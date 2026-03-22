@@ -21,6 +21,22 @@ import { ActiveSessionProvider } from "@/providers/ActiveSessionProvider";
 import { OpenCodeClientContext } from "@/providers/OpenCodeClientProvider";
 import { PreferencesProvider } from "@/providers/PreferencesProvider";
 
+// Mock react-virtual so all items render in jsdom (no viewport measurement)
+vi.mock("@tanstack/react-virtual", () => ({
+  useVirtualizer: ({ count }: { count: number }) => ({
+    getVirtualItems: () =>
+      Array.from({ length: count }, (_, i) => ({
+        index: i,
+        key: i,
+        start: i * 80,
+        size: 80,
+        end: (i + 1) * 80,
+      })),
+    getTotalSize: () => count * 80,
+    measureElement: () => {},
+  }),
+}));
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function makeSession(id: string, title: string, createdAt = Date.now()): Session {
