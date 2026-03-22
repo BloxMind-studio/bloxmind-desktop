@@ -55,7 +55,7 @@ jobs:
             target: x86_64-unknown-linux-gnu
             node_asset: node-v22.13.1-linux-x64.tar.gz
             node_inner_dir: node-v22.13.1-linux-x64
-            opencode_asset: opencode-linux-x64.zip
+            opencode_asset: opencode-linux-x64.tar.gz
             opencode_bin: opencode
             ext: ""
             args: "--bundles deb appimage"
@@ -149,7 +149,10 @@ jobs:
             "https://github.com/anomalyco/opencode/releases/download/v${{ env.OPENCODE_VERSION }}/${{ matrix.opencode_asset }}" \
             -o "/tmp/${{ matrix.opencode_asset }}"
           cd src-tauri/binaries
-          unzip -o "/tmp/${{ matrix.opencode_asset }}"
+          case "${{ matrix.opencode_asset }}" in
+            *.tar.gz) tar -xzf "/tmp/${{ matrix.opencode_asset }}" ;;
+            *.zip)    unzip -o "/tmp/${{ matrix.opencode_asset }}" ;;
+          esac
           mv "${{ matrix.opencode_bin }}" "opencode-${{ matrix.target }}${{ matrix.ext }}"
           chmod +x "opencode-${{ matrix.target }}${{ matrix.ext }}" 2>/dev/null || true
 
