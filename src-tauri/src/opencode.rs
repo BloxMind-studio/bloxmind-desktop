@@ -555,7 +555,10 @@ async fn do_start(
         .unwrap_or_default();
 
     let mut healthy = false;
-    for _ in 0..15 {
+    // 120 iterations * 500ms = 60 seconds max wait.
+    // First launch can trigger a database migration that takes 10+ seconds,
+    // so we need a generous timeout here.
+    for _ in 0..120 {
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
         // Check if the process already exited (the event handler sets
