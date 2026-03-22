@@ -131,3 +131,150 @@ pub fn set_config(app: AppHandle, patch: serde_json::Value) -> Result<AppConfig,
     *guard = updated.clone();
     Ok(updated)
 }
+
+// ── Tests ──────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── AppConfig defaults ───────────────────────────────────────────
+
+    #[test]
+    fn default_config_values() {
+        let cfg = AppConfig::default();
+        assert!(!cfg.has_launched);
+        assert!(cfg.last_model.is_none());
+        assert!(cfg.hidden_models.is_empty());
+    }
+
+    // ── Serde round-trip ─────────────────────────────────────────────
+
+    #[test]
+    fn serde_round_trip_default() {
+        let cfg = AppConfig::default();
+        let json = serde_json::to_string(&cfg).unwrap();
+        let restored: AppConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(cfg.has_launched, restored.has_launched);
+        assert_eq!(cfg.last_model, restored.last_model);
+        assert_eq!(cfg.hidden_models, restored.hidden_models);
+    }
+
+    #[test]
+    fn serde_round_trip_populated() {
+        let cfg = AppConfig {
+            has_launched: true,
+            last_model: Some("anthropic/claude-opus-4-6".into()),
+            hidden_models: vec!["old-model".into(), "deprecated-model".into()],
+        };
+        let json = serde_json::to_string(&cfg).unwrap();
+        let restored: AppConfig = serde_json::from_str(&json).unwrap();
+        assert!(restored.has_launched);
+        assert_eq!(restored.last_model.as_deref(), Some("anthropic/claude-opus-4-6"));
+        assert_eq!(restored.hidden_models.len(), 2);
+    }
+
+    // ── camelCase field names ────────────────────────────────────────
+
+    #[test]
+    fn serializes_camel_case_fields() {
+        let cfg = AppConfig {
+            has_launched: true,
+            last_model: Some("test".into()),
+            hidden_models: vec!["a".into()],
+        };
+        let val = serde_json::to_value(&cfg).unwrap();
+        assert!(val.get("hasLaunched").is_some());
+        assert!(val.get("lastModel").is_some());
+        assert!(val.get("hiddenModels").is_some());
+        // Snake case keys should NOT be present
+        assert!(val.get("has_launched").is_none());
+        assert!(val.get("last_model").is_none());
+        assert!(val.get("hidden_models").is_none());
+    }
+
+    // ── Deserialization from partial JSON ────────────────────────────
+
+    #[test]
+    fn deserialize_empty_object_uses_defaults() {
+        let cfg: AppConfig = serde_json::from_str("{}").unwrap();
+        assert!(!cfg.has_launched);
+        assert!(cfg.last_model.is_none());
+        assert!(cfg.hidden_models.is_empty());
+    }
+
+    #[test]
+    fn deserialize_partial_object() {
+        let cfg: AppConfig =
+            serde_json::from_str(r#"{"hasLaunched": true}"#).unwrap();
+        assert!(cfg.has_launched);
+        assert!(cfg.last_model.is_none());
+        assert!(cfg.hidden_models.is_empty());
+    }
+
+    // ── skip_serializing_if behavior ────────────────────────────────
+
+    #[test]
+    fn none_and_empty_fields_omitted_from_json() {
+        let cfg = AppConfig::default();
+        let val = serde_json::to_value(&cfg).unwrap();
+        // lastModel (None) and hiddenModels (empty) should be omitted
+        assert!(val.get("lastModel").is_none());
+        assert!(val.get("hiddenModels").is_none());
+        // hasLaunched is always present (no skip_serializing_if)
+        assert!(val.get("hasLaunched").is_some());
+    }
+
+    // ── JSON merge patch logic (unit-level) ──────────────────────────
+
+    #[test]
+    fn merge_patch_updates_only_provided_fields() {
+        let base = AppConfig {
+            has_launched: false,
+            last_model: Some("old-model".into()),
+            hidden_models: vec!["a".into()],
+        };
+        let mut base_val = serde_json::to_value(&base).unwrap();
+        let patch: serde_json::Value =
+            serde_json::from_str(r#"{"hasLaunched": true}"#).unwrap();
+
+        if let (Some(base_obj), Some(patch_obj)) =
+            (base_val.as_object_mut(), patch.as_object())
+        {
+            for (k, v) in patch_obj {
+                base_obj.insert(k.clone(), v.clone());
+            }
+        }
+
+        let merged: AppConfig = serde_json::from_value(base_val).unwrap();
+        assert!(merged.has_launched); // updated
+        assert_eq!(merged.last_model.as_deref(), Some("old-model")); // unchanged
+        assert_eq!(merged.hidden_models, vec!["a".to_string()]); // unchanged
+    }
+
+    // ── save_to_disk / filesystem ────────────────────────────────────
+
+    #[test]
+    fn save_to_disk_creates_parent_dirs_and_writes() {
+        let tmp = std::env::temp_dir().join("bloxbot_config_test");
+        let path = tmp.join("nested").join("config.json");
+        // Clean up from previous runs
+        let _ = std::fs::remove_dir_all(&tmp);
+
+        let cfg = AppConfig {
+            has_launched: true,
+            last_model: Some("test/model".into()),
+            hidden_models: vec![],
+        };
+        save_to_disk(&path, &cfg);
+
+        assert!(path.exists());
+        let contents = std::fs::read_to_string(&path).unwrap();
+        let restored: AppConfig = serde_json::from_str(&contents).unwrap();
+        assert!(restored.has_launched);
+        assert_eq!(restored.last_model.as_deref(), Some("test/model"));
+
+        // Cleanup
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+}

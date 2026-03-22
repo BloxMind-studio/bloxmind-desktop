@@ -112,3 +112,52 @@ pub fn workspace_dir() -> Result<PathBuf, String> {
 pub fn get_workspace_dir() -> Result<String, String> {
     workspace_dir().map(|p| p.to_string_lossy().to_string())
 }
+
+// ── Tests ──────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── workspace_dir ────────────────────────────────────────────────
+
+    #[test]
+    fn workspace_dir_returns_bloxbot_under_home() {
+        let ws = workspace_dir().expect("workspace_dir should succeed");
+        let home = dirs::home_dir().expect("home dir should exist");
+        assert_eq!(ws, home.join("BloxBot"));
+        assert!(ws.exists(), "workspace_dir should create the directory");
+    }
+
+    #[test]
+    fn workspace_dir_is_idempotent() {
+        let ws1 = workspace_dir().unwrap();
+        let ws2 = workspace_dir().unwrap();
+        assert_eq!(ws1, ws2);
+    }
+
+    // ── sidecar_path ─────────────────────────────────────────────────
+
+    #[test]
+    fn sidecar_path_nonexistent_binary_returns_error() {
+        let result = sidecar_path("definitely_not_a_real_sidecar_binary_xyz");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("not found"), "error should mention 'not found': {err}");
+    }
+
+    // ── bundled_nodejs_bin_dir ────────────────────────────────────────
+
+    // This may fail in CI or non-bundled environments, which is expected.
+    // The test validates the function doesn't panic and returns a
+    // meaningful error when Node.js isn't bundled.
+    #[test]
+    fn bundled_nodejs_bin_dir_does_not_panic() {
+        let result = bundled_nodejs_bin_dir();
+        // Either Ok(path) or Err(message) — just don't panic
+        match result {
+            Ok(path) => assert!(path.exists()),
+            Err(msg) => assert!(msg.contains("not found"), "error should be descriptive: {msg}"),
+        }
+    }
+}

@@ -902,3 +902,200 @@ pub struct StudioStatusResult {
     pub error: Option<String>,
 }
 
+// ── Tests ──────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── OpenCodeStatus & OpenCodeState ────────────────────────────────
+
+    #[test]
+    fn default_state_is_stopped_port_zero() {
+        let state = OpenCodeState::default();
+        assert!(matches!(state.status, OpenCodeStatus::Stopped));
+        assert_eq!(state.port, 0);
+        assert!(state.child.is_none());
+    }
+
+    #[test]
+    fn status_serializes_to_expected_json() {
+        let stopped = serde_json::to_value(&OpenCodeStatus::Stopped).unwrap();
+        assert_eq!(stopped, serde_json::json!("Stopped"));
+
+        let starting = serde_json::to_value(&OpenCodeStatus::Starting).unwrap();
+        assert_eq!(starting, serde_json::json!("Starting"));
+
+        let running = serde_json::to_value(&OpenCodeStatus::Running).unwrap();
+        assert_eq!(running, serde_json::json!("Running"));
+
+        let error = serde_json::to_value(&OpenCodeStatus::Error("boom".into())).unwrap();
+        assert_eq!(error, serde_json::json!({"Error": "boom"}));
+    }
+
+    #[test]
+    fn status_payload_serializes_correctly() {
+        let payload = StatusPayload {
+            status: OpenCodeStatus::Running,
+            port: 59200,
+        };
+        let json = serde_json::to_value(&payload).unwrap();
+        assert_eq!(json["port"], 59200);
+        assert_eq!(json["status"], "Running");
+    }
+
+    // ── Constants ────────────────────────────────────────────────────
+
+    #[test]
+    fn port_range_within_iana_dynamic_range() {
+        assert!(OC_PORT_START >= 49152);
+        assert!((OC_PORT_START + PORT_RANGE) as u32 <= 65535);
+    }
+
+    #[test]
+    fn loopback_is_ipv4() {
+        assert_eq!(LOOPBACK, "127.0.0.1");
+    }
+
+    // ── parse_sidecar_level ──────────────────────────────────────────
+
+    #[test]
+    fn parse_sidecar_level_error() {
+        assert_eq!(
+            parse_sidecar_level("ERROR 2026-03-22T12:00:00 something broke"),
+            log::Level::Error
+        );
+    }
+
+    #[test]
+    fn parse_sidecar_level_warn() {
+        assert_eq!(
+            parse_sidecar_level("WARN  2026-03-22T12:00:00 deprecated usage"),
+            log::Level::Warn
+        );
+    }
+
+    #[test]
+    fn parse_sidecar_level_info() {
+        assert_eq!(
+            parse_sidecar_level("INFO  2026-03-22T12:00:00 server started"),
+            log::Level::Info
+        );
+    }
+
+    #[test]
+    fn parse_sidecar_level_debug() {
+        assert_eq!(
+            parse_sidecar_level("DEBUG 2026-03-22T12:00:00 tick"),
+            log::Level::Debug
+        );
+    }
+
+    #[test]
+    fn parse_sidecar_level_unknown_defaults_to_warn() {
+        assert_eq!(
+            parse_sidecar_level("some random stack trace line"),
+            log::Level::Warn
+        );
+    }
+
+    #[test]
+    fn parse_sidecar_level_leading_whitespace() {
+        assert_eq!(
+            parse_sidecar_level("  ERROR trailing text"),
+            log::Level::Error
+        );
+    }
+
+    // ── is_noisy_sidecar_line ────────────────────────────────────────
+
+    #[test]
+    fn noisy_patterns_detected() {
+        assert!(is_noisy_sidecar_line("path=/mcp request id=123"));
+        assert!(is_noisy_sidecar_line("path=/global/health request"));
+        assert!(is_noisy_sidecar_line("service=server method=GET"));
+        assert!(is_noisy_sidecar_line("service=server status=200"));
+        assert!(is_noisy_sidecar_line("service=bus type=event"));
+        assert!(is_noisy_sidecar_line("service=tool.registry loading"));
+        assert!(is_noisy_sidecar_line("service=permission check=true"));
+    }
+
+    #[test]
+    fn non_noisy_lines_pass_through() {
+        assert!(!is_noisy_sidecar_line("ERROR something important"));
+        assert!(!is_noisy_sidecar_line("server listening on port 59200"));
+        assert!(!is_noisy_sidecar_line(""));
+    }
+
+    // ── studio_mcp_command ───────────────────────────────────────────
+
+    #[test]
+    fn studio_mcp_command_returns_non_empty_vec() {
+        let cmd = studio_mcp_command();
+        assert!(!cmd.is_empty());
+        // On macOS, first element should be the StudioMCP path
+        #[cfg(target_os = "macos")]
+        assert!(cmd[0].contains("StudioMCP"));
+        // On Windows, first element should be cmd.exe
+        #[cfg(target_os = "windows")]
+        assert_eq!(cmd[0], "cmd.exe");
+    }
+
+    // ── StudioStatusResult ───────────────────────────────────────────
+
+    #[test]
+    fn studio_status_result_serializes() {
+        let result = StudioStatusResult {
+            status: "connected".into(),
+            error: None,
+        };
+        let json = serde_json::to_value(&result).unwrap();
+        assert_eq!(json["status"], "connected");
+        assert!(json["error"].is_null());
+
+        let result_err = StudioStatusResult {
+            status: "failed".into(),
+            error: Some("timeout".into()),
+        };
+        let json_err = serde_json::to_value(&result_err).unwrap();
+        assert_eq!(json_err["error"], "timeout");
+    }
+
+    // ── find_available_port ──────────────────────────────────────────
+
+    #[tokio::test]
+    async fn find_available_port_returns_port_in_range() {
+        let port = find_available_port(OC_PORT_START).await;
+        assert!(port >= OC_PORT_START);
+        assert!(port < OC_PORT_START + PORT_RANGE);
+    }
+
+    #[tokio::test]
+    async fn find_available_port_skips_occupied_port() {
+        // Bind the first port so find_available_port must skip it
+        let listener = tokio::net::TcpListener::bind((LOOPBACK, OC_PORT_START))
+            .await
+            .expect("failed to bind test port");
+        let port = find_available_port(OC_PORT_START).await;
+        assert!(port > OC_PORT_START, "should skip the occupied port");
+        assert!(port < OC_PORT_START + PORT_RANGE);
+        drop(listener);
+    }
+
+    // ── strip_win_prefix (Windows only) ──────────────────────────────
+
+    #[cfg(windows)]
+    #[test]
+    fn strip_win_prefix_removes_extended_prefix() {
+        let path = std::path::Path::new(r"\\?\C:\Users\test\bin");
+        assert_eq!(strip_win_prefix(path), r"C:\Users\test\bin");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn strip_win_prefix_no_op_for_normal_paths() {
+        let path = std::path::Path::new(r"C:\Users\test\bin");
+        assert_eq!(strip_win_prefix(path), r"C:\Users\test\bin");
+    }
+}
+
