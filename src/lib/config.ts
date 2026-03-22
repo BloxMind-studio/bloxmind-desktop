@@ -1,15 +1,21 @@
-import { invoke } from "@tauri-apps/api/core";
-
 export interface AppConfig {
-  hasLaunched: boolean;
   lastModel: string | null;
   hiddenModels: string[];
 }
 
-export async function loadConfig(): Promise<AppConfig> {
-  return invoke<AppConfig>("get_config");
+const STORAGE_KEY = "bloxbot:config";
+
+export function loadConfig(): AppConfig {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {
+    // Corrupted data, start fresh
+  }
+  return { lastModel: null, hiddenModels: [] };
 }
 
-export async function patchConfig(patch: Partial<AppConfig>): Promise<AppConfig> {
-  return invoke<AppConfig>("set_config", { patch });
+export function patchConfig(patch: Partial<AppConfig>): void {
+  const current = loadConfig();
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...current, ...patch }));
 }

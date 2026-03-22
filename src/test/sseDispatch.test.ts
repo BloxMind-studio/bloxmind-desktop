@@ -541,12 +541,12 @@ describe("sseDispatch", () => {
   // ── MCP events ─────────────────────────────────────────────────────
 
   describe("mcp.tools.changed", () => {
-    it("invalidates the studioStatus query", () => {
+    it("is a no-op (studio status indicator removed)", () => {
       const spy = vi.spyOn(qc, "invalidateQueries");
 
       dispatch(qc, { type: "mcp.tools.changed", properties: {} });
 
-      expect(spy).toHaveBeenCalledWith({ queryKey: qk.studioStatus });
+      expect(spy).not.toHaveBeenCalled();
     });
   });
 });

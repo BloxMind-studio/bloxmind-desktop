@@ -11,7 +11,7 @@ export function useCreateSession() {
   const { client } = useOpenCodeClient();
   const queryClient = useQueryClient();
   const { selectSession } = useActiveSession();
-  const { selectedModel, addOwnSessionId, setSessionModel } = usePreferences();
+  const { selectedModel, setSessionModel } = usePreferences();
 
   return useMutation({
     mutationFn: async () => {
@@ -21,8 +21,6 @@ export function useCreateSession() {
       return res.data;
     },
     onSuccess: (newSession: Session) => {
-      addOwnSessionId(newSession.id);
-
       if (selectedModel) {
         setSessionModel(newSession.id, selectedModel);
       }

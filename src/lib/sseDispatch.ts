@@ -242,9 +242,5 @@ export function sseDispatch(
       }
       break;
     }
-    case "mcp.tools.changed": {
-      queryClient.invalidateQueries({ queryKey: qk.studioStatus });
-      break;
-    }
   }
 }

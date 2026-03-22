@@ -1,9 +1,4 @@
-import type { Message, Part, ProviderAuthMethod } from "@opencode-ai/sdk/v2/client";
-
-// ── OpenCode sidecar status (from Rust backend) ─────────────────────────
-
-/** Status of the OpenCode sidecar process (from Rust backend). */
-export type OpenCodeStatus = "Stopped" | "Starting" | "Running" | { Error: string };
+import type { Message, Part } from "@opencode-ai/sdk/v2/client";
 
 // ── Chat types ──────────────────────────────────────────────────────────
 
@@ -18,9 +13,7 @@ export interface ModelInfo {
   name: string;
   providerId: string;
   providerName: string;
-  status?: "alpha" | "beta" | "deprecated" | "active";
-  cost?: { input: number; output: number };
-  contextLimit?: number;
+  status?: "alpha" | "beta" | "deprecated";
   variants?: Record<string, Record<string, unknown>>;
 }
 
@@ -30,6 +23,3 @@ export interface ProviderInfo {
   name: string;
   env: string[];
 }
-
-/** Auth methods keyed by provider ID */
-export type AuthMethods = Record<string, ProviderAuthMethod[]>;

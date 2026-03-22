@@ -10,7 +10,7 @@ export function useDeleteSession() {
   const { client } = useOpenCodeClient();
   const queryClient = useQueryClient();
   const { activeSessionId, clearSession } = useActiveSession();
-  const { removeOwnSessionId, removeSessionModel } = usePreferences();
+  const { removeSessionModel } = usePreferences();
 
   return useMutation({
     mutationFn: async (sessionID: string) => {
@@ -19,7 +19,6 @@ export function useDeleteSession() {
       return sessionID;
     },
     onSuccess: (sessionID: string) => {
-      removeOwnSessionId(sessionID);
       removeSessionModel(sessionID);
 
       queryClient.setQueryData<Session[]>(qk.sessions, (prev) => {

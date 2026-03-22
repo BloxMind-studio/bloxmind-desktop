@@ -1,22 +1,19 @@
+import type {
+  ProviderAuthMethod,
+  ProviderAuthResponse,
+  ProviderListResponse,
+} from "@opencode-ai/sdk/v2/client";
 import { useQuery } from "@tanstack/react-query";
 
 import { qk } from "@/lib/queryKeys";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
-import type { AuthMethods, ModelInfo, ProviderInfo } from "@/types";
+import type { ModelInfo, ProviderInfo } from "@/types";
 
-interface ProvidersData {
-  all: Array<{
-    id: string;
-    name: string;
-    env: string[];
-    models: Record<string, { id: string; name: string; status?: string; variants?: unknown }>;
-  }>;
-  connected: string[];
-  default?: Record<string, string>;
-  authMethods?: AuthMethods;
-}
+type ProvidersData = ProviderListResponse & {
+  authMethods?: Record<string, ProviderAuthMethod[]>;
+};
 
-export function useProvidersQuery() {
+function useProvidersQuery() {
   const { client } = useOpenCodeClient();
 
   return useQuery<ProvidersData>({
@@ -25,14 +22,15 @@ export function useProvidersQuery() {
       if (!client) throw new Error("No client");
       const [provRes, authRes] = await Promise.all([
         client.provider.list({}),
-        client.provider.auth({}).catch(() => ({ data: undefined })),
+        client.provider.auth({}).catch(() => ({ data: undefined as ProviderAuthResponse | undefined })),
       ]);
       if (!provRes.data) throw new Error("No provider data");
-      const merged = authRes.data ? { ...provRes.data, authMethods: authRes.data } : provRes.data;
-      return merged as ProvidersData;
+      if (authRes.data) {
+        return { ...provRes.data, authMethods: authRes.data };
+      }
+      return provRes.data;
     },
     enabled: !!client,
-    // Allow refetches when invalidated (after auth changes)
     staleTime: 0,
   });
 }
@@ -59,15 +57,15 @@ export function useAllModels(): ModelInfo[] {
         name: model.name,
         providerId: provider.id,
         providerName: provider.name,
-        status: model.status as ModelInfo["status"],
-        variants: model.variants as ModelInfo["variants"],
+        status: model.status,
+        variants: model.variants,
       });
     }
   }
   return models;
 }
 
-export function useAuthMethods(): AuthMethods {
+export function useAuthMethods(): Record<string, ProviderAuthMethod[]> {
   const { data } = useProvidersQuery();
-  return (data as ProvidersData & { authMethods?: AuthMethods })?.authMethods ?? {};
+  return data?.authMethods ?? {};
 }

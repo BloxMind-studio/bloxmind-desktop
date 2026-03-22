@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
 import { lazy, Suspense, useCallback, useState } from "react";
 
 import ChatInput from "@/components/ChatInput";
@@ -11,15 +10,12 @@ import { useIsBusy } from "@/hooks/useSessionStatuses";
 import { useSessions } from "@/hooks/useSessions";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
-import { usePreferences } from "@/providers/PreferencesProvider";
 
 const Settings = lazy(() => import("@/components/Settings"));
-const ChatSetup = lazy(() => import("@/components/ChatSetup"));
 
 function Chat() {
-  const { status, ready, initError } = useOpenCodeClient();
+  const { ready, initError } = useOpenCodeClient();
   const { activeSessionId } = useActiveSession();
-  const { hasLaunched } = usePreferences();
   const connectedProviders = useConnectedProviders();
   const isBusy = useIsBusy(activeSessionId);
   const createSession = useCreateSession();
@@ -30,52 +26,10 @@ function Chat() {
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [restarting, setRestarting] = useState(false);
 
   const handleToggleSidebar = useCallback(() => setSidebarCollapsed((c) => !c), []);
   const handleSessionSelect = useCallback(() => setShowSettings(false), []);
   const handleOpenSettings = useCallback(() => setShowSettings(true), []);
-
-  const serverRunning = status === "Running";
-  const isError = typeof status === "object" && "Error" in status;
-
-  async function handleRetry() {
-    setRestarting(true);
-    try {
-      await invoke("restart_opencode");
-    } catch (err) {
-      console.error("[chat] restart_opencode failed:", err);
-    } finally {
-      setRestarting(false);
-    }
-  }
-
-  // Still loading persisted state from disk
-  if (hasLaunched === null) {
-    return <LoadingScreen message="Starting up..." />;
-  }
-
-  // First-run welcome screen
-  if (hasLaunched === false) {
-    return (
-      <Suspense fallback={<LoadingScreen message="Loading..." />}>
-        <ChatSetup />
-      </Suspense>
-    );
-  }
-
-  // Waiting for the backend to start OpenCode
-  if (!serverRunning) {
-    return (
-      <LoadingScreen
-        message={isError ? "Something went wrong" : "Starting up..."}
-        detail={isError ? status.Error : undefined}
-        error={isError}
-        onRetry={isError ? handleRetry : undefined}
-        retrying={restarting}
-      />
-    );
-  }
 
   // Main chat UI
   return (

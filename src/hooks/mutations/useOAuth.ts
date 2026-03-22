@@ -1,5 +1,4 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { openUrl } from "@tauri-apps/plugin-opener";
 
 import { qk } from "@/lib/queryKeys";
 import { capture } from "@/lib/telemetry";
@@ -20,7 +19,7 @@ export function useStartOAuth() {
       const res = await client.provider.oauth.authorize({ providerID, method: methodIndex });
       if (!res.data) return undefined;
       if (res.data.method === "code") {
-        await openUrl(res.data.url);
+        window.open(res.data.url, "_blank");
       }
       return { method: res.data.method, instructions: res.data.instructions, url: res.data.url };
     },
@@ -49,8 +48,6 @@ export function useCompleteOAuth() {
       });
       await client.instance.dispose();
 
-      // The first provider.list() after dispose() triggers server reinitialization
-      // with the new credentials. It may return stale data. Fetch twice.
       await client.provider.list({});
       const [provRes, authRes] = await Promise.all([
         client.provider.list({}),

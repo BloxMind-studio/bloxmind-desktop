@@ -4,14 +4,12 @@
  * These render the real component tree (Chat, ChatSidebar, ChatMessages, ChatInput)
  * inside the real provider hierarchy. Only the system boundary is mocked:
  * - SDK client (createOpencodeClient)
- * - Tauri APIs (invoke, listen, store, opener)
  *
  * Each test simulates a real user journey and asserts on what appears on screen.
  */
 
 import type { Session } from "@opencode-ai/sdk/v2/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { invoke } from "@tauri-apps/api/core";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -70,9 +68,8 @@ function TestApp({
       <OpenCodeClientContext.Provider
         value={{
           client: client as never,
-          status: "Running",
+          status: "ready",
           port: 4096,
-          serverError: null,
           ready: true,
           initError: null,
         }}
@@ -202,20 +199,12 @@ function seedReadyState(
     connectedProviders,
     providerDefaults: { anthropic: "claude-3.5-sonnet" },
   });
-  queryClient.setQueryData(qk.studioStatus, { status: "connected", error: null });
 }
 
 // ── Setup ──────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // Mock invoke calls that components make directly
-  (invoke as ReturnType<typeof vi.fn>).mockImplementation(async (cmd: string) => {
-    if (cmd === "poll_studio_status") return { status: "connected", error: null };
-    if (cmd === "get_config") return { hasLaunched: true, lastModel: null, hiddenModels: [] };
-    if (cmd === "set_config") return { hasLaunched: true, lastModel: null, hiddenModels: [] };
-    return undefined;
-  });
 });
 
 afterEach(() => {

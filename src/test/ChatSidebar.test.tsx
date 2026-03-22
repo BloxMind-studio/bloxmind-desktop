@@ -7,7 +7,6 @@
 
 import type { Session } from "@opencode-ai/sdk/v2/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { invoke } from "@tauri-apps/api/core";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -100,7 +99,7 @@ function TestSidebar({
   return (
     <QueryClientProvider client={queryClient}>
       <OpenCodeClientContext.Provider
-        value={{ client: client as never, status: "Running", port: 4096, serverError: null, ready: true, initError: null }}
+        value={{ client: client as never, status: "ready", port: 4096, ready: true, initError: null }}
       >
         <ActiveSessionProvider activeSessionIdRef={activeSessionIdRef}>
           <PreferencesProvider>
@@ -121,12 +120,6 @@ function TestSidebar({
 
 beforeEach(() => {
   vi.clearAllMocks();
-  (invoke as ReturnType<typeof vi.fn>).mockImplementation(async (cmd: string) => {
-    if (cmd === "poll_studio_status") return { status: "connected", error: null };
-    if (cmd === "get_config") return { hasLaunched: true, lastModel: null, hiddenModels: [] };
-    if (cmd === "set_config") return { hasLaunched: true, lastModel: null, hiddenModels: [] };
-    return undefined;
-  });
 });
 
 afterEach(() => {

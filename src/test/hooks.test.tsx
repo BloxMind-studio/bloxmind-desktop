@@ -3,14 +3,12 @@
  *   useSessions / useFilteredSessions
  *   useProviders (useAllProviders, useConnectedProviders, useAllModels, useAuthMethods)
  *   useMessages (useMessageIds, useMessage)
- *   useStudioStatus
  *   useSessionStatuses / useIsBusy
  */
 
 import type { Session, SessionStatus } from "@opencode-ai/sdk/v2/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { invoke } from "@tauri-apps/api/core";
-import { renderHook, waitFor } from "@testing-library/react";
+import { renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { useRef } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -19,10 +17,8 @@ import type { MessagesCache } from "@/lib/sseDispatch";
 import { useMessageIds, useMessage } from "@/hooks/useMessages";
 import { useAllModels, useAllProviders, useConnectedProviders, useAuthMethods } from "@/hooks/useProviders";
 import { useSessions, useFilteredSessions } from "@/hooks/useSessions";
-import { useStudioStatus } from "@/hooks/useStudioStatus";
 import { useSessionStatuses, useIsBusy } from "@/hooks/useSessionStatuses";
 import { ActiveSessionContext } from "@/providers/ActiveSessionProvider";
-import { OpenCodeClientContext } from "@/providers/OpenCodeClientProvider";
 import { PreferencesContext } from "@/providers/PreferencesProvider";
 
 // ── Test helpers ─────────────────────────────────────────────────────
@@ -112,36 +108,10 @@ function makePreferencesWrapper(
   };
 }
 
-/** Wrapper providing OpenCodeClient context for useStudioStatus */
-function makeClientWrapper(qc: QueryClient, clientStatus: string) {
-  return function Wrapper({ children }: { children: ReactNode }) {
-    return (
-      <QueryClientProvider client={qc}>
-        <OpenCodeClientContext.Provider
-          value={{
-            client: null,
-            status: clientStatus as any,
-            port: 4096,
-            serverError: null,
-            ready: clientStatus === "Running",
-            initError: null,
-          }}
-        >
-          {children}
-        </OpenCodeClientContext.Provider>
-      </QueryClientProvider>
-    );
-  };
-}
-
 // ── Setup ────────────────────────────────────────────────────────────
 
 beforeEach(() => {
   vi.clearAllMocks();
-  (invoke as ReturnType<typeof vi.fn>).mockImplementation(async (cmd: string) => {
-    if (cmd === "poll_studio_status") return { status: "connected", error: null };
-    return undefined;
-  });
 });
 
 // ── useSessions ──────────────────────────────────────────────────────
@@ -365,52 +335,6 @@ describe("useMessage", () => {
     });
 
     expect(result.current).toBeUndefined();
-  });
-});
-
-// ── useStudioStatus ──────────────────────────────────────────────────
-
-describe("useStudioStatus", () => {
-  it("returns connected status when Tauri invoke succeeds", async () => {
-    const qc = makeQC();
-
-    const { result } = renderHook(() => useStudioStatus(), {
-      wrapper: makeClientWrapper(qc, "Running"),
-    });
-
-    await waitFor(() => {
-      expect(result.current.studioStatus).toBe("connected");
-    });
-    expect(result.current.studioError).toBeNull();
-  });
-
-  it("returns unknown when client is not Running", () => {
-    const qc = makeQC();
-
-    const { result } = renderHook(() => useStudioStatus(), {
-      wrapper: makeClientWrapper(qc, "Stopped"),
-    });
-
-    // Query is disabled, so studioStatus stays at default
-    expect(result.current.studioStatus).toBe("unknown");
-  });
-
-  it("returns error from Tauri invoke", async () => {
-    (invoke as ReturnType<typeof vi.fn>).mockResolvedValue({
-      status: "failed",
-      error: "Connection refused",
-    });
-
-    const qc = makeQC();
-
-    const { result } = renderHook(() => useStudioStatus(), {
-      wrapper: makeClientWrapper(qc, "Running"),
-    });
-
-    await waitFor(() => {
-      expect(result.current.studioStatus).toBe("failed");
-    });
-    expect(result.current.studioError).toBe("Connection refused");
   });
 });
 

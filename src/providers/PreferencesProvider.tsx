@@ -4,36 +4,27 @@ import { createContext, type ReactNode, useCallback, useContext, useEffect, useS
 import { patchConfig } from "@/lib/config";
 import { qk } from "@/lib/queryKeys";
 import { splitModelKey } from "@/lib/splitModelKey";
-import { persistSessionModels, SESSION_MODELS_KEY, tauriStore } from "@/lib/tauriStore";
+import { persistSessionModels } from "@/lib/tauriStore";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 
 interface ConfigData {
-  hasLaunched: boolean;
   lastModel: string | null;
   hiddenModels: string[];
-  ownSessionIds: Set<string>;
   sessionModels: Record<string, string>;
   connectedProviders: string[];
   providerDefaults?: Record<string, string>;
 }
 
 interface PreferencesContextValue {
-  hasLaunched: boolean | null;
   selectedModel: string | null;
   selectedAgent: string | null;
   selectedVariant: string | null;
   hiddenModels: Set<string>;
   sessionModels: Record<string, string>;
-  ownSessionIds: Set<string>;
-  showAllSessions: boolean;
   setSelectedModel: (modelID: string) => void;
   setSelectedAgent: (name: string) => void;
   setSelectedVariant: (variant: string | null) => void;
   toggleModelVisibility: (modelKey: string) => void;
-  setShowAllSessions: (show: boolean) => void;
-  dismissWelcome: () => void;
-  addOwnSessionId: (id: string) => void;
-  removeOwnSessionId: (id: string) => void;
   setSessionModel: (sessionId: string, modelId: string) => void;
   removeSessionModel: (sessionId: string) => void;
 }
@@ -48,23 +39,18 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const { activeSessionId } = useActiveSession();
 
   // Read config from query cache (populated by init)
-  const { data: configData } = useQuery<ConfigData>({ queryKey: qk.config });
+  const { data: configData } = useQuery<ConfigData>({ queryKey: qk.config, enabled: false });
 
-  const [hasLaunched, setHasLaunched] = useState<boolean | null>(null);
   const [selectedModel, setSelectedModelState] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgentState] = useState<string | null>(null);
   const [selectedVariant, setSelectedVariantState] = useState<string | null>(null);
   const [hiddenModels, setHiddenModels] = useState<Set<string>>(new Set());
   const [sessionModels, setSessionModels] = useState<Record<string, string>>({});
-  const [ownSessionIds, setOwnSessionIds] = useState<Set<string>>(new Set());
-  const [showAllSessions, setShowAllSessionsState] = useState(false);
 
   // Initialize from config data when it arrives
   useEffect(() => {
     if (!configData) return;
-    setHasLaunched(configData.hasLaunched);
     setHiddenModels(new Set(configData.hiddenModels));
-    setOwnSessionIds(configData.ownSessionIds);
     setSessionModels(configData.sessionModels);
 
     // Model selection priority
@@ -82,7 +68,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   }, [configData]);
 
   // Auto-select first agent
-  const { data: agents } = useQuery<Agent[]>({ queryKey: qk.agents });
+  const { data: agents } = useQuery<Agent[]>({ queryKey: qk.agents, enabled: false });
   useEffect(() => {
     if (!agents || selectedAgent) return;
     const primary = agents.find((a) => a.mode === "primary" && !a.hidden);
@@ -99,11 +85,11 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const setSelectedModel = useCallback(
     (modelID: string) => {
       setSelectedModelState(modelID);
-      patchConfig({ lastModel: modelID }).catch(() => {});
+      patchConfig({ lastModel: modelID });
       if (activeSessionId) {
         setSessionModels((prev) => {
           const next = { ...prev, [activeSessionId]: modelID };
-          persistSessionModels(next).catch(() => {});
+          persistSessionModels(next);
           return next;
         });
       }
@@ -127,39 +113,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       } else {
         next.add(modelKey);
       }
-      patchConfig({ hiddenModels: [...next] }).catch(() => {});
-      return next;
-    });
-  }, []);
-
-  const setShowAllSessions = useCallback((show: boolean) => {
-    setShowAllSessionsState(show);
-  }, []);
-
-  const dismissWelcome = useCallback(() => {
-    setHasLaunched(true);
-    patchConfig({ hasLaunched: true }).catch(() => {});
-    import("@/lib/telemetry").then(({ capture }) => capture("welcome_completed"));
-  }, []);
-
-  const addOwnSessionId = useCallback((id: string) => {
-    setOwnSessionIds((prev) => {
-      const next = new Set(prev);
-      next.add(id);
-      import("@/lib/tauriStore").then(({ persistOwnSessionIds }) =>
-        persistOwnSessionIds(next).catch(() => {}),
-      );
-      return next;
-    });
-  }, []);
-
-  const removeOwnSessionId = useCallback((id: string) => {
-    setOwnSessionIds((prev) => {
-      const next = new Set(prev);
-      next.delete(id);
-      import("@/lib/tauriStore").then(({ persistOwnSessionIds }) =>
-        persistOwnSessionIds(next).catch(() => {}),
-      );
+      patchConfig({ hiddenModels: [...next] });
       return next;
     });
   }, []);
@@ -167,7 +121,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const setSessionModel = useCallback((sessionId: string, modelId: string) => {
     setSessionModels((prev) => {
       const next = { ...prev, [sessionId]: modelId };
-      tauriStore.set(SESSION_MODELS_KEY, next).catch(() => {});
+      persistSessionModels(next);
       return next;
     });
   }, []);
@@ -175,28 +129,21 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const removeSessionModel = useCallback((sessionId: string) => {
     setSessionModels((prev) => {
       const { [sessionId]: _removed, ...rest } = prev;
-      tauriStore.set(SESSION_MODELS_KEY, rest).catch(() => {});
+      persistSessionModels(rest);
       return rest;
     });
   }, []);
 
   const value: PreferencesContextValue = {
-    hasLaunched,
     selectedModel,
     selectedAgent,
     selectedVariant,
     hiddenModels,
     sessionModels,
-    ownSessionIds,
-    showAllSessions,
     setSelectedModel,
     setSelectedAgent,
     setSelectedVariant,
     toggleModelVisibility,
-    setShowAllSessions,
-    dismissWelcome,
-    addOwnSessionId,
-    removeOwnSessionId,
     setSessionModel,
     removeSessionModel,
   };

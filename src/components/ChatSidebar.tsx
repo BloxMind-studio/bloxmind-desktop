@@ -3,9 +3,8 @@ import { useCreateSession } from "@/hooks/mutations/useCreateSession";
 import { useDeleteSession } from "@/hooks/mutations/useDeleteSession";
 import { useRenameSession } from "@/hooks/mutations/useRenameSession";
 import { useSessionStatuses } from "@/hooks/useSessionStatuses";
-import { useFilteredSessions } from "@/hooks/useSessions";
+import { useSessions } from "@/hooks/useSessions";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
-import { usePreferences } from "@/providers/PreferencesProvider";
 
 interface ChatSidebarProps {
   collapsed: boolean;
@@ -48,19 +47,16 @@ const ChatSidebar = memo(function ChatSidebar({
   onSessionSelect,
   onOpenSettings,
 }: ChatSidebarProps) {
-  const sessions = useFilteredSessions();
+  const { data: sessions = [] } = useSessions();
   const { activeSessionId, selectSession } = useActiveSession();
   const { data: sessionStatuses = {} } = useSessionStatuses();
-  const { showAllSessions, setShowAllSessions } = usePreferences();
   const createSession = useCreateSession();
   const deleteSession = useDeleteSession();
   const renameSession = useRenameSession();
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
-  const [showFilter, setShowFilter] = useState(false);
   const editRef = useRef<HTMLInputElement>(null);
-  const filterRef = useRef<HTMLDivElement>(null);
 
   function handleSelect(id: string) {
     onSessionSelect();
@@ -79,17 +75,6 @@ const ChatSidebar = memo(function ChatSidebar({
     }
   }, [editingId]);
 
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (filterRef.current && !filterRef.current.contains(e.target as Node)) {
-        setShowFilter(false);
-      }
-    }
-    if (showFilter) {
-      document.addEventListener("mousedown", handleClick);
-      return () => document.removeEventListener("mousedown", handleClick);
-    }
-  }, [showFilter]);
 
   function startRename(session: { id: string; title?: string }) {
     setEditingId(session.id);
@@ -177,92 +162,6 @@ const ChatSidebar = memo(function ChatSidebar({
               Sessions
             </span>
             <div className="flex items-center gap-0.5">
-              <div className="relative" ref={filterRef}>
-                <button
-                  onClick={() => setShowFilter(!showFilter)}
-                  className={`flex h-6 w-6 items-center justify-center rounded transition-colors ${
-                    showAllSessions
-                      ? "text-foreground"
-                      : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                  }`}
-                  title="Filter sessions"
-                >
-                  <svg
-                    width="13"
-                    height="13"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
-                  </svg>
-                </button>
-                {showFilter && (
-                  <div className="animate-scale-in absolute left-0 top-full z-50 mt-1 w-44 rounded-lg border bg-popover p-1 shadow-lg">
-                    <button
-                      onClick={() => {
-                        if (showAllSessions) setShowAllSessions(false);
-                        setShowFilter(false);
-                      }}
-                      className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${
-                        !showAllSessions
-                          ? "bg-accent font-medium text-foreground"
-                          : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                      }`}
-                    >
-                      <span className="flex h-3.5 w-3.5 items-center justify-center">
-                        {!showAllSessions && (
-                          <svg
-                            width="10"
-                            height="10"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="3"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <polyline points="20 6 9 17 4 12" />
-                          </svg>
-                        )}
-                      </span>
-                      BloxBot sessions
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (!showAllSessions) setShowAllSessions(true);
-                        setShowFilter(false);
-                      }}
-                      className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${
-                        showAllSessions
-                          ? "bg-accent font-medium text-foreground"
-                          : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                      }`}
-                    >
-                      <span className="flex h-3.5 w-3.5 items-center justify-center">
-                        {showAllSessions && (
-                          <svg
-                            width="10"
-                            height="10"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="3"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <polyline points="20 6 9 17 4 12" />
-                          </svg>
-                        )}
-                      </span>
-                      All sessions
-                    </button>
-                  </div>
-                )}
-              </div>
               <button
                 onClick={handleCreate}
                 className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
