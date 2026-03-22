@@ -543,18 +543,14 @@ async fn do_start(
     // spawn_exit_monitor from the old tokio::process implementation.
     spawn_event_handler(rx, Arc::clone(state), app.clone());
 
-    // Wait for the server to be ready by polling the health endpoint.
-    // If the process exits (detected via the event handler setting the
-    // status to Error), bail out immediately instead of waiting the full
-    // timeout — this avoids a ~35 second hang when the binary crashes on
-    // launch.
-    let health_url = format!("http://{LOOPBACK}:{port}/global/health");
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(2))
-        .build()
-        .unwrap_or_default();
+    // Wait for the server to accept connections by probing the TCP port
+    // directly. This avoids HTTP overhead and detects readiness the moment
+    // the process binds the socket - no log parsing required. If the
+    // process exits (detected via the event handler setting the status to
+    // Error), bail out immediately instead of waiting the full timeout.
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
 
-    let mut healthy = false;
+    let mut listening = false;
     // 120 iterations * 500ms = 60 seconds max wait.
     // First launch can trigger a database migration that takes 10+ seconds,
     // so we need a generous timeout here.
@@ -566,14 +562,14 @@ async fn do_start(
         {
             let s = state.lock().await;
             if s.child.is_none() {
-                // Process is gone — return whatever error the event
+                // Process is gone - return whatever error the event
                 // handler already set, or a generic message.
                 if let OpenCodeStatus::Error(ref msg) = s.status {
                     let err = msg.clone();
-                    log::error!("Process exited before becoming healthy: {err}");
+                    log::error!("Process exited before becoming ready: {err}");
                     return Err(err);
                 }
-                let err = "OpenCode process exited before becoming healthy".to_string();
+                let err = "OpenCode process exited before becoming ready".to_string();
                 log::error!("{err}");
                 drop(s);
                 set_status(state, app, OpenCodeStatus::Error(err.clone())).await;
@@ -581,16 +577,19 @@ async fn do_start(
             }
         }
 
-        if let Ok(resp) = client.get(&health_url).send().await {
-            if resp.status().is_success() {
-                healthy = true;
+        // Try to open a TCP connection. If the process has bound the port
+        // and is accepting connections, this succeeds immediately.
+        match tokio::net::TcpStream::connect(addr).await {
+            Ok(_) => {
+                listening = true;
                 break;
             }
+            Err(_) => continue,
         }
     }
 
-    if healthy {
-        log::info!("Server healthy on port {port}");
+    if listening {
+        log::info!("Server listening on port {port}");
         set_status(state, app, OpenCodeStatus::Running).await;
         Ok(port)
     } else {
@@ -598,12 +597,12 @@ async fn do_start(
         let s = state.lock().await;
         if let OpenCodeStatus::Error(ref msg) = s.status {
             let err = msg.clone();
-            log::error!("Process exited during health check: {err}");
+            log::error!("Process exited during startup: {err}");
             return Err(err);
         }
         drop(s);
 
-        let err = "OpenCode server started but health check timed out".to_string();
+        let err = "OpenCode server did not start listening in time".to_string();
         log::error!("{err}");
         set_status(state, app, OpenCodeStatus::Error(err.clone())).await;
         Err(err)
