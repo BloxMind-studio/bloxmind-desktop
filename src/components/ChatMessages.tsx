@@ -5,6 +5,7 @@ import type {
   QuestionRequest,
   Todo,
 } from "@opencode-ai/sdk/v2/client";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -1332,6 +1333,13 @@ function ChatMessages() {
   const containerRef = useRef<HTMLDivElement>(null);
   const shouldAutoScroll = useRef(true);
 
+  const virtualizer = useVirtualizer({
+    count: messageIds.length,
+    getScrollElement: () => containerRef.current,
+    estimateSize: () => 80,
+    overscan: 5,
+  });
+
   const handleScroll = useCallback(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -1397,25 +1405,48 @@ function ChatMessages() {
     );
   }
 
+  const virtualItems = virtualizer.getVirtualItems();
+
   return (
     <div ref={containerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto">
       <ImageLightbox />
-      <div className="mx-auto max-w-2xl space-y-4 px-4 py-4">
-        {messageIds.map((id) => (
-          <MessageBubble key={id} messageId={id} />
-        ))}
-        {todos.length > 0 && <TodoPanel todos={todos} />}
-        {activeQuestion && (
-          <QuestionPrompt
-            question={activeQuestion}
-            onAnswer={handleAnswer}
-            onReject={handleReject}
-          />
-        )}
-        {activePermission && (
-          <PermissionPrompt permission={activePermission} onReply={handleReplyPermission} />
-        )}
-        <BusyThinkingIndicator />
+      <div className="mx-auto max-w-2xl px-4 py-4">
+        <div
+          style={{ height: `${virtualizer.getTotalSize()}px`, position: "relative", width: "100%" }}
+        >
+          {virtualItems.map((virtualItem) => (
+            <div
+              key={messageIds[virtualItem.index]}
+              data-index={virtualItem.index}
+              ref={virtualizer.measureElement}
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: "100%",
+                transform: `translateY(${virtualItem.start}px)`,
+              }}
+            >
+              <div className="pb-4">
+                <MessageBubble messageId={messageIds[virtualItem.index]} />
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="space-y-4">
+          {todos.length > 0 && <TodoPanel todos={todos} />}
+          {activeQuestion && (
+            <QuestionPrompt
+              question={activeQuestion}
+              onAnswer={handleAnswer}
+              onReject={handleReject}
+            />
+          )}
+          {activePermission && (
+            <PermissionPrompt permission={activePermission} onReply={handleReplyPermission} />
+          )}
+          <BusyThinkingIndicator />
+        </div>
         <div ref={bottomRef} />
       </div>
     </div>
