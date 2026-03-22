@@ -58,7 +58,7 @@ jobs:
             opencode_asset: opencode-linux-x64.tar.gz
             opencode_bin: opencode
             ext: ""
-            args: "--bundles deb appimage"
+            args: "--bundles deb"
 
     runs-on: ${{ matrix.platform }}
 
