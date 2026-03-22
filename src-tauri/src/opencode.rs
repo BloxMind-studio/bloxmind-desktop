@@ -544,26 +544,18 @@ async fn do_start(
     spawn_event_handler(rx, Arc::clone(state), app.clone());
 
     // Wait for the server to accept connections by probing the TCP port
-    // directly. This avoids HTTP overhead and detects readiness the moment
-    // the process binds the socket - no log parsing required. If the
-    // process exits (detected via the event handler setting the status to
-    // Error), bail out immediately instead of waiting the full timeout.
+    // directly. No timeout - we loop until either the port is accepting
+    // connections or the process exits (detected via the event handler
+    // setting child to None and status to Error).
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
 
-    let mut listening = false;
-    // 120 iterations * 500ms = 60 seconds max wait.
-    // First launch can trigger a database migration that takes 10+ seconds,
-    // so we need a generous timeout here.
-    for _ in 0..120 {
+    loop {
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
-        // Check if the process already exited (the event handler sets
-        // child to None and status to Error on termination).
+        // Check if the process already exited.
         {
             let s = state.lock().await;
             if s.child.is_none() {
-                // Process is gone - return whatever error the event
-                // handler already set, or a generic message.
                 if let OpenCodeStatus::Error(ref msg) = s.status {
                     let err = msg.clone();
                     log::error!("Process exited before becoming ready: {err}");
@@ -579,33 +571,11 @@ async fn do_start(
 
         // Try to open a TCP connection. If the process has bound the port
         // and is accepting connections, this succeeds immediately.
-        match tokio::net::TcpStream::connect(addr).await {
-            Ok(_) => {
-                listening = true;
-                break;
-            }
-            Err(_) => continue,
+        if tokio::net::TcpStream::connect(addr).await.is_ok() {
+            log::info!("Server listening on port {port}");
+            set_status(state, app, OpenCodeStatus::Running).await;
+            return Ok(port);
         }
-    }
-
-    if listening {
-        log::info!("Server listening on port {port}");
-        set_status(state, app, OpenCodeStatus::Running).await;
-        Ok(port)
-    } else {
-        // One final check: the process may have died on the last iteration.
-        let s = state.lock().await;
-        if let OpenCodeStatus::Error(ref msg) = s.status {
-            let err = msg.clone();
-            log::error!("Process exited during startup: {err}");
-            return Err(err);
-        }
-        drop(s);
-
-        let err = "OpenCode server did not start listening in time".to_string();
-        log::error!("{err}");
-        set_status(state, app, OpenCodeStatus::Error(err.clone())).await;
-        Err(err)
     }
 }
 
