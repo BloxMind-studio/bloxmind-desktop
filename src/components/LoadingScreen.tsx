@@ -66,7 +66,7 @@ function LoadingScreen({
   return (
     <div className="flex flex-1 flex-col items-center justify-center px-6">
       <div className="animate-fade-in flex flex-col items-center">
-        {/* BloxBot face — inline SVG so we can animate individual parts */}
+        {/* BloxBot face  - inline SVG so we can animate individual parts */}
         <svg
           width="80"
           height="80"
@@ -179,7 +179,7 @@ function LoadingScreen({
               </button>
             )}
 
-            {/* Secondary actions — text links only */}
+            {/* Secondary actions  - text links only */}
             <div className="flex items-center gap-3 text-xs text-muted-foreground">
               {updateStatus === "idle" && (
                 <button

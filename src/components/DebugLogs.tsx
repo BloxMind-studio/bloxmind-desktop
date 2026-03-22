@@ -121,7 +121,7 @@ function DebugLogs() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Auto-scroll via rAF — avoids synchronous layout thrash on every state update.
+  // Auto-scroll via rAF  - avoids synchronous layout thrash on every state update.
   // biome-ignore lint/correctness/useExhaustiveDependencies: logs used as trigger
   useEffect(() => {
     if (!autoScroll || !scrollRef.current) return;

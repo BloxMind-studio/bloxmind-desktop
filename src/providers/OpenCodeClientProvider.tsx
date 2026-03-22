@@ -358,7 +358,7 @@ async function doInit(
       queryClient.setQueryData(qk.providers, providerListRes.data);
     }
 
-    // Auth methods — stored within the providers query data as a convention,
+    // Auth methods  - stored within the providers query data as a convention,
     // but also available standalone
     if (authMethodsRes.data) {
       // We'll attach auth methods to the providers data via a merged object

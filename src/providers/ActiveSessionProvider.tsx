@@ -9,7 +9,7 @@ interface ActiveSessionContextValue {
   activeSessionId: string | null;
   selectSession: (sessionID: string) => Promise<void>;
   clearSession: () => void;
-  /** Ref that always holds the current activeSessionId — used by SSE dispatch */
+  /** Ref that always holds the current activeSessionId  - used by SSE dispatch */
   activeSessionIdRef: React.RefObject<string | null>;
 }
 

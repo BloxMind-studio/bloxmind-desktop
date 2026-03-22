@@ -497,7 +497,7 @@ function ProvidersTab() {
           </svg>
         </button>
 
-        {/* Connected: show disconnect option (not for opencode — it's always connected) */}
+        {/* Connected: show disconnect option (not for opencode  - it's always connected) */}
         {isExpanded && isConnected && provider.id !== "opencode" && (
           <div className="animate-fade-in border-t px-3.5 py-3">
             <button

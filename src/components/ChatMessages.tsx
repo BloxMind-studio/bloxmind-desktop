@@ -28,7 +28,7 @@ interface LightboxState {
   index: number;
 }
 
-/** Module-level lightbox setter — avoids prop drilling through memoized bubbles. */
+/** Module-level lightbox setter  - avoids prop drilling through memoized bubbles. */
 let setLightboxState: ((state: LightboxState | null) => void) | null = null;
 
 function openLightbox(urls: string[], index: number) {
@@ -261,7 +261,7 @@ function inputField(input: Record<string, unknown>, key: string): string {
 }
 
 // ── Tool-specific renderers ─────────────────────────────────────────────
-// (These are unchanged from the original — they don't use the store)
+// (These are unchanged from the original  - they don't use the store)
 
 const BashToolView = memo(function BashToolView({
   input,

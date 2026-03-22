@@ -41,7 +41,7 @@ interface UseUpdaterReturn {
   status: UpdaterStatus;
   /** Non-null when a minor/major update is available and waiting for user action. */
   pendingUpdate: UpdateInfo | null;
-  /** User accepted — download + install + relaunch. */
+  /** User accepted  - download + install + relaunch. */
   installUpdate: () => Promise<void>;
   /** User dismissed the prompt. */
   dismissUpdate: () => void;
@@ -80,7 +80,7 @@ export function useUpdater(): UseUpdaterReturn {
         };
 
         if (patch) {
-          // Patch update — auto-install silently.
+          // Patch update  - auto-install silently.
           console.debug(
             `[updater] Auto-installing patch update ${currentVersion} → ${update.version}`,
           );
@@ -89,7 +89,7 @@ export function useUpdater(): UseUpdaterReturn {
           // Relaunch after install.
           await relaunch();
         } else {
-          // Minor/major — show prompt to the user.
+          // Minor/major  - show prompt to the user.
           console.debug(`[updater] Prompting for update ${currentVersion} → ${update.version}`);
           setUpdateHandle(update);
           setPendingUpdate(info);
