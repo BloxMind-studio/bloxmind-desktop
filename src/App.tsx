@@ -5,10 +5,13 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import UpdateBanner from "@/components/UpdateBanner";
 import { Toaster } from "@/components/ui/sonner";
 import { useUpdater } from "@/hooks/useUpdater";
+import { initTelemetry } from "@/lib/telemetry";
 import { ActiveSessionProvider } from "@/providers/ActiveSessionProvider";
 import { OpenCodeClientProvider } from "@/providers/OpenCodeClientProvider";
 import { PreferencesProvider } from "@/providers/PreferencesProvider";
 import { QueryProvider } from "@/providers/QueryProvider";
+
+initTelemetry();
 
 function AppInner() {
   const { status, pendingUpdate, installUpdate, dismissUpdate } = useUpdater();
