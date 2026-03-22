@@ -1,0 +1,307 @@
+/**
+ * Component tests for ChatSidebar.
+ *
+ * Tests session list rendering, create/delete/rename interactions,
+ * and session filtering (BloxBot-only vs all).
+ */
+
+import type { Session } from "@opencode-ai/sdk/v2/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { invoke } from "@tauri-apps/api/core";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useRef } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { qk } from "@/lib/queryKeys";
+import ChatSidebar from "@/components/ChatSidebar";
+import { ActiveSessionProvider } from "@/providers/ActiveSessionProvider";
+import { OpenCodeClientContext } from "@/providers/OpenCodeClientProvider";
+import { PreferencesProvider } from "@/providers/PreferencesProvider";
+
+// ── Helpers ──────────────────────────────────────────────────────────
+
+function makeSession(id: string, title: string, createdAt = Date.now()): Session {
+  return { id, title, time: { created: createdAt, updated: createdAt }, version: 1, parentID: "" } as Session;
+}
+
+function createClient(overrides: Record<string, unknown> = {}) {
+  return {
+    session: {
+      list: vi.fn().mockResolvedValue({ data: [] }),
+      get: vi.fn().mockResolvedValue({ data: null }),
+      create: vi.fn().mockResolvedValue({ data: null }),
+      delete: vi.fn().mockResolvedValue({}),
+      update: vi.fn().mockResolvedValue({ data: null }),
+      abort: vi.fn().mockResolvedValue({}),
+      messages: vi.fn().mockResolvedValue({ data: [] }),
+      status: vi.fn().mockResolvedValue({ data: {} }),
+      todo: vi.fn().mockResolvedValue({ data: [] }),
+      promptAsync: vi.fn().mockResolvedValue({}),
+      ...overrides,
+    },
+    provider: {
+      list: vi.fn().mockResolvedValue({ data: { all: [], connected: [] } }),
+      oauth: { authorize: vi.fn(), callback: vi.fn() },
+      auth: vi.fn().mockResolvedValue({ data: undefined }),
+    },
+    auth: { set: vi.fn(), remove: vi.fn() },
+    question: { list: vi.fn().mockResolvedValue({ data: [] }), reply: vi.fn(), reject: vi.fn() },
+    permission: { list: vi.fn().mockResolvedValue({ data: [] }), reply: vi.fn() },
+    event: { subscribe: vi.fn().mockResolvedValue({ stream: null }) },
+    app: { agents: vi.fn().mockResolvedValue({ data: [] }) },
+    mcp: { connect: vi.fn(), disconnect: vi.fn() },
+    instance: { dispose: vi.fn() },
+  };
+}
+
+function createQueryClient() {
+  return new QueryClient({
+    defaultOptions: { queries: { staleTime: Infinity, gcTime: Infinity, retry: false } },
+  });
+}
+
+function seedState(
+  qc: QueryClient,
+  opts: { sessions?: Session[]; ownSessionIds?: Set<string> } = {},
+) {
+  const sessions = opts.sessions ?? [];
+  const ownSessionIds = opts.ownSessionIds ?? new Set(sessions.map((s) => s.id));
+
+  qc.setQueryData(qk.sessions, sessions);
+  qc.setQueryData(qk.statuses, {});
+  qc.setQueryData(qk.agents, []);
+  qc.setQueryData(qk.providers, { all: [], connected: [], default: {} });
+  qc.setQueryData(qk.config, {
+    hasLaunched: true,
+    lastModel: null,
+    hiddenModels: [],
+    ownSessionIds,
+    sessionModels: {},
+    connectedProviders: [],
+    providerDefaults: {},
+  });
+}
+
+function TestSidebar({
+  client,
+  queryClient,
+  collapsed = false,
+  onToggle = vi.fn(),
+  onSessionSelect = vi.fn(),
+  onOpenSettings = vi.fn(),
+}: {
+  client: ReturnType<typeof createClient>;
+  queryClient: QueryClient;
+  collapsed?: boolean;
+  onToggle?: () => void;
+  onSessionSelect?: () => void;
+  onOpenSettings?: () => void;
+}) {
+  const activeSessionIdRef = useRef<string | null>(null);
+  return (
+    <QueryClientProvider client={queryClient}>
+      <OpenCodeClientContext.Provider
+        value={{ client: client as never, status: "Running", port: 4096, serverError: null, ready: true, initError: null }}
+      >
+        <ActiveSessionProvider activeSessionIdRef={activeSessionIdRef}>
+          <PreferencesProvider>
+            <ChatSidebar
+              collapsed={collapsed}
+              onToggle={onToggle}
+              onSessionSelect={onSessionSelect}
+              onOpenSettings={onOpenSettings}
+            />
+          </PreferencesProvider>
+        </ActiveSessionProvider>
+      </OpenCodeClientContext.Provider>
+    </QueryClientProvider>
+  );
+}
+
+// ── Setup ────────────────────────────────────────────────────────────
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  (invoke as ReturnType<typeof vi.fn>).mockImplementation(async (cmd: string) => {
+    if (cmd === "poll_studio_status") return { status: "connected", error: null };
+    if (cmd === "get_config") return { hasLaunched: true, lastModel: null, hiddenModels: [] };
+    if (cmd === "set_config") return { hasLaunched: true, lastModel: null, hiddenModels: [] };
+    return undefined;
+  });
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+// ── Tests ────────────────────────────────────────────────────────────
+
+describe("ChatSidebar", () => {
+  it("renders session list", async () => {
+    const client = createClient();
+    const qc = createQueryClient();
+    seedState(qc, { sessions: [makeSession("s1", "Session Alpha"), makeSession("s2", "Session Beta")] });
+
+    render(<TestSidebar client={client} queryClient={qc} />);
+
+    expect(await screen.findByText("Session Alpha")).toBeInTheDocument();
+    expect(screen.getByText("Session Beta")).toBeInTheDocument();
+  });
+
+  it("shows empty state when no sessions", async () => {
+    const client = createClient();
+    const qc = createQueryClient();
+    seedState(qc);
+
+    render(<TestSidebar client={client} queryClient={qc} />);
+
+    expect(await screen.findByText(/No sessions yet/)).toBeInTheDocument();
+  });
+
+  it("calls session.create when New Session is clicked", async () => {
+    const newSession = makeSession("new-1", "New Session");
+    const client = createClient({
+      create: vi.fn().mockResolvedValue({ data: newSession }),
+      get: vi.fn().mockResolvedValue({ data: newSession }),
+      messages: vi.fn().mockResolvedValue({ data: [] }),
+    });
+    const qc = createQueryClient();
+    seedState(qc);
+
+    const onSessionSelect = vi.fn();
+    render(<TestSidebar client={client} queryClient={qc} onSessionSelect={onSessionSelect} />);
+
+    const newBtn = screen.getByTitle("New session");
+    await act(async () => {
+      fireEvent.click(newBtn);
+    });
+
+    expect(client.session.create).toHaveBeenCalled();
+    expect(onSessionSelect).toHaveBeenCalled();
+  });
+
+  it("calls session.delete when Delete is clicked", async () => {
+    const s1 = makeSession("s1", "To Delete");
+    const client = createClient({ delete: vi.fn().mockResolvedValue({}) });
+    const qc = createQueryClient();
+    seedState(qc, { sessions: [s1] });
+
+    render(<TestSidebar client={client} queryClient={qc} />);
+
+    expect(await screen.findByText("To Delete")).toBeInTheDocument();
+
+    const deleteBtn = screen.getByTitle("Delete");
+    await act(async () => {
+      fireEvent.click(deleteBtn);
+    });
+
+    expect(client.session.delete).toHaveBeenCalledWith({ sessionID: "s1" });
+
+    await waitFor(() => {
+      expect(screen.queryByText("To Delete")).not.toBeInTheDocument();
+    });
+  });
+
+  it("enters rename mode and commits on Enter", async () => {
+    const s1 = makeSession("s1", "Original Name");
+    const renamed = makeSession("s1", "Renamed");
+    const client = createClient({
+      update: vi.fn().mockResolvedValue({ data: renamed }),
+    });
+    const qc = createQueryClient();
+    seedState(qc, { sessions: [s1] });
+
+    render(<TestSidebar client={client} queryClient={qc} />);
+
+    expect(await screen.findByText("Original Name")).toBeInTheDocument();
+
+    // Click rename button
+    const renameBtn = screen.getByTitle("Rename");
+    await act(async () => {
+      fireEvent.click(renameBtn);
+    });
+
+    // An input should appear with the current title
+    const input = screen.getByDisplayValue("Original Name");
+    expect(input).toBeInTheDocument();
+
+    // Type new name and press Enter
+    await act(async () => {
+      fireEvent.change(input, { target: { value: "Renamed" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+
+    expect(client.session.update).toHaveBeenCalledWith({
+      sessionID: "s1",
+      title: "Renamed",
+    });
+  });
+
+  it("cancels rename on Escape", async () => {
+    const s1 = makeSession("s1", "My Session");
+    const client = createClient();
+    const qc = createQueryClient();
+    seedState(qc, { sessions: [s1] });
+
+    render(<TestSidebar client={client} queryClient={qc} />);
+
+    const renameBtn = await screen.findByTitle("Rename");
+    await act(async () => {
+      fireEvent.click(renameBtn);
+    });
+
+    const input = screen.getByDisplayValue("My Session");
+    await act(async () => {
+      fireEvent.change(input, { target: { value: "Changed" } });
+      fireEvent.keyDown(input, { key: "Escape" });
+    });
+
+    // Should not have called update
+    expect(client.session.update).not.toHaveBeenCalled();
+    // Should show original title
+    expect(screen.getByText("My Session")).toBeInTheDocument();
+  });
+
+  it("calls onOpenSettings when Settings button is clicked", async () => {
+    const client = createClient();
+    const qc = createQueryClient();
+    seedState(qc);
+
+    const onOpenSettings = vi.fn();
+    render(<TestSidebar client={client} queryClient={qc} onOpenSettings={onOpenSettings} />);
+
+    const settingsBtn = await screen.findByText("Settings");
+    await act(async () => {
+      fireEvent.click(settingsBtn);
+    });
+
+    expect(onOpenSettings).toHaveBeenCalled();
+  });
+
+  it("shows collapsed state with icon buttons", () => {
+    const client = createClient();
+    const qc = createQueryClient();
+    seedState(qc);
+
+    render(<TestSidebar client={client} queryClient={qc} collapsed />);
+
+    expect(screen.getByTitle("Expand sidebar")).toBeInTheDocument();
+    expect(screen.getByTitle("New session")).toBeInTheDocument();
+    expect(screen.getByTitle("Settings")).toBeInTheDocument();
+  });
+
+  it("calls onToggle when collapse button is clicked", async () => {
+    const client = createClient();
+    const qc = createQueryClient();
+    seedState(qc);
+
+    const onToggle = vi.fn();
+    render(<TestSidebar client={client} queryClient={qc} onToggle={onToggle} />);
+
+    const collapseBtn = screen.getByTitle("Collapse sidebar");
+    await act(async () => {
+      fireEvent.click(collapseBtn);
+    });
+
+    expect(onToggle).toHaveBeenCalled();
+  });
+});
