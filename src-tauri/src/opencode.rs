@@ -802,9 +802,53 @@ pub async fn restart_opencode(
     start_opencode_server(state.inner().clone(), app).await
 }
 
+/// Check whether the Roblox Studio process is actually running.
+///
+/// OpenCode reports "connected" when its stdio transport to the StudioMCP
+/// binary is alive, but that can remain true after Roblox Studio closes.
+/// This function provides a ground-truth check so we can override stale
+/// "connected" statuses.
+async fn is_studio_process_running() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        // pgrep -x matches the exact process name (no substring matching).
+        // RobloxStudio is the process from the .app bundle.
+        tokio::process::Command::new("pgrep")
+            .args(["-x", "RobloxStudio"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .await
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+    #[cfg(target_os = "windows")]
+    {
+        // tasklist exits 0 if the filter matches at least one process.
+        tokio::process::Command::new("tasklist")
+            .args(["/FI", "IMAGENAME eq RobloxStudioBeta.exe", "/NH"])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .output()
+            .await
+            .map(|o| {
+                let out = String::from_utf8_lossy(&o.stdout);
+                // tasklist always exits 0; check stdout for the process name.
+                out.contains("RobloxStudioBeta.exe")
+            })
+            .unwrap_or(false)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        // Unsupported platform - skip the check and trust OpenCode.
+        true
+    }
+}
+
 /// Poll the Studio MCP server status via the OpenCode server's /mcp
 /// endpoint. The official Studio MCP binary handles the actual connection
-/// to Roblox Studio — we just ask OpenCode for its status.
+/// to Roblox Studio - we just ask OpenCode for its status and then
+/// cross-check that Studio is actually running as a process.
 #[tauri::command]
 pub async fn poll_studio_status(
     state: tauri::State<'_, SharedOpenCodeState>,
@@ -842,10 +886,25 @@ pub async fn poll_studio_status(
                         .unwrap_or("unknown");
 
                     match status_str {
-                        "connected" => Ok(StudioStatusResult {
-                            status: "connected".into(),
-                            error: None,
-                        }),
+                        "connected" => {
+                            // OpenCode reports "connected" when the stdio
+                            // transport to StudioMCP is alive, but Studio
+                            // itself may have closed. Verify the process.
+                            if is_studio_process_running().await {
+                                Ok(StudioStatusResult {
+                                    status: "connected".into(),
+                                    error: None,
+                                })
+                            } else {
+                                log::info!(
+                                    "MCP reports connected but Studio process not found"
+                                );
+                                Ok(StudioStatusResult {
+                                    status: "disconnected".into(),
+                                    error: None,
+                                })
+                            }
+                        }
                         "failed" => {
                             let err = rs.get("error").and_then(|v| v.as_str()).map(String::from);
                             Ok(StudioStatusResult {
@@ -1096,6 +1155,17 @@ mod tests {
     fn strip_win_prefix_no_op_for_normal_paths() {
         let path = std::path::Path::new(r"C:\Users\test\bin");
         assert_eq!(strip_win_prefix(path), r"C:\Users\test\bin");
+    }
+
+    // ── is_studio_process_running ───────────────────────────────────
+
+    #[tokio::test]
+    async fn is_studio_process_running_returns_bool() {
+        // Smoke test: the function should complete without panicking
+        // and return a bool. In CI (where Studio is never running)
+        // this will be false; locally it depends on whether Studio is
+        // open - either result is valid.
+        let _running = is_studio_process_running().await;
     }
 }
 
