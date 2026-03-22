@@ -14,7 +14,7 @@ concurrency:
 
 env:
   NODE_VERSION: "22.13.1"
-  OPENCODE_VERSION: "1.1.53"
+  OPENCODE_VERSION: "1.2.27"
 
 jobs:
   build:
@@ -55,8 +55,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: true
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -82,6 +80,9 @@ jobs:
 
       - name: Install frontend deps
         run: pnpm install --frozen-lockfile
+
+      - name: Run tests
+        run: pnpm test
 
       # ── Download and bundle Node.js runtime ───────────────────────────
 
@@ -136,25 +137,6 @@ jobs:
           unzip -o "/tmp/${{ matrix.opencode_asset }}"
           mv "${{ matrix.opencode_bin }}" "opencode-${{ matrix.target }}${{ matrix.ext }}"
           chmod +x "opencode-${{ matrix.target }}${{ matrix.ext }}" 2>/dev/null || true
-
-      # ── Build MCP server (submodule) and launcher ──────────────────
-
-      - name: Build MCP server
-        shell: bash
-        run: |
-          cd src-tauri/resources/mcp-server
-          npm install
-          npm run build
-          # Keep only production deps for the bundle
-          rm -rf node_modules
-          npm install --omit=dev --no-package-lock
-
-      - name: Build MCP launcher
-        shell: bash
-        run: |
-          cd src-tauri/resources/launcher
-          npm install
-          npm run build
 
       # ── Build (CI) / Build & Release (tags) ─────────────────────────
 

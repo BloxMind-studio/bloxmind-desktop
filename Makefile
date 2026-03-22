@@ -58,7 +58,11 @@ build: deps $(NODE_MODULES) ## Build production app bundle
 dev: deps $(NODE_MODULES) ## Run in development mode
 	pnpm tauri dev
 
-check: $(NODE_MODULES) ## Type-check + lint + cargo check
+test: $(NODE_MODULES) ## Run frontend tests
+	pnpm test
+
+check: $(NODE_MODULES) ## Type-check + lint + test + cargo check
+	pnpm test
 	pnpm tsc --noEmit
 	pnpm lint
 	cd src-tauri && cargo check
