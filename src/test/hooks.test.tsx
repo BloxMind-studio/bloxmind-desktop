@@ -1,6 +1,6 @@
 /**
  * Unit tests for data-fetching hooks:
- *   useSessions / useFilteredSessions
+ *   useSessions
  *   useProviders (useAllProviders, useConnectedProviders, useAllModels, useAuthMethods)
  *   useMessages (useMessageIds, useMessage)
  *   useSessionStatuses / useIsBusy
@@ -16,10 +16,9 @@ import { qk } from "@/lib/queryKeys";
 import type { MessagesCache } from "@/lib/sseDispatch";
 import { useMessageIds, useMessage } from "@/hooks/useMessages";
 import { useAllModels, useAllProviders, useConnectedProviders, useAuthMethods } from "@/hooks/useProviders";
-import { useSessions, useFilteredSessions } from "@/hooks/useSessions";
+import { useSessions } from "@/hooks/useSessions";
 import { useSessionStatuses, useIsBusy } from "@/hooks/useSessionStatuses";
 import { ActiveSessionContext } from "@/providers/ActiveSessionProvider";
-import { PreferencesContext } from "@/providers/PreferencesProvider";
 
 // ── Test helpers ─────────────────────────────────────────────────────
 
@@ -61,53 +60,6 @@ function makeSessionWrapper(qc: QueryClient, activeSessionId: string | null) {
   };
 }
 
-/** Wrapper providing QueryClient + Preferences context for useFilteredSessions */
-function makePreferencesWrapper(
-  qc: QueryClient,
-  opts: { showAllSessions: boolean; ownSessionIds: Set<string> },
-) {
-  return function Wrapper({ children }: { children: ReactNode }) {
-    const ref = useRef<string | null>(null);
-    return (
-      <QueryClientProvider client={qc}>
-        <ActiveSessionContext.Provider
-          value={{
-            activeSessionId: null,
-            selectSession: async () => {},
-            clearSession: () => {},
-            activeSessionIdRef: ref,
-          }}
-        >
-          <PreferencesContext.Provider
-            value={{
-              hasLaunched: true,
-              selectedModel: null,
-              selectedAgent: null,
-              selectedVariant: null,
-              hiddenModels: new Set(),
-              sessionModels: {},
-              ownSessionIds: opts.ownSessionIds,
-              showAllSessions: opts.showAllSessions,
-              setSelectedModel: () => {},
-              setSelectedAgent: () => {},
-              setSelectedVariant: () => {},
-              toggleModelVisibility: () => {},
-              setShowAllSessions: () => {},
-              dismissWelcome: () => {},
-              addOwnSessionId: () => {},
-              removeOwnSessionId: () => {},
-              setSessionModel: () => {},
-              removeSessionModel: () => {},
-            }}
-          >
-            {children}
-          </PreferencesContext.Provider>
-        </ActiveSessionContext.Provider>
-      </QueryClientProvider>
-    );
-  };
-}
-
 // ── Setup ────────────────────────────────────────────────────────────
 
 beforeEach(() => {
@@ -132,42 +84,6 @@ describe("useSessions", () => {
     const qc = makeQC();
     const { result } = renderHook(() => useSessions(), { wrapper: makeWrapper(qc) });
     expect(result.current.data).toBeUndefined();
-  });
-});
-
-describe("useFilteredSessions", () => {
-  it("returns all sessions when showAllSessions is true", () => {
-    const qc = makeQC();
-    qc.setQueryData(qk.sessions, [makeSession("s1", "One"), makeSession("s2", "Two")]);
-
-    const { result } = renderHook(() => useFilteredSessions(), {
-      wrapper: makePreferencesWrapper(qc, { showAllSessions: true, ownSessionIds: new Set(["s1"]) }),
-    });
-
-    expect(result.current).toHaveLength(2);
-  });
-
-  it("returns only own sessions when showAllSessions is false", () => {
-    const qc = makeQC();
-    qc.setQueryData(qk.sessions, [makeSession("s1", "One"), makeSession("s2", "Two")]);
-
-    const { result } = renderHook(() => useFilteredSessions(), {
-      wrapper: makePreferencesWrapper(qc, { showAllSessions: false, ownSessionIds: new Set(["s1"]) }),
-    });
-
-    expect(result.current).toHaveLength(1);
-    expect(result.current[0].id).toBe("s1");
-  });
-
-  it("returns empty array when no sessions match", () => {
-    const qc = makeQC();
-    qc.setQueryData(qk.sessions, [makeSession("s1", "One")]);
-
-    const { result } = renderHook(() => useFilteredSessions(), {
-      wrapper: makePreferencesWrapper(qc, { showAllSessions: false, ownSessionIds: new Set() }),
-    });
-
-    expect(result.current).toHaveLength(0);
   });
 });
 

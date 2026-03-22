@@ -167,10 +167,9 @@ function createQueryClient() {
 /** Seed the query cache with the minimum state the app needs to be "ready" */
 function seedReadyState(
   queryClient: QueryClient,
-  opts: { sessions?: Session[]; hasLaunched?: boolean; connectedProviders?: string[] } = {},
+  opts: { sessions?: Session[]; connectedProviders?: string[] } = {},
 ) {
   const sessions = opts.sessions ?? [];
-  const hasLaunched = opts.hasLaunched ?? true;
   const connectedProviders = opts.connectedProviders ?? ["anthropic"];
 
   queryClient.setQueryData(qk.sessions, sessions);
@@ -191,10 +190,8 @@ function seedReadyState(
     default: { anthropic: "claude-3.5-sonnet" },
   });
   queryClient.setQueryData(qk.config, {
-    hasLaunched,
     lastModel: connectedProviders.length > 0 ? "anthropic/claude-3.5-sonnet" : null,
     hiddenModels: [],
-    ownSessionIds: new Set(sessions.map((s) => s.id)),
     sessionModels: {},
     connectedProviders,
     providerDefaults: { anthropic: "claude-3.5-sonnet" },
@@ -214,19 +211,6 @@ afterEach(() => {
 // ── Tests ──────────────────────────────────────────────────────────────────
 
 describe("User journeys", () => {
-  it("shows welcome prompt on first launch, then main UI after dismissing", async () => {
-    const client = createClient();
-    const queryClient = createQueryClient();
-    seedReadyState(queryClient, { hasLaunched: false });
-
-    const { unmount } = render(<TestApp client={client} queryClient={queryClient} />);
-
-    // First-launch welcome screen
-    expect(await screen.findByText("Get Started")).toBeInTheDocument();
-
-    unmount();
-  });
-
   it("shows 'Connect a provider' when no providers are connected", async () => {
     const client = createClient();
     const queryClient = createQueryClient();
@@ -653,16 +637,7 @@ describe("User journeys", () => {
       );
     });
 
-    // Toggle to "All sessions" to see it (since it's not in ownSessionIds)
-    // Actually the ownSessionIds filter is on — let's add it
-    act(() => {
-      const config = queryClient.getQueryData(qk.config) as Record<string, unknown>;
-      queryClient.setQueryData(qk.config, {
-        ...config,
-        ownSessionIds: new Set(["s1", "s2"]),
-      });
-    });
-
+    // The new session should appear in the sidebar (no filter — all sessions shown)
     await waitFor(() => {
       expect(screen.getByText("New From CLI")).toBeInTheDocument();
     });
