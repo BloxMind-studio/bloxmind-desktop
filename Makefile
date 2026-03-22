@@ -13,7 +13,7 @@ SHELL := /bin/bash
 
 # ── Versions ─────────────────────────────────────────────────────────────
 NODE_VERSION   := 22.13.1
-OPENCODE_VERSION := 1.1.53
+OPENCODE_VERSION := 1.2.27
 
 # ── Platform detection ───────────────────────────────────────────────────
 UNAME_S := $(shell uname -s)
@@ -41,13 +41,9 @@ else ifeq ($(UNAME_S),Linux)
   OC_BIN       := opencode
 endif
 
-MCP_SERVER_REPO := boshyxd/robloxstudio-mcp
-MCP_SERVER_VERSION := v2.3.0
-
 # ── Paths ────────────────────────────────────────────────────────────────
 NODEJS_BIN     := src-tauri/resources/nodejs/bin/node
 OPENCODE_BIN   := src-tauri/binaries/opencode-$(TARGET)
-MCP_SERVER_DIR := src-tauri/resources/mcp-server/dist/index.js
 NODE_MODULES   := node_modules/.pnpm
 
 # ── Default target ───────────────────────────────────────────────────────
@@ -78,11 +74,10 @@ clean: ## Remove build artifacts (keeps downloaded deps)
 
 nuke: clean ## Remove everything including downloaded deps
 	rm -rf src-tauri/resources/nodejs
-	rm -rf src-tauri/resources/mcp-server
 	rm -f src-tauri/binaries/opencode-*
 	rm -rf node_modules
 
-deps: $(NODEJS_BIN) $(OPENCODE_BIN) $(MCP_SERVER_DIR) ## Download Node.js + OpenCode sidecar + build MCP server
+deps: $(NODEJS_BIN) $(OPENCODE_BIN) ## Download Node.js + OpenCode sidecar
 
 # ── Frontend deps ────────────────────────────────────────────────────────
 
@@ -125,19 +120,3 @@ $(OPENCODE_BIN):
 	chmod +x "$(OPENCODE_BIN)"
 	rm -rf /tmp/bloxbot-deps
 	@echo "✓ OpenCode sidecar ready"
-
-# ── MCP server ──────────────────────────────────────────────────────────
-
-$(MCP_SERVER_DIR):
-	@echo "⬇ Cloning robloxstudio-mcp $(MCP_SERVER_VERSION)..."
-	@rm -rf /tmp/bloxbot-mcp
-	git clone --depth 1 --branch "$(MCP_SERVER_VERSION)" \
-		"https://github.com/$(MCP_SERVER_REPO).git" /tmp/bloxbot-mcp
-	cd /tmp/bloxbot-mcp && npm install && npm run build
-	@echo "📦 Bundling MCP server into resources..."
-	mkdir -p src-tauri/resources/mcp-server
-	cp -R /tmp/bloxbot-mcp/dist src-tauri/resources/mcp-server/
-	cp /tmp/bloxbot-mcp/package.json src-tauri/resources/mcp-server/
-	cd src-tauri/resources/mcp-server && npm install --omit=dev --no-package-lock
-	rm -rf /tmp/bloxbot-mcp
-	@echo "✓ MCP server ready"

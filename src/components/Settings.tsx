@@ -3,8 +3,17 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-
-import { useStore } from "@/stores/opencode";
+import { useCompleteOAuth, useStartOAuth } from "@/hooks/mutations/useOAuth";
+import { useRestartMcp } from "@/hooks/mutations/useRestartMcp";
+import { useDisconnectProvider, useSetApiKey } from "@/hooks/mutations/useSetApiKey";
+import {
+  useAllModels,
+  useAllProviders,
+  useAuthMethods,
+  useConnectedProviders,
+} from "@/hooks/useProviders";
+import { useStudioStatus } from "@/hooks/useStudioStatus";
+import { usePreferences } from "@/providers/PreferencesProvider";
 import type { ModelInfo, ProviderInfo } from "@/types";
 
 // ── Popular providers (same order as OpenCode's web UI) ──────────────
@@ -46,8 +55,8 @@ const TECHNOLOGIES = [
   { name: "OpenCode", url: "https://opencode.ai", description: "AI coding engine" },
   {
     name: "Roblox Studio MCP",
-    url: "https://github.com/boshyxd/robloxstudio-mcp",
-    description: "Studio bridge server",
+    url: "https://create.roblox.com/docs/studio/mcp",
+    description: "Official Studio MCP server",
   },
 ];
 
@@ -219,13 +228,13 @@ function Settings({ onClose }: SettingsProps) {
 // ═══════════════════════════════════════════════════════════════════════
 
 function ProvidersTab() {
-  const allProviders = useStore((s) => s.allProviders);
-  const connectedProviders = useStore((s) => s.connectedProviders);
-  const authMethods = useStore((s) => s.authMethods);
-  const storeSetApiKey = useStore((s) => s.setApiKey);
-  const storeStartOAuth = useStore((s) => s.startOAuth);
-  const storeCompleteOAuth = useStore((s) => s.completeOAuth);
-  const storeDisconnect = useStore((s) => s.disconnectProvider);
+  const allProviders = useAllProviders();
+  const connectedProviders = useConnectedProviders();
+  const authMethods = useAuthMethods();
+  const setApiKeyMutation = useSetApiKey();
+  const startOAuthMutation = useStartOAuth();
+  const completeOAuthMutation = useCompleteOAuth();
+  const disconnectMutation = useDisconnectProvider();
 
   const [expandedProvider, setExpandedProvider] = useState<string | null>(null);
   const [apiKeyInput, setApiKeyInput] = useState("");
@@ -274,7 +283,13 @@ function ProvidersTab() {
     return { popular: pop, other: oth };
   }, [allProviders, search]);
 
+  // Only show OAuth for providers with a working auth plugin installed.
+  // We bundle opencode-gemini-auth, so only Google has a working OAuth flow.
+  // Other providers (Anthropic, OpenAI, etc.) require API keys.
+  const OAUTH_ENABLED_PROVIDERS = new Set(["google"]);
+
   function getOAuthMethodIndex(providerId: string): number | null {
+    if (!OAUTH_ENABLED_PROVIDERS.has(providerId)) return null;
     const methods = authMethods[providerId];
     if (!methods) return null;
     const idx = methods.findIndex((m) => m.type === "oauth");
@@ -305,7 +320,10 @@ function ProvidersTab() {
     setOauthCodeInput("");
     setFeedback(null);
     try {
-      const authResult = await storeStartOAuth(providerId, methodIndex);
+      const authResult = await startOAuthMutation.mutateAsync({
+        providerID: providerId,
+        methodIndex,
+      });
       if (!authResult) {
         resetOAuthState();
         return;
@@ -320,10 +338,21 @@ function ProvidersTab() {
         const abort = new AbortController();
         oauthAbortRef.current = abort;
         try {
-          await storeCompleteOAuth(providerId, methodIndex);
+          const success = await completeOAuthMutation.mutateAsync({
+            providerID: providerId,
+            methodIndex,
+          });
           if (!abort.signal.aborted) {
             resetOAuthState();
-            setFeedback({ providerId, type: "success", text: "Connected!" });
+            if (success) {
+              setFeedback({ providerId, type: "success", text: "Connected!" });
+            } else {
+              setFeedback({
+                providerId,
+                type: "error",
+                text: "Authorization failed. Please try again.",
+              });
+            }
           }
         } catch {
           if (!abort.signal.aborted) {
@@ -351,9 +380,17 @@ function ProvidersTab() {
     const methodIndex = getOAuthMethodIndex(providerId);
     if (methodIndex === null || !oauthCodeInput.trim()) return;
     try {
-      await storeCompleteOAuth(providerId, methodIndex, oauthCodeInput.trim());
+      const success = await completeOAuthMutation.mutateAsync({
+        providerID: providerId,
+        methodIndex,
+        code: oauthCodeInput.trim(),
+      });
       resetOAuthState();
-      setFeedback({ providerId, type: "success", text: "Connected!" });
+      if (success) {
+        setFeedback({ providerId, type: "success", text: "Connected!" });
+      } else {
+        setFeedback({ providerId, type: "error", text: "Authorization failed. Please try again." });
+      }
     } catch {
       setFeedback({
         providerId,
@@ -368,7 +405,7 @@ function ProvidersTab() {
     setDisconnecting(providerId);
     setFeedback(null);
     try {
-      await storeDisconnect(providerId);
+      await disconnectMutation.mutateAsync(providerId);
       setExpandedProvider(null);
       setFeedback({ providerId, type: "success", text: "Disconnected" });
     } catch {
@@ -387,7 +424,7 @@ function ProvidersTab() {
     setSaving(true);
     setFeedback(null);
     try {
-      await storeSetApiKey(providerId, apiKeyInput.trim());
+      await setApiKeyMutation.mutateAsync({ providerID: providerId, key: apiKeyInput.trim() });
       setApiKeyInput("");
       setExpandedProvider(null);
       setFeedback({ providerId, type: "success", text: `${label} connected` });
@@ -436,16 +473,8 @@ function ProvidersTab() {
           }}
           className="flex w-full cursor-pointer items-center gap-3 px-3.5 py-2.5 text-left"
         >
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-accent text-xs font-semibold text-muted-foreground">
-            {provider.name.charAt(0).toUpperCase()}
-          </span>
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <span className="truncate text-sm font-medium">{provider.name}</span>
-            {provider.id === "opencode" && (
-              <span className="shrink-0 rounded bg-sky-50 px-1.5 py-px text-[9px] font-medium text-sky-700">
-                Recommended
-              </span>
-            )}
           </div>
           {isConnected && (
             <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
@@ -468,8 +497,8 @@ function ProvidersTab() {
           </svg>
         </button>
 
-        {/* Connected: show disconnect option */}
-        {isExpanded && isConnected && (
+        {/* Connected: show disconnect option (not for opencode — it's always connected) */}
+        {isExpanded && isConnected && provider.id !== "opencode" && (
           <div className="animate-fade-in border-t px-3.5 py-3">
             <button
               onClick={() => handleDisconnect(provider.id)}
@@ -591,7 +620,8 @@ function ProvidersTab() {
                 ) : (
                   <button
                     onClick={() => handleOAuth(provider.id)}
-                    className="flex h-9 w-full items-center justify-center gap-2 rounded-md border bg-background text-xs font-medium transition-colors hover:bg-accent"
+                    disabled={startOAuthMutation.isPending}
+                    className="flex h-9 w-full items-center justify-center gap-2 rounded-md border bg-background text-xs font-medium transition-colors hover:bg-accent disabled:opacity-50"
                   >
                     <svg
                       width="12"
@@ -770,10 +800,9 @@ function ProvidersTab() {
 // ═══════════════════════════════════════════════════════════════════════
 
 function ModelsTab() {
-  const allModels = useStore((s) => s.allModels);
-  const connectedProviders = useStore((s) => s.connectedProviders);
-  const hiddenModels = useStore((s) => s.hiddenModels);
-  const toggleModelVisibility = useStore((s) => s.toggleModelVisibility);
+  const allModels = useAllModels();
+  const connectedProviders = useConnectedProviders();
+  const { hiddenModels, toggleModelVisibility } = usePreferences();
 
   const [search, setSearch] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
@@ -902,7 +931,7 @@ function ModelsTab() {
                 const modelKey = `${model.providerId}/${model.id}`;
                 const isVisible = !hiddenModels.has(modelKey);
                 return (
-                  <div key={model.id}>
+                  <div key={modelKey}>
                     {idx > 0 && <div className="mx-3.5 h-px bg-border" />}
                     <button
                       onClick={() => toggleModelVisibility(modelKey)}
@@ -949,66 +978,32 @@ function ModelsTab() {
 // Studio Tab
 // ═══════════════════════════════════════════════════════════════════════
 
+const STUDIO_STATUS_CONFIG: Record<string, { dot: string; label: string }> = {
+  connected: { dot: "bg-emerald-400", label: "Connected" },
+  disconnected: { dot: "bg-red-400", label: "Studio not connected" },
+  failed: { dot: "bg-red-400", label: "MCP server unreachable" },
+  disabled: { dot: "bg-stone-300", label: "Disabled" },
+  needs_auth: { dot: "bg-amber-400", label: "MCP needs authentication" },
+  unknown: { dot: "bg-stone-300 animate-pulse", label: "Checking..." },
+};
+
 function StudioTab() {
-  const studioStatus = useStore((s) => s.studioStatus);
-  const studioError = useStore((s) => s.studioError);
-  const mcpUrl = useStore((s) => s.mcpUrl);
-  const restartMcpServer = useStore((s) => s.restartMcpServer);
-  const pluginInstalled = useStore((s) => s.pluginInstalled);
-  const installPlugin = useStore((s) => s.installPlugin);
-
-  const [restarting, setRestarting] = useState(false);
-  const [installing, setInstalling] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const copyTimerRef = useRef<ReturnType<typeof setTimeout>>();
-
-  useEffect(() => () => clearTimeout(copyTimerRef.current), []);
-
-  async function handleCopyUrl() {
-    if (!mcpUrl) return;
-    await navigator.clipboard.writeText(mcpUrl);
-    setCopied(true);
-    clearTimeout(copyTimerRef.current);
-    copyTimerRef.current = setTimeout(() => setCopied(false), 2000);
-  }
+  const { studioStatus, studioError } = useStudioStatus();
+  const restartMcp = useRestartMcp();
 
   async function handleRestart() {
-    setRestarting(true);
-    try {
-      await restartMcpServer();
-    } catch {
-      // Error logged by store
-    } finally {
-      setRestarting(false);
-    }
+    restartMcp.mutate();
   }
 
-  async function handleInstall() {
-    setInstalling(true);
-    try {
-      await installPlugin();
-    } catch {
-      // Error logged by store
-    } finally {
-      setInstalling(false);
-    }
-  }
+  const restarting = restartMcp.isPending;
 
-  const statusConfig: Record<string, { dot: string; label: string }> = {
-    connected: { dot: "bg-emerald-400", label: "Connected" },
-    disconnected: { dot: "bg-red-400", label: "Studio not connected" },
-    failed: { dot: "bg-red-400", label: "MCP server unreachable" },
-    disabled: { dot: "bg-stone-300", label: "Disabled" },
-    needs_auth: { dot: "bg-amber-400", label: "MCP needs authentication" },
-    unknown: { dot: "bg-stone-300 animate-pulse", label: "Checking..." },
-  };
-  const config = statusConfig[studioStatus] ?? statusConfig.unknown;
+  const config = STUDIO_STATUS_CONFIG[studioStatus] ?? STUDIO_STATUS_CONFIG.unknown;
 
   return (
     <div className="mx-auto w-full max-w-md px-6 py-8">
       <h4 className="font-serif text-lg italic text-foreground">Roblox Studio</h4>
       <p className="mt-1 text-xs text-muted-foreground">
-        Manage the MCP bridge that connects BloxBot to Roblox Studio.
+        BloxBot connects to Roblox Studio via the official built-in MCP server.
       </p>
 
       {/* Connection status */}
@@ -1018,7 +1013,9 @@ function StudioTab() {
         </div>
         <div className="rounded-lg border bg-card p-3.5">
           <div className="flex items-center gap-2.5">
-            <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${config.dot}`} />
+            <span
+              className={`inline-block h-2 w-2 shrink-0 rounded-full transition-colors duration-500 ${config.dot}`}
+            />
             <span className="text-sm font-medium">{config.label}</span>
           </div>
           {studioError && (
@@ -1028,50 +1025,44 @@ function StudioTab() {
           )}
           {studioStatus === "disconnected" && (
             <div className="mt-2.5">
-              {pluginInstalled === false ? (
-                <p className="text-[11px] text-muted-foreground">
-                  The Studio plugin is not installed. Install it below, then open Roblox Studio and
-                  connect from the Plugins tab.
-                </p>
-              ) : (
-                <ol className="space-y-0.5 text-[11px] text-muted-foreground">
-                  <li>1. Open Roblox Studio</li>
-                  <li>2. Open or create a place file</li>
-                  <li>
-                    3. Click the <strong>Plugins</strong> tab and open the BloxBot plugin
-                  </li>
-                  <li>
-                    4. Paste the connection URL and click <strong>Connect</strong>
-                  </li>
-                </ol>
-              )}
+              <ol className="space-y-0.5 text-[11px] text-muted-foreground">
+                <li>1. Open Roblox Studio</li>
+                <li>2. Open or create a place file</li>
+                <li>
+                  3. Open <strong>Assistant</strong> settings (three-dot menu)
+                </li>
+                <li>
+                  4. Go to the <strong>MCP Servers</strong> tab
+                </li>
+                <li>
+                  5. Enable <strong>Studio as MCP server</strong>
+                </li>
+              </ol>
             </div>
           )}
         </div>
       </div>
 
-      {/* Connection URL */}
-      {mcpUrl && (
-        <div className="mt-6">
-          <div className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Connection URL
-          </div>
-          <div className="rounded-lg border bg-card p-3.5">
-            <p className="mb-2 text-[11px] leading-relaxed text-muted-foreground">
-              Copy this URL into the Roblox Studio BloxBot plugin to connect.
-            </p>
-            <button
-              onClick={handleCopyUrl}
-              className="flex w-full items-center gap-2 rounded border bg-background px-3 py-2 text-left transition-colors hover:bg-accent"
-            >
-              <span className="flex-1 truncate font-mono text-xs">{mcpUrl}</span>
-              <span className="shrink-0 text-[10px] text-muted-foreground">
-                {copied ? "Copied!" : "Click to copy"}
-              </span>
-            </button>
-          </div>
+      {/* Setup guide */}
+      <div className="mt-6">
+        <div className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Setup
         </div>
-      )}
+        <div className="rounded-lg border bg-card p-3.5">
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            BloxBot uses Roblox Studio's built-in MCP server. No plugin installation needed, just
+            make sure it's enabled in Studio's Assistant settings.
+          </p>
+          <a
+            href="https://create.roblox.com/docs/studio/mcp"
+            target="_blank"
+            rel="noreferrer"
+            className="mt-2 inline-block text-[11px] text-foreground underline underline-offset-2 hover:text-muted-foreground"
+          >
+            View documentation
+          </a>
+        </div>
+      </div>
 
       {/* Actions */}
       <div className="mt-6">
@@ -1116,66 +1107,6 @@ function StudioTab() {
               </>
             )}
           </button>
-
-          {pluginInstalled === false && (
-            <button
-              onClick={handleInstall}
-              disabled={installing}
-              className="flex h-9 w-full items-center justify-center gap-2 rounded-lg border bg-card text-xs font-medium transition-colors hover:bg-accent disabled:opacity-50"
-            >
-              {installing ? (
-                <>
-                  <svg
-                    className="h-3 w-3 animate-spin"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  >
-                    <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
-                  </svg>
-                  Installing Plugin...
-                </>
-              ) : (
-                <>
-                  <svg
-                    width="12"
-                    height="12"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                    <polyline points="7 10 12 15 17 10" />
-                    <line x1="12" y1="15" x2="12" y2="3" />
-                  </svg>
-                  Install Studio Plugin
-                </>
-              )}
-            </button>
-          )}
-
-          {pluginInstalled === true && (
-            <div className="flex items-center gap-2 rounded-lg border bg-card px-3.5 py-2.5">
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="text-emerald-500"
-              >
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-              <span className="text-xs text-muted-foreground">Studio plugin installed</span>
-            </div>
-          )}
         </div>
       </div>
     </div>

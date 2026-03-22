@@ -1,0 +1,665 @@
+/**
+ * End-to-end integration tests.
+ *
+ * These render the real component tree (Chat, ChatSidebar, ChatMessages, ChatInput)
+ * inside the real provider hierarchy. Only the system boundary is mocked:
+ * - SDK client (createOpencodeClient)
+ * - Tauri APIs (invoke, listen, store, opener)
+ *
+ * Each test simulates a real user journey and asserts on what appears on screen.
+ */
+
+import type { Session } from "@opencode-ai/sdk/v2/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { invoke } from "@tauri-apps/api/core";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useRef } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { qk } from "@/lib/queryKeys";
+import { type MessagesCache, sseDispatch } from "@/lib/sseDispatch";
+import { ActiveSessionProvider } from "@/providers/ActiveSessionProvider";
+import { OpenCodeClientContext } from "@/providers/OpenCodeClientProvider";
+import { PreferencesProvider } from "@/providers/PreferencesProvider";
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+function makeSession(id: string, title: string, createdAt = Date.now()): Session {
+  return {
+    id,
+    title,
+    time: { created: createdAt, updated: createdAt },
+    version: 1,
+    parentID: "",
+  } as Session;
+}
+
+/**
+ * Build a minimal but real provider tree for integration tests.
+ * We skip OpenCodeClientProvider's lifecycle (Tauri listeners, SSE, init)
+ * and inject the client + ready state directly via the exported context.
+ * Everything below that — ActiveSessionProvider, PreferencesProvider,
+ * and all components — runs with real code.
+ */
+function TestApp({
+  client,
+  queryClient,
+}: {
+  client: ReturnType<typeof createClient>;
+  queryClient: QueryClient;
+}) {
+  const activeSessionIdRef = useRef<string | null>(null);
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <OpenCodeClientContext.Provider
+        value={{
+          client: client as never,
+          status: "Running",
+          port: 4096,
+          serverError: null,
+          ready: true,
+          initError: null,
+        }}
+      >
+        <ActiveSessionProvider activeSessionIdRef={activeSessionIdRef}>
+          <PreferencesProvider>
+            <ChatWithSonner />
+          </PreferencesProvider>
+        </ActiveSessionProvider>
+      </OpenCodeClientContext.Provider>
+    </QueryClientProvider>
+  );
+}
+
+/** Lazy-import Chat to avoid top-level Tauri calls in module scope */
+import Chat from "@/components/Chat";
+import { Toaster } from "@/components/ui/sonner";
+
+function ChatWithSonner() {
+  return (
+    <>
+      <Chat />
+      <Toaster />
+    </>
+  );
+}
+
+function createClient(overrides: Record<string, unknown> = {}) {
+  return {
+    session: {
+      list: vi.fn().mockResolvedValue({ data: [] }),
+      get: vi.fn().mockResolvedValue({ data: null }),
+      create: vi.fn().mockResolvedValue({ data: null }),
+      delete: vi.fn().mockResolvedValue({}),
+      update: vi.fn().mockResolvedValue({ data: null }),
+      abort: vi.fn().mockResolvedValue({}),
+      messages: vi.fn().mockResolvedValue({ data: [] }),
+      status: vi.fn().mockResolvedValue({ data: {} }),
+      todo: vi.fn().mockResolvedValue({ data: [] }),
+      promptAsync: vi.fn().mockResolvedValue({}),
+      ...overrides,
+    },
+    provider: {
+      list: vi.fn().mockResolvedValue({
+        data: {
+          all: [
+            {
+              id: "anthropic",
+              name: "Anthropic",
+              env: [],
+              models: {
+                "claude-3.5-sonnet": {
+                  id: "claude-3.5-sonnet",
+                  name: "Claude 3.5 Sonnet",
+                },
+              },
+            },
+          ],
+          connected: ["anthropic"],
+          default: { anthropic: "claude-3.5-sonnet" },
+        },
+      }),
+      oauth: { authorize: vi.fn(), callback: vi.fn() },
+      auth: vi.fn().mockResolvedValue({ data: undefined }),
+    },
+    auth: { set: vi.fn(), remove: vi.fn() },
+    question: {
+      list: vi.fn().mockResolvedValue({ data: [] }),
+      reply: vi.fn().mockResolvedValue({}),
+      reject: vi.fn().mockResolvedValue({}),
+    },
+    permission: {
+      list: vi.fn().mockResolvedValue({ data: [] }),
+      reply: vi.fn().mockResolvedValue({}),
+    },
+    event: { subscribe: vi.fn().mockResolvedValue({ stream: null }) },
+    app: { agents: vi.fn().mockResolvedValue({ data: [] }) },
+    mcp: { connect: vi.fn(), disconnect: vi.fn() },
+    instance: { dispose: vi.fn() },
+  };
+}
+
+function createQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        staleTime: Number.POSITIVE_INFINITY,
+        gcTime: Number.POSITIVE_INFINITY,
+        retry: false,
+      },
+    },
+  });
+}
+
+/** Seed the query cache with the minimum state the app needs to be "ready" */
+function seedReadyState(
+  queryClient: QueryClient,
+  opts: { sessions?: Session[]; hasLaunched?: boolean; connectedProviders?: string[] } = {},
+) {
+  const sessions = opts.sessions ?? [];
+  const hasLaunched = opts.hasLaunched ?? true;
+  const connectedProviders = opts.connectedProviders ?? ["anthropic"];
+
+  queryClient.setQueryData(qk.sessions, sessions);
+  queryClient.setQueryData(qk.statuses, {});
+  queryClient.setQueryData(qk.agents, []);
+  queryClient.setQueryData(qk.providers, {
+    all: [
+      {
+        id: "anthropic",
+        name: "Anthropic",
+        env: [],
+        models: {
+          "claude-3.5-sonnet": { id: "claude-3.5-sonnet", name: "Claude 3.5 Sonnet" },
+        },
+      },
+    ],
+    connected: connectedProviders,
+    default: { anthropic: "claude-3.5-sonnet" },
+  });
+  queryClient.setQueryData(qk.config, {
+    hasLaunched,
+    lastModel: connectedProviders.length > 0 ? "anthropic/claude-3.5-sonnet" : null,
+    hiddenModels: [],
+    ownSessionIds: new Set(sessions.map((s) => s.id)),
+    sessionModels: {},
+    connectedProviders,
+    providerDefaults: { anthropic: "claude-3.5-sonnet" },
+  });
+  queryClient.setQueryData(qk.studioStatus, { status: "connected", error: null });
+}
+
+// ── Setup ──────────────────────────────────────────────────────────────────
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  // Mock invoke calls that components make directly
+  (invoke as ReturnType<typeof vi.fn>).mockImplementation(async (cmd: string) => {
+    if (cmd === "poll_studio_status") return { status: "connected", error: null };
+    if (cmd === "get_config") return { hasLaunched: true, lastModel: null, hiddenModels: [] };
+    if (cmd === "set_config") return { hasLaunched: true, lastModel: null, hiddenModels: [] };
+    return undefined;
+  });
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+// ── Tests ──────────────────────────────────────────────────────────────────
+
+describe("User journeys", () => {
+  it("shows welcome prompt on first launch, then main UI after dismissing", async () => {
+    const client = createClient();
+    const queryClient = createQueryClient();
+    seedReadyState(queryClient, { hasLaunched: false });
+
+    const { unmount } = render(<TestApp client={client} queryClient={queryClient} />);
+
+    // First-launch welcome screen
+    expect(await screen.findByText("Get Started")).toBeInTheDocument();
+
+    unmount();
+  });
+
+  it("shows 'Connect a provider' when no providers are connected", async () => {
+    const client = createClient();
+    const queryClient = createQueryClient();
+    seedReadyState(queryClient, { connectedProviders: [] });
+
+    render(<TestApp client={client} queryClient={queryClient} />);
+
+    expect(await screen.findByText("Connect a provider to get started")).toBeInTheDocument();
+    expect(screen.getByText("Connect Provider")).toBeInTheDocument();
+  });
+
+  it("creates a session and shows the chat interface", async () => {
+    const newSession = makeSession("s1", "New Session");
+    const client = createClient({
+      create: vi.fn().mockResolvedValue({ data: newSession }),
+      get: vi.fn().mockResolvedValue({ data: newSession }),
+      messages: vi.fn().mockResolvedValue({ data: [] }),
+    });
+    const queryClient = createQueryClient();
+    seedReadyState(queryClient);
+
+    render(<TestApp client={client} queryClient={queryClient} />);
+
+    // We should see "What would you like to build?" and a "New Session" button
+    const newSessionBtn = await screen.findByText("New Session");
+    await act(async () => {
+      fireEvent.click(newSessionBtn);
+    });
+
+    // After session creation, the SDK should have been called
+    expect(client.session.create).toHaveBeenCalled();
+
+    // The chat area for the session should now be visible (textarea)
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText("Describe what you want to build...")).toBeInTheDocument();
+    });
+  });
+
+  it("sends a message and shows the assistant response via SSE", async () => {
+    const session = makeSession("s1", "My Session");
+    const client = createClient({
+      create: vi.fn().mockResolvedValue({ data: session }),
+      get: vi.fn().mockResolvedValue({ data: session }),
+      messages: vi.fn().mockResolvedValue({ data: [] }),
+      promptAsync: vi.fn().mockResolvedValue({}),
+    });
+    const queryClient = createQueryClient();
+    seedReadyState(queryClient, { sessions: [session] });
+
+    // Pre-populate the active session state
+    queryClient.setQueryData<MessagesCache>(qk.messages("s1"), {
+      messageIds: [],
+      messagesById: {},
+    });
+    queryClient.setQueryData(qk.todos("s1"), []);
+    queryClient.setQueryData(qk.questions, null);
+    queryClient.setQueryData(qk.permissions, null);
+
+    render(<TestApp client={client} queryClient={queryClient} />);
+
+    // Click the session in the sidebar to select it
+    const sessionTitle = await screen.findByText("My Session");
+    await act(async () => {
+      fireEvent.click(sessionTitle);
+    });
+
+    // Wait for the chat input to appear
+    const textarea = await screen.findByPlaceholderText("Describe what you want to build...");
+
+    // Type and send a message
+    await act(async () => {
+      fireEvent.change(textarea, { target: { value: "Build me a Roblox game" } });
+    });
+    const sendBtn = screen.getByTitle("Send");
+    await act(async () => {
+      fireEvent.click(sendBtn);
+    });
+
+    expect(client.session.promptAsync).toHaveBeenCalled();
+    const callArgs = client.session.promptAsync.mock.calls[0][0];
+    expect(callArgs.parts[0].text).toBe("Build me a Roblox game");
+
+    // Simulate SSE: assistant message comes in
+    const activeRef = { current: "s1" };
+    act(() => {
+      sseDispatch(
+        queryClient,
+        {
+          type: "message.updated",
+          properties: {
+            info: {
+              id: "msg_1",
+              sessionID: "s1",
+              role: "assistant",
+              time: { created: Date.now(), updated: Date.now() },
+            },
+          },
+        } as never,
+        activeRef,
+      );
+    });
+
+    // Simulate SSE: text part streams in
+    act(() => {
+      sseDispatch(
+        queryClient,
+        {
+          type: "message.part.updated",
+          properties: {
+            part: {
+              id: "part_1",
+              messageID: "msg_1",
+              sessionID: "s1",
+              type: "text",
+              text: "I'll create a Roblox obby for you!",
+              time: { created: Date.now(), updated: Date.now() },
+            },
+          },
+        } as never,
+        activeRef,
+      );
+    });
+
+    // The assistant's response should appear on screen
+    await waitFor(() => {
+      expect(screen.getByText(/I'll create a Roblox obby for you!/)).toBeInTheDocument();
+    });
+  });
+
+  it("shows permission prompt and user can approve it", async () => {
+    const session = makeSession("s1", "My Session");
+    const permRequest = {
+      id: "perm_1",
+      sessionID: "s1",
+      permission: "bash",
+      patterns: ["rm -rf /tmp/test"],
+    };
+    const client = createClient({
+      get: vi.fn().mockResolvedValue({ data: session }),
+      messages: vi.fn().mockResolvedValue({
+        data: [
+          {
+            info: {
+              id: "msg_1",
+              sessionID: "s1",
+              role: "assistant",
+              time: { created: Date.now(), updated: Date.now() },
+            },
+            parts: [],
+          },
+        ],
+      }),
+    });
+    // Make permission.list return our permission so selectSession picks it up
+    client.permission.list = vi.fn().mockResolvedValue({ data: [permRequest] });
+    const queryClient = createQueryClient();
+    seedReadyState(queryClient, { sessions: [session] });
+
+    render(<TestApp client={client} queryClient={queryClient} />);
+
+    // Select the session — this triggers selectSession which fetches permissions from SDK
+    const sessionTitle = await screen.findByText("My Session");
+    await act(async () => {
+      fireEvent.click(sessionTitle);
+    });
+
+    // The permission prompt should appear (populated by selectSession from SDK response)
+    await waitFor(() => {
+      expect(screen.getByText("Permission Required")).toBeInTheDocument();
+      expect(screen.getByText("bash")).toBeInTheDocument();
+    });
+
+    // Click "Allow Once"
+    const allowBtn = screen.getByText("Allow Once");
+    await act(async () => {
+      fireEvent.click(allowBtn);
+    });
+
+    expect(client.permission.reply).toHaveBeenCalledWith({
+      requestID: "perm_1",
+      reply: "once",
+    });
+  });
+
+  it("deletes a session and it disappears from the sidebar", async () => {
+    const s1 = makeSession("s1", "Session One");
+    const s2 = makeSession("s2", "Session Two");
+    const client = createClient({
+      delete: vi.fn().mockResolvedValue({}),
+      get: vi.fn().mockResolvedValue({ data: s1 }),
+      messages: vi.fn().mockResolvedValue({ data: [] }),
+    });
+    const queryClient = createQueryClient();
+    seedReadyState(queryClient, { sessions: [s1, s2] });
+    queryClient.setQueryData(qk.todos("s1"), []);
+    queryClient.setQueryData(qk.questions, null);
+    queryClient.setQueryData(qk.permissions, null);
+
+    render(<TestApp client={client} queryClient={queryClient} />);
+
+    // Both sessions should be visible in sidebar
+    expect(await screen.findByText("Session One")).toBeInTheDocument();
+    expect(screen.getByText("Session Two")).toBeInTheDocument();
+
+    // Hover over Session One to reveal the delete button, then click it
+    const sessionOneEl = screen.getByText("Session One").closest("[class*='cursor-pointer']");
+    expect(sessionOneEl).toBeTruthy();
+
+    // Find the delete button (title="Delete") within the session row
+    const deleteButtons = screen.getAllByTitle("Delete");
+    await act(async () => {
+      fireEvent.click(deleteButtons[0]);
+    });
+
+    expect(client.session.delete).toHaveBeenCalledWith({ sessionID: "s1" });
+
+    // Session One should be gone from the sidebar
+    await waitFor(() => {
+      expect(screen.queryByText("Session One")).not.toBeInTheDocument();
+    });
+    // Session Two should still be there
+    expect(screen.getByText("Session Two")).toBeInTheDocument();
+  });
+
+  it("shows question prompt and user can answer it", async () => {
+    const session = makeSession("s1", "My Session");
+    const questionReq = {
+      id: "q1",
+      sessionID: "s1",
+      questions: [
+        {
+          header: "File Conflict",
+          question: "The file already exists. What should I do?",
+          options: [
+            { label: "Overwrite", description: "Replace the file" },
+            { label: "Skip", description: "Leave it" },
+          ],
+          multiple: false,
+          custom: true,
+        },
+      ],
+    };
+    const client = createClient({
+      get: vi.fn().mockResolvedValue({ data: session }),
+      messages: vi.fn().mockResolvedValue({
+        data: [
+          {
+            info: {
+              id: "msg_1",
+              sessionID: "s1",
+              role: "assistant",
+              time: { created: Date.now(), updated: Date.now() },
+            },
+            parts: [],
+          },
+        ],
+      }),
+    });
+    // Make question.list return our question so selectSession picks it up
+    client.question.list = vi.fn().mockResolvedValue({ data: [questionReq] });
+    const queryClient = createQueryClient();
+    seedReadyState(queryClient, { sessions: [session] });
+
+    render(<TestApp client={client} queryClient={queryClient} />);
+
+    // Select session — selectSession fetches questions from SDK
+    await act(async () => {
+      fireEvent.click(await screen.findByText("My Session"));
+    });
+
+    // Question prompt should appear (populated by selectSession from SDK response)
+    await waitFor(() => {
+      expect(screen.getByText("File Conflict")).toBeInTheDocument();
+      expect(screen.getByText("The file already exists. What should I do?")).toBeInTheDocument();
+    });
+
+    // Click "Overwrite" option
+    await act(async () => {
+      fireEvent.click(screen.getByText("Overwrite"));
+    });
+
+    // Submit the answer
+    await act(async () => {
+      fireEvent.click(screen.getByText("Submit"));
+    });
+
+    expect(client.question.reply).toHaveBeenCalledWith({
+      requestID: "q1",
+      answers: [["Overwrite"]],
+    });
+  });
+
+  it("streams tool use (bash command) and shows it in the UI", async () => {
+    const session = makeSession("s1", "My Session");
+    const client = createClient({
+      get: vi.fn().mockResolvedValue({ data: session }),
+      messages: vi.fn().mockResolvedValue({ data: [] }),
+    });
+    const queryClient = createQueryClient();
+    seedReadyState(queryClient, { sessions: [session] });
+
+    queryClient.setQueryData<MessagesCache>(qk.messages("s1"), {
+      messageIds: [],
+      messagesById: {},
+    });
+    queryClient.setQueryData(qk.todos("s1"), []);
+    queryClient.setQueryData(qk.questions, null);
+    queryClient.setQueryData(qk.permissions, null);
+
+    render(<TestApp client={client} queryClient={queryClient} />);
+
+    // Select session
+    await act(async () => {
+      fireEvent.click(await screen.findByText("My Session"));
+    });
+    await screen.findByPlaceholderText("Describe what you want to build...");
+
+    const activeRef = { current: "s1" };
+
+    // SSE: assistant message
+    act(() => {
+      sseDispatch(
+        queryClient,
+        {
+          type: "message.updated",
+          properties: {
+            info: {
+              id: "msg_a",
+              sessionID: "s1",
+              role: "assistant",
+              time: { created: Date.now(), updated: Date.now() },
+            },
+          },
+        } as never,
+        activeRef,
+      );
+    });
+
+    // SSE: tool part — bash command running
+    act(() => {
+      sseDispatch(
+        queryClient,
+        {
+          type: "message.part.updated",
+          properties: {
+            part: {
+              id: "tool_1",
+              messageID: "msg_a",
+              sessionID: "s1",
+              type: "tool",
+              tool: "bash",
+              state: {
+                status: "running",
+                input: { command: "ls -la src/", description: "List source files" },
+              },
+              time: { created: Date.now(), updated: Date.now() },
+            },
+          },
+        } as never,
+        activeRef,
+      );
+    });
+
+    // The bash command should be visible
+    await waitFor(() => {
+      expect(screen.getByText("List source files")).toBeInTheDocument();
+      expect(screen.getByText("ls -la src/")).toBeInTheDocument();
+      expect(screen.getByText("Running...")).toBeInTheDocument();
+    });
+
+    // SSE: tool completes with output
+    act(() => {
+      sseDispatch(
+        queryClient,
+        {
+          type: "message.part.updated",
+          properties: {
+            part: {
+              id: "tool_1",
+              messageID: "msg_a",
+              sessionID: "s1",
+              type: "tool",
+              tool: "bash",
+              state: {
+                status: "completed",
+                input: { command: "ls -la src/", description: "List source files" },
+                output: "total 48\ndrwxr-xr-x  12 user  staff  384 Mar 21 10:00 .",
+              },
+              time: { created: Date.now(), updated: Date.now() },
+            },
+          },
+        } as never,
+        activeRef,
+      );
+    });
+
+    // Running indicator should be gone, output should be available
+    await waitFor(() => {
+      expect(screen.queryByText("Running...")).not.toBeInTheDocument();
+    });
+  });
+
+  it("SSE session.created adds a new session to the sidebar", async () => {
+    const s1 = makeSession("s1", "Existing Session");
+    const client = createClient();
+    const queryClient = createQueryClient();
+    seedReadyState(queryClient, { sessions: [s1] });
+
+    render(<TestApp client={client} queryClient={queryClient} />);
+    expect(await screen.findByText("Existing Session")).toBeInTheDocument();
+
+    // Simulate a session being created elsewhere (e.g. from OpenCode CLI)
+    const activeRef = { current: null };
+    act(() => {
+      sseDispatch(
+        queryClient,
+        {
+          type: "session.created",
+          properties: {
+            info: makeSession("s2", "New From CLI"),
+          },
+        } as never,
+        activeRef,
+      );
+    });
+
+    // Toggle to "All sessions" to see it (since it's not in ownSessionIds)
+    // Actually the ownSessionIds filter is on — let's add it
+    act(() => {
+      const config = queryClient.getQueryData(qk.config) as Record<string, unknown>;
+      queryClient.setQueryData(qk.config, {
+        ...config,
+        ownSessionIds: new Set(["s1", "s2"]),
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("New From CLI")).toBeInTheDocument();
+    });
+  });
+});

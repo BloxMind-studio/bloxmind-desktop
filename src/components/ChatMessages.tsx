@@ -12,8 +12,14 @@ import remarkGfm from "remark-gfm";
 /** Module-level constant to avoid creating a new array on every render. */
 const REMARK_PLUGINS = [remarkGfm];
 
-import { useShallow } from "zustand/react/shallow";
-import { useStore } from "@/stores/opencode";
+import { useAnswerQuestion, useRejectQuestion } from "@/hooks/mutations/useAnswerQuestion";
+import { useReplyPermission } from "@/hooks/mutations/useReplyPermission";
+import { useMessage, useMessageIds } from "@/hooks/useMessages";
+import { useActivePermission } from "@/hooks/usePermissions";
+import { useActiveQuestion } from "@/hooks/useQuestions";
+import { useIsBusy } from "@/hooks/useSessionStatuses";
+import { useTodos } from "@/hooks/useTodos";
+import { useActiveSession } from "@/providers/ActiveSessionProvider";
 
 // ── Image lightbox ───────────────────────────────────────────────────────
 
@@ -42,8 +48,6 @@ const ImageLightbox = memo(function ImageLightbox() {
     };
   }, []);
 
-  // Keyboard navigation — keyed on open/closed only, handlers use updater form
-  // so they always read the latest state without re-registering the listener.
   useEffect(() => {
     if (!isOpen) return;
     function handleKey(e: KeyboardEvent) {
@@ -100,7 +104,6 @@ const ImageLightbox = memo(function ImageLightbox() {
       className="animate-lightbox-backdrop fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm"
       onClick={() => setState(null)}
     >
-      {/* Close button */}
       <button
         onClick={() => setState(null)}
         className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
@@ -120,7 +123,6 @@ const ImageLightbox = memo(function ImageLightbox() {
         </svg>
       </button>
 
-      {/* Previous arrow */}
       {hasMultiple && (
         <button
           onClick={goPrev}
@@ -141,7 +143,6 @@ const ImageLightbox = memo(function ImageLightbox() {
         </button>
       )}
 
-      {/* Image */}
       <img
         key={animKey}
         src={urls[index]}
@@ -150,7 +151,6 @@ const ImageLightbox = memo(function ImageLightbox() {
         onClick={(e) => e.stopPropagation()}
       />
 
-      {/* Next arrow */}
       {hasMultiple && (
         <button
           onClick={goNext}
@@ -171,7 +171,6 @@ const ImageLightbox = memo(function ImageLightbox() {
         </button>
       )}
 
-      {/* Counter pill */}
       {hasMultiple && (
         <div className="animate-fade-in-up absolute bottom-6 left-1/2 -translate-x-1/2 rounded-full bg-black/50 px-3 py-1 text-xs font-medium text-white/80 backdrop-blur-sm">
           {index + 1} / {urls.length}
@@ -183,7 +182,6 @@ const ImageLightbox = memo(function ImageLightbox() {
 
 // ── Inline BloxBot thinking indicator ────────────────────────────────────
 
-/** Tiny animated BloxBot face used as the "thinking" / "waiting" indicator. */
 function BloxBotThinking({ label = "Thinking..." }: { label?: string }) {
   return (
     <div className="flex items-center gap-2 py-0.5">
@@ -196,7 +194,6 @@ function BloxBotThinking({ label = "Thinking..." }: { label?: string }) {
         className="bloxbot-face-think shrink-0"
         aria-hidden="true"
       >
-        {/* Body */}
         <rect
           x="32"
           y="32"
@@ -206,7 +203,6 @@ function BloxBotThinking({ label = "Thinking..." }: { label?: string }) {
           fill="currentColor"
           className="text-foreground"
         />
-        {/* Left eye */}
         <rect
           className="bloxbot-eye"
           x="144"
@@ -216,7 +212,6 @@ function BloxBotThinking({ label = "Thinking..." }: { label?: string }) {
           rx="24"
           fill="var(--background)"
         />
-        {/* Right eye */}
         <rect
           className="bloxbot-eye"
           x="296"
@@ -226,7 +221,6 @@ function BloxBotThinking({ label = "Thinking..." }: { label?: string }) {
           rx="24"
           fill="var(--background)"
         />
-        {/* Smile */}
         <path
           d="M168 328C168 328 204.8 376 256 376C307.2 376 344 328 344 328"
           stroke="var(--background)"
@@ -246,8 +240,6 @@ function BloxBotThinking({ label = "Thinking..." }: { label?: string }) {
 
 // ── Constants ───────────────────────────────────────────────────────────
 
-/** CSS classes for each tool part status. Hoisted to module scope to avoid
- *  re-creating the object on every render inside ToolPartView. */
 const TOOL_STATUS_COLORS: Record<string, string> = {
   pending: "border-stone-200 bg-stone-50/50",
   running: "border-amber-200 bg-amber-50/30",
@@ -257,12 +249,10 @@ const TOOL_STATUS_COLORS: Record<string, string> = {
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
-/** Strip MCP prefix (e.g. "mcp_roblox-studio_bash" -> "bash") */
 function baseToolName(tool: string): string {
   return tool.replace(/^mcp_[^_]+_/, "");
 }
 
-/** Get input field safely */
 function inputField(input: Record<string, unknown>, key: string): string {
   const val = input[key];
   if (typeof val === "string") return val;
@@ -271,8 +261,7 @@ function inputField(input: Record<string, unknown>, key: string): string {
 }
 
 // ── Tool-specific renderers ─────────────────────────────────────────────
-// These are all wrapped in memo() because they receive primitive/stable
-// props from the memoized ToolPartView parent.
+// (These are unchanged from the original — they don't use the store)
 
 const BashToolView = memo(function BashToolView({
   input,
@@ -285,7 +274,6 @@ const BashToolView = memo(function BashToolView({
 }) {
   const command = inputField(input, "command");
   const description = inputField(input, "description");
-  // Track open/close locally so parent re-renders don't reset it
   const [detailsOpen, setDetailsOpen] = useState<boolean | null>(null);
   const autoOpen = Boolean(output && output.length < 500);
   const isOpen = detailsOpen ?? autoOpen;
@@ -323,7 +311,6 @@ const BashToolView = memo(function BashToolView({
   );
 });
 
-/** Renders a split old/new diff block, splitting each string only once. */
 const DiffBlock = memo(function DiffBlock({ oldStr, newStr }: { oldStr: string; newStr: string }) {
   const oldLines = oldStr ? oldStr.split("\n") : [];
   const newLines = newStr ? newStr.split("\n") : [];
@@ -372,7 +359,6 @@ const EditToolView = memo(function EditToolView({
   const oldStr = inputField(input, "oldString");
   const newStr = inputField(input, "newString");
   const shortPath = filePath.split("/").slice(-3).join("/");
-
   return (
     <div>
       <div className="flex items-center gap-1.5 text-[11px]">
@@ -410,7 +396,6 @@ const ReadToolView = memo(function ReadToolView({
 }) {
   const filePath = inputField(input, "filePath");
   const shortPath = filePath.split("/").slice(-3).join("/");
-
   return (
     <div className="flex items-center gap-1.5 text-[11px]">
       <svg
@@ -446,7 +431,6 @@ const WriteToolView = memo(function WriteToolView({
 }) {
   const filePath = inputField(input, "filePath");
   const shortPath = filePath.split("/").slice(-3).join("/");
-
   return (
     <div className="flex items-center gap-1.5 text-[11px]">
       <svg
@@ -483,7 +467,6 @@ const GlobToolView = memo(function GlobToolView({
   status: string;
 }) {
   const pattern = inputField(input, "pattern");
-
   return (
     <div className="flex items-center gap-1.5 text-[11px]">
       <svg
@@ -517,7 +500,6 @@ const GrepToolView = memo(function GrepToolView({
 }) {
   const pattern = inputField(input, "pattern");
   const include = inputField(input, "include");
-
   return (
     <div className="flex items-center gap-1.5 text-[11px]">
       <svg
@@ -553,7 +535,6 @@ const TaskToolView = memo(function TaskToolView({
 }) {
   const description = inputField(input, "description");
   const agentType = inputField(input, "subagent_type");
-
   return (
     <div className="flex items-center gap-1.5 text-[11px]">
       <svg
@@ -598,7 +579,6 @@ const WebFetchToolView = memo(function WebFetchToolView({
   } catch {
     /* use raw */
   }
-
   return (
     <div className="flex items-center gap-1.5 text-[11px]">
       <svg
@@ -634,11 +614,10 @@ const TodoWriteToolView = memo(function TodoWriteToolView({
   const rawTodos = input.todos;
   if (!Array.isArray(rawTodos)) return null;
   const items = rawTodos as Todo[];
-
   return (
     <div className="space-y-0.5">
-      {items.map((todo) => (
-        <div key={todo.id} className="flex items-start gap-1.5 text-[11px]">
+      {items.map((todo, idx) => (
+        <div key={idx} className="flex items-start gap-1.5 text-[11px]">
           <span className="mt-px shrink-0">
             {todo.status === "completed" ? (
               <svg
@@ -705,7 +684,6 @@ const DefaultToolView = memo(function DefaultToolView({
 }) {
   const title = "title" in input ? inputField(input, "title") : "";
   const [detailsOpen, setDetailsOpen] = useState(false);
-
   return (
     <div>
       <div className="flex items-center gap-1.5 text-[11px]">
@@ -834,7 +812,6 @@ const markdownComponents: Components = {
   },
 };
 
-/** Memoized text part — only re-parses Markdown when `part.text` actually changes. */
 const TextPartView = memo(
   function TextPartView({ part }: { part: Extract<Part, { type: "text" }> }) {
     return (
@@ -848,7 +825,6 @@ const TextPartView = memo(
   (prev, next) => prev.part.text === next.part.text,
 );
 
-/** Memoized reasoning part with controlled open state to survive re-renders. */
 const ReasoningPartView = memo(function ReasoningPartView({
   part,
 }: {
@@ -886,7 +862,6 @@ const ToolPartView = memo(function ToolPartView({
     (status === "running" || status === "completed") && "title" in part.state
       ? part.state.title
       : undefined;
-
   const tool = baseToolName(part.tool);
 
   function renderToolContent() {
@@ -1014,11 +989,6 @@ const CompactionPartView = memo(function CompactionPartView() {
   );
 });
 
-/**
- * Memoized part dispatcher. Each branch is itself memoized, so even when
- * this component re-renders (because a sibling part changed), the actual
- * DOM work is skipped if the part object is referentially equal.
- */
 const PartRenderer = memo(function PartRenderer({ part }: { part: Part }) {
   switch (part.type) {
     case "text":
@@ -1049,7 +1019,6 @@ const TodoPanel = memo(function TodoPanel({ todos }: { todos: Todo[] }) {
   if (todos.length === 0) return null;
   const completed = todos.filter((t) => t.status === "completed").length;
   const total = todos.length;
-
   return (
     <div className="animate-fade-in my-2 rounded-lg border bg-card px-3 py-2.5">
       <div className="mb-1.5 flex items-center justify-between">
@@ -1065,8 +1034,8 @@ const TodoPanel = memo(function TodoPanel({ todos }: { todos: Todo[] }) {
         />
       </div>
       <div className="mt-2 space-y-1">
-        {todos.map((todo) => (
-          <div key={todo.id} className="flex items-start gap-1.5 text-[11px]">
+        {todos.map((todo, idx) => (
+          <div key={idx} className="flex items-start gap-1.5 text-[11px]">
             <span className="mt-0.5 shrink-0">
               {todo.status === "completed" ? (
                 <svg
@@ -1173,11 +1142,7 @@ const QuestionPrompt = memo(function QuestionPrompt({
                 <button
                   key={opt.label}
                   onClick={() => toggleOption(qIdx, opt.label, q.multiple)}
-                  className={`rounded-md border px-2.5 py-1 text-[11px] transition-colors ${
-                    isSelected
-                      ? "border-blue-400 bg-blue-100 text-blue-800"
-                      : "border-stone-200 bg-white text-foreground hover:border-blue-300 hover:bg-blue-50"
-                  }`}
+                  className={`rounded-md border px-2.5 py-1 text-[11px] transition-colors ${isSelected ? "border-blue-400 bg-blue-100 text-blue-800" : "border-stone-200 bg-white text-foreground hover:border-blue-300 hover:bg-blue-50"}`}
                   title={opt.description}
                 >
                   {opt.label}
@@ -1262,10 +1227,8 @@ const PermissionPrompt = memo(function PermissionPrompt({
   );
 });
 
-// ── User message parts (images + text) — single pass over parts ────────
+// ── User message parts ──────────────────────────────────────────────────
 
-/** Renders user message content: images (clickable for lightbox) then text.
- *  Uses a single pass over `parts` to avoid repeated `.filter()` calls. */
 const UserPartsView = memo(
   function UserPartsView({ parts }: { parts: Part[] }) {
     const fileParts: Extract<Part, { type: "file" }>[] = [];
@@ -1274,9 +1237,7 @@ const UserPartsView = memo(
       if (p.type === "file") fileParts.push(p as Extract<Part, { type: "file" }>);
       else if (p.type === "text") textParts.push(p as Extract<Part, { type: "text" }>);
     }
-    // Stable urls array — only recomputed when parts ref changes
     const fileUrls = fileParts.map((p) => p.url);
-
     return (
       <div className="text-[13px] leading-relaxed">
         {fileParts.length > 0 && (
@@ -1311,14 +1272,8 @@ const UserPartsView = memo(
 
 // ── Message bubble ─────────────────────────────────────────────────────
 
-/**
- * Each MessageBubble subscribes to its own message by ID via the normalized
- * store. When a streaming update arrives, only the message that actually
- * changed gets a new object reference — so only that bubble re-renders.
- * All other bubbles are completely untouched.
- */
 const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: string }) {
-  const msg = useStore(useCallback((s) => s.messagesById[messageId], [messageId]));
+  const msg = useMessage(messageId);
   if (!msg) return null;
 
   const isUser = msg.info.role === "user";
@@ -1326,9 +1281,7 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
   return (
     <div className={`animate-fade-in-up flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div
-        className={`max-w-[85%] ${
-          isUser ? "rounded-2xl rounded-br-md bg-foreground px-3.5 py-2 text-background" : "w-full"
-        }`}
+        className={`max-w-[85%] ${isUser ? "rounded-2xl rounded-br-md bg-foreground px-3.5 py-2 text-background" : "w-full"}`}
       >
         {isUser ? (
           <UserPartsView parts={msg.parts} />
@@ -1354,24 +1307,26 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
 
 // ── Main component ─────────────────────────────────────────────────────
 
-/** Subscribes to the last message to show the busy thinking indicator. */
 const BusyThinkingIndicator = memo(function BusyThinkingIndicator() {
-  const messageIds = useStore(useShallow((s) => s.messageIds));
-  const isBusy = useStore((s) => s.isBusy);
+  const messageIds = useMessageIds();
+  const { activeSessionId } = useActiveSession();
+  const isBusy = useIsBusy(activeSessionId);
   const lastId = messageIds.length > 0 ? messageIds[messageIds.length - 1] : null;
-  const lastMsg = useStore((s) => (lastId ? s.messagesById[lastId] : undefined));
+  const lastMsg = useMessage(lastId ?? "");
   if (!isBusy || !lastMsg || lastMsg.info.role !== "user") return null;
   return <BloxBotThinking />;
 });
 
 function ChatMessages() {
-  // messageIds is a lightweight string[] — only changes when messages are added/removed,
-  // NOT when a message's content (parts) is updated during streaming.
-  const messageIds = useStore(useShallow((s) => s.messageIds));
-  const isBusy = useStore((s) => s.isBusy);
-  const todos = useStore((s) => s.todos);
-  const activeQuestion = useStore((s) => s.activeQuestion);
-  const activePermission = useStore((s) => s.activePermission);
+  const messageIds = useMessageIds();
+  const { activeSessionId } = useActiveSession();
+  const isBusy = useIsBusy(activeSessionId);
+  const todos = useTodos();
+  const activeQuestion = useActiveQuestion();
+  const activePermission = useActivePermission();
+  const answerQuestion = useAnswerQuestion();
+  const rejectQuestion = useRejectQuestion();
+  const replyPermission = useReplyPermission();
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1384,10 +1339,6 @@ function ChatMessages() {
     shouldAutoScroll.current = distanceFromBottom < 80;
   }, []);
 
-  // Auto-scroll: use a MutationObserver on the scroll container to detect
-  // DOM changes (new parts, updated text) without subscribing to message content.
-  // We use rAF-throttled "instant" scroll during streaming to keep up with fast
-  // content updates, and "smooth" scroll for discrete events (new todos, questions).
   useEffect(() => {
     const el = containerRef.current;
     const anchor = bottomRef.current;
@@ -1395,9 +1346,6 @@ function ChatMessages() {
     let rafId = 0;
     const observer = new MutationObserver(() => {
       if (!shouldAutoScroll.current) return;
-      // Throttle to one scroll per animation frame — during streaming, mutations
-      // fire faster than the browser can paint. Using "instant" keeps up with the
-      // content instead of queuing smooth animations that fall behind.
       if (!rafId) {
         rafId = requestAnimationFrame(() => {
           rafId = 0;
@@ -1412,13 +1360,26 @@ function ChatMessages() {
     };
   }, []);
 
-  // Also scroll when these reactive values change (new todos, questions, etc.)
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional scroll triggers
   useEffect(() => {
     if (shouldAutoScroll.current) {
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [isBusy, todos, activeQuestion, activePermission]);
+
+  const handleAnswer = useCallback(
+    (requestID: string, answers: QuestionAnswer[]) => answerQuestion.mutate({ requestID, answers }),
+    [answerQuestion],
+  );
+  const handleReject = useCallback(
+    (requestID: string) => rejectQuestion.mutate(requestID),
+    [rejectQuestion],
+  );
+  const handleReplyPermission = useCallback(
+    (requestID: string, reply: "once" | "always" | "reject") =>
+      replyPermission.mutate({ requestID, reply }),
+    [replyPermission],
+  );
 
   if (messageIds.length === 0 && !isBusy) {
     return (
@@ -1443,30 +1404,18 @@ function ChatMessages() {
         {messageIds.map((id) => (
           <MessageBubble key={id} messageId={id} />
         ))}
-
-        {/* Inline todo panel */}
         {todos.length > 0 && <TodoPanel todos={todos} />}
-
-        {/* Question prompt */}
         {activeQuestion && (
           <QuestionPrompt
             question={activeQuestion}
-            onAnswer={useStore.getState().answerQuestion}
-            onReject={useStore.getState().rejectQuestion}
+            onAnswer={handleAnswer}
+            onReject={handleReject}
           />
         )}
-
-        {/* Permission prompt */}
         {activePermission && (
-          <PermissionPrompt
-            permission={activePermission}
-            onReply={useStore.getState().replyPermission}
-          />
+          <PermissionPrompt permission={activePermission} onReply={handleReplyPermission} />
         )}
-
-        {/* Busy indicator when last message is from user */}
         <BusyThinkingIndicator />
-
         <div ref={bottomRef} />
       </div>
     </div>

@@ -1,38 +1,32 @@
 import { invoke } from "@tauri-apps/api/core";
 import { lazy, Suspense, useCallback, useState } from "react";
-import { useShallow } from "zustand/react/shallow";
 
 import ChatInput from "@/components/ChatInput";
 import ChatMessages from "@/components/ChatMessages";
 import ChatSidebar from "@/components/ChatSidebar";
 import LoadingScreen from "@/components/LoadingScreen";
-import { useStore } from "@/stores/opencode";
+import { useCreateSession } from "@/hooks/mutations/useCreateSession";
+import { useConnectedProviders } from "@/hooks/useProviders";
+import { useIsBusy } from "@/hooks/useSessionStatuses";
+import { useSessions } from "@/hooks/useSessions";
+import { useActiveSession } from "@/providers/ActiveSessionProvider";
+import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
+import { usePreferences } from "@/providers/PreferencesProvider";
 
 const Settings = lazy(() => import("@/components/Settings"));
 const ChatSetup = lazy(() => import("@/components/ChatSetup"));
 
 function Chat() {
-  const {
-    status,
-    activeSessionTitle,
-    activeSessionId,
-    isBusy,
-    ready,
-    connectedProviders,
-    initError,
-    hasLaunched,
-  } = useStore(
-    useShallow((s) => ({
-      status: s.status,
-      activeSessionTitle: s.activeSession?.title ?? null,
-      activeSessionId: s.activeSession?.id ?? null,
-      isBusy: s.isBusy,
-      ready: s.ready,
-      connectedProviders: s.connectedProviders,
-      initError: s.initError,
-      hasLaunched: s.hasLaunched,
-    })),
-  );
+  const { status, ready, initError } = useOpenCodeClient();
+  const { activeSessionId } = useActiveSession();
+  const { hasLaunched } = usePreferences();
+  const connectedProviders = useConnectedProviders();
+  const isBusy = useIsBusy(activeSessionId);
+  const createSession = useCreateSession();
+  const { data: allSessions } = useSessions();
+
+  // Get active session title from the sessions list
+  const activeSessionTitle = allSessions?.find((s) => s.id === activeSessionId)?.title ?? null;
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -56,14 +50,12 @@ function Chat() {
     }
   }
 
-  // ── Still loading persisted state from disk ─────────────────────────
-  // hasLaunched is null until init() finishes reading the Tauri store.
-  // Show the loading screen to avoid flashing the welcome screen.
+  // Still loading persisted state from disk
   if (hasLaunched === null) {
     return <LoadingScreen message="Starting up..." />;
   }
 
-  // ── First-run welcome screen ─────────────────────────────────────────
+  // First-run welcome screen
   if (hasLaunched === false) {
     return (
       <Suspense fallback={<LoadingScreen message="Loading..." />}>
@@ -72,7 +64,7 @@ function Chat() {
     );
   }
 
-  // ── Waiting for the backend to start OpenCode ────────────────────────
+  // Waiting for the backend to start OpenCode
   if (!serverRunning) {
     return (
       <LoadingScreen
@@ -85,10 +77,9 @@ function Chat() {
     );
   }
 
-  // ── Main chat UI ─────────────────────────────────────────────────────
+  // Main chat UI
   return (
     <div className="flex min-h-0 flex-1">
-      {/* Sidebar */}
       <ChatSidebar
         collapsed={sidebarCollapsed}
         onToggle={handleToggleSidebar}
@@ -96,7 +87,6 @@ function Chat() {
         onOpenSettings={handleOpenSettings}
       />
 
-      {/* Main area */}
       <div className="flex min-w-0 flex-1 flex-col">
         {showSettings ? (
           <Suspense fallback={<LoadingScreen message="Loading settings..." />}>
@@ -105,7 +95,6 @@ function Chat() {
         ) : !ready ? (
           <LoadingScreen message="Initializing..." />
         ) : !activeSessionId ? (
-          // No session selected
           <div className="flex flex-1 flex-col items-center justify-center px-6">
             <div className="animate-fade-in-up text-center">
               {connectedProviders.length === 0 ? (
@@ -146,7 +135,7 @@ function Chat() {
                     off.
                   </p>
                   <button
-                    onClick={() => useStore.getState().createSession()}
+                    onClick={() => createSession.mutate()}
                     className="mt-5 inline-flex h-9 items-center gap-2 rounded-lg bg-foreground px-5 text-sm font-medium text-background transition-opacity hover:opacity-90"
                   >
                     <svg
@@ -169,10 +158,8 @@ function Chat() {
             </div>
           </div>
         ) : (
-          // Active session -- show messages + input
           <>
-            {/* Session header */}
-            <div className="flex h-10 shrink-0 items-center justify-between border-b px-4">
+            <div className="flex h-10 shrink-0 items-center border-b px-4">
               <div className="flex items-center gap-2">
                 <h3 className="truncate text-xs font-semibold">
                   {activeSessionTitle || "Untitled"}
@@ -184,9 +171,6 @@ function Chat() {
                   </span>
                 )}
               </div>
-              <div className="text-[10px] text-muted-foreground">
-                {activeSessionId?.slice(0, 8)}
-              </div>
             </div>
 
             <ChatMessages />
@@ -194,7 +178,6 @@ function Chat() {
           </>
         )}
 
-        {/* Error banner */}
         {initError && (
           <div className="shrink-0 border-t border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700">
             {initError}

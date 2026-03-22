@@ -14,15 +14,12 @@ use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 use tokio::sync::Mutex;
 
-/// BloxBot's reserved port ranges within the IANA dynamic/private range
-/// (49152-65535). Each block is 10 ports; the app binds to the first
-/// available port in each block.
+/// BloxBot's reserved port range within the IANA dynamic/private range
+/// (49152-65535). The block is 10 ports; the app binds to the first
+/// available port in the block.
 ///
 /// 59200-59209: OpenCode server (HTTP API)
-/// 59210-59219: MCP bridge (Studio plugin ↔ MCP server)
-/// 59220-59229: MCP launcher control endpoint
 const OC_PORT_START: u16 = 59200;
-const MCP_PORT_START: u16 = 59210;
 const PORT_RANGE: u16 = 10;
 
 /// All servers bind to IPv4 loopback. Using `"localhost"` is **not**
@@ -63,7 +60,6 @@ pub struct StatusPayload {
 pub struct OpenCodeState {
     pub status: OpenCodeStatus,
     pub port: u16,
-    pub mcp_port: u16,
     pub(crate) child: Option<CommandChild>,
 }
 
@@ -72,7 +68,6 @@ impl Default for OpenCodeState {
         Self {
             status: OpenCodeStatus::Stopped,
             port: 0,
-            mcp_port: 0,
             child: None,
         }
     }
@@ -130,23 +125,49 @@ fn strip_win_prefix(p: &std::path::Path) -> String {
     s.strip_prefix(r"\\?\").unwrap_or(&s).to_string()
 }
 
+// ── Studio MCP binary resolution ────────────────────────────────────────
+
+/// Returns the command array for launching the official Roblox Studio MCP
+/// server. The binary ships with Roblox Studio itself — no separate
+/// download required.
+///
+/// macOS:   ["/Applications/RobloxStudio.app/Contents/MacOS/StudioMCP"]
+/// Windows: ["cmd.exe", "/c", "%LOCALAPPDATA%\\Roblox\\mcp.bat"]
+fn studio_mcp_command() -> Vec<String> {
+    #[cfg(target_os = "macos")]
+    {
+        vec!["/Applications/RobloxStudio.app/Contents/MacOS/StudioMCP".to_string()]
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let local_app = dirs::data_local_dir()
+            .map(|p| p.join("Roblox").join("mcp.bat"))
+            .unwrap_or_else(|| std::path::PathBuf::from(r"C:\Users\Default\AppData\Local\Roblox\mcp.bat"));
+        vec![
+            "cmd.exe".to_string(),
+            "/c".to_string(),
+            local_app.to_string_lossy().to_string(),
+        ]
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        // Fallback for unsupported platforms
+        vec!["studio-mcp".to_string()]
+    }
+}
+
 // ── Startup cleanup ─────────────────────────────────────────────────────
 
-/// Kill any stale processes listening on our reserved port ranges
-/// (59200-59229). This handles the case where BloxBot crashed or was
+/// Kill any stale processes listening on our reserved port range
+/// (59200-59209). This handles the case where BloxBot crashed or was
 /// force-quit, leaving orphan processes holding ports.
-///
-/// Covers all three ranges:
-/// - 59200-59209: OpenCode server
-/// - 59210-59219: MCP bridge
-/// - 59220-59229: Launcher control endpoint
 ///
 /// Uses platform-specific commands:
 /// - macOS/Linux: `lsof -ti tcp:PORT` to find PIDs, then `kill -9`
 /// - Windows: `netstat -ano` to find PIDs, then `taskkill /F /PID`
 pub fn cleanup_stale_processes() {
     let start = OC_PORT_START; // 59200
-    let end = OC_PORT_START + PORT_RANGE * 3; // 59230 (covers 59200-59229)
+    let end = OC_PORT_START + PORT_RANGE; // 59210
     log::info!("Checking for stale processes on ports {start}-{}", end - 1);
 
     #[cfg(unix)]
@@ -269,40 +290,19 @@ async fn do_start(
     tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
 
     let port = find_available_port(OC_PORT_START).await;
-    let mcp_port = find_available_port(MCP_PORT_START).await;
-    let control_port = mcp_port.wrapping_add(10); // 59220+ range
-    log::info!("OpenCode port: {port}, MCP bridge port: {mcp_port}, control port: {control_port}");
+    log::info!("OpenCode port: {port}");
 
     {
         let mut s = state.lock().await;
         s.port = port;
-        s.mcp_port = mcp_port;
     }
 
-    // Configure the MCP server to use our bundled copy (run directly with node).
-    // This avoids npx download issues on Windows and ensures a known-good version.
-    let launcher_dir = crate::paths::bundled_launcher_dir().map_err(|e| {
-        log::error!("Failed to find MCP launcher: {e}");
-        e
-    })?;
-    let mcp_entry = launcher_dir.join("dist").join("launcher.js");
-    log::info!("MCP launcher: {}", mcp_entry.display());
-
-    #[cfg(unix)]
-    let node_cmd = "node";
-    #[cfg(windows)]
-    let node_cmd = "node.exe";
-
-    // On Windows, std::env::current_exe() runs fs::canonicalize which
-    // prepends \\?\ to the path. We already strip this for PATH, but the
-    // MCP entry path also needs it stripped — Node.js module resolution
-    // can break when the entry script path has this prefix.
-    #[cfg(unix)]
-    let mcp_entry_str = mcp_entry.to_string_lossy().to_string();
-    #[cfg(windows)]
-    let mcp_entry_str = strip_win_prefix(&mcp_entry);
-
-    // mcp_port and control_port are already set above from the reserved range.
+    // Resolve the official Roblox Studio MCP binary path.
+    // The built-in MCP server ships with Roblox Studio itself:
+    //   macOS:   /Applications/RobloxStudio.app/Contents/MacOS/StudioMCP
+    //   Windows: %LOCALAPPDATA%/Roblox/mcp.bat
+    let studio_mcp_cmd = studio_mcp_command();
+    log::info!("Studio MCP command: {:?}", studio_mcp_cmd);
 
     let mcp_config = serde_json::json!({
         "plugin": [
@@ -311,13 +311,8 @@ async fn do_start(
         "mcp": {
             "roblox-studio": {
                 "type": "local",
-                "command": [node_cmd, &mcp_entry_str],
-                "enabled": true,
-                "environment": {
-                    "ROBLOX_STUDIO_HOST": LOOPBACK,
-                    "ROBLOX_STUDIO_PORT": mcp_port.to_string(),
-                    "BLOXBOT_CONTROL_PORT": control_port.to_string()
-                }
+                "command": studio_mcp_cmd,
+                "enabled": true
             }
         },
         "default_agent": "studio",
@@ -329,106 +324,109 @@ async fn do_start(
                 "mode": "primary",
                 "description": "Roblox Studio development assistant",
                 "prompt": concat!(
-                    "You are BloxBot, an expert Roblox game developer working directly inside Roblox Studio. ",
-                    "You have deep knowledge of the Roblox engine, the DataModel, Luau, and Studio workflows. ",
-                    "You build games by using MCP tools to modify the live Studio session — not by showing code snippets.\n\n",
+                    "You are BloxBot, an expert Roblox game developer working directly inside Roblox Studio via the official built-in MCP server. ",
+                    "You build games by using MCP tools to read, write, and execute code in the live Studio session — never by showing code snippets for the user to paste.\n\n",
 
                     // ── Workflow ──────────────────────────────────────────
                     "## Workflow\n",
-                    "1. **Explore first.** Before modifying anything, understand the project: `get_project_structure` (use maxDepth 5-10), `get_services`, `get_instance_children`, `get_selection`. Never guess at paths. Read existing scripts to understand conventions before writing new code.\n",
-                    "2. **Make changes with tools.** Always use the MCP tools to create instances, set properties, write scripts, etc. directly in Studio. Never tell the user to paste code.\n",
-                    "3. **Verify.** After changes, read back the result (`get_script_source`, `get_instance_properties`) to confirm correctness.\n",
-                    "4. **Debug with playtests.** When behavior must be verified at runtime: instrument with print/warn, `start_playtest`, ask the user to perform actions, poll output with `get_playtest_output`, probe live state with `execute_luau`, `stop_playtest`, fix, repeat.\n\n",
+                    "1. **Explore first.** Use `search_game_tree` (depth 5-10), `inspect_instance`, `script_search`, and `script_read` to understand the project before changing anything. Never guess at paths or names.\n",
+                    "2. **Edit with tools.** Use `multi_edit` for script changes and `execute_luau` for instance creation, property changes, and batch operations. Never tell the user to paste code.\n",
+                    "3. **Verify after.** Re-read scripts with `script_read` and confirm DataModel changes with `inspect_instance` or `search_game_tree`.\n",
+                    "4. **Debug with playtests.** Instrument code → `start_stop_play(\"start\")` → simulate input or ask the user to act → `console_output()` + `execute_luau` to probe live state → `start_stop_play(\"stop\")` → fix → repeat.\n\n",
 
                     // ── Project awareness ─────────────────────────────────
                     "## Project Awareness\n",
-                    "At the start of a session or when you encounter an unfamiliar project, **scan the codebase** to learn its architecture. Use `get_project_structure` with high depth, then read key scripts. Identify:\n",
-                    "- **Frameworks**: Knit, AeroGameFramework, Rojo project structure, Nevermore, Fusion, Roact/React-lua, Rodux, ProfileService/ProfileStore, DataStore2, etc. If the project uses one, all new code must follow its patterns (e.g. Knit Services/Controllers, Roact components, Fusion scopes).\n",
-                    "- **Folder conventions**: How are scripts organized? Is there a Shared/ folder, a Systems/ folder, a Components/ folder? Place new code where it belongs.\n",
-                    "- **Module patterns**: How does existing code structure ModuleScripts? (return table, OOP class via metatables, functional). Match the style.\n",
-                    "- **Communication patterns**: Does the project use RemoteEvents directly, or wrap them (e.g. Knit, BridgeNet2, Red)? Use the same approach.\n",
-                    "- **Naming conventions**: Do existing scripts use PascalCase, camelCase, or a prefix system? Does the project use specific naming for remotes, modules, etc.?\n\n",
-                    "**Carry this context throughout the session.** Every script you write or edit must be consistent with the project's existing patterns. Do not introduce a new framework or architectural style unless the user explicitly asks for a refactor.\n\n",
+                    "At the start of a session, scan the codebase to learn its architecture. Use `search_game_tree` with high depth, then read key scripts. Identify:\n",
+                    "- **Frameworks**: Knit, AeroGameFramework, Rojo, Nevermore, Fusion, Roact/React-lua, Rodux, ProfileService, DataStore2, etc. All new code must follow existing patterns.\n",
+                    "- **Folder conventions**: How are scripts organized? Place new code where it belongs.\n",
+                    "- **Module patterns**: Return table, OOP metatables, functional? Match the style.\n",
+                    "- **Communication patterns**: Direct RemoteEvents, or wrapped (Knit, BridgeNet2, Red)? Use the same approach.\n",
+                    "- **Naming conventions**: PascalCase, camelCase, prefix systems? Be consistent.\n\n",
+                    "Carry this context throughout the session. Do not introduce new frameworks or architectural styles unless the user explicitly asks.\n\n",
 
-                    // ── Tool guidance ─────────────────────────────────────
+                    // ── Tool guide ────────────────────────────────────────
                     "## Tool Guide\n\n",
 
-                    "**Scripts** — Always read first with `get_script_source` (returns numbered lines via `numberedSource`). ",
-                    "For partial edits use `edit_script_lines`/`insert_script_lines`/`delete_script_lines` — they are safer and faster than rewriting the whole source. ",
-                    "Only use `set_script_source` for new scripts or full rewrites. Line numbers are 1-indexed and inclusive.\n\n",
+                    "### Scripts\n",
+                    "- `script_read(path)` — Read script content using dot-notation (e.g. `game.ServerScriptService.MyScript`). Supports `start_line`/`end_line` for ranges. Always read before editing.\n",
+                    "- `multi_edit(path, edits[])` — Atomic sequential edits using exact string matching. Copy the exact text from `script_read` output as the match target. Prefer narrow, targeted edits over full rewrites. Can create new scripts if the path doesn't exist.\n",
+                    "- `script_search(query)` — Fuzzy search script names (max 10 results).\n",
+                    "- `script_grep(pattern)` — Search all script contents for a string pattern (max 50 matches). Use to find references, remote names, API usage.\n\n",
 
-                    "**Instances** — Use `create_object_with_properties` to create and configure in one call. ",
-                    "Use `mass_create_objects_with_properties` when creating multiple instances. ",
-                    "Use `smart_duplicate` with positionOffset/propertyVariations for grids and arrays of objects.\n\n",
+                    "### Data Model\n",
+                    "- `search_game_tree(path?, instance_type?, keyword?, depth?)` — Explore the instance hierarchy as flat JSON. Default depth 3, max 10.\n",
+                    "- `inspect_instance(path)` — All readable properties, custom attributes, children count, descendants. Always inspect before modifying properties via Luau.\n\n",
 
-                    "**Properties** — `set_property` for single changes. `mass_set_property` for bulk. ",
-                    "`set_relative_property` to offset from the current value (e.g. move +5 on Y). ",
-                    "`set_calculated_property` for formula-driven values across multiple instances.\n\n",
+                    "### Code Execution\n",
+                    "`execute_luau(code)` — Execute Luau directly in Studio. This is your primary tool for:\n",
+                    "- **Creating instances**: `Instance.new(\"Part\", workspace)`\n",
+                    "- **Setting properties**: `workspace.Part.Color = Color3.new(1, 0, 0)`\n",
+                    "- **Batch operations**: Updating many objects, building folder structures, migrations\n",
+                    "- **Runtime inspection**: Querying live state during playtests\n",
+                    "- **Anything the focused tools don't cover**\n\n",
+                    "Keep `execute_luau` code minimal and explicit. Print or return confirmation data. Prefer idempotent operations.\n\n",
 
-                    "**Attributes & Tags** — Use attributes for custom data on instances (health, cost, team). ",
-                    "Use CollectionService tags to group instances for system-level behavior (\"Lava\", \"Interactable\").\n\n",
+                    "### Playtesting & Debugging\n",
+                    "- `start_stop_play(\"start\")` / `start_stop_play(\"stop\")` — Start/stop playtesting.\n",
+                    "- `console_output()` — Retrieve console logs. Check immediately after starting a playtest or triggering a feature.\n",
+                    "- **Always stop playtesting before making structural edits** to ensure changes persist in the Edit session.\n\n",
+                    "Debug loop:\n",
+                    "1. Add strategic print/warn statements to trace execution\n",
+                    "2. Start playtest\n",
+                    "3. Trigger the behavior — use input simulation or ask the user\n",
+                    "4. `console_output()` to read logs + `execute_luau` to probe live state\n",
+                    "5. Stop playtest\n",
+                    "6. Apply minimal fix\n",
+                    "7. Repeat until resolved\n\n",
 
-                    "**Execute Luau** — `execute_luau` runs Luau in the plugin context with access to `game`, all services, and `print()`. ",
-                    "Use it for complex queries, batch operations, or anything the focused tools don't cover.\n\n",
+                    "### Input Simulation\n",
+                    "Use during active playtests to validate gameplay and UI:\n",
+                    "- `character_navigation(target)` — Move player to a position or instance path\n",
+                    "- `keyboard_input(action, key)` — Key presses, holds, text input\n",
+                    "- `mouse_input(action, position?)` — Clicks, movement, scrolling\n\n",
 
-                    "**Playtest & Live Debugging** — `start_playtest` (mode: \"play\" or \"run\"), `get_playtest_output` to poll logs, `stop_playtest` to end. ",
-                    "This is your debugger. Use it proactively when the user reports bugs or when you need to verify runtime behavior. ",
-                    "Combine all three approaches for maximum effectiveness:\n",
-                    "  1. **Instrumented logging** — Add strategic print/warn statements before the playtest to trace execution flow and variable state.\n",
-                    "  2. **Live probing with `execute_luau`** — While the playtest is running, use `execute_luau` to inspect live game state: query property values, read attributes, check player positions, verify instance existence, evaluate conditions. This lets you diagnose issues without stopping the session.\n",
-                    "  3. **User-directed actions** — Ask the user to perform specific in-game actions during the playtest (\"walk to the red part\", \"click the shop button\", \"try jumping on the platform\") then immediately poll output and probe state to observe the result. This is essential for testing interactions, UI flows, physics, and any player-triggered behavior.\n",
-                    "The full debug loop: instrument code → start playtest → ask user to trigger the behavior → poll output + probe values with execute_luau → stop → analyze → fix → repeat.\n\n",
+                    "### Session Management\n",
+                    "- `list_roblox_studios()` — List connected Studio instances\n",
+                    "- `set_active_studio(studio_id)` — Target a specific instance before making changes\n\n",
 
                     // ── Roblox architecture ───────────────────────────────
                     "## Roblox Architecture\n\n",
 
-                    "**DataModel hierarchy**: game (DataModel) → Services → Instances. Key services and their roles:\n",
-                    "- `Workspace` — 3D world. BaseParts, Models, Terrain, Camera live here. Replicated.\n",
+                    "**DataModel**: game → Services → Instances. Key services:\n",
+                    "- `Workspace` — 3D world. BaseParts, Models, Terrain, Camera. Replicated.\n",
                     "- `ServerScriptService` — Server Scripts. Never accessible from client.\n",
-                    "- `ServerStorage` — Server-only assets, data templates. Not replicated to clients.\n",
-                    "- `ReplicatedStorage` — Shared between server and client. ModuleScripts, RemoteEvents, RemoteFunctions, assets.\n",
-                    "- `StarterPlayerScripts` / `StarterCharacterScripts` — LocalScripts cloned to each player.\n",
-                    "- `StarterGui` — ScreenGuis/LocalScripts cloned to each player's PlayerGui.\n",
-                    "- `Players` — Player objects (with Character models in Workspace).\n",
-                    "- `Lighting` — Atmosphere, sky, time of day, post-processing.\n",
-                    "- `SoundService` — Ambient and spatial audio.\n",
-                    "- `TweenService`, `RunService`, `UserInputService`, `ContextActionService`, `CollectionService`, `PhysicsService`, `MarketplaceService`, `DataStoreService`, `MessagingService`, `HttpService` — use `:GetService()` to access.\n\n",
+                    "- `ServerStorage` — Server-only assets and data. Not replicated.\n",
+                    "- `ReplicatedStorage` — Shared modules, RemoteEvents, RemoteFunctions, assets.\n",
+                    "- `StarterPlayerScripts` / `StarterCharacterScripts` — LocalScripts cloned per player.\n",
+                    "- `StarterGui` — ScreenGuis/LocalScripts cloned to PlayerGui.\n",
+                    "- `Players`, `Lighting`, `SoundService` — as named.\n",
+                    "- Access all services via `:GetService()`.\n\n",
 
-                    "**Client-server model**: Server is authoritative. Clients see a replicated subset. Communication via RemoteEvents (fire-and-forget) and RemoteFunctions (request-response) in ReplicatedStorage. ",
-                    "**Never trust the client.** Validate all inputs server-side. Exploiters can fire any RemoteEvent with any arguments.\n\n",
+                    "**Client-server model**: Server is authoritative. Clients see a replicated subset. Communicate via RemoteEvents (fire-and-forget) and RemoteFunctions (request-response). ",
+                    "**Never trust the client.** Validate all inputs server-side.\n\n",
 
-                    "**Script types**:\n",
-                    "- `Script` — runs on server (ServerScriptService, Workspace, or ServerStorage). Has `game:GetService()` access to all server APIs.\n",
-                    "- `LocalScript` — runs on client (StarterPlayerScripts, StarterCharacterScripts, StarterGui). Has access to `LocalPlayer`, UserInputService, Camera.\n",
-                    "- `ModuleScript` — shared code loaded via `require()`. Place in ReplicatedStorage (shared), ServerStorage (server-only), or alongside consumers.\n\n",
+                    "**Script types**: `Script` (server), `LocalScript` (client), `ModuleScript` (shared via `require()`). Place them in the correct service.\n\n",
 
                     // ── Luau style ────────────────────────────────────────
                     "## Luau Style\n",
-                    "- Write idiomatic **Luau**. Use type annotations, `if-then-else` expressions, string interpolation (`backtick syntax`), and typed `for` loops.\n",
-                    "- **Descriptive names only.** `player` not `p`, `character` not `char`, `humanoid` not `hum`, `connection` not `conn`. Readability over brevity, always.\n",
-                    "- PascalCase for services, instances, properties, methods. camelCase for local variables and functions.\n",
-                    "- Use `:GetService()` to access services. Use `:WaitForChild()` on the client when referencing instances that may not have replicated yet.\n",
-                    "- Handle cleanup: disconnect connections, destroy cloned instances, use `Maid`/`Trove` patterns or `task.cancel()` for spawned threads.\n",
-                    "- Use `task.spawn`, `task.defer`, `task.delay`, `task.wait` (not legacy `spawn`, `wait`, `delay`).\n\n",
+                    "- Idiomatic Luau: type annotations, string interpolation, `if-then-else` expressions.\n",
+                    "- Descriptive names: `player` not `p`, `character` not `char`, `humanoid` not `hum`.\n",
+                    "- PascalCase for services/instances/properties/methods. camelCase for locals.\n",
+                    "- `:GetService()` for services. `:WaitForChild()` on client for instances that may not have replicated.\n",
+                    "- `task.spawn`, `task.defer`, `task.delay`, `task.wait` — never legacy `spawn`/`wait`/`delay`.\n",
+                    "- Clean up: disconnect connections, destroy clones, cancel threads.\n\n",
 
-                    // ── Knowledge & docs ──────────────────────────────────
-                    "## Roblox Knowledge\n",
-                    "You have deep knowledge of the Roblox engine, but APIs evolve. ",
-                    "When uncertain about a class, property, method, or enum — or when using less-common APIs — ",
-                    "**search the Roblox documentation** (create.roblox.com/docs) or the DevForum (devforum.roblox.com) before writing code. ",
-                    "Do not guess API signatures. Getting a method name or parameter wrong wastes the user's time.\n\n",
+                    // ── Safety & communication ────────────────────────────
+                    "## Safety\n",
+                    "- Never overwrite large scripts unless necessary. Prefer targeted `multi_edit`.\n",
+                    "- Never invent paths, remotes, or instances without verifying they exist.\n",
+                    "- Never claim a fix works until verified with `script_read`, `inspect_instance`, or playtesting.\n",
+                    "- If a change is risky or destructive, say so and proceed carefully.\n\n",
 
-                    "Common reference points:\n",
-                    "- Instance API: Instance.new(), :Clone(), :Destroy(), :FindFirstChild(), :FindFirstChildOfClass(), :GetChildren(), :GetDescendants(), :WaitForChild(), :SetAttribute(), :GetAttribute()\n",
-                    "- Events: .Changed, :GetPropertyChangedSignal(), .ChildAdded, .ChildRemoved, .Touched, .PlayerAdded, .CharacterAdded\n",
-                    "- Physics: BasePart.Anchored, AssemblyLinearVelocity, CollisionGroup, CustomPhysicalProperties\n",
-                    "- UI: ScreenGui, Frame, TextLabel, TextButton, ImageLabel, UIListLayout, UIStroke, UICorner, UIGradient, UIPadding\n\n",
-
-                    // ── Communication ─────────────────────────────────────
                     "## Communication\n",
-                    "Be concise and practical. Show what you did, not how to do it — the tools already did it. ",
-                    "Explain *why* you chose an approach when it's non-obvious. ",
-                    "If a request is outside what the tools can do (e.g. publishing, Team Create, marketplace), say so clearly."
+                    "Be concise and practical. State what you did, not how to do it — the tools already did it. ",
+                    "Explain *why* when it's non-obvious. When console errors appear, immediately read the relevant script to diagnose. ",
+                    "If a request is outside what the tools can do (publishing, Team Create, marketplace), say so clearly."
                 )
             }
         }
@@ -755,37 +753,23 @@ async fn handle_process_exit(
     emit_status(app, &s.status, s.port);
 }
 
-/// Gracefully stop everything: MCP server (via launcher control endpoint),
-/// then the OpenCode sidecar. Waits briefly between the MCP shutdown
-/// request and killing the sidecar so the launcher has time to terminate
-/// its child process tree.
+/// Gracefully stop the OpenCode sidecar process.
 pub async fn stop_all(state: &SharedOpenCodeState, app: &AppHandle) {
-    let (mcp_port, has_child) = {
+    let has_child = {
         let s = state.lock().await;
-        (s.mcp_port, s.child.is_some())
+        s.child.is_some()
     };
 
-    if !has_child && mcp_port == 0 {
+    if !has_child {
         return;
     }
 
-    // Step 1: Ask the launcher to gracefully shut down the MCP server.
-    if mcp_port > 0 {
-        shutdown_mcp_server(mcp_port).await;
-        // Give the launcher time to SIGTERM the child and exit (it waits
-        // up to 2s internally before SIGKILL). 1.5s is enough in the
-        // happy path; the sidecar kill below is the final backstop.
-        tokio::time::sleep(tokio::time::Duration::from_millis(1500)).await;
-    }
-
-    // Step 2: Kill the OpenCode sidecar process.
     let mut s = state.lock().await;
     if let Some(child) = s.child.take() {
         let _ = child.kill();
     }
     s.status = OpenCodeStatus::Stopped;
     s.port = 0;
-    s.mcp_port = 0;
     emit_status(app, &s.status, 0);
 }
 
@@ -818,31 +802,28 @@ pub async fn restart_opencode(
     start_opencode_server(state.inner().clone(), app).await
 }
 
-/// Combined studio status poll.  Queries both the OpenCode server (for
-/// MCP server state) and the MCP bridge health endpoint (for Studio
-/// plugin connectivity) in a single Tauri command, avoiding CORS issues.
+/// Poll the Studio MCP server status via the OpenCode server's /mcp
+/// endpoint. The official Studio MCP binary handles the actual connection
+/// to Roblox Studio — we just ask OpenCode for its status.
 #[tauri::command]
 pub async fn poll_studio_status(
     state: tauri::State<'_, SharedOpenCodeState>,
 ) -> Result<StudioStatusResult, String> {
-    let (oc_port, mcp_port) = {
+    let oc_port = {
         let s = state.lock().await;
-        // If OpenCode isn't running yet there's nothing to poll.
         if !matches!(s.status, OpenCodeStatus::Running) {
             return Ok(StudioStatusResult {
                 status: "unknown".into(),
                 error: None,
             });
         }
-        (s.port, s.mcp_port)
+        s.port
     };
     let workspace = crate::paths::workspace_dir()?;
     let client = http_client();
 
-    // ── Step 1: ask OpenCode for the MCP server status ─────────────
     let workspace_str = workspace.to_string_lossy().to_string();
     let mcp_url = format!("http://{LOOPBACK}:{oc_port}/mcp");
-    let mut mcp_connected = false;
 
     match client
         .get(&mcp_url)
@@ -861,90 +842,54 @@ pub async fn poll_studio_status(
                         .unwrap_or("unknown");
 
                     match status_str {
+                        "connected" => Ok(StudioStatusResult {
+                            status: "connected".into(),
+                            error: None,
+                        }),
                         "failed" => {
                             let err = rs.get("error").and_then(|v| v.as_str()).map(String::from);
-                            return Ok(StudioStatusResult {
+                            Ok(StudioStatusResult {
                                 status: "failed".into(),
                                 error: err,
-                            });
+                            })
                         }
-                        "disabled" => {
-                            return Ok(StudioStatusResult {
-                                status: "disabled".into(),
-                                error: None,
-                            });
-                        }
-                        "needs_auth" | "needs_client_registration" => {
-                            return Ok(StudioStatusResult {
-                                status: "needs_auth".into(),
-                                error: None,
-                            });
-                        }
-                        "connected" => {
-                            mcp_connected = true;
-                        }
-                        other => {
-                            log::warn!("Unknown MCP status: {other}");
-                        }
+                        "disabled" => Ok(StudioStatusResult {
+                            status: "disabled".into(),
+                            error: None,
+                        }),
+                        "needs_auth" | "needs_client_registration" => Ok(StudioStatusResult {
+                            status: "needs_auth".into(),
+                            error: None,
+                        }),
+                        _ => Ok(StudioStatusResult {
+                            status: "disconnected".into(),
+                            error: None,
+                        }),
                     }
                 } else {
-                    log::debug!("No 'roblox-studio' key in /mcp response");
+                    Ok(StudioStatusResult {
+                        status: "unknown".into(),
+                        error: None,
+                    })
                 }
+            } else {
+                Ok(StudioStatusResult {
+                    status: "unknown".into(),
+                    error: None,
+                })
             }
         }
         Ok(resp) => {
             log::warn!("OpenCode /mcp returned HTTP {}", resp.status());
-        }
-        Err(e) => {
-            log::warn!("OpenCode /mcp request failed: {e}");
-        }
-    }
-
-    // Only check the health endpoint if OpenCode reports MCP as connected.
-    // Otherwise there's no point — the MCP server isn't running.
-    if !mcp_connected {
-        return Ok(StudioStatusResult {
-            status: "unknown".into(),
-            error: None,
-        });
-    }
-
-    // ── Step 2: poll the MCP bridge health endpoint ────────────────
-    let health_url = format!("http://{LOOPBACK}:{mcp_port}/health");
-    log::trace!("Checking MCP health at {health_url}");
-    match client.get(&health_url).send().await {
-        Ok(resp) if resp.status().is_success() => {
-            let body = resp
-                .json::<serde_json::Value>()
-                .await
-                .unwrap_or(serde_json::Value::Null);
-            log::trace!("MCP health response: {body}");
-            let plugin_connected = body
-                .get("pluginConnected")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
             Ok(StudioStatusResult {
-                status: if plugin_connected {
-                    "connected"
-                } else {
-                    "disconnected"
-                }
-                .into(),
+                status: "unknown".into(),
                 error: None,
             })
         }
-        Ok(resp) => {
-            let status = resp.status();
-            log::warn!("MCP health returned HTTP {status}");
-            Ok(StudioStatusResult {
-                status: "failed".into(),
-                error: Some(format!("HTTP {status}")),
-            })
-        }
         Err(e) => {
-            log::warn!("MCP health request failed: {e}");
+            log::warn!("OpenCode /mcp request failed: {e}");
             Ok(StudioStatusResult {
-                status: "failed".into(),
+                status: "unknown".into(),
                 error: None,
             })
         }
@@ -957,42 +902,3 @@ pub struct StudioStatusResult {
     pub error: Option<String>,
 }
 
-/// Gracefully shut down the MCP server via the launcher's control endpoint.
-/// Called on app quit and before MCP restart to ensure clean process cleanup.
-pub async fn shutdown_mcp_server(mcp_port: u16) {
-    let control_port = mcp_port.wrapping_add(10);
-    let url = format!("http://{LOOPBACK}:{control_port}/shutdown");
-
-    match http_client().post(&url).send().await {
-        Ok(resp) if resp.status().is_success() => {
-            log::info!("MCP server shutdown requested via control port {control_port}");
-        }
-        Ok(resp) => {
-            log::warn!("MCP shutdown returned HTTP {}", resp.status());
-        }
-        Err(e) => {
-            // Launcher may not be running — that's fine
-            log::debug!("MCP shutdown request failed (may not be running): {e}");
-        }
-    }
-}
-
-/// Tauri command wrapper for shutdown_mcp_server.
-#[tauri::command]
-pub async fn shutdown_mcp(state: tauri::State<'_, SharedOpenCodeState>) -> Result<(), String> {
-    let mcp_port = state.lock().await.mcp_port;
-    shutdown_mcp_server(mcp_port).await;
-    Ok(())
-}
-
-/// Return the auto-picked MCP bridge URL for the Studio plugin to connect to.
-#[tauri::command]
-pub async fn get_mcp_url(
-    state: tauri::State<'_, SharedOpenCodeState>,
-) -> Result<String, String> {
-    let mcp_port = state.lock().await.mcp_port;
-    if mcp_port == 0 {
-        return Err("MCP server not started yet".into());
-    }
-    Ok(format!("http://{LOOPBACK}:{mcp_port}"))
-}

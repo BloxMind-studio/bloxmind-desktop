@@ -40,14 +40,7 @@ pub fn run() {
             opencode::get_opencode_status,
             opencode::restart_opencode,
             opencode::poll_studio_status,
-            opencode::shutdown_mcp,
-            opencode::get_mcp_url,
             paths::get_workspace_dir,
-            paths::check_plugin_installed,
-            paths::check_plugin_needs_update,
-            paths::check_legacy_plugin_exists,
-            paths::remove_legacy_plugin,
-            paths::install_studio_plugin,
         ])
         .setup(|app| {
             // Give the logger access to the AppHandle so it can emit
@@ -173,8 +166,7 @@ pub fn run() {
             }
 
             if let tauri::WindowEvent::CloseRequested { .. } = event {
-                // Gracefully tear down the full process tree (MCP server →
-                // launcher → OpenCode sidecar) before exiting.
+                // Gracefully tear down the OpenCode sidecar before exiting.
                 let state = window
                     .app_handle()
                     .state::<SharedOpenCodeState>()

@@ -1,6 +1,11 @@
 import { memo, useEffect, useRef, useState } from "react";
-import { useShallow } from "zustand/react/shallow";
-import { selectSessions, useStore } from "@/stores/opencode";
+import { useCreateSession } from "@/hooks/mutations/useCreateSession";
+import { useDeleteSession } from "@/hooks/mutations/useDeleteSession";
+import { useRenameSession } from "@/hooks/mutations/useRenameSession";
+import { useSessionStatuses } from "@/hooks/useSessionStatuses";
+import { useFilteredSessions } from "@/hooks/useSessions";
+import { useActiveSession } from "@/providers/ActiveSessionProvider";
+import { usePreferences } from "@/providers/PreferencesProvider";
 
 interface ChatSidebarProps {
   collapsed: boolean;
@@ -10,7 +15,6 @@ interface ChatSidebarProps {
 }
 
 function formatTime(timestamp: number): string {
-  // OpenCode timestamps may be seconds or milliseconds; detect by magnitude
   const ms = timestamp > 1e12 ? timestamp : timestamp * 1000;
   const date = new Date(ms);
   const now = new Date();
@@ -44,12 +48,13 @@ const ChatSidebar = memo(function ChatSidebar({
   onSessionSelect,
   onOpenSettings,
 }: ChatSidebarProps) {
-  const sessions = useStore(useShallow(selectSessions));
-  const activeSessionId = useStore((s) => s.activeSession?.id ?? null);
-  // Subscribe to the full sessionStatuses object with useShallow so the
-  // component only re-renders when a status value actually changes.
-  const sessionStatuses = useStore(useShallow((s) => s.sessionStatuses));
-  const showAllSessions = useStore((s) => s.showAllSessions);
+  const sessions = useFilteredSessions();
+  const { activeSessionId, selectSession } = useActiveSession();
+  const { data: sessionStatuses = {} } = useSessionStatuses();
+  const { showAllSessions, setShowAllSessions } = usePreferences();
+  const createSession = useCreateSession();
+  const deleteSession = useDeleteSession();
+  const renameSession = useRenameSession();
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
@@ -59,12 +64,12 @@ const ChatSidebar = memo(function ChatSidebar({
 
   function handleSelect(id: string) {
     onSessionSelect();
-    useStore.getState().selectSession(id);
+    selectSession(id);
   }
 
   function handleCreate() {
     onSessionSelect();
-    useStore.getState().createSession();
+    createSession.mutate();
   }
 
   useEffect(() => {
@@ -74,7 +79,6 @@ const ChatSidebar = memo(function ChatSidebar({
     }
   }, [editingId]);
 
-  // Close filter dropdown on outside click
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (filterRef.current && !filterRef.current.contains(e.target as Node)) {
@@ -94,7 +98,7 @@ const ChatSidebar = memo(function ChatSidebar({
 
   function commitRename() {
     if (editingId && editValue.trim()) {
-      useStore.getState().renameSession(editingId, editValue.trim());
+      renameSession.mutate({ sessionID: editingId, title: editValue.trim() });
     }
     setEditingId(null);
   }
@@ -106,7 +110,6 @@ const ChatSidebar = memo(function ChatSidebar({
       }`}
     >
       {collapsed ? (
-        /* ── Collapsed state ──────────────────────────────────────── */
         <div className="flex flex-1 flex-col items-center justify-between py-2">
           <div className="flex flex-col items-center">
             <button
@@ -168,15 +171,12 @@ const ChatSidebar = memo(function ChatSidebar({
           </button>
         </div>
       ) : (
-        /* ── Expanded state ───────────────────────────────────────── */
         <>
-          {/* Header */}
           <div className="flex h-10 items-center justify-between border-b px-3">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               Sessions
             </span>
             <div className="flex items-center gap-0.5">
-              {/* Filter button */}
               <div className="relative" ref={filterRef}>
                 <button
                   onClick={() => setShowFilter(!showFilter)}
@@ -204,7 +204,7 @@ const ChatSidebar = memo(function ChatSidebar({
                   <div className="animate-scale-in absolute left-0 top-full z-50 mt-1 w-44 rounded-lg border bg-popover p-1 shadow-lg">
                     <button
                       onClick={() => {
-                        if (showAllSessions) useStore.getState().setShowAllSessions(false);
+                        if (showAllSessions) setShowAllSessions(false);
                         setShowFilter(false);
                       }}
                       className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${
@@ -233,7 +233,7 @@ const ChatSidebar = memo(function ChatSidebar({
                     </button>
                     <button
                       onClick={() => {
-                        if (!showAllSessions) useStore.getState().setShowAllSessions(true);
+                        if (!showAllSessions) setShowAllSessions(true);
                         setShowFilter(false);
                       }}
                       className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${
@@ -303,7 +303,6 @@ const ChatSidebar = memo(function ChatSidebar({
             </div>
           </div>
 
-          {/* Session list */}
           <div className="flex-1 overflow-y-auto overflow-x-hidden py-1">
             {sessions.length === 0 && (
               <div className="animate-fade-in px-3 py-6 text-center text-xs text-muted-foreground">
@@ -358,7 +357,6 @@ const ChatSidebar = memo(function ChatSidebar({
                       </div>
                     </div>
 
-                    {/* Actions (visible on hover) */}
                     {!isEditing && (
                       <div
                         className={`absolute inset-y-0 right-0 flex items-center gap-0.5 rounded-r-md pl-4 pr-1.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 ${
@@ -391,7 +389,7 @@ const ChatSidebar = memo(function ChatSidebar({
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            useStore.getState().deleteSession(session.id);
+                            deleteSession.mutate(session.id);
                           }}
                           className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:text-destructive"
                           title="Delete"
@@ -418,7 +416,6 @@ const ChatSidebar = memo(function ChatSidebar({
             })}
           </div>
 
-          {/* Footer: Settings */}
           <div className="shrink-0 border-t px-3 py-2 space-y-1">
             <button
               onClick={onOpenSettings}

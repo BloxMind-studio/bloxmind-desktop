@@ -1,0 +1,51 @@
+import { useMutation } from "@tanstack/react-query";
+
+import { splitModelKey } from "@/lib/splitModelKey";
+import { capture } from "@/lib/telemetry";
+import { useActiveSession } from "@/providers/ActiveSessionProvider";
+import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
+import { usePreferences } from "@/providers/PreferencesProvider";
+
+interface SendMessageInput {
+  text: string;
+  images?: Array<{ mime: string; url: string; filename?: string }>;
+}
+
+export function useSendMessage() {
+  const { client } = useOpenCodeClient();
+  const { activeSessionId } = useActiveSession();
+  const { selectedModel, selectedAgent, selectedVariant } = usePreferences();
+
+  return useMutation({
+    mutationFn: async ({ text, images }: SendMessageInput) => {
+      if (!client || !activeSessionId) throw new Error("No client or session");
+
+      const parts: Array<{ type: string; [k: string]: unknown }> = [{ type: "text", text }];
+      if (images) {
+        for (const img of images) {
+          parts.push({ type: "file", mime: img.mime, url: img.url, filename: img.filename });
+        }
+      }
+      const opts: Record<string, unknown> = {
+        sessionID: activeSessionId,
+        parts,
+      };
+
+      if (selectedModel) {
+        const [providerID, modelID] = splitModelKey(selectedModel);
+        if (providerID && modelID) {
+          opts.model = { providerID, modelID };
+        }
+      }
+
+      if (selectedAgent) opts.agent = selectedAgent;
+      if (selectedVariant) opts.variant = selectedVariant;
+
+      await client.session.promptAsync(opts as Parameters<typeof client.session.promptAsync>[0]);
+      capture("message_sent", {
+        model: selectedModel ?? undefined,
+        agent: selectedAgent ?? undefined,
+      });
+    },
+  });
+}

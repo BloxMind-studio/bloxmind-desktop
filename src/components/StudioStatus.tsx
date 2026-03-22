@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from "react";
-import { useStore } from "@/stores/opencode";
-import type { StudioConnectionStatus } from "@/types";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { useRestartMcp } from "@/hooks/mutations/useRestartMcp";
+import { useStudioStatus } from "@/hooks/useStudioStatus";
+import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 
-const STATUS_CONFIG: Record<
-  StudioConnectionStatus,
-  { dot: string; label: string; description: string }
-> = {
+type Status = "connected" | "disconnected" | "failed" | "disabled" | "needs_auth" | "unknown";
+
+const STATUS_CONFIG: Record<Status, { dot: string; label: string; description: string }> = {
   connected: {
     dot: "bg-emerald-400",
     label: "Studio connected",
@@ -14,17 +14,17 @@ const STATUS_CONFIG: Record<
   disconnected: {
     dot: "bg-red-400",
     label: "Studio not connected",
-    description: "Open Roblox Studio and connect the BloxBot plugin from the Plugins tab.",
+    description: "Open Roblox Studio and enable the built-in MCP server in Assistant settings.",
   },
   failed: {
     dot: "bg-red-400",
     label: "MCP server unreachable",
     description:
-      "The Roblox Studio bridge is not responding. Another process may be blocking the port.",
+      "The Studio MCP server is not responding. Make sure Roblox Studio is running with MCP enabled.",
   },
   disabled: {
     dot: "bg-stone-300",
-    label: "Plugin disabled",
+    label: "MCP disabled",
     description: "The Roblox Studio integration is disabled in the configuration.",
   },
   needs_auth: {
@@ -34,156 +34,62 @@ const STATUS_CONFIG: Record<
   },
   unknown: {
     dot: "bg-stone-300 animate-pulse",
-    label: "Checking connection...",
+    label: "Checking...",
     description: "Waiting for the MCP server to report its status.",
   },
 };
 
-function CopyableUrl({ url }: { url: string }) {
-  const [copied, setCopied] = useState(false);
-  const copyTimerRef = useRef<ReturnType<typeof setTimeout>>();
-
-  useEffect(() => () => clearTimeout(copyTimerRef.current), []);
-
-  async function handleCopy() {
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopied(true);
-      clearTimeout(copyTimerRef.current);
-      copyTimerRef.current = setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Clipboard API may fail in some contexts
-    }
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={handleCopy}
-      className="mt-1.5 flex w-full items-center gap-1.5 rounded-md border bg-muted/50 px-2 py-1 text-left transition-colors hover:bg-muted"
-    >
-      <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-foreground">{url}</span>
-      <span className="shrink-0 text-[10px] text-muted-foreground">
-        {copied ? "Copied!" : "Copy"}
-      </span>
-    </button>
-  );
-}
-
-function StudioStatus() {
-  const status = useStore((s) => s.status);
-  const ready = useStore((s) => s.ready);
-  const studioStatus = useStore((s) => s.studioStatus);
-  const studioError = useStore((s) => s.studioError);
-  const mcpUrl = useStore((s) => s.mcpUrl);
-  const pluginInstalled = useStore((s) => s.pluginInstalled);
+const StudioStatus = memo(function StudioStatus() {
+  const { status, ready } = useOpenCodeClient();
+  const { studioStatus, studioError } = useStudioStatus();
+  const restartMcp = useRestartMcp();
   const [hovering, setHovering] = useState(false);
-  const [installing, setInstalling] = useState(false);
-  const [restarting, setRestarting] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const config = STATUS_CONFIG[studioStatus];
 
-  // Show the URL in the popover when MCP is running (connected or waiting for Studio)
-  const showUrl = mcpUrl && (studioStatus === "connected" || studioStatus === "disconnected");
-
-  // Clean up pending timeout on unmount
-  useEffect(() => {
-    return () => {
+  useEffect(
+    () => () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    };
-  }, []);
+    },
+    [],
+  );
 
-  function handleEnter() {
+  const handleEnter = useCallback(() => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     setHovering(true);
-  }
+  }, []);
 
-  function handleLeave() {
+  const handleLeave = useCallback(() => {
     timeoutRef.current = setTimeout(() => setHovering(false), 150);
-  }
+  }, []);
 
-  async function handleInstall() {
-    setInstalling(true);
-    try {
-      await useStore.getState().installPlugin();
-    } catch {
-      // Error logged by store
-    } finally {
-      setInstalling(false);
-    }
-  }
+  const handleRestart = useCallback(() => {
+    restartMcp.mutate();
+  }, [restartMcp]);
 
-  async function handleRestart() {
-    setRestarting(true);
-    try {
-      await useStore.getState().restartMcpServer();
-    } catch {
-      // Error logged by store
-    } finally {
-      setRestarting(false);
-    }
-  }
+  if (status !== "Running" || !ready) return null;
 
-  // Don't show Studio status until the user is inside the app
-  // (server running and SDK initialized).
-  if (status !== "Running" || !ready) {
-    return null;
-  }
-
-  // ── Plugin not installed: show install button ──────────────────────
-  if (pluginInstalled === false) {
-    return (
-      <button
-        type="button"
-        onClick={handleInstall}
-        disabled={installing}
-        className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-2.5 py-1 text-[11px] font-medium text-background transition-opacity hover:opacity-90 active:scale-[0.97] disabled:opacity-50"
-      >
-        <svg
-          width="12"
-          height="12"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-          <polyline points="7 10 12 15 17 10" />
-          <line x1="12" y1="15" x2="12" y2="3" />
-        </svg>
-        {installing ? "Installing..." : "Install Studio Plugin"}
-      </button>
-    );
-  }
-
-  // ── Plugin installed: show connection status ───────────────────────
   return (
     <div className="relative" onMouseEnter={handleEnter} onMouseLeave={handleLeave}>
-      {/* Indicator row */}
       <div className="flex w-full cursor-default items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-accent">
-        <span className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${config.dot}`} />
+        <span
+          className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full transition-colors duration-500 ${config.dot}`}
+        />
         <span className="text-[11px] text-muted-foreground">{config.label}</span>
       </div>
 
-      {/* Popover */}
       {hovering && (
-        <div className="absolute right-0 top-full z-50 mt-1 w-64 rounded-lg border bg-popover p-3 shadow-lg">
+        <div className="absolute right-0 top-full z-50 mt-1 w-64 animate-in fade-in slide-in-from-top-1 duration-150 rounded-lg border bg-popover p-3 shadow-lg">
           <div className="flex items-center gap-2">
-            <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${config.dot}`} />
+            <span
+              className={`inline-block h-2 w-2 shrink-0 rounded-full transition-colors duration-500 ${config.dot}`}
+            />
             <span className="text-xs font-medium text-foreground">{config.label}</span>
           </div>
           <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
             {config.description}
           </p>
-          {showUrl && (
-            <div className="mt-2">
-              <p className="text-[10px] text-muted-foreground">Connection URL:</p>
-              <CopyableUrl url={mcpUrl} />
-            </div>
-          )}
           {studioStatus === "failed" && (
             <div className="mt-2">
               {studioError && (
@@ -194,10 +100,10 @@ function StudioStatus() {
               <button
                 type="button"
                 onClick={handleRestart}
-                disabled={restarting}
+                disabled={restartMcp.isPending}
                 className="inline-flex h-7 w-full items-center justify-center gap-1.5 rounded-md bg-foreground text-[11px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
               >
-                {restarting ? "Restarting..." : "Restart MCP Server"}
+                {restartMcp.isPending ? "Restarting..." : "Restart MCP Server"}
               </button>
             </div>
           )}
@@ -207,10 +113,11 @@ function StudioStatus() {
                 <li>1. Open Roblox Studio</li>
                 <li>2. Open or create a place file</li>
                 <li>
-                  3. Click the <strong>Plugins</strong> tab
+                  3. Open <strong>Assistant</strong> settings (three-dot menu)
                 </li>
                 <li>
-                  4. Open the BloxBot plugin and click <strong>Connect</strong>
+                  4. Go to <strong>MCP Servers</strong> and enable{" "}
+                  <strong>Studio as MCP server</strong>
                 </li>
               </ol>
             </div>
@@ -219,6 +126,6 @@ function StudioStatus() {
       )}
     </div>
   );
-}
+});
 
 export default StudioStatus;
