@@ -4,7 +4,6 @@ import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import LoadingScreen from "@/components/LoadingScreen";
-import { loadConfig } from "@/lib/config";
 import { qk } from "@/lib/queryKeys";
 import { sseDispatch } from "@/lib/sseDispatch";
 
@@ -67,7 +66,7 @@ export function OpenCodeClientProvider({
           directory: workspace,
         });
 
-        await fetchServerStateAndPreferences(newClient, queryClient);
+        await prefetchServerState(newClient, queryClient);
         if (cancelled) return;
 
         setPort(ocPort);
@@ -192,9 +191,11 @@ export function OpenCodeClientProvider({
   return <OpenCodeClientContext.Provider value={value}>{children}</OpenCodeClientContext.Provider>;
 }
 
-// ── Fetch all server state and local preferences into the query cache ──
+// ── Pre-warm query cache with server state ──
+// Hooks have their own queryFn as fallback, but seeding the cache here
+// avoids extra round-trips on first render.
 
-async function fetchServerStateAndPreferences(client: OpencodeClient, queryClient: QueryClient) {
+async function prefetchServerState(client: OpencodeClient, queryClient: QueryClient) {
   const [sessionRes, providerRes, statusRes, agentsRes, authRes] = await Promise.all([
     client.session.list({}),
     client.provider.list({}),
@@ -203,7 +204,6 @@ async function fetchServerStateAndPreferences(client: OpencodeClient, queryClien
     client.provider.auth({}).catch(() => ({ data: undefined })),
   ]);
 
-  // Server state → query cache
   if (sessionRes.data) {
     const sorted = [...sessionRes.data].sort((a, b) => b.time.created - a.time.created);
     queryClient.setQueryData(qk.sessions, sorted);
@@ -223,11 +223,4 @@ async function fetchServerStateAndPreferences(client: OpencodeClient, queryClien
       : providerRes.data;
     queryClient.setQueryData(qk.providers, providerData);
   }
-
-  // Local preferences (Tauri store) → query cache
-  const cfg = await loadConfig();
-  queryClient.setQueryData(qk.config, {
-    lastModel: cfg.lastModel,
-    hiddenModels: cfg.hiddenModels,
-  });
 }

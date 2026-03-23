@@ -2,7 +2,19 @@ import type { Session } from "@opencode-ai/sdk/v2/client";
 import { useQuery } from "@tanstack/react-query";
 
 import { qk } from "@/lib/queryKeys";
+import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 
 export function useSessions() {
-  return useQuery<Session[]>({ queryKey: qk.sessions, enabled: false });
+  const { client, ready } = useOpenCodeClient();
+
+  return useQuery<Session[]>({
+    queryKey: qk.sessions,
+    queryFn: async () => {
+      if (!client) return [];
+      const res = await client.session.list({});
+      if (!res.data) return [];
+      return [...res.data].sort((a, b) => b.time.created - a.time.created);
+    },
+    enabled: ready && !!client,
+  });
 }

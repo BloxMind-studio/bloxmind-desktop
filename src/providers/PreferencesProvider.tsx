@@ -1,15 +1,10 @@
-import type { Agent } from "@opencode-ai/sdk/v2/client";
 import { useQuery } from "@tanstack/react-query";
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useState } from "react";
-import { patchConfig } from "@/lib/config";
+import { useAgents } from "@/hooks/useAgents";
 import { useConnectedProviders } from "@/hooks/useProviders";
+import { type AppConfig, loadConfig, patchConfig } from "@/lib/config";
 import { qk } from "@/lib/queryKeys";
 import { splitModelKey } from "@/lib/splitModelKey";
-
-interface ConfigData {
-  lastModel: string | null;
-  hiddenModels: string[];
-}
 
 interface PreferencesContextValue {
   selectedModel: string | null;
@@ -29,8 +24,10 @@ export function usePreferences() {
 }
 
 export function PreferencesProvider({ children }: { children: ReactNode }) {
-  // Read config from query cache (populated by init)
-  const { data: configData } = useQuery<ConfigData>({ queryKey: qk.config, enabled: false });
+  const { data: configData } = useQuery<AppConfig>({
+    queryKey: qk.config,
+    queryFn: loadConfig,
+  });
 
   const [selectedModel, setSelectedModelState] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgentState] = useState<string | null>(null);
@@ -54,9 +51,9 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   }, [configData, connectedProviders]);
 
   // Auto-select first agent
-  const { data: agents } = useQuery<Agent[]>({ queryKey: qk.agents, enabled: false });
+  const agents = useAgents();
   useEffect(() => {
-    if (!agents || selectedAgent) return;
+    if (agents.length === 0 || selectedAgent) return;
     const primary = agents.find((a) => a.mode === "primary" && !a.hidden);
     if (primary) setSelectedAgentState(primary.name);
   }, [agents, selectedAgent]);

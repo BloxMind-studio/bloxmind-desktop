@@ -19,7 +19,8 @@ export function useStartOAuth() {
       if (!client) throw new Error("No client");
       const res = await client.provider.oauth.authorize({ providerID, method: methodIndex });
       if (!res.data) return undefined;
-      if (res.data.method === "code") {
+      // Always open the URL — in a Tauri app the sidecar can't open a browser itself
+      if (res.data.url) {
         await openUrl(res.data.url);
       }
       return { method: res.data.method, instructions: res.data.instructions, url: res.data.url };
