@@ -217,16 +217,11 @@ async function fetchServerStateAndPreferences(client: OpencodeClient, queryClien
     queryClient.setQueryData(qk.agents, agentsRes.data);
   }
 
-  let connectedProviders: string[] = [];
-  let providerDefaults: Record<string, string> | undefined;
-
   if (providerRes.data) {
     const providerData = authRes.data
       ? { ...providerRes.data, authMethods: authRes.data }
       : providerRes.data;
     queryClient.setQueryData(qk.providers, providerData);
-    connectedProviders = providerRes.data.connected;
-    providerDefaults = providerRes.data.default as Record<string, string> | undefined;
   }
 
   // Local preferences (Tauri store) → query cache
@@ -234,7 +229,5 @@ async function fetchServerStateAndPreferences(client: OpencodeClient, queryClien
   queryClient.setQueryData(qk.config, {
     lastModel: cfg.lastModel,
     hiddenModels: cfg.hiddenModels,
-    connectedProviders,
-    providerDefaults,
   });
 }

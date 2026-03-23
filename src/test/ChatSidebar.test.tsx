@@ -71,8 +71,6 @@ function seedState(
   qc.setQueryData(qk.config, {
     lastModel: null,
     hiddenModels: [],
-    connectedProviders: [],
-    providerDefaults: {},
   });
 }
 

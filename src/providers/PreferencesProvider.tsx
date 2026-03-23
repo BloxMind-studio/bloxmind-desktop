@@ -2,14 +2,13 @@ import type { Agent } from "@opencode-ai/sdk/v2/client";
 import { useQuery } from "@tanstack/react-query";
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useState } from "react";
 import { patchConfig } from "@/lib/config";
+import { useConnectedProviders } from "@/hooks/useProviders";
 import { qk } from "@/lib/queryKeys";
 import { splitModelKey } from "@/lib/splitModelKey";
 
 interface ConfigData {
   lastModel: string | null;
   hiddenModels: string[];
-  connectedProviders: string[];
-  providerDefaults?: Record<string, string>;
 }
 
 interface PreferencesContextValue {
@@ -38,24 +37,21 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [selectedVariant, setSelectedVariantState] = useState<string | null>(null);
   const [hiddenModels, setHiddenModels] = useState<Set<string>>(new Set());
 
+  const connectedProviders = useConnectedProviders();
+
   // Initialize from config data when it arrives
   useEffect(() => {
     if (!configData) return;
     setHiddenModels(new Set(configData.hiddenModels));
-
-    // Model selection priority
-    const connected = configData.connectedProviders;
-    if (configData.lastModel && connected.includes(splitModelKey(configData.lastModel)[0])) {
-      setSelectedModelState(configData.lastModel);
-    } else if (configData.providerDefaults) {
-      const entry = Object.entries(configData.providerDefaults).find(([pid]) =>
-        connected.includes(pid),
-      );
-      if (entry) {
-        setSelectedModelState(`${entry[0]}/${entry[1]}`);
-      }
-    }
   }, [configData]);
+
+  // Model selection: prefer last used model, fall back to first connected provider's default
+  useEffect(() => {
+    if (!configData || connectedProviders.length === 0) return;
+    if (configData.lastModel && connectedProviders.includes(splitModelKey(configData.lastModel)[0])) {
+      setSelectedModelState(configData.lastModel);
+    }
+  }, [configData, connectedProviders]);
 
   // Auto-select first agent
   const { data: agents } = useQuery<Agent[]>({ queryKey: qk.agents, enabled: false });

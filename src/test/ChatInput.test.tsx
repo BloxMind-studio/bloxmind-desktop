@@ -82,8 +82,6 @@ function seedState(qc: QueryClient, session: Session) {
   qc.setQueryData(qk.config, {
     lastModel: "anthropic/claude-3.5-sonnet",
     hiddenModels: [],
-    connectedProviders: ["anthropic"],
-    providerDefaults: { anthropic: "claude-3.5-sonnet" },
   });
   qc.setQueryData<MessagesCache>(qk.messages(session.id), { messageIds: [], messagesById: {} });
   qc.setQueryData(qk.todos(session.id), []);
