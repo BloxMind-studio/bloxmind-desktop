@@ -1,21 +1,25 @@
+import { LazyStore } from "@tauri-apps/plugin-store";
+
 export interface AppConfig {
   lastModel: string | null;
   hiddenModels: string[];
 }
 
-const STORAGE_KEY = "bloxbot:config";
+const store = new LazyStore("bloxbot-store.json");
+const CONFIG_KEY = "config";
+const DEFAULT_CONFIG: AppConfig = { lastModel: null, hiddenModels: [] };
 
-export function loadConfig(): AppConfig {
+export async function loadConfig(): Promise<AppConfig> {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
+    const raw = await store.get<AppConfig>(CONFIG_KEY);
+    if (raw) return raw;
   } catch {
     // Corrupted data, start fresh
   }
-  return { lastModel: null, hiddenModels: [] };
+  return DEFAULT_CONFIG;
 }
 
-export function patchConfig(patch: Partial<AppConfig>): void {
-  const current = loadConfig();
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...current, ...patch }));
+export async function patchConfig(patch: Partial<AppConfig>): Promise<void> {
+  const current = await loadConfig();
+  await store.set(CONFIG_KEY, { ...current, ...patch });
 }

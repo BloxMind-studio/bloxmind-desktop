@@ -81,11 +81,6 @@ describe("sseDispatch", () => {
       expect(sessions).toHaveLength(1);
     });
 
-    it("ignores event when info is missing", () => {
-      qc.setQueryData(qk.sessions, [makeSession("s1", "One")]);
-      dispatch(qc, { type: "session.created", properties: {} });
-      expect(qc.getQueryData<Session[]>(qk.sessions)).toHaveLength(1);
-    });
   });
 
   describe("session.updated", () => {

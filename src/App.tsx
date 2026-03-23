@@ -2,19 +2,15 @@ import { useRef } from "react";
 
 import Chat from "@/components/Chat";
 import ErrorBoundary from "@/components/ErrorBoundary";
-import UpdateBanner from "@/components/UpdateBanner";
 import { Toaster } from "@/components/ui/sonner";
 import { useUpdater } from "@/hooks/useUpdater";
-import { initTelemetry } from "@/lib/telemetry";
 import { ActiveSessionProvider } from "@/providers/ActiveSessionProvider";
 import { OpenCodeClientProvider } from "@/providers/OpenCodeClientProvider";
 import { PreferencesProvider } from "@/providers/PreferencesProvider";
 import { QueryProvider } from "@/providers/QueryProvider";
 
-initTelemetry();
-
 function AppInner() {
-  const { status, pendingUpdate, installUpdate, dismissUpdate } = useUpdater();
+  useUpdater();
 
   return (
     <main className="flex h-full flex-col overflow-hidden">
@@ -22,14 +18,6 @@ function AppInner() {
         className="flex h-9 shrink-0 items-center justify-end border-b bg-card px-3"
         data-tauri-drag-region
       />
-      {pendingUpdate && (
-        <UpdateBanner
-          status={status}
-          update={pendingUpdate}
-          onInstall={installUpdate}
-          onDismiss={dismissUpdate}
-        />
-      )}
       <ErrorBoundary>
         <Chat />
       </ErrorBoundary>

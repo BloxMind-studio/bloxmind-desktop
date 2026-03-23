@@ -192,7 +192,6 @@ function seedReadyState(
   queryClient.setQueryData(qk.config, {
     lastModel: connectedProviders.length > 0 ? "anthropic/claude-3.5-sonnet" : null,
     hiddenModels: [],
-    sessionModels: {},
     connectedProviders,
     providerDefaults: { anthropic: "claude-3.5-sonnet" },
   });

@@ -1,7 +1,8 @@
+import { usePostHog } from "@posthog/react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { qk } from "@/lib/queryKeys";
-import { capture } from "@/lib/telemetry";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 
 export function useStartOAuth() {
@@ -19,7 +20,7 @@ export function useStartOAuth() {
       const res = await client.provider.oauth.authorize({ providerID, method: methodIndex });
       if (!res.data) return undefined;
       if (res.data.method === "code") {
-        window.open(res.data.url, "_blank");
+        await openUrl(res.data.url);
       }
       return { method: res.data.method, instructions: res.data.instructions, url: res.data.url };
     },
@@ -29,6 +30,7 @@ export function useStartOAuth() {
 export function useCompleteOAuth() {
   const { client } = useOpenCodeClient();
   const queryClient = useQueryClient();
+  const posthog = usePostHog();
 
   return useMutation({
     mutationFn: async ({
@@ -59,7 +61,7 @@ export function useCompleteOAuth() {
       }
 
       if (res.data === true) {
-        capture("provider_connected", { provider: providerID, method: "oauth" });
+        posthog.capture("provider_connected", { provider: providerID, method: "oauth" });
       }
       return res.data === true;
     },

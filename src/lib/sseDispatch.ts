@@ -1,7 +1,5 @@
 import type {
   Event,
-  Message,
-  Part,
   PermissionRequest,
   QuestionRequest,
   Session,
@@ -33,210 +31,172 @@ export function sseDispatch(
 
   switch (event.type) {
     case "session.created": {
-      const session = event.properties.info as Session | undefined;
-      if (session) {
-        queryClient.setQueryData<Session[]>(qk.sessions, (prev) => {
-          if (!prev) return [session];
-          if (prev.some((s) => s.id === session.id)) return prev;
-          return [session, ...prev];
-        });
-      }
+      const { info } = event.properties;
+      queryClient.setQueryData<Session[]>(qk.sessions, (prev) => {
+        if (!prev) return [info];
+        if (prev.some((s) => s.id === info.id)) return prev;
+        return [info, ...prev];
+      });
       break;
     }
     case "session.updated": {
-      const session = event.properties.info as Session | undefined;
-      if (session) {
-        queryClient.setQueryData<Session[]>(qk.sessions, (prev) => {
-          if (!prev) return prev;
-          return prev.map((s) => (s.id === session.id ? session : s));
-        });
-      }
+      const { info } = event.properties;
+      queryClient.setQueryData<Session[]>(qk.sessions, (prev) => {
+        if (!prev) return prev;
+        return prev.map((s) => (s.id === info.id ? info : s));
+      });
       break;
     }
     case "session.deleted": {
-      const session = event.properties.info as Session | undefined;
-      if (session) {
-        queryClient.setQueryData<Session[]>(qk.sessions, (prev) => {
-          if (!prev) return prev;
-          return prev.filter((s) => s.id !== session.id);
-        });
-      }
+      const { info } = event.properties;
+      queryClient.setQueryData<Session[]>(qk.sessions, (prev) => {
+        if (!prev) return prev;
+        return prev.filter((s) => s.id !== info.id);
+      });
       break;
     }
     case "session.status": {
-      const { sessionID, status } = event.properties as {
-        sessionID?: string;
-        status?: SessionStatus;
-      };
-      if (sessionID && status) {
-        queryClient.setQueryData<Record<string, SessionStatus>>(qk.statuses, (prev) => {
-          const prevStatus = prev?.[sessionID];
-          if (prevStatus?.type === status.type) return prev;
-          return { ...prev, [sessionID]: status };
-        });
-      }
+      const { sessionID, status } = event.properties;
+      queryClient.setQueryData<Record<string, SessionStatus>>(qk.statuses, (prev) => {
+        if (prev?.[sessionID]?.type === status.type) return prev;
+        return { ...prev, [sessionID]: status };
+      });
       break;
     }
     case "session.idle": {
-      const { sessionID } = event.properties as { sessionID?: string };
-      if (sessionID) {
-        queryClient.setQueryData<Record<string, SessionStatus>>(qk.statuses, (prev) => {
-          if (prev?.[sessionID]?.type === "idle") return prev;
-          return { ...prev, [sessionID]: { type: "idle" } as SessionStatus };
-        });
-      }
+      const { sessionID } = event.properties;
+      queryClient.setQueryData<Record<string, SessionStatus>>(qk.statuses, (prev) => {
+        if (prev?.[sessionID]?.type === "idle") return prev;
+        return { ...prev, [sessionID]: { type: "idle" } as SessionStatus };
+      });
       break;
     }
     case "message.updated": {
-      const info = event.properties.info as Message;
-      if (info && info.sessionID === currentSessionId) {
-        queryClient.setQueryData<MessagesCache>(qk.messages(currentSessionId), (prev) => {
-          if (!prev)
-            return { messageIds: [info.id], messagesById: { [info.id]: { info, parts: [] } } };
-          const existing = prev.messagesById[info.id];
-          if (existing) {
-            return {
-              ...prev,
-              messagesById: { ...prev.messagesById, [info.id]: { ...existing, info } },
-            };
-          }
+      const { info } = event.properties;
+      if (info.sessionID !== currentSessionId) break;
+      queryClient.setQueryData<MessagesCache>(qk.messages(currentSessionId), (prev) => {
+        if (!prev)
+          return { messageIds: [info.id], messagesById: { [info.id]: { info, parts: [] } } };
+        const existing = prev.messagesById[info.id];
+        if (existing) {
           return {
-            messageIds: [...prev.messageIds, info.id],
-            messagesById: { ...prev.messagesById, [info.id]: { info, parts: [] } },
+            ...prev,
+            messagesById: { ...prev.messagesById, [info.id]: { ...existing, info } },
           };
-        });
-      }
+        }
+        return {
+          messageIds: [...prev.messageIds, info.id],
+          messagesById: { ...prev.messagesById, [info.id]: { info, parts: [] } },
+        };
+      });
       break;
     }
     case "message.part.updated": {
-      const part = event.properties.part as Part;
-      if (part && part.sessionID === currentSessionId) {
-        queryClient.setQueryData<MessagesCache>(qk.messages(currentSessionId), (prev) => {
-          if (!prev) return prev;
-          const msg = prev.messagesById[part.messageID];
-          if (!msg) return prev;
-          const partIdx = msg.parts.findIndex((p) => p.id === part.id);
-          let newParts: Part[];
-          if (partIdx >= 0) {
-            newParts = [...msg.parts];
-            newParts[partIdx] = part;
-          } else {
-            newParts = [...msg.parts, part];
-          }
-          return {
-            ...prev,
-            messagesById: {
-              ...prev.messagesById,
-              [part.messageID]: { ...msg, parts: newParts },
-            },
-          };
-        });
-      }
+      const { part } = event.properties;
+      if (part.sessionID !== currentSessionId) break;
+      queryClient.setQueryData<MessagesCache>(qk.messages(currentSessionId), (prev) => {
+        if (!prev) return prev;
+        const msg = prev.messagesById[part.messageID];
+        if (!msg) return prev;
+        const partIdx = msg.parts.findIndex((p) => p.id === part.id);
+        const newParts =
+          partIdx >= 0
+            ? msg.parts.map((p, i) => (i === partIdx ? part : p))
+            : [...msg.parts, part];
+        return {
+          ...prev,
+          messagesById: {
+            ...prev.messagesById,
+            [part.messageID]: { ...msg, parts: newParts },
+          },
+        };
+      });
       break;
     }
     case "message.part.delta": {
-      const { messageID, partID, field, delta } = event.properties as {
-        messageID?: string;
-        partID?: string;
-        field?: string;
-        delta?: string;
-      };
-      if (messageID && partID && currentSessionId) {
-        queryClient.setQueryData<MessagesCache>(qk.messages(currentSessionId), (prev) => {
-          if (!prev) return prev;
-          const msg = prev.messagesById[messageID];
-          if (!msg) return prev;
-          const partIdx = msg.parts.findIndex((p) => p.id === partID);
-          if (partIdx < 0) return prev;
-          const part = { ...msg.parts[partIdx] };
-          const key = field || "text";
-          if (key in part && typeof (part as Record<string, unknown>)[key] === "string") {
-            (part as Record<string, unknown>)[key] =
-              ((part as Record<string, unknown>)[key] as string) + (delta as string);
-          }
-          const newParts = [...msg.parts];
-          newParts[partIdx] = part as Part;
-          return {
-            ...prev,
-            messagesById: { ...prev.messagesById, [messageID]: { ...msg, parts: newParts } },
-          };
-        });
-      }
+      const { messageID, partID, field, delta } = event.properties;
+      if (!currentSessionId) break;
+      queryClient.setQueryData<MessagesCache>(qk.messages(currentSessionId), (prev) => {
+        if (!prev) return prev;
+        const msg = prev.messagesById[messageID];
+        if (!msg) return prev;
+        const partIdx = msg.parts.findIndex((p) => p.id === partID);
+        if (partIdx < 0) return prev;
+        const part = { ...msg.parts[partIdx] };
+        const key = field || "text";
+        if (key in part && typeof (part as Record<string, unknown>)[key] === "string") {
+          (part as Record<string, unknown>)[key] =
+            ((part as Record<string, unknown>)[key] as string) + delta;
+        }
+        const newParts = msg.parts.map((p, i) => (i === partIdx ? part : p));
+        return {
+          ...prev,
+          messagesById: { ...prev.messagesById, [messageID]: { ...msg, parts: newParts } },
+        };
+      });
       break;
     }
     case "message.removed": {
-      const { sessionID, messageID } = event.properties as {
-        sessionID?: string;
-        messageID?: string;
-      };
-      if (sessionID === currentSessionId && messageID) {
-        queryClient.setQueryData<MessagesCache>(qk.messages(currentSessionId), (prev) => {
-          if (!prev) return prev;
-          const { [messageID]: _removed, ...rest } = prev.messagesById;
-          return {
-            messageIds: prev.messageIds.filter((id) => id !== messageID),
-            messagesById: rest,
-          };
-        });
-      }
+      const { sessionID, messageID } = event.properties;
+      if (sessionID !== currentSessionId) break;
+      queryClient.setQueryData<MessagesCache>(qk.messages(currentSessionId), (prev) => {
+        if (!prev) return prev;
+        const { [messageID]: _removed, ...rest } = prev.messagesById;
+        return {
+          messageIds: prev.messageIds.filter((id) => id !== messageID),
+          messagesById: rest,
+        };
+      });
       break;
     }
     case "message.part.removed": {
-      const { sessionID, messageID, partID } = event.properties as {
-        sessionID?: string;
-        messageID?: string;
-        partID?: string;
-      };
-      if (sessionID === currentSessionId && messageID) {
-        queryClient.setQueryData<MessagesCache>(qk.messages(currentSessionId), (prev) => {
-          if (!prev) return prev;
-          const msg = prev.messagesById[messageID];
-          if (!msg) return prev;
-          return {
-            ...prev,
-            messagesById: {
-              ...prev.messagesById,
-              [messageID]: { ...msg, parts: msg.parts.filter((p) => p.id !== partID) },
-            },
-          };
-        });
-      }
+      const { sessionID, messageID, partID } = event.properties;
+      if (sessionID !== currentSessionId) break;
+      queryClient.setQueryData<MessagesCache>(qk.messages(currentSessionId), (prev) => {
+        if (!prev) return prev;
+        const msg = prev.messagesById[messageID];
+        if (!msg) return prev;
+        return {
+          ...prev,
+          messagesById: {
+            ...prev.messagesById,
+            [messageID]: { ...msg, parts: msg.parts.filter((p) => p.id !== partID) },
+          },
+        };
+      });
       break;
     }
     case "todo.updated": {
-      const { sessionID, todos: newTodos } = event.properties as {
-        sessionID?: string;
-        todos?: Todo[];
-      };
-      if (sessionID === currentSessionId && Array.isArray(newTodos)) {
-        queryClient.setQueryData<Todo[]>(qk.todos(currentSessionId), newTodos);
+      const { sessionID, todos } = event.properties;
+      if (sessionID === currentSessionId) {
+        queryClient.setQueryData<Todo[]>(qk.todos(currentSessionId), todos);
       }
       break;
     }
     case "question.asked": {
-      const qr = event.properties as unknown as QuestionRequest;
-      if (qr && qr.sessionID === currentSessionId) {
-        queryClient.setQueryData<QuestionRequest | null>(qk.questions, qr);
+      const props = event.properties;
+      if (props.sessionID === currentSessionId) {
+        queryClient.setQueryData<QuestionRequest | null>(qk.questions, props);
       }
       break;
     }
     case "question.replied":
     case "question.rejected": {
-      const { sessionID } = event.properties as { sessionID?: string };
+      const { sessionID } = event.properties;
       if (sessionID === currentSessionId) {
         queryClient.setQueryData<QuestionRequest | null>(qk.questions, null);
       }
       break;
     }
     case "permission.asked": {
-      const pr = event.properties as unknown as PermissionRequest;
-      if (pr && pr.sessionID === currentSessionId) {
-        queryClient.setQueryData<PermissionRequest | null>(qk.permissions, pr);
+      const props = event.properties;
+      if (props.sessionID === currentSessionId) {
+        queryClient.setQueryData<PermissionRequest | null>(qk.permissions, props);
       }
       break;
     }
     case "permission.replied": {
-      const { sessionID } = event.properties as { sessionID?: string };
+      const { sessionID } = event.properties;
       if (sessionID === currentSessionId) {
         queryClient.setQueryData<PermissionRequest | null>(qk.permissions, null);
       }

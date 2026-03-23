@@ -80,11 +80,8 @@ function seedState(qc: QueryClient, session: Session) {
     default: { anthropic: "claude-3.5-sonnet" },
   });
   qc.setQueryData(qk.config, {
-    hasLaunched: true,
     lastModel: "anthropic/claude-3.5-sonnet",
     hiddenModels: [],
-    ownSessionIds: new Set([session.id]),
-    sessionModels: {},
     connectedProviders: ["anthropic"],
     providerDefaults: { anthropic: "claude-3.5-sonnet" },
   });

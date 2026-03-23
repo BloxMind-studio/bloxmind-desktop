@@ -4,13 +4,10 @@ import { createContext, type ReactNode, useCallback, useContext, useEffect, useS
 import { patchConfig } from "@/lib/config";
 import { qk } from "@/lib/queryKeys";
 import { splitModelKey } from "@/lib/splitModelKey";
-import { persistSessionModels } from "@/lib/tauriStore";
-import { useActiveSession } from "@/providers/ActiveSessionProvider";
 
 interface ConfigData {
   lastModel: string | null;
   hiddenModels: string[];
-  sessionModels: Record<string, string>;
   connectedProviders: string[];
   providerDefaults?: Record<string, string>;
 }
@@ -20,13 +17,10 @@ interface PreferencesContextValue {
   selectedAgent: string | null;
   selectedVariant: string | null;
   hiddenModels: Set<string>;
-  sessionModels: Record<string, string>;
   setSelectedModel: (modelID: string) => void;
   setSelectedAgent: (name: string) => void;
   setSelectedVariant: (variant: string | null) => void;
   toggleModelVisibility: (modelKey: string) => void;
-  setSessionModel: (sessionId: string, modelId: string) => void;
-  removeSessionModel: (sessionId: string) => void;
 }
 
 export const PreferencesContext = createContext<PreferencesContextValue>(null!);
@@ -36,8 +30,6 @@ export function usePreferences() {
 }
 
 export function PreferencesProvider({ children }: { children: ReactNode }) {
-  const { activeSessionId } = useActiveSession();
-
   // Read config from query cache (populated by init)
   const { data: configData } = useQuery<ConfigData>({ queryKey: qk.config, enabled: false });
 
@@ -45,13 +37,11 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [selectedAgent, setSelectedAgentState] = useState<string | null>(null);
   const [selectedVariant, setSelectedVariantState] = useState<string | null>(null);
   const [hiddenModels, setHiddenModels] = useState<Set<string>>(new Set());
-  const [sessionModels, setSessionModels] = useState<Record<string, string>>({});
 
   // Initialize from config data when it arrives
   useEffect(() => {
     if (!configData) return;
     setHiddenModels(new Set(configData.hiddenModels));
-    setSessionModels(configData.sessionModels);
 
     // Model selection priority
     const connected = configData.connectedProviders;
@@ -75,27 +65,10 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     if (primary) setSelectedAgentState(primary.name);
   }, [agents, selectedAgent]);
 
-  // Restore per-session model on session change
-  useEffect(() => {
-    if (activeSessionId && sessionModels[activeSessionId]) {
-      setSelectedModelState(sessionModels[activeSessionId]);
-    }
-  }, [activeSessionId, sessionModels]);
-
-  const setSelectedModel = useCallback(
-    (modelID: string) => {
-      setSelectedModelState(modelID);
-      patchConfig({ lastModel: modelID });
-      if (activeSessionId) {
-        setSessionModels((prev) => {
-          const next = { ...prev, [activeSessionId]: modelID };
-          persistSessionModels(next);
-          return next;
-        });
-      }
-    },
-    [activeSessionId],
-  );
+  const setSelectedModel = useCallback((modelID: string) => {
+    setSelectedModelState(modelID);
+    patchConfig({ lastModel: modelID }).catch(() => {});
+  }, []);
 
   const setSelectedAgent = useCallback((name: string) => {
     setSelectedAgentState(name);
@@ -113,24 +86,8 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       } else {
         next.add(modelKey);
       }
-      patchConfig({ hiddenModels: [...next] });
+      patchConfig({ hiddenModels: [...next] }).catch(() => {});
       return next;
-    });
-  }, []);
-
-  const setSessionModel = useCallback((sessionId: string, modelId: string) => {
-    setSessionModels((prev) => {
-      const next = { ...prev, [sessionId]: modelId };
-      persistSessionModels(next);
-      return next;
-    });
-  }, []);
-
-  const removeSessionModel = useCallback((sessionId: string) => {
-    setSessionModels((prev) => {
-      const { [sessionId]: _removed, ...rest } = prev;
-      persistSessionModels(rest);
-      return rest;
     });
   }, []);
 
@@ -139,13 +96,10 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     selectedAgent,
     selectedVariant,
     hiddenModels,
-    sessionModels,
     setSelectedModel,
     setSelectedAgent,
     setSelectedVariant,
     toggleModelVisibility,
-    setSessionModel,
-    removeSessionModel,
   };
 
   return <PreferencesContext.Provider value={value}>{children}</PreferencesContext.Provider>;

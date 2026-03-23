@@ -26,6 +26,7 @@ pub const LOOPBACK: &str = "127.0.0.1";
 
 pub struct OpenCodeState {
     pub port: u16,
+    pub workspace: String,
     pub(crate) child: Option<CommandChild>,
 }
 
@@ -33,6 +34,7 @@ impl Default for OpenCodeState {
     fn default() -> Self {
         Self {
             port: 0,
+            workspace: String::new(),
             child: None,
         }
     }
@@ -158,29 +160,19 @@ pub fn cleanup_stale_processes() {
     }
 }
 
-// ── Port injection ──────────────────────────────────────────────────────
+// ── Tauri command ───────────────────────────────────────────────────────
 
-/// Navigate the webview to include port and workspace as query params.
-/// This survives page reloads (unlike window.eval-based globals).
-fn inject_into_webview(app: &AppHandle, port: u16, workspace: &str) {
-    use tauri::Manager;
-    if let Some(win) = app.get_webview_window("main") {
-        match win.url() {
-            Ok(mut url) => {
-                url.query_pairs_mut()
-                    .append_pair("port", &port.to_string())
-                    .append_pair("workspace", workspace);
-                if let Err(e) = win.navigate(url.clone()) {
-                    log::error!("Failed to navigate webview: {e}");
-                } else {
-                    log::info!("Navigated webview to {url}");
-                }
-            }
-            Err(e) => {
-                log::error!("Failed to get webview URL: {e}");
-            }
-        }
+/// Returns the OpenCode server port and workspace directory.
+/// Called by the frontend to create the SDK client.
+#[tauri::command]
+pub async fn get_opencode_info(
+    state: tauri::State<'_, SharedOpenCodeState>,
+) -> Result<(u16, String), String> {
+    let s = state.lock().await;
+    if s.port == 0 {
+        return Err("OpenCode is not running".to_string());
     }
+    Ok((s.port, s.workspace.clone()))
 }
 
 // ── Core lifecycle ──────────────────────────────────────────────────────
@@ -202,8 +194,14 @@ pub async fn start_opencode_server(
     log::info!("Node.js bin: {}", nodejs_bin_dir.display());
 
     let port = do_start(&state, &app, &nodejs_bin_dir).await?;
+
+    // Store workspace in state so the frontend can retrieve it via command
     let workspace = crate::paths::workspace_dir()?;
-    inject_into_webview(&app, port, &workspace.to_string_lossy());
+    {
+        let mut s = state.lock().await;
+        s.workspace = workspace.to_string_lossy().to_string();
+    }
+
     Ok(port)
 }
 

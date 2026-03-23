@@ -1,13 +1,12 @@
+import { invoke } from "@tauri-apps/api/core";
 import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk/v2/client";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import LoadingScreen from "@/components/LoadingScreen";
 import { loadConfig } from "@/lib/config";
-import { getOpenCodePort, getWorkspaceDir } from "@/lib/env";
 import { qk } from "@/lib/queryKeys";
 import { sseDispatch } from "@/lib/sseDispatch";
-import { loadSessionModels } from "@/lib/tauriStore";
 
 const SSE_RECONNECT_DELAY = 3000;
 const SSE_FAILURE_THRESHOLD = 3;
@@ -21,14 +20,6 @@ interface OpenCodeClientContextValue {
   ready: boolean;
   initError: string | null;
 }
-
-const initialPort = getOpenCodePort() ?? 0;
-const initialClient = initialPort
-  ? createOpencodeClient({
-      baseUrl: `http://127.0.0.1:${initialPort}`,
-      directory: getWorkspaceDir(),
-    })
-  : null;
 
 export const OpenCodeClientContext = createContext<OpenCodeClientContextValue>({
   client: null,
@@ -51,37 +42,45 @@ export function OpenCodeClientProvider({
 }) {
   const queryClient = useQueryClient();
 
-  const [status, setStatus] = useState<AppStatus>(initialClient ? "waiting" : "error");
-  const [port] = useState(initialPort);
-  const [client] = useState<OpencodeClient | null>(initialClient);
+  const [status, setStatus] = useState<AppStatus>("waiting");
+  const [port, setPort] = useState(0);
+  const [client, setClient] = useState<OpencodeClient | null>(null);
   const [ready, setReady] = useState(false);
-  const [initError, setInitError] = useState<string | null>(
-    initialClient ? null : "No port provided — OpenCode may not have started.",
-  );
+  const [initError, setInitError] = useState<string | null>(null);
 
   const sseAbortRef = useRef<AbortController | null>(null);
 
-  // ── Fetch server state + load local preferences into the query cache ─
+  // ── Get port from Rust, create client, fetch server state ────────────
   useEffect(() => {
-    if (!client || ready) return;
+    if (ready) return;
 
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout>;
 
-    const attempt = () => {
-      fetchServerStateAndPreferences(client, queryClient)
-        .then(() => {
-          if (cancelled) return;
-          setReady(true);
-          setStatus("ready");
-          setInitError(null);
-        })
-        .catch((err) => {
-          if (cancelled) return;
-          console.error("Failed to fetch initial state, retrying in 3s:", err);
-          setInitError(String(err));
-          retryTimer = setTimeout(attempt, 3000);
+    const attempt = async () => {
+      try {
+        const [ocPort, workspace] = await invoke<[number, string]>("get_opencode_info");
+        if (cancelled) return;
+
+        const newClient = createOpencodeClient({
+          baseUrl: `http://127.0.0.1:${ocPort}`,
+          directory: workspace,
         });
+
+        await fetchServerStateAndPreferences(newClient, queryClient);
+        if (cancelled) return;
+
+        setPort(ocPort);
+        setClient(newClient);
+        setReady(true);
+        setStatus("ready");
+        setInitError(null);
+      } catch (err) {
+        if (cancelled) return;
+        console.error("Failed to initialize, retrying in 3s:", err);
+        setInitError(String(err));
+        retryTimer = setTimeout(attempt, 3000);
+      }
     };
     attempt();
 
@@ -89,7 +88,7 @@ export function OpenCodeClientProvider({
       cancelled = true;
       clearTimeout(retryTimer);
     };
-  }, [client, ready, queryClient]);
+  }, [ready, queryClient]);
 
   // ── SSE subscription ────────────────────────────────────────────────
   useEffect(() => {
@@ -230,12 +229,11 @@ async function fetchServerStateAndPreferences(client: OpencodeClient, queryClien
     providerDefaults = providerRes.data.default as Record<string, string> | undefined;
   }
 
-  // Local preferences (localStorage) → query cache
-  const cfg = loadConfig();
+  // Local preferences (Tauri store) → query cache
+  const cfg = await loadConfig();
   queryClient.setQueryData(qk.config, {
     lastModel: cfg.lastModel,
     hiddenModels: cfg.hiddenModels,
-    sessionModels: loadSessionModels(),
     connectedProviders,
     providerDefaults,
   });

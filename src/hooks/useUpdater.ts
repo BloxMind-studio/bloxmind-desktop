@@ -1,7 +1,8 @@
 import { getVersion } from "@tauri-apps/api/app";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check, type Update } from "@tauri-apps/plugin-updater";
-import { useEffect, useState } from "react";
+import { useEffect, useRef } from "react";
+import { toast } from "sonner";
 
 // ── Semver helpers ──────────────────────────────────────────────────────
 
@@ -28,29 +29,8 @@ function isPatchOnly(current: SemVer, next: SemVer): boolean {
 
 // ── Hook ────────────────────────────────────────────────────────────────
 
-export interface UpdateInfo {
-  version: string;
-  body?: string;
-  /** True when the update is a patch bump and will auto-install. */
-  isPatch: boolean;
-}
-
-export type UpdaterStatus = "idle" | "checking" | "downloading" | "prompting";
-
-interface UseUpdaterReturn {
-  status: UpdaterStatus;
-  /** Non-null when a minor/major update is available and waiting for user action. */
-  pendingUpdate: UpdateInfo | null;
-  /** User accepted  - download + install + relaunch. */
-  installUpdate: () => Promise<void>;
-  /** User dismissed the prompt. */
-  dismissUpdate: () => void;
-}
-
-export function useUpdater(): UseUpdaterReturn {
-  const [status, setStatus] = useState<UpdaterStatus>("idle");
-  const [pendingUpdate, setPendingUpdate] = useState<UpdateInfo | null>(null);
-  const [updateHandle, setUpdateHandle] = useState<Update | null>(null);
+export function useUpdater(): void {
+  const updateRef = useRef<Update | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -60,44 +40,51 @@ export function useUpdater(): UseUpdaterReturn {
       await new Promise((r) => setTimeout(r, 3000));
       if (cancelled) return;
 
-      setStatus("checking");
       try {
         const update = await check();
-        if (cancelled || !update) {
-          setStatus("idle");
-          return;
-        }
+        if (cancelled || !update) return;
+
+        updateRef.current = update;
 
         const currentVersion = await getVersion();
         const current = parseSemver(currentVersion);
         const next = parseSemver(update.version);
         const patch = current && next ? isPatchOnly(current, next) : false;
 
-        const info: UpdateInfo = {
-          version: update.version,
-          body: update.body ?? undefined,
-          isPatch: patch,
-        };
-
         if (patch) {
-          // Patch update  - auto-install silently.
+          // Patch update — auto-install silently.
           console.debug(
             `[updater] Auto-installing patch update ${currentVersion} → ${update.version}`,
           );
-          setStatus("downloading");
           await update.downloadAndInstall();
-          // Relaunch after install.
           await relaunch();
         } else {
-          // Minor/major  - show prompt to the user.
+          // Minor/major — show persistent toast requiring manual action.
           console.debug(`[updater] Prompting for update ${currentVersion} → ${update.version}`);
-          setUpdateHandle(update);
-          setPendingUpdate(info);
-          setStatus("prompting");
+
+          toast(`BloxBot ${update.version} is available`, {
+            description: update.body ?? "A new version is ready to install.",
+            duration: Number.POSITIVE_INFINITY,
+            action: {
+              label: "Install & Restart",
+              onClick: async () => {
+                const toastId = toast.loading("Installing update...");
+                try {
+                  await update.downloadAndInstall();
+                  await relaunch();
+                } catch (err) {
+                  console.error("[updater] Failed to install update:", err);
+                  toast.dismiss(toastId);
+                  toast.error("Update failed", {
+                    description: err instanceof Error ? err.message : "Installation failed",
+                  });
+                }
+              },
+            },
+          });
         }
       } catch (err) {
         console.error("[updater] Failed to check for updates:", err);
-        setStatus("idle");
       }
     }
 
@@ -106,24 +93,4 @@ export function useUpdater(): UseUpdaterReturn {
       cancelled = true;
     };
   }, []);
-
-  async function installUpdate() {
-    if (!updateHandle) return;
-    try {
-      setStatus("downloading");
-      await updateHandle.downloadAndInstall();
-      await relaunch();
-    } catch (err) {
-      console.error("[updater] Failed to install update:", err);
-      setStatus("idle");
-    }
-  }
-
-  function dismissUpdate() {
-    setPendingUpdate(null);
-    setUpdateHandle(null);
-    setStatus("idle");
-  }
-
-  return { status, pendingUpdate, installUpdate, dismissUpdate };
 }

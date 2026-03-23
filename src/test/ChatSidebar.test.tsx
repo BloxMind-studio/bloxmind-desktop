@@ -60,21 +60,17 @@ function createQueryClient() {
 
 function seedState(
   qc: QueryClient,
-  opts: { sessions?: Session[]; ownSessionIds?: Set<string> } = {},
+  opts: { sessions?: Session[] } = {},
 ) {
   const sessions = opts.sessions ?? [];
-  const ownSessionIds = opts.ownSessionIds ?? new Set(sessions.map((s) => s.id));
 
   qc.setQueryData(qk.sessions, sessions);
   qc.setQueryData(qk.statuses, {});
   qc.setQueryData(qk.agents, []);
   qc.setQueryData(qk.providers, { all: [], connected: [], default: {} });
   qc.setQueryData(qk.config, {
-    hasLaunched: true,
     lastModel: null,
     hiddenModels: [],
-    ownSessionIds,
-    sessionModels: {},
     connectedProviders: [],
     providerDefaults: {},
   });

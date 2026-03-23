@@ -1,7 +1,7 @@
+import { usePostHog } from "@posthog/react";
 import { useMutation } from "@tanstack/react-query";
 
 import { splitModelKey } from "@/lib/splitModelKey";
-import { capture } from "@/lib/telemetry";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
@@ -15,6 +15,7 @@ export function useSendMessage() {
   const { client } = useOpenCodeClient();
   const { activeSessionId } = useActiveSession();
   const { selectedModel, selectedAgent, selectedVariant } = usePreferences();
+  const posthog = usePostHog();
 
   return useMutation({
     mutationFn: async ({ text, images }: SendMessageInput) => {
@@ -42,7 +43,7 @@ export function useSendMessage() {
       if (selectedVariant) opts.variant = selectedVariant;
 
       await client.session.promptAsync(opts as Parameters<typeof client.session.promptAsync>[0]);
-      capture("message_sent", {
+      posthog.capture("message_sent", {
         model: selectedModel ?? undefined,
         agent: selectedAgent ?? undefined,
       });

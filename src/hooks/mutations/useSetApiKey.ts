@@ -1,12 +1,13 @@
+import { usePostHog } from "@posthog/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { qk } from "@/lib/queryKeys";
-import { capture } from "@/lib/telemetry";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 
 export function useSetApiKey() {
   const { client } = useOpenCodeClient();
   const queryClient = useQueryClient();
+  const posthog = usePostHog();
 
   return useMutation({
     mutationFn: async ({ providerID, key }: { providerID: string; key: string }) => {
@@ -23,7 +24,7 @@ export function useSetApiKey() {
         const merged = authRes.data ? { ...provRes.data, authMethods: authRes.data } : provRes.data;
         queryClient.setQueryData(qk.providers, merged);
       }
-      capture("provider_connected", { provider: providerID, method: "api_key" });
+      posthog.capture("provider_connected", { provider: providerID, method: "api_key" });
     },
   });
 }
@@ -31,6 +32,7 @@ export function useSetApiKey() {
 export function useDisconnectProvider() {
   const { client } = useOpenCodeClient();
   const queryClient = useQueryClient();
+  const posthog = usePostHog();
 
   return useMutation({
     mutationFn: async (providerID: string) => {
@@ -46,7 +48,7 @@ export function useDisconnectProvider() {
         const merged = authRes.data ? { ...provRes.data, authMethods: authRes.data } : provRes.data;
         queryClient.setQueryData(qk.providers, merged);
       }
-      capture("provider_disconnected", { provider: providerID });
+      posthog.capture("provider_disconnected", { provider: providerID });
       return providerID;
     },
   });
