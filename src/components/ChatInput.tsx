@@ -608,12 +608,7 @@ function ChatInput() {
               </div>
               <div className="flex-1 overflow-y-auto p-1">
                 {modelsByProvider.map(([id, group]) => renderProviderGroup(id, group))}
-                {connectedProviders.length === 0 && (
-                  <div className="px-2 py-3 text-center text-xs text-muted-foreground">
-                    No providers connected
-                  </div>
-                )}
-                {connectedProviders.length > 0 && modelsByProvider.length === 0 && (
+                {modelsByProvider.length === 0 && (
                   <div className="px-2 py-3 text-center text-xs text-muted-foreground">
                     No models matching "{modelSearch}"
                   </div>

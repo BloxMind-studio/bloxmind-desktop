@@ -5,7 +5,6 @@ import ChatMessages from "@/components/ChatMessages";
 import ChatSidebar from "@/components/ChatSidebar";
 import LoadingScreen from "@/components/LoadingScreen";
 import { useCreateSession } from "@/hooks/mutations/useCreateSession";
-import { useConnectedProviders } from "@/hooks/useProviders";
 import { useIsBusy } from "@/hooks/useSessionStatuses";
 import { useSessions } from "@/hooks/useSessions";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
@@ -16,7 +15,6 @@ const Settings = lazy(() => import("@/components/Settings"));
 function Chat() {
   const { ready, initError } = useOpenCodeClient();
   const { activeSessionId } = useActiveSession();
-  const connectedProviders = useConnectedProviders();
   const isBusy = useIsBusy(activeSessionId);
   const createSession = useCreateSession();
   const { data: allSessions } = useSessions();
@@ -51,64 +49,32 @@ function Chat() {
         ) : !activeSessionId ? (
           <div className="flex flex-1 flex-col items-center justify-center px-6">
             <div className="animate-fade-in-up text-center">
-              {connectedProviders.length === 0 ? (
-                <>
-                  <h2 className="font-serif text-2xl italic text-foreground">
-                    Connect a provider to get started
-                  </h2>
-                  <p className="mt-2 max-w-sm text-xs text-muted-foreground">
-                    You need at least one AI provider connected before you can start chatting.
-                  </p>
-                  <button
-                    onClick={() => setShowSettings(true)}
-                    className="mt-5 inline-flex h-9 items-center gap-2 rounded-lg bg-foreground px-5 text-sm font-medium text-background transition-opacity hover:opacity-90"
-                  >
-                    <svg
-                      width="13"
-                      height="13"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <line x1="12" y1="5" x2="12" y2="19" />
-                      <line x1="5" y1="12" x2="19" y2="12" />
-                    </svg>
-                    Connect Provider
-                  </button>
-                </>
-              ) : (
-                <>
-                  <h2 className="font-serif text-2xl italic text-foreground">
-                    What would you like to build?
-                  </h2>
-                  <p className="mt-2 max-w-md text-xs text-muted-foreground">
-                    Create a new session or pick one from the sidebar to continue where you left
-                    off.
-                  </p>
-                  <button
-                    onClick={() => createSession.mutate()}
-                    className="mt-5 inline-flex h-9 items-center gap-2 rounded-lg bg-foreground px-5 text-sm font-medium text-background transition-opacity hover:opacity-90"
-                  >
-                    <svg
-                      width="13"
-                      height="13"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <line x1="12" y1="5" x2="12" y2="19" />
-                      <line x1="5" y1="12" x2="19" y2="12" />
-                    </svg>
-                    New Session
-                  </button>
-                </>
-              )}
+              <h2 className="font-serif text-2xl italic text-foreground">
+                What would you like to build?
+              </h2>
+              <p className="mt-2 max-w-md text-xs text-muted-foreground">
+                Create a new session or pick one from the sidebar to continue where you left
+                off.
+              </p>
+              <button
+                onClick={() => createSession.mutate()}
+                className="mt-5 inline-flex h-9 items-center gap-2 rounded-lg bg-foreground px-5 text-sm font-medium text-background transition-opacity hover:opacity-90"
+              >
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+                New Session
+              </button>
             </div>
           </div>
         ) : (

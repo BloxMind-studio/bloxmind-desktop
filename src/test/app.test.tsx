@@ -167,10 +167,9 @@ function createQueryClient() {
 /** Seed the query cache with the minimum state the app needs to be "ready" */
 function seedReadyState(
   queryClient: QueryClient,
-  opts: { sessions?: Session[]; connectedProviders?: string[] } = {},
+  opts: { sessions?: Session[] } = {},
 ) {
   const sessions = opts.sessions ?? [];
-  const connectedProviders = opts.connectedProviders ?? ["anthropic"];
 
   queryClient.setQueryData(qk.sessions, sessions);
   queryClient.setQueryData(qk.statuses, {});
@@ -186,11 +185,11 @@ function seedReadyState(
         },
       },
     ],
-    connected: connectedProviders,
+    connected: ["anthropic"],
     default: { anthropic: "claude-3.5-sonnet" },
   });
   queryClient.setQueryData(qk.config, {
-    lastModel: connectedProviders.length > 0 ? "anthropic/claude-3.5-sonnet" : null,
+    lastModel: "anthropic/claude-3.5-sonnet",
     hiddenModels: [],
   });
 }
@@ -208,17 +207,6 @@ afterEach(() => {
 // ── Tests ──────────────────────────────────────────────────────────────────
 
 describe("User journeys", () => {
-  it("shows 'Connect a provider' when no providers are connected", async () => {
-    const client = createClient();
-    const queryClient = createQueryClient();
-    seedReadyState(queryClient, { connectedProviders: [] });
-
-    render(<TestApp client={client} queryClient={queryClient} />);
-
-    expect(await screen.findByText("Connect a provider to get started")).toBeInTheDocument();
-    expect(screen.getByText("Connect Provider")).toBeInTheDocument();
-  });
-
   it("creates a session and shows the chat interface", async () => {
     const newSession = makeSession("s1", "New Session");
     const client = createClient({
