@@ -106,13 +106,6 @@ pub fn workspace_dir() -> Result<PathBuf, String> {
     Ok(workspace)
 }
 
-// ── Tauri commands ───────────────────────────────────────────────────────
-
-#[tauri::command]
-pub fn get_workspace_dir() -> Result<String, String> {
-    workspace_dir().map(|p| p.to_string_lossy().to_string())
-}
-
 // ── Tests ──────────────────────────────────────────────────────────────
 
 #[cfg(test)]

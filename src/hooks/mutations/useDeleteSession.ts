@@ -4,13 +4,11 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { qk } from "@/lib/queryKeys";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
-import { usePreferences } from "@/providers/PreferencesProvider";
 
 export function useDeleteSession() {
   const { client } = useOpenCodeClient();
   const queryClient = useQueryClient();
   const { activeSessionId, clearSession } = useActiveSession();
-  const { removeOwnSessionId, removeSessionModel } = usePreferences();
 
   return useMutation({
     mutationFn: async (sessionID: string) => {
@@ -19,9 +17,6 @@ export function useDeleteSession() {
       return sessionID;
     },
     onSuccess: (sessionID: string) => {
-      removeOwnSessionId(sessionID);
-      removeSessionModel(sessionID);
-
       queryClient.setQueryData<Session[]>(qk.sessions, (prev) => {
         if (!prev) return prev;
         return prev.filter((s) => s.id !== sessionID);

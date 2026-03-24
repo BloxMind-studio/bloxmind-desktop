@@ -4,7 +4,6 @@ import { check } from "@tauri-apps/plugin-updater";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useCompleteOAuth, useStartOAuth } from "@/hooks/mutations/useOAuth";
-import { useRestartMcp } from "@/hooks/mutations/useRestartMcp";
 import { useDisconnectProvider, useSetApiKey } from "@/hooks/mutations/useSetApiKey";
 import {
   useAllModels,
@@ -12,7 +11,6 @@ import {
   useAuthMethods,
   useConnectedProviders,
 } from "@/hooks/useProviders";
-import { useStudioStatus } from "@/hooks/useStudioStatus";
 import { usePreferences } from "@/providers/PreferencesProvider";
 import type { ModelInfo, ProviderInfo } from "@/types";
 
@@ -60,7 +58,7 @@ const TECHNOLOGIES = [
   },
 ];
 
-type SettingsTab = "providers" | "models" | "studio" | "about";
+type SettingsTab = "providers" | "models" | "about";
 
 interface SettingsProps {
   onClose: () => void;
@@ -155,34 +153,6 @@ function Settings({ onClose }: SettingsProps) {
           </button>
 
           <div className="mt-4 px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Integration
-          </div>
-          <button
-            onClick={() => setTab("studio")}
-            className={`mx-1.5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${
-              tab === "studio"
-                ? "bg-accent font-medium text-foreground"
-                : "text-muted-foreground hover:bg-accent hover:text-foreground"
-            }`}
-          >
-            <svg
-              width="13"
-              height="13"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-              <line x1="8" y1="21" x2="16" y2="21" />
-              <line x1="12" y1="17" x2="12" y2="21" />
-            </svg>
-            Studio
-          </button>
-
-          <div className="mt-4 px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             App
           </div>
           <button
@@ -215,7 +185,7 @@ function Settings({ onClose }: SettingsProps) {
         <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
           {tab === "providers" && <ProvidersTab />}
           {tab === "models" && <ModelsTab />}
-          {tab === "studio" && <StudioTab />}
+
           {tab === "about" && <AboutTab appVersion={appVersion} />}
         </div>
       </div>
@@ -224,8 +194,14 @@ function Settings({ onClose }: SettingsProps) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// Providers Tab
+// Providers Tab — matches OpenCode's two-section layout with connect dialog
 // ═══════════════════════════════════════════════════════════════════════
+
+type ConnectDialogState =
+  | { step: "closed" }
+  | { step: "methods"; provider: ProviderInfo }
+  | { step: "oauth"; provider: ProviderInfo; methodIndex: number; method: "auto" | "code" | null; instructions: string | null }
+  | { step: "apikey"; provider: ProviderInfo };
 
 function ProvidersTab() {
   const allProviders = useAllProviders();
@@ -236,60 +212,57 @@ function ProvidersTab() {
   const completeOAuthMutation = useCompleteOAuth();
   const disconnectMutation = useDisconnectProvider();
 
-  const [expandedProvider, setExpandedProvider] = useState<string | null>(null);
+  const [dialog, setDialog] = useState<ConnectDialogState>({ step: "closed" });
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [saving, setSaving] = useState(false);
-  const [oauthLoading, setOauthLoading] = useState<string | null>(null);
-  const [oauthInstructions, setOauthInstructions] = useState<string | null>(null);
-  const [oauthMethod, setOauthMethod] = useState<"auto" | "code" | null>(null);
   const [oauthCodeInput, setOauthCodeInput] = useState("");
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
-  const [feedback, setFeedback] = useState<{
-    providerId: string;
-    type: "success" | "error";
-    text: string;
-  } | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const searchRef = useRef<HTMLInputElement>(null);
-  /** Holds the AbortController for cancelling an in-flight completeOAuth call. */
   const oauthAbortRef = useRef<AbortController | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    searchRef.current?.focus();
     return () => {
       oauthAbortRef.current?.abort();
     };
   }, []);
 
-  const { popular, other } = useMemo(() => {
-    const query = search.toLowerCase().trim();
-    const filtered = allProviders.filter((p) => {
-      if (!query) return true;
-      return `${p.name} ${p.id}`.toLowerCase().includes(query);
-    });
-
-    const pop: ProviderInfo[] = [];
-    const oth: ProviderInfo[] = [];
-    for (const p of filtered) {
-      if (POPULAR_PROVIDERS.includes(p.id)) {
-        pop.push(p);
-      } else {
-        oth.push(p);
+  // Close dialog on click outside
+  useEffect(() => {
+    if (dialog.step === "closed") return;
+    function handleClick(e: MouseEvent) {
+      if (dialogRef.current && !dialogRef.current.contains(e.target as Node)) {
+        closeDialog();
       }
     }
-    pop.sort((a, b) => POPULAR_PROVIDERS.indexOf(a.id) - POPULAR_PROVIDERS.indexOf(b.id));
-    oth.sort((a, b) => a.name.localeCompare(b.name));
-    return { popular: pop, other: oth };
-  }, [allProviders, search]);
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [dialog.step]);
 
-  // Only show OAuth for providers with a working auth plugin installed.
-  // We bundle opencode-gemini-auth, so only Google has a working OAuth flow.
-  // Other providers (Anthropic, OpenAI, etc.) require API keys.
-  const OAUTH_ENABLED_PROVIDERS = new Set(["google"]);
+  // Auto-close dialog when provider becomes connected
+  const prevConnectedRef = useRef(connectedProviders);
+  useEffect(() => {
+    const prev = prevConnectedRef.current;
+    prevConnectedRef.current = connectedProviders;
+    if (dialog.step === "closed") return;
+    const providerId = dialog.provider.id;
+    if (connectedProviders.includes(providerId) && !prev.includes(providerId)) {
+      toast.success(`${dialog.provider.name} connected`);
+      closeDialog();
+    }
+  }, [connectedProviders, dialog]);
+
+  function closeDialog() {
+    oauthAbortRef.current?.abort();
+    oauthAbortRef.current = null;
+    setDialog({ step: "closed" });
+    setApiKeyInput("");
+    setOauthCodeInput("");
+    setError(null);
+  }
 
   function getOAuthMethodIndex(providerId: string): number | null {
-    if (!OAUTH_ENABLED_PROVIDERS.has(providerId)) return null;
     const methods = authMethods[providerId];
     if (!methods) return null;
     const idx = methods.findIndex((m) => m.type === "oauth");
@@ -302,247 +275,314 @@ function ProvidersTab() {
     return methods.some((m) => m.type === "api");
   }
 
-  function resetOAuthState() {
-    setOauthLoading(null);
-    setOauthInstructions(null);
-    setOauthMethod(null);
-    setOauthCodeInput("");
-    oauthAbortRef.current?.abort();
-    oauthAbortRef.current = null;
+  function openConnect(provider: ProviderInfo) {
+    const oauthIdx = getOAuthMethodIndex(provider.id);
+    const apiKey = hasApiKeyAuth(provider.id);
+
+    // If only one method, skip method selection
+    if (oauthIdx !== null && !apiKey) {
+      startOAuthFlow(provider, oauthIdx);
+    } else if (oauthIdx === null && apiKey) {
+      setDialog({ step: "apikey", provider });
+    } else if (oauthIdx !== null && apiKey) {
+      setDialog({ step: "methods", provider });
+    } else {
+      // No auth methods available
+      setError(`No authentication methods available. Required env vars: ${provider.env.join(", ")}`);
+      setDialog({ step: "methods", provider });
+    }
   }
 
-  async function handleOAuth(providerId: string) {
-    const methodIndex = getOAuthMethodIndex(providerId);
-    if (methodIndex === null) return;
-    setOauthLoading(providerId);
-    setOauthInstructions(null);
-    setOauthMethod(null);
-    setOauthCodeInput("");
-    setFeedback(null);
+  async function startOAuthFlow(provider: ProviderInfo, methodIndex: number) {
+    setDialog({ step: "oauth", provider, methodIndex, method: null, instructions: null });
+    setError(null);
     try {
       const authResult = await startOAuthMutation.mutateAsync({
-        providerID: providerId,
+        providerID: provider.id,
         methodIndex,
       });
       if (!authResult) {
-        resetOAuthState();
+        closeDialog();
         return;
       }
-      setOauthMethod(authResult.method);
-      if (authResult.instructions) {
-        setOauthInstructions(authResult.instructions);
-      }
+      setDialog({
+        step: "oauth",
+        provider,
+        methodIndex,
+        method: authResult.method,
+        instructions: authResult.instructions ?? null,
+      });
       if (authResult.method === "auto") {
-        // For "auto" flows (e.g. GitHub device code): call callback which blocks
-        // until the user authorizes on the external site
         const abort = new AbortController();
         oauthAbortRef.current = abort;
         try {
           const success = await completeOAuthMutation.mutateAsync({
-            providerID: providerId,
+            providerID: provider.id,
             methodIndex,
           });
           if (!abort.signal.aborted) {
-            resetOAuthState();
             if (success) {
-              setFeedback({ providerId, type: "success", text: "Connected!" });
+              // Auto-close handled by the connectedProviders effect
             } else {
-              setFeedback({
-                providerId,
-                type: "error",
-                text: "Authorization failed. Please try again.",
-              });
+              setError("Authorization failed. Please try again.");
+              setDialog({ step: "methods", provider });
             }
           }
         } catch {
           if (!abort.signal.aborted) {
-            setFeedback({
-              providerId,
-              type: "error",
-              text: "Sign-in timed out or was cancelled",
-            });
-            resetOAuthState();
+            setError("Sign-in timed out or was cancelled");
+            setDialog({ step: "methods", provider });
           }
         }
       }
-      // For "code" flows, we wait for the user to submit a code via handleOAuthCode
     } catch {
-      setFeedback({
-        providerId,
-        type: "error",
-        text: "Failed to start sign-in flow",
-      });
-      resetOAuthState();
+      setError("Failed to start sign-in flow");
+      setDialog({ step: "methods", provider });
     }
   }
 
   async function handleOAuthCode(providerId: string) {
-    const methodIndex = getOAuthMethodIndex(providerId);
-    if (methodIndex === null || !oauthCodeInput.trim()) return;
+    if (dialog.step !== "oauth" || !oauthCodeInput.trim()) return;
     try {
       const success = await completeOAuthMutation.mutateAsync({
         providerID: providerId,
-        methodIndex,
+        methodIndex: dialog.methodIndex,
         code: oauthCodeInput.trim(),
       });
-      resetOAuthState();
-      if (success) {
-        setFeedback({ providerId, type: "success", text: "Connected!" });
-      } else {
-        setFeedback({ providerId, type: "error", text: "Authorization failed. Please try again." });
+      if (!success) {
+        setError("Authorization failed. Please try again.");
       }
+      // Success auto-closes via connectedProviders effect
     } catch {
-      setFeedback({
-        providerId,
-        type: "error",
-        text: "Invalid code. Please try again.",
-      });
-      resetOAuthState();
+      setError("Invalid code. Please try again.");
     }
+    setOauthCodeInput("");
   }
 
-  async function handleDisconnect(providerId: string) {
-    setDisconnecting(providerId);
-    setFeedback(null);
-    try {
-      await disconnectMutation.mutateAsync(providerId);
-      setExpandedProvider(null);
-      setFeedback({ providerId, type: "success", text: "Disconnected" });
-    } catch {
-      setFeedback({
-        providerId,
-        type: "error",
-        text: "Failed to disconnect",
-      });
-    } finally {
-      setDisconnecting(null);
-    }
-  }
-
-  async function handleSaveKey(providerId: string, label: string) {
+  async function handleSaveKey(providerId: string) {
     if (!apiKeyInput.trim()) return;
     setSaving(true);
-    setFeedback(null);
+    setError(null);
     try {
       await setApiKeyMutation.mutateAsync({ providerID: providerId, key: apiKeyInput.trim() });
-      setApiKeyInput("");
-      setExpandedProvider(null);
-      setFeedback({ providerId, type: "success", text: `${label} connected` });
+      // Success auto-closes via connectedProviders effect
     } catch {
-      setFeedback({
-        providerId,
-        type: "error",
-        text: "Invalid key or connection failed",
-      });
+      setError("Invalid key or connection failed");
     } finally {
       setSaving(false);
     }
   }
 
-  // Auto-collapse when a provider just became connected (e.g. after OAuth flow)
-  const prevConnectedRef = useRef(connectedProviders);
-  useEffect(() => {
-    const prev = prevConnectedRef.current;
-    prevConnectedRef.current = connectedProviders;
-    if (!expandedProvider) return;
-    // Only collapse if this provider wasn't connected before but is now
-    const justConnected =
-      connectedProviders.includes(expandedProvider) && !prev.includes(expandedProvider);
-    if (justConnected) {
-      setExpandedProvider(null);
-      setApiKeyInput("");
+  async function handleDisconnect(providerId: string) {
+    setDisconnecting(providerId);
+    try {
+      await disconnectMutation.mutateAsync(providerId);
+      toast.success("Provider disconnected");
+    } catch {
+      toast.error("Failed to disconnect");
+    } finally {
+      setDisconnecting(null);
     }
-  }, [connectedProviders, expandedProvider]);
+  }
 
-  function renderProvider(provider: ProviderInfo) {
-    const meta = PROVIDER_META[provider.id];
-    const isConnected = connectedProviders.includes(provider.id);
-    const isExpanded = expandedProvider === provider.id;
-    const oauthIndex = getOAuthMethodIndex(provider.id);
-    const supportsApiKey = hasApiKeyAuth(provider.id);
-    const isOauthLoading = oauthLoading === provider.id;
-    const providerFeedback = feedback?.providerId === provider.id ? feedback : null;
+  // Split providers into connected and unconnected
+  const connected = allProviders.filter(
+    (p) => connectedProviders.includes(p.id),
+  );
+  const unconnected = allProviders.filter(
+    (p) => !connectedProviders.includes(p.id),
+  );
 
-    return (
-      <div key={provider.id} className="rounded-lg border bg-card">
-        <button
-          onClick={() => {
-            setExpandedProvider(isExpanded ? null : provider.id);
-            setApiKeyInput("");
-            setFeedback(null);
-          }}
-          className="flex w-full cursor-pointer items-center gap-3 px-3.5 py-2.5 text-left"
-        >
-          <div className="flex min-w-0 flex-1 items-center gap-2">
-            <span className="truncate text-sm font-medium">{provider.name}</span>
+  // Sort unconnected: popular first, then alphabetical
+  const sortedUnconnected = useMemo(() => {
+    const pop: ProviderInfo[] = [];
+    const oth: ProviderInfo[] = [];
+    for (const p of unconnected) {
+      if (POPULAR_PROVIDERS.includes(p.id)) {
+        pop.push(p);
+      } else {
+        oth.push(p);
+      }
+    }
+    pop.sort((a, b) => POPULAR_PROVIDERS.indexOf(a.id) - POPULAR_PROVIDERS.indexOf(b.id));
+    oth.sort((a, b) => a.name.localeCompare(b.name));
+    return [...pop, ...oth];
+  }, [unconnected]);
+
+  return (
+    <div className="mx-auto w-full max-w-md px-6 py-8">
+      <h4 className="font-serif text-lg italic text-foreground">Providers</h4>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Connect AI providers to use their models.
+      </p>
+
+      {/* Connected providers */}
+      {connected.length > 0 && (
+        <div className="mt-6">
+          <div className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Connected
           </div>
-          {isConnected && (
-            <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-              Connected
-            </span>
-          )}
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className={`shrink-0 text-muted-foreground transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`}
-          >
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
-        </button>
-
-        {/* Connected: show disconnect option (not for opencode  - it's always connected) */}
-        {isExpanded && isConnected && provider.id !== "opencode" && (
-          <div className="animate-fade-in border-t px-3.5 py-3">
-            <button
-              onClick={() => handleDisconnect(provider.id)}
-              disabled={disconnecting === provider.id}
-              className="flex h-8 w-full items-center justify-center gap-2 rounded-md border border-red-200 bg-background text-xs font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50"
-            >
-              {disconnecting === provider.id ? (
-                <>
-                  <svg
-                    className="h-3 w-3 animate-spin"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  >
-                    <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
-                  </svg>
-                  Disconnecting...
-                </>
-              ) : (
-                "Disconnect"
-              )}
-            </button>
-            {providerFeedback && (
-              <p
-                className={`mt-2 text-[11px] ${providerFeedback.type === "error" ? "text-destructive" : "text-emerald-600"}`}
+          <div className="space-y-1.5">
+            {connected.map((provider) => (
+              <div
+                key={provider.id}
+                className="flex items-center justify-between rounded-lg border bg-card px-3.5 py-2.5"
               >
-                {providerFeedback.text}
-              </p>
-            )}
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">{provider.name}</span>
+                  <span className="flex items-center gap-1.5 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                    Connected
+                  </span>
+                </div>
+                {provider.id !== "opencode" && (
+                  <button
+                    onClick={() => handleDisconnect(provider.id)}
+                    disabled={disconnecting === provider.id}
+                    className="text-[11px] text-muted-foreground transition-colors hover:text-red-600 disabled:opacity-50"
+                  >
+                    {disconnecting === provider.id ? "..." : "Disconnect"}
+                  </button>
+                )}
+              </div>
+            ))}
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Not connected: show sign-in options */}
-        {isExpanded && !isConnected && (
-          <div className="animate-fade-in border-t px-3.5 py-3">
-            {oauthIndex !== null && (
-              <div>
-                {isOauthLoading ? (
-                  <div className="space-y-2">
-                    <button
-                      disabled
-                      className="flex h-9 w-full items-center justify-center gap-2 rounded-md border bg-background text-xs font-medium opacity-50"
+      {/* Unconnected providers */}
+      {sortedUnconnected.length > 0 && (
+        <div className="mt-6">
+          <div className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            {connected.length > 0 ? "Available" : "Providers"}
+          </div>
+          <div className="space-y-1.5">
+            {sortedUnconnected.map((provider) => (
+              <div
+                key={provider.id}
+                className="flex items-center justify-between rounded-lg border bg-card px-3.5 py-2.5"
+              >
+                <span className="text-sm font-medium">{provider.name}</span>
+                <button
+                  onClick={() => openConnect(provider)}
+                  className="rounded-md border bg-background px-3 py-1 text-[11px] font-medium transition-colors hover:bg-accent"
+                >
+                  Connect
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {allProviders.length === 0 && (
+        <div className="mt-8 py-4 text-center text-xs text-muted-foreground">Loading providers...</div>
+      )}
+
+      {/* Connect dialog overlay */}
+      {dialog.step !== "closed" && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div
+            ref={dialogRef}
+            className="mx-4 w-full max-w-sm rounded-xl border bg-card p-5 shadow-lg"
+          >
+            <div className="flex items-center justify-between">
+              <h5 className="text-sm font-semibold">Connect {dialog.provider.name}</h5>
+              <button
+                onClick={closeDialog}
+                className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              >
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+
+            {error && (
+              <p className="mt-3 text-[11px] text-destructive">{error}</p>
+            )}
+
+            {/* Method selection */}
+            {dialog.step === "methods" && (
+              <div className="mt-4 space-y-2">
+                {getOAuthMethodIndex(dialog.provider.id) !== null && (
+                  <button
+                    onClick={() => {
+                      const idx = getOAuthMethodIndex(dialog.provider.id);
+                      if (idx !== null) {
+                        setError(null);
+                        startOAuthFlow(dialog.provider, idx);
+                      }
+                    }}
+                    className="flex h-9 w-full items-center justify-center gap-2 rounded-md border bg-background text-xs font-medium transition-colors hover:bg-accent"
+                  >
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
                     >
+                      <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+                      <polyline points="10 17 15 12 10 7" />
+                      <line x1="15" y1="12" x2="3" y2="12" />
+                    </svg>
+                    Sign in with {dialog.provider.name}
+                  </button>
+                )}
+                {getOAuthMethodIndex(dialog.provider.id) !== null && hasApiKeyAuth(dialog.provider.id) && (
+                  <div className="flex items-center gap-2">
+                    <div className="h-px flex-1 bg-border" />
+                    <span className="text-[10px] text-muted-foreground">or</span>
+                    <div className="h-px flex-1 bg-border" />
+                  </div>
+                )}
+                {hasApiKeyAuth(dialog.provider.id) && (
+                  <button
+                    onClick={() => {
+                      setError(null);
+                      setDialog({ step: "apikey", provider: dialog.provider });
+                    }}
+                    className="flex h-9 w-full items-center justify-center gap-2 rounded-md border bg-background text-xs font-medium transition-colors hover:bg-accent"
+                  >
+                    Use an API key
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* OAuth flow */}
+            {dialog.step === "oauth" && (
+              <div className="mt-4 space-y-3">
+                {!dialog.method && (
+                  <div className="flex items-center justify-center py-4">
+                    <svg
+                      className="h-4 w-4 animate-spin text-muted-foreground"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
+                      <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
+                    </svg>
+                  </div>
+                )}
+                {dialog.method === "auto" && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-center gap-2 py-2 text-xs text-muted-foreground">
                       <svg
                         className="h-3 w-3 animate-spin"
                         viewBox="0 0 24 24"
@@ -552,16 +592,16 @@ function ProvidersTab() {
                       >
                         <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
                       </svg>
-                      Waiting for sign-in...
-                    </button>
-                    {oauthInstructions && oauthMethod === "auto" && (
+                      Waiting for authorization...
+                    </div>
+                    {dialog.instructions && (
                       <div className="rounded-md border bg-muted/50 p-2.5">
                         <p className="text-[11px] leading-relaxed text-muted-foreground">
-                          {oauthInstructions}
+                          {dialog.instructions}
                         </p>
                         <button
                           onClick={() => {
-                            const code = oauthInstructions.match(/[A-Z0-9]{4,}-[A-Z0-9]{4,}/i);
+                            const code = dialog.instructions?.match(/[A-Z0-9]{4,}-[A-Z0-9]{4,}/i);
                             if (code) {
                               navigator.clipboard.writeText(code[0]);
                               toast("Code copied to clipboard");
@@ -586,211 +626,93 @@ function ProvidersTab() {
                         </button>
                       </div>
                     )}
-                    {oauthMethod === "code" && (
-                      <div className="space-y-1.5">
-                        {oauthInstructions && (
-                          <p className="text-[11px] text-muted-foreground">{oauthInstructions}</p>
-                        )}
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            value={oauthCodeInput}
-                            onChange={(e) => setOauthCodeInput(e.target.value)}
-                            placeholder="Paste authorization code..."
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter" && oauthCodeInput.trim()) {
-                                e.preventDefault();
-                                handleOAuthCode(provider.id);
-                              }
-                            }}
-                            className="h-8 flex-1 rounded border bg-background px-2 font-mono text-xs placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
-                            autoFocus
-                          />
-                          <button
-                            onClick={() => handleOAuthCode(provider.id)}
-                            disabled={!oauthCodeInput.trim()}
-                            className="h-8 rounded bg-foreground px-3 text-xs font-medium text-background transition-opacity disabled:opacity-40"
-                          >
-                            Submit
-                          </button>
-                        </div>
-                      </div>
-                    )}
                   </div>
-                ) : (
-                  <button
-                    onClick={() => handleOAuth(provider.id)}
-                    disabled={startOAuthMutation.isPending}
-                    className="flex h-9 w-full items-center justify-center gap-2 rounded-md border bg-background text-xs font-medium transition-colors hover:bg-accent disabled:opacity-50"
-                  >
-                    <svg
-                      width="12"
-                      height="12"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
-                      <polyline points="10 17 15 12 10 7" />
-                      <line x1="15" y1="12" x2="3" y2="12" />
-                    </svg>
-                    Sign in with {provider.name}
-                  </button>
+                )}
+                {dialog.method === "code" && (
+                  <div className="space-y-2">
+                    {dialog.instructions && (
+                      <p className="text-[11px] text-muted-foreground">{dialog.instructions}</p>
+                    )}
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={oauthCodeInput}
+                        onChange={(e) => setOauthCodeInput(e.target.value)}
+                        placeholder="Paste authorization code..."
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && oauthCodeInput.trim()) {
+                            e.preventDefault();
+                            handleOAuthCode(dialog.provider.id);
+                          }
+                        }}
+                        className="h-8 flex-1 rounded border bg-background px-2 font-mono text-xs placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
+                        autoFocus
+                      />
+                      <button
+                        onClick={() => handleOAuthCode(dialog.provider.id)}
+                        disabled={!oauthCodeInput.trim()}
+                        className="h-8 rounded bg-foreground px-3 text-xs font-medium text-background transition-opacity disabled:opacity-40"
+                      >
+                        Submit
+                      </button>
+                    </div>
+                  </div>
                 )}
               </div>
             )}
-            {oauthIndex !== null && supportsApiKey && (
-              <div className="my-2.5 flex items-center gap-2">
-                <div className="h-px flex-1 bg-border" />
-                <span className="text-[10px] text-muted-foreground">or use an API key</span>
-                <div className="h-px flex-1 bg-border" />
-              </div>
-            )}
-            {supportsApiKey && (
-              <>
+
+            {/* API key input */}
+            {dialog.step === "apikey" && (
+              <div className="mt-4 space-y-2">
                 <div className="flex gap-2">
                   <input
                     type="password"
                     value={apiKeyInput}
                     onChange={(e) => {
                       setApiKeyInput(e.target.value);
-                      setFeedback(null);
+                      setError(null);
                     }}
-                    placeholder={meta?.placeholder ?? "API key..."}
+                    placeholder={PROVIDER_META[dialog.provider.id]?.placeholder ?? "API key..."}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && apiKeyInput.trim() && !saving) {
                         e.preventDefault();
-                        handleSaveKey(provider.id, provider.name);
+                        handleSaveKey(dialog.provider.id);
                       }
                     }}
                     className="h-8 flex-1 rounded border bg-background px-2 font-mono text-xs placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
-                    autoFocus={oauthIndex === null}
+                    autoFocus
                   />
                   <button
-                    onClick={() => handleSaveKey(provider.id, provider.name)}
+                    onClick={() => handleSaveKey(dialog.provider.id)}
                     disabled={saving || !apiKeyInput.trim()}
                     className="h-8 rounded bg-foreground px-3 text-xs font-medium text-background transition-opacity disabled:opacity-40"
                   >
                     {saving ? "..." : "Save"}
                   </button>
                 </div>
-                {meta?.helpUrl && (
+                {PROVIDER_META[dialog.provider.id]?.helpUrl && (
                   <a
-                    href={meta.helpUrl}
+                    href={PROVIDER_META[dialog.provider.id]?.helpUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="mt-1.5 inline-block text-[10px] text-muted-foreground underline hover:text-foreground"
+                    className="inline-block text-[10px] text-muted-foreground underline hover:text-foreground"
                   >
                     Get an API key
                   </a>
                 )}
-              </>
-            )}
-            {oauthIndex === null && !supportsApiKey && (
-              <p className="text-[11px] text-muted-foreground">
-                No authentication methods available. Required env vars: {provider.env.join(", ")}
-              </p>
-            )}
-            {providerFeedback && (
-              <p
-                className={`mt-2 text-[11px] ${providerFeedback.type === "error" ? "text-destructive" : "text-emerald-600"}`}
-              >
-                {providerFeedback.text}
-              </p>
+                {getOAuthMethodIndex(dialog.provider.id) !== null && (
+                  <button
+                    onClick={() => setDialog({ step: "methods", provider: dialog.provider })}
+                    className="block text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    Back to sign-in options
+                  </button>
+                )}
+              </div>
             )}
           </div>
-        )}
-      </div>
-    );
-  }
-
-  function renderGroup(label: string, providers: ProviderInfo[]) {
-    if (providers.length === 0) return null;
-    return (
-      <div>
-        <div className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-          {label}
         </div>
-        <div className="space-y-1.5">{providers.map((p) => renderProvider(p))}</div>
-      </div>
-    );
-  }
-
-  const hasResults = popular.length > 0 || other.length > 0;
-
-  return (
-    <div className="mx-auto w-full max-w-md px-6 py-8">
-      <h4 className="font-serif text-lg italic text-foreground">Providers</h4>
-      <p className="mt-1 text-xs text-muted-foreground">
-        Connect AI providers to use their models. Keys are stored locally.
-      </p>
-
-      {/* Search */}
-      <div className="mt-4">
-        <div className="flex items-center gap-1.5 rounded-lg border bg-background px-2.5">
-          <svg
-            width="13"
-            height="13"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="shrink-0 text-muted-foreground/50"
-          >
-            <circle cx="11" cy="11" r="8" />
-            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-          </svg>
-          <input
-            ref={searchRef}
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search providers..."
-            className="h-8 flex-1 bg-transparent text-xs placeholder:text-muted-foreground/40 focus:outline-none"
-          />
-          {search && (
-            <button
-              onClick={() => {
-                setSearch("");
-                searchRef.current?.focus();
-              }}
-              className="flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
-            >
-              <svg
-                width="8"
-                height="8"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="3"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div className="mt-4 space-y-5">
-        {renderGroup("Popular", popular)}
-        {renderGroup("Other", other)}
-        {!hasResults && allProviders.length > 0 && (
-          <div className="py-4 text-center text-xs text-muted-foreground">
-            No providers matching &quot;{search}&quot;
-          </div>
-        )}
-        {allProviders.length === 0 && (
-          <div className="py-4 text-center text-xs text-muted-foreground">Loading providers...</div>
-        )}
-      </div>
+      )}
     </div>
   );
 }
@@ -969,145 +891,6 @@ function ModelsTab() {
             Connect a provider to see available models.
           </div>
         )}
-      </div>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// Studio Tab
-// ═══════════════════════════════════════════════════════════════════════
-
-const STUDIO_STATUS_CONFIG: Record<string, { dot: string; label: string }> = {
-  connected: { dot: "bg-emerald-400", label: "Connected" },
-  disconnected: { dot: "bg-red-400", label: "Studio not connected" },
-  failed: { dot: "bg-red-400", label: "MCP server unreachable" },
-  disabled: { dot: "bg-stone-300", label: "Disabled" },
-  needs_auth: { dot: "bg-amber-400", label: "MCP needs authentication" },
-  unknown: { dot: "bg-stone-300 animate-pulse", label: "Checking..." },
-};
-
-function StudioTab() {
-  const { studioStatus, studioError } = useStudioStatus();
-  const restartMcp = useRestartMcp();
-
-  async function handleRestart() {
-    restartMcp.mutate();
-  }
-
-  const restarting = restartMcp.isPending;
-
-  const config = STUDIO_STATUS_CONFIG[studioStatus] ?? STUDIO_STATUS_CONFIG.unknown;
-
-  return (
-    <div className="mx-auto w-full max-w-md px-6 py-8">
-      <h4 className="font-serif text-lg italic text-foreground">Roblox Studio</h4>
-      <p className="mt-1 text-xs text-muted-foreground">
-        BloxBot connects to Roblox Studio via the official built-in MCP server.
-      </p>
-
-      {/* Connection status */}
-      <div className="mt-6">
-        <div className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Connection Status
-        </div>
-        <div className="rounded-lg border bg-card p-3.5">
-          <div className="flex items-center gap-2.5">
-            <span
-              className={`inline-block h-2 w-2 shrink-0 rounded-full transition-colors duration-500 ${config.dot}`}
-            />
-            <span className="text-sm font-medium">{config.label}</span>
-          </div>
-          {studioError && (
-            <p className="mt-2 rounded bg-red-50 px-2 py-1 font-mono text-[10px] text-red-600">
-              {studioError}
-            </p>
-          )}
-          {studioStatus === "disconnected" && (
-            <div className="mt-2.5">
-              <ol className="space-y-0.5 text-[11px] text-muted-foreground">
-                <li>1. Open Roblox Studio</li>
-                <li>2. Open or create a place file</li>
-                <li>
-                  3. Open <strong>Assistant</strong> settings (three-dot menu)
-                </li>
-                <li>
-                  4. Go to the <strong>MCP Servers</strong> tab
-                </li>
-                <li>
-                  5. Enable <strong>Studio as MCP server</strong>
-                </li>
-              </ol>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Setup guide */}
-      <div className="mt-6">
-        <div className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Setup
-        </div>
-        <div className="rounded-lg border bg-card p-3.5">
-          <p className="text-[11px] leading-relaxed text-muted-foreground">
-            BloxBot uses Roblox Studio's built-in MCP server. No plugin installation needed, just
-            make sure it's enabled in Studio's Assistant settings.
-          </p>
-          <a
-            href="https://create.roblox.com/docs/studio/mcp"
-            target="_blank"
-            rel="noreferrer"
-            className="mt-2 inline-block text-[11px] text-foreground underline underline-offset-2 hover:text-muted-foreground"
-          >
-            View documentation
-          </a>
-        </div>
-      </div>
-
-      {/* Actions */}
-      <div className="mt-6">
-        <div className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Actions
-        </div>
-        <div className="space-y-2">
-          <button
-            onClick={handleRestart}
-            disabled={restarting}
-            className="flex h-9 w-full items-center justify-center gap-2 rounded-lg border bg-card text-xs font-medium transition-colors hover:bg-accent disabled:opacity-50"
-          >
-            {restarting ? (
-              <>
-                <svg
-                  className="h-3 w-3 animate-spin"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
-                </svg>
-                Restarting MCP Server...
-              </>
-            ) : (
-              <>
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <polyline points="23 4 23 10 17 10" />
-                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-                </svg>
-                Restart MCP Server
-              </>
-            )}
-          </button>
-        </div>
       </div>
     </div>
   );

@@ -64,7 +64,7 @@ function LoadingScreen({
   }
 
   return (
-    <div className="flex flex-1 flex-col items-center justify-center px-6">
+    <div className="flex h-full w-full flex-col items-center justify-center px-6">
       <div className="animate-fade-in flex flex-col items-center">
         {/* BloxBot face  - inline SVG so we can animate individual parts */}
         <svg

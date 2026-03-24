@@ -5,7 +5,6 @@ import { useSendMessage } from "@/hooks/mutations/useSendMessage";
 import { useAgents } from "@/hooks/useAgents";
 import { useAllModels, useConnectedProviders } from "@/hooks/useProviders";
 import { useIsBusy } from "@/hooks/useSessionStatuses";
-import { useStudioStatus } from "@/hooks/useStudioStatus";
 import { splitModelKey } from "@/lib/splitModelKey";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
@@ -168,10 +167,8 @@ const SendButton = memo(function SendButton({
 }) {
   const { activeSessionId } = useActiveSession();
   const isBusy = useIsBusy(activeSessionId);
-  const { studioStatus } = useStudioStatus();
   const abort = useAbort();
-  const studioConnected = studioStatus === "connected";
-  const canSend = !isBusy && studioConnected;
+  const canSend = !isBusy;
 
   return (
     <>
@@ -190,7 +187,7 @@ const SendButton = memo(function SendButton({
           onClick={onSend}
           disabled={(!text.trim() && !hasAttachments) || !canSend}
           className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-foreground text-background transition-opacity disabled:opacity-30"
-          title={studioConnected ? "Send" : "Roblox Studio is not connected"}
+          title="Send"
         >
           <svg
             width="12"
@@ -212,12 +209,9 @@ const SendButton = memo(function SendButton({
 });
 
 const StatusHint = memo(function StatusHint() {
-  const { studioStatus } = useStudioStatus();
   return (
     <div className="mt-1.5 text-center text-[10px] text-muted-foreground/50">
-      {studioStatus === "connected"
-        ? "Shift+Enter for new line"
-        : "Waiting for Roblox Studio to connect..."}
+      Shift+Enter for new line
     </div>
   );
 });
@@ -227,7 +221,6 @@ function ChatInput() {
   const connectedProviders = useConnectedProviders();
   const agents = useAgents();
   const { activeSessionId } = useActiveSession();
-  const { studioStatus } = useStudioStatus();
   const isBusy = useIsBusy(activeSessionId);
   const {
     selectedModel,
@@ -450,7 +443,7 @@ function ChatInput() {
   function handleSubmit() {
     const trimmed = text.trim();
     if (!trimmed && attachments.length === 0) return;
-    if (isBusy || studioStatus !== "connected") return;
+    if (isBusy) return;
     const images =
       attachments.length > 0
         ? attachments.map((a) => ({ mime: a.mime, url: a.dataUrl, filename: a.filename }))
@@ -464,7 +457,7 @@ function ChatInput() {
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (isBusy || studioStatus !== "connected") return;
+      if (isBusy) return;
       handleSubmit();
     }
   }
@@ -615,12 +608,7 @@ function ChatInput() {
               </div>
               <div className="flex-1 overflow-y-auto p-1">
                 {modelsByProvider.map(([id, group]) => renderProviderGroup(id, group))}
-                {connectedProviders.length === 0 && (
-                  <div className="px-2 py-3 text-center text-xs text-muted-foreground">
-                    No providers connected
-                  </div>
-                )}
-                {connectedProviders.length > 0 && modelsByProvider.length === 0 && (
+                {modelsByProvider.length === 0 && (
                   <div className="px-2 py-3 text-center text-xs text-muted-foreground">
                     No models matching "{modelSearch}"
                   </div>

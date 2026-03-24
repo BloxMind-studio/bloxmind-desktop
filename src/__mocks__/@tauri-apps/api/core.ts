@@ -1,3 +1,3 @@
-import { vi } from "vitest";
-
-export const invoke = vi.fn().mockResolvedValue(undefined);
+export async function invoke() {
+  return undefined;
+}

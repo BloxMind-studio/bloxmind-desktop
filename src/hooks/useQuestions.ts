@@ -4,6 +4,9 @@ import { useQuery } from "@tanstack/react-query";
 import { qk } from "@/lib/queryKeys";
 
 export function useActiveQuestion(): QuestionRequest | null {
-  const { data } = useQuery<QuestionRequest | null>({ queryKey: qk.questions });
+  const { data } = useQuery<QuestionRequest | null>({
+    queryKey: qk.questions,
+    enabled: false,
+  });
   return data ?? null;
 }

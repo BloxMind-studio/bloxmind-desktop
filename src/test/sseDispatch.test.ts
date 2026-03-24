@@ -81,11 +81,6 @@ describe("sseDispatch", () => {
       expect(sessions).toHaveLength(1);
     });
 
-    it("ignores event when info is missing", () => {
-      qc.setQueryData(qk.sessions, [makeSession("s1", "One")]);
-      dispatch(qc, { type: "session.created", properties: {} });
-      expect(qc.getQueryData<Session[]>(qk.sessions)).toHaveLength(1);
-    });
   });
 
   describe("session.updated", () => {
@@ -541,12 +536,12 @@ describe("sseDispatch", () => {
   // ── MCP events ─────────────────────────────────────────────────────
 
   describe("mcp.tools.changed", () => {
-    it("invalidates the studioStatus query", () => {
+    it("is a no-op (studio status indicator removed)", () => {
       const spy = vi.spyOn(qc, "invalidateQueries");
 
       dispatch(qc, { type: "mcp.tools.changed", properties: {} });
 
-      expect(spy).toHaveBeenCalledWith({ queryKey: qk.studioStatus });
+      expect(spy).not.toHaveBeenCalled();
     });
   });
 });

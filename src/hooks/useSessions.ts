@@ -2,17 +2,19 @@ import type { Session } from "@opencode-ai/sdk/v2/client";
 import { useQuery } from "@tanstack/react-query";
 
 import { qk } from "@/lib/queryKeys";
-import { usePreferences } from "@/providers/PreferencesProvider";
+import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 
 export function useSessions() {
-  return useQuery<Session[]>({ queryKey: qk.sessions });
-}
+  const { client, ready } = useOpenCodeClient();
 
-/** Filtered session list (BloxBot-only or all) */
-export function useFilteredSessions() {
-  const { showAllSessions, ownSessionIds } = usePreferences();
-  const { data: sessions = [] } = useSessions();
-
-  if (showAllSessions) return sessions;
-  return sessions.filter((s) => ownSessionIds.has(s.id));
+  return useQuery<Session[]>({
+    queryKey: qk.sessions,
+    queryFn: async () => {
+      if (!client) return [];
+      const res = await client.session.list({});
+      if (!res.data) return [];
+      return [...res.data].sort((a, b) => b.time.created - a.time.created);
+    },
+    enabled: ready && !!client,
+  });
 }

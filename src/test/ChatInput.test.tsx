@@ -7,7 +7,6 @@
 
 import type { Session, SessionStatus } from "@opencode-ai/sdk/v2/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { invoke } from "@tauri-apps/api/core";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -81,15 +80,9 @@ function seedState(qc: QueryClient, session: Session) {
     default: { anthropic: "claude-3.5-sonnet" },
   });
   qc.setQueryData(qk.config, {
-    hasLaunched: true,
     lastModel: "anthropic/claude-3.5-sonnet",
     hiddenModels: [],
-    ownSessionIds: new Set([session.id]),
-    sessionModels: {},
-    connectedProviders: ["anthropic"],
-    providerDefaults: { anthropic: "claude-3.5-sonnet" },
   });
-  qc.setQueryData(qk.studioStatus, { status: "connected", error: null });
   qc.setQueryData<MessagesCache>(qk.messages(session.id), { messageIds: [], messagesById: {} });
   qc.setQueryData(qk.todos(session.id), []);
   qc.setQueryData(qk.questions, null);
@@ -104,7 +97,7 @@ function TestChatInput({
   client,
   queryClient,
   sessionId = "s1",
-  clientStatus = "Running",
+  clientStatus = "ready",
 }: {
   client: ReturnType<typeof createClient>;
   queryClient: QueryClient;
@@ -118,7 +111,7 @@ function TestChatInput({
   return (
     <QueryClientProvider client={queryClient}>
       <OpenCodeClientContext.Provider
-        value={{ client: client as never, status: clientStatus as any, port: 4096, serverError: null, ready: clientStatus === "Running", initError: null }}
+        value={{ client: client as never, status: clientStatus as "waiting" | "ready" | "error", port: 4096, ready: clientStatus === "ready", initError: null }}
       >
         <ActiveSessionContext.Provider
           value={{
@@ -142,12 +135,6 @@ function TestChatInput({
 
 beforeEach(() => {
   vi.clearAllMocks();
-  (invoke as ReturnType<typeof vi.fn>).mockImplementation(async (cmd: string) => {
-    if (cmd === "poll_studio_status") return { status: "connected", error: null };
-    if (cmd === "get_config") return { hasLaunched: true, lastModel: "anthropic/claude-3.5-sonnet", hiddenModels: [] };
-    if (cmd === "set_config") return { hasLaunched: true, lastModel: "anthropic/claude-3.5-sonnet", hiddenModels: [] };
-    return undefined;
-  });
 });
 
 afterEach(() => {
@@ -318,7 +305,7 @@ describe("ChatInput", () => {
     });
   });
 
-  it("shows status hint about Shift+Enter when studio is connected", async () => {
+  it("shows Shift+Enter hint", async () => {
     const client = createClient();
     const qc = createQueryClient();
 
@@ -326,29 +313,6 @@ describe("ChatInput", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Shift+Enter for new line")).toBeInTheDocument();
-    });
-  });
-
-  it("shows waiting hint when studio is disconnected", async () => {
-    (invoke as ReturnType<typeof vi.fn>).mockImplementation(async (cmd: string) => {
-      if (cmd === "poll_studio_status") return { status: "disconnected", error: null };
-      if (cmd === "get_config") return { hasLaunched: true, lastModel: "anthropic/claude-3.5-sonnet", hiddenModels: [] };
-      if (cmd === "set_config") return { hasLaunched: true, lastModel: "anthropic/claude-3.5-sonnet", hiddenModels: [] };
-      return undefined;
-    });
-
-    const client = createClient();
-    const qc = createQueryClient();
-
-    render(<TestChatInput client={client} queryClient={qc} />);
-
-    // Override studio status after render (seedState sets it to "connected")
-    act(() => {
-      qc.setQueryData(qk.studioStatus, { status: "disconnected", error: null });
-    });
-
-    await waitFor(() => {
-      expect(screen.getByText("Waiting for Roblox Studio to connect...")).toBeInTheDocument();
     });
   });
 

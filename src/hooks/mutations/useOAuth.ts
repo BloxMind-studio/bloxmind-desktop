@@ -1,8 +1,8 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { usePostHog } from "@posthog/react";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { qk } from "@/lib/queryKeys";
-import { capture } from "@/lib/telemetry";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 
 export function useStartOAuth() {
@@ -19,7 +19,8 @@ export function useStartOAuth() {
       if (!client) throw new Error("No client");
       const res = await client.provider.oauth.authorize({ providerID, method: methodIndex });
       if (!res.data) return undefined;
-      if (res.data.method === "code") {
+      // Always open the URL — in a Tauri app the sidecar can't open a browser itself
+      if (res.data.url) {
         await openUrl(res.data.url);
       }
       return { method: res.data.method, instructions: res.data.instructions, url: res.data.url };
@@ -30,6 +31,7 @@ export function useStartOAuth() {
 export function useCompleteOAuth() {
   const { client } = useOpenCodeClient();
   const queryClient = useQueryClient();
+  const posthog = usePostHog();
 
   return useMutation({
     mutationFn: async ({
@@ -49,8 +51,6 @@ export function useCompleteOAuth() {
       });
       await client.instance.dispose();
 
-      // The first provider.list() after dispose() triggers server reinitialization
-      // with the new credentials. It may return stale data. Fetch twice.
       await client.provider.list({});
       const [provRes, authRes] = await Promise.all([
         client.provider.list({}),
@@ -62,7 +62,7 @@ export function useCompleteOAuth() {
       }
 
       if (res.data === true) {
-        capture("provider_connected", { provider: providerID, method: "oauth" });
+        posthog.capture("provider_connected", { provider: providerID, method: "oauth" });
       }
       return res.data === true;
     },

@@ -4,14 +4,12 @@
  * These render the real component tree (Chat, ChatSidebar, ChatMessages, ChatInput)
  * inside the real provider hierarchy. Only the system boundary is mocked:
  * - SDK client (createOpencodeClient)
- * - Tauri APIs (invoke, listen, store, opener)
  *
  * Each test simulates a real user journey and asserts on what appears on screen.
  */
 
 import type { Session } from "@opencode-ai/sdk/v2/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { invoke } from "@tauri-apps/api/core";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -70,9 +68,8 @@ function TestApp({
       <OpenCodeClientContext.Provider
         value={{
           client: client as never,
-          status: "Running",
+          status: "ready",
           port: 4096,
-          serverError: null,
           ready: true,
           initError: null,
         }}
@@ -170,11 +167,9 @@ function createQueryClient() {
 /** Seed the query cache with the minimum state the app needs to be "ready" */
 function seedReadyState(
   queryClient: QueryClient,
-  opts: { sessions?: Session[]; hasLaunched?: boolean; connectedProviders?: string[] } = {},
+  opts: { sessions?: Session[] } = {},
 ) {
   const sessions = opts.sessions ?? [];
-  const hasLaunched = opts.hasLaunched ?? true;
-  const connectedProviders = opts.connectedProviders ?? ["anthropic"];
 
   queryClient.setQueryData(qk.sessions, sessions);
   queryClient.setQueryData(qk.statuses, {});
@@ -190,32 +185,19 @@ function seedReadyState(
         },
       },
     ],
-    connected: connectedProviders,
+    connected: ["anthropic"],
     default: { anthropic: "claude-3.5-sonnet" },
   });
   queryClient.setQueryData(qk.config, {
-    hasLaunched,
-    lastModel: connectedProviders.length > 0 ? "anthropic/claude-3.5-sonnet" : null,
+    lastModel: "anthropic/claude-3.5-sonnet",
     hiddenModels: [],
-    ownSessionIds: new Set(sessions.map((s) => s.id)),
-    sessionModels: {},
-    connectedProviders,
-    providerDefaults: { anthropic: "claude-3.5-sonnet" },
   });
-  queryClient.setQueryData(qk.studioStatus, { status: "connected", error: null });
 }
 
 // ── Setup ──────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // Mock invoke calls that components make directly
-  (invoke as ReturnType<typeof vi.fn>).mockImplementation(async (cmd: string) => {
-    if (cmd === "poll_studio_status") return { status: "connected", error: null };
-    if (cmd === "get_config") return { hasLaunched: true, lastModel: null, hiddenModels: [] };
-    if (cmd === "set_config") return { hasLaunched: true, lastModel: null, hiddenModels: [] };
-    return undefined;
-  });
 });
 
 afterEach(() => {
@@ -225,30 +207,6 @@ afterEach(() => {
 // ── Tests ──────────────────────────────────────────────────────────────────
 
 describe("User journeys", () => {
-  it("shows welcome prompt on first launch, then main UI after dismissing", async () => {
-    const client = createClient();
-    const queryClient = createQueryClient();
-    seedReadyState(queryClient, { hasLaunched: false });
-
-    const { unmount } = render(<TestApp client={client} queryClient={queryClient} />);
-
-    // First-launch welcome screen
-    expect(await screen.findByText("Get Started")).toBeInTheDocument();
-
-    unmount();
-  });
-
-  it("shows 'Connect a provider' when no providers are connected", async () => {
-    const client = createClient();
-    const queryClient = createQueryClient();
-    seedReadyState(queryClient, { connectedProviders: [] });
-
-    render(<TestApp client={client} queryClient={queryClient} />);
-
-    expect(await screen.findByText("Connect a provider to get started")).toBeInTheDocument();
-    expect(screen.getByText("Connect Provider")).toBeInTheDocument();
-  });
-
   it("creates a session and shows the chat interface", async () => {
     const newSession = makeSession("s1", "New Session");
     const client = createClient({
@@ -664,16 +622,7 @@ describe("User journeys", () => {
       );
     });
 
-    // Toggle to "All sessions" to see it (since it's not in ownSessionIds)
-    // Actually the ownSessionIds filter is on — let's add it
-    act(() => {
-      const config = queryClient.getQueryData(qk.config) as Record<string, unknown>;
-      queryClient.setQueryData(qk.config, {
-        ...config,
-        ownSessionIds: new Set(["s1", "s2"]),
-      });
-    });
-
+    // The new session should appear in the sidebar (no filter — all sessions shown)
     await waitFor(() => {
       expect(screen.getByText("New From CLI")).toBeInTheDocument();
     });

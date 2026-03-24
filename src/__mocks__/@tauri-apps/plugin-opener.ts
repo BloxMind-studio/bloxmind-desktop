@@ -1,3 +1,3 @@
-import { vi } from "vitest";
-
-export const openUrl = vi.fn().mockResolvedValue(undefined);
+export async function openUrl() {
+  return undefined;
+}

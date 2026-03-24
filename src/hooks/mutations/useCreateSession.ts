@@ -1,17 +1,16 @@
 import type { Session } from "@opencode-ai/sdk/v2/client";
+import { usePostHog } from "@posthog/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { qk } from "@/lib/queryKeys";
-import { capture } from "@/lib/telemetry";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
-import { usePreferences } from "@/providers/PreferencesProvider";
 
 export function useCreateSession() {
   const { client } = useOpenCodeClient();
   const queryClient = useQueryClient();
   const { selectSession } = useActiveSession();
-  const { selectedModel, addOwnSessionId, setSessionModel } = usePreferences();
+  const posthog = usePostHog();
 
   return useMutation({
     mutationFn: async () => {
@@ -21,12 +20,6 @@ export function useCreateSession() {
       return res.data;
     },
     onSuccess: (newSession: Session) => {
-      addOwnSessionId(newSession.id);
-
-      if (selectedModel) {
-        setSessionModel(newSession.id, selectedModel);
-      }
-
       queryClient.setQueryData<Session[]>(qk.sessions, (prev) => {
         if (!prev) return [newSession];
         if (prev.some((s) => s.id === newSession.id)) return prev;
@@ -43,7 +36,7 @@ export function useCreateSession() {
       queryClient.setQueryData(qk.permissions, null);
 
       selectSession(newSession.id);
-      capture("session_created");
+      posthog.capture("session_created");
     },
   });
 }

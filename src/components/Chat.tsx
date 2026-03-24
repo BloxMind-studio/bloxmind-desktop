@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
 import { lazy, Suspense, useCallback, useState } from "react";
 
 import ChatInput from "@/components/ChatInput";
@@ -6,21 +5,16 @@ import ChatMessages from "@/components/ChatMessages";
 import ChatSidebar from "@/components/ChatSidebar";
 import LoadingScreen from "@/components/LoadingScreen";
 import { useCreateSession } from "@/hooks/mutations/useCreateSession";
-import { useConnectedProviders } from "@/hooks/useProviders";
 import { useIsBusy } from "@/hooks/useSessionStatuses";
 import { useSessions } from "@/hooks/useSessions";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
-import { usePreferences } from "@/providers/PreferencesProvider";
 
 const Settings = lazy(() => import("@/components/Settings"));
-const ChatSetup = lazy(() => import("@/components/ChatSetup"));
 
 function Chat() {
-  const { status, ready, initError } = useOpenCodeClient();
+  const { ready, initError } = useOpenCodeClient();
   const { activeSessionId } = useActiveSession();
-  const { hasLaunched } = usePreferences();
-  const connectedProviders = useConnectedProviders();
   const isBusy = useIsBusy(activeSessionId);
   const createSession = useCreateSession();
   const { data: allSessions } = useSessions();
@@ -30,52 +24,10 @@ function Chat() {
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [restarting, setRestarting] = useState(false);
 
   const handleToggleSidebar = useCallback(() => setSidebarCollapsed((c) => !c), []);
   const handleSessionSelect = useCallback(() => setShowSettings(false), []);
   const handleOpenSettings = useCallback(() => setShowSettings(true), []);
-
-  const serverRunning = status === "Running";
-  const isError = typeof status === "object" && "Error" in status;
-
-  async function handleRetry() {
-    setRestarting(true);
-    try {
-      await invoke("restart_opencode");
-    } catch (err) {
-      console.error("[chat] restart_opencode failed:", err);
-    } finally {
-      setRestarting(false);
-    }
-  }
-
-  // Still loading persisted state from disk
-  if (hasLaunched === null) {
-    return <LoadingScreen message="Starting up..." />;
-  }
-
-  // First-run welcome screen
-  if (hasLaunched === false) {
-    return (
-      <Suspense fallback={<LoadingScreen message="Loading..." />}>
-        <ChatSetup />
-      </Suspense>
-    );
-  }
-
-  // Waiting for the backend to start OpenCode
-  if (!serverRunning) {
-    return (
-      <LoadingScreen
-        message={isError ? "Something went wrong" : "Starting up..."}
-        detail={isError ? status.Error : undefined}
-        error={isError}
-        onRetry={isError ? handleRetry : undefined}
-        retrying={restarting}
-      />
-    );
-  }
 
   // Main chat UI
   return (
@@ -97,64 +49,32 @@ function Chat() {
         ) : !activeSessionId ? (
           <div className="flex flex-1 flex-col items-center justify-center px-6">
             <div className="animate-fade-in-up text-center">
-              {connectedProviders.length === 0 ? (
-                <>
-                  <h2 className="font-serif text-2xl italic text-foreground">
-                    Connect a provider to get started
-                  </h2>
-                  <p className="mt-2 max-w-sm text-xs text-muted-foreground">
-                    You need at least one AI provider connected before you can start chatting.
-                  </p>
-                  <button
-                    onClick={() => setShowSettings(true)}
-                    className="mt-5 inline-flex h-9 items-center gap-2 rounded-lg bg-foreground px-5 text-sm font-medium text-background transition-opacity hover:opacity-90"
-                  >
-                    <svg
-                      width="13"
-                      height="13"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <line x1="12" y1="5" x2="12" y2="19" />
-                      <line x1="5" y1="12" x2="19" y2="12" />
-                    </svg>
-                    Connect Provider
-                  </button>
-                </>
-              ) : (
-                <>
-                  <h2 className="font-serif text-2xl italic text-foreground">
-                    What would you like to build?
-                  </h2>
-                  <p className="mt-2 max-w-md text-xs text-muted-foreground">
-                    Create a new session or pick one from the sidebar to continue where you left
-                    off.
-                  </p>
-                  <button
-                    onClick={() => createSession.mutate()}
-                    className="mt-5 inline-flex h-9 items-center gap-2 rounded-lg bg-foreground px-5 text-sm font-medium text-background transition-opacity hover:opacity-90"
-                  >
-                    <svg
-                      width="13"
-                      height="13"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <line x1="12" y1="5" x2="12" y2="19" />
-                      <line x1="5" y1="12" x2="19" y2="12" />
-                    </svg>
-                    New Session
-                  </button>
-                </>
-              )}
+              <h2 className="font-serif text-2xl italic text-foreground">
+                What would you like to build?
+              </h2>
+              <p className="mt-2 max-w-md text-xs text-muted-foreground">
+                Create a new session or pick one from the sidebar to continue where you left
+                off.
+              </p>
+              <button
+                onClick={() => createSession.mutate()}
+                className="mt-5 inline-flex h-9 items-center gap-2 rounded-lg bg-foreground px-5 text-sm font-medium text-background transition-opacity hover:opacity-90"
+              >
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+                New Session
+              </button>
             </div>
           </div>
         ) : (

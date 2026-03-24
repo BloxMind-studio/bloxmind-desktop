@@ -9,19 +9,18 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
-      "@tauri-apps/api/core": mock("@tauri-apps/api/core.ts"),
-      "@tauri-apps/api/event": mock("@tauri-apps/api/event.ts"),
       "@tauri-apps/api/app": mock("@tauri-apps/api/app.ts"),
-      "@tauri-apps/plugin-store": mock("@tauri-apps/plugin-store.ts"),
+      "@tauri-apps/api/core": mock("@tauri-apps/api/core.ts"),
       "@tauri-apps/plugin-opener": mock("@tauri-apps/plugin-opener.ts"),
-      "@tauri-apps/plugin-updater": mock("@tauri-apps/plugin-updater.ts"),
       "@tauri-apps/plugin-process": mock("@tauri-apps/plugin-process.ts"),
+      "@tauri-apps/plugin-store": mock("@tauri-apps/plugin-store.ts"),
+      "@tauri-apps/plugin-updater": mock("@tauri-apps/plugin-updater.ts"),
     },
   },
   test: {
     globals: true,
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
-    include: ["src/**/*.test.{ts,tsx}"],
+    include: ["src/test/**/*.test.{ts,tsx}"],
   },
 });

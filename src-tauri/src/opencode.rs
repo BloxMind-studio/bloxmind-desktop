@@ -1,15 +1,13 @@
 //! OpenCode server management.
 //!
-//! Starts the OpenCode server as a child process on app launch and emits
-//! Tauri events when its status changes. The frontend never polls -- it
-//! just listens for `opencode-status-changed` events.
+//! Starts the OpenCode server as a child process on app launch, waits
+//! for it to be ready, then injects the port into the webview so the
+//! frontend can connect directly via the OpenCode SDK.
 //!
-//! All process spawning goes through `tauri-plugin-shell`, which provides
-//! sidecar resolution, event-based stdout/stderr, and cross-platform
-//! process management (including hiding console windows on Windows).
+//! If the sidecar can't start, the app exits.
 
-use std::sync::{Arc, OnceLock};
-use tauri::{AppHandle, Emitter};
+use std::sync::Arc;
+use tauri::AppHandle;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 use tokio::sync::Mutex;
@@ -17,57 +15,26 @@ use tokio::sync::Mutex;
 /// BloxBot's reserved port range within the IANA dynamic/private range
 /// (49152-65535). The block is 10 ports; the app binds to the first
 /// available port in the block.
-///
-/// 59200-59209: OpenCode server (HTTP API)
 const OC_PORT_START: u16 = 59200;
 const PORT_RANGE: u16 = 10;
 
-/// All servers bind to IPv4 loopback. Using `"localhost"` is **not**
-/// safe because macOS resolves it to `[::1]` (IPv6), causing our IPv4
-/// health checks to fail with "connection refused".
+/// All servers bind to IPv4 loopback.
 pub const LOOPBACK: &str = "127.0.0.1";
 
-/// Shared HTTP client — reuses connections across poll calls.
-fn http_client() -> &'static reqwest::Client {
-    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-    CLIENT.get_or_init(|| {
-        reqwest::Client::builder()
-            .timeout(std::time::Duration::from_millis(800))
-            .build()
-            .unwrap_or_default()
-    })
-}
-
-// ── Status ──────────────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, serde::Serialize)]
-pub enum OpenCodeStatus {
-    Stopped,
-    Starting,
-    Running,
-    Error(String),
-}
-
-/// Payload emitted with the `opencode-status-changed` event.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct StatusPayload {
-    pub status: OpenCodeStatus,
-    pub port: u16,
-}
 
 // ── State ───────────────────────────────────────────────────────────────
 
 pub struct OpenCodeState {
-    pub status: OpenCodeStatus,
     pub port: u16,
+    pub workspace: String,
     pub(crate) child: Option<CommandChild>,
 }
 
 impl Default for OpenCodeState {
     fn default() -> Self {
         Self {
-            status: OpenCodeStatus::Stopped,
             port: 0,
+            workspace: String::new(),
             child: None,
         }
     }
@@ -77,31 +44,7 @@ pub type SharedOpenCodeState = Arc<Mutex<OpenCodeState>>;
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
-/// Emit a status change event to the frontend.
-fn emit_status(app: &AppHandle, status: &OpenCodeStatus, port: u16) {
-    let _ = app.emit(
-        "opencode-status-changed",
-        StatusPayload {
-            status: status.clone(),
-            port,
-        },
-    );
-}
-
-/// Update the state and emit the event in one step.
-async fn set_status(state: &SharedOpenCodeState, app: &AppHandle, status: OpenCodeStatus) {
-    let port;
-    {
-        let mut s = state.lock().await;
-        s.status = status.clone();
-        port = s.port;
-    }
-    emit_status(app, &status, port);
-}
-
-/// Find the first available TCP port starting from `start`, trying
-/// up to `PORT_RANGE` consecutive ports. All servers bind to `LOOPBACK`
-/// (127.0.0.1), so we only need to probe that address.
+/// Find the first available TCP port starting from `start`.
 async fn find_available_port(start: u16) -> u16 {
     for port in start..start.saturating_add(PORT_RANGE) {
         if tokio::net::TcpListener::bind((LOOPBACK, port))
@@ -112,13 +55,14 @@ async fn find_available_port(start: u16) -> u16 {
         }
         log::debug!("Port {port} unavailable, skipping");
     }
-    log::error!("All ports {start}-{} are unavailable!", start.saturating_add(PORT_RANGE - 1));
-    start // fallback — let the spawn surface the real error
+    log::error!(
+        "All ports {start}-{} are unavailable!",
+        start.saturating_add(PORT_RANGE - 1)
+    );
+    start
 }
 
-/// Strip the Windows extended-length path prefix (`\\?\`) from a path string.
-/// These prefixes are returned by `std::fs::canonicalize` / Tauri resource resolution
-/// but break when used in the `PATH` env var or passed to other programs.
+/// Strip the Windows extended-length path prefix (`\\?\`).
 #[cfg(windows)]
 fn strip_win_prefix(p: &std::path::Path) -> String {
     let s = p.to_string_lossy();
@@ -127,12 +71,6 @@ fn strip_win_prefix(p: &std::path::Path) -> String {
 
 // ── Studio MCP binary resolution ────────────────────────────────────────
 
-/// Returns the command array for launching the official Roblox Studio MCP
-/// server. The binary ships with Roblox Studio itself — no separate
-/// download required.
-///
-/// macOS:   ["/Applications/RobloxStudio.app/Contents/MacOS/StudioMCP"]
-/// Windows: ["cmd.exe", "/c", "%LOCALAPPDATA%\\Roblox\\mcp.bat"]
 fn studio_mcp_command() -> Vec<String> {
     #[cfg(target_os = "macos")]
     {
@@ -142,7 +80,9 @@ fn studio_mcp_command() -> Vec<String> {
     {
         let local_app = dirs::data_local_dir()
             .map(|p| p.join("Roblox").join("mcp.bat"))
-            .unwrap_or_else(|| std::path::PathBuf::from(r"C:\Users\Default\AppData\Local\Roblox\mcp.bat"));
+            .unwrap_or_else(|| {
+                std::path::PathBuf::from(r"C:\Users\Default\AppData\Local\Roblox\mcp.bat")
+            });
         vec![
             "cmd.exe".to_string(),
             "/c".to_string(),
@@ -151,23 +91,16 @@ fn studio_mcp_command() -> Vec<String> {
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
-        // Fallback for unsupported platforms
         vec!["studio-mcp".to_string()]
     }
 }
 
 // ── Startup cleanup ─────────────────────────────────────────────────────
 
-/// Kill any stale processes listening on our reserved port range
-/// (59200-59209). This handles the case where BloxBot crashed or was
-/// force-quit, leaving orphan processes holding ports.
-///
-/// Uses platform-specific commands:
-/// - macOS/Linux: `lsof -ti tcp:PORT` to find PIDs, then `kill -9`
-/// - Windows: `netstat -ano` to find PIDs, then `taskkill /F /PID`
+/// Kill any stale processes listening on our reserved port range.
 pub fn cleanup_stale_processes() {
-    let start = OC_PORT_START; // 59200
-    let end = OC_PORT_START + PORT_RANGE; // 59210
+    let start = OC_PORT_START;
+    let end = OC_PORT_START + PORT_RANGE;
     log::info!("Checking for stale processes on ports {start}-{}", end - 1);
 
     #[cfg(unix)]
@@ -200,7 +133,6 @@ pub fn cleanup_stale_processes() {
 
     #[cfg(windows)]
     {
-        // Parse netstat output to find PIDs listening on our ports.
         let output = std::process::Command::new("netstat")
             .args(["-ano", "-p", "TCP"])
             .output();
@@ -211,7 +143,6 @@ pub fn cleanup_stale_processes() {
                 let needle = format!("{}:{}", LOOPBACK, port);
                 for line in text.lines() {
                     if line.contains(&needle) && line.contains("LISTENING") {
-                        // Last column is the PID
                         if let Some(pid_str) = line.split_whitespace().last() {
                             if let Ok(pid) = pid_str.parse::<u32>() {
                                 if pid > 0 {
@@ -229,14 +160,24 @@ pub fn cleanup_stale_processes() {
     }
 }
 
+// ── Tauri command ───────────────────────────────────────────────────────
+
+/// Returns the OpenCode server port and workspace directory.
+/// Called by the frontend to create the SDK client.
+#[tauri::command]
+pub async fn get_opencode_info(
+    state: tauri::State<'_, SharedOpenCodeState>,
+) -> Result<(u16, String), String> {
+    let s = state.lock().await;
+    if s.port == 0 {
+        return Err("OpenCode is not running".to_string());
+    }
+    Ok((s.port, s.workspace.clone()))
+}
+
 // ── Core lifecycle ──────────────────────────────────────────────────────
 
 /// Start the OpenCode server. Called automatically on app launch.
-///
-/// Uses `tauri-plugin-shell` sidecar support to spawn the bundled
-/// `opencode` binary. stdout/stderr and process exit are handled via
-/// the shell plugin's event channel, replacing manual BufReader capture
-/// and polling-based exit monitoring.
 pub async fn start_opencode_server(
     state: SharedOpenCodeState,
     app: AppHandle,
@@ -244,49 +185,33 @@ pub async fn start_opencode_server(
     // Guard: don't double-start
     {
         let current = state.lock().await;
-        if matches!(
-            current.status,
-            OpenCodeStatus::Running | OpenCodeStatus::Starting
-        ) {
+        if current.child.is_some() {
             return Ok(current.port);
         }
     }
 
-    let nodejs_bin_dir = match crate::paths::bundled_nodejs_bin_dir() {
-        Ok(dir) => dir,
-        Err(e) => {
-            log::error!("Failed to find Node.js: {e}");
-            set_status(&state, &app, OpenCodeStatus::Error(e.clone())).await;
-            return Err(e);
-        }
-    };
+    let nodejs_bin_dir = crate::paths::bundled_nodejs_bin_dir()?;
     log::info!("Node.js bin: {}", nodejs_bin_dir.display());
 
-    set_status(&state, &app, OpenCodeStatus::Starting).await;
+    let port = do_start(&state, &app, &nodejs_bin_dir).await?;
 
-    // Run the actual startup logic. If anything fails after this point,
-    // transition status to Error so the frontend can show a retry button
-    // instead of being stuck on "Starting up..." forever.
-    match do_start(&state, &app, &nodejs_bin_dir).await {
-        Ok(port) => Ok(port),
-        Err(e) => {
-            set_status(&state, &app, OpenCodeStatus::Error(e.clone())).await;
-            Err(e)
-        }
+    // Store workspace in state so the frontend can retrieve it via command
+    let workspace = crate::paths::workspace_dir()?;
+    {
+        let mut s = state.lock().await;
+        s.workspace = workspace.to_string_lossy().to_string();
     }
+
+    Ok(port)
 }
 
-/// Inner startup logic extracted so that any `?` failure is caught by the
-/// caller and translated into an `Error` status transition.
+/// Inner startup logic.
 async fn do_start(
     state: &SharedOpenCodeState,
     app: &AppHandle,
     nodejs_bin_dir: &std::path::Path,
 ) -> Result<u16, String> {
-    // Kill any stale processes from a previous crash/force-quit before
-    // probing ports. This ensures find_available_port gets clean ports.
     cleanup_stale_processes();
-    // Brief pause so the OS can release the TCP sockets after killing processes.
     tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
 
     let port = find_available_port(OC_PORT_START).await;
@@ -297,10 +222,6 @@ async fn do_start(
         s.port = port;
     }
 
-    // Resolve the official Roblox Studio MCP binary path.
-    // The built-in MCP server ships with Roblox Studio itself:
-    //   macOS:   /Applications/RobloxStudio.app/Contents/MacOS/StudioMCP
-    //   Windows: %LOCALAPPDATA%/Roblox/mcp.bat
     let studio_mcp_cmd = studio_mcp_command();
     log::info!("Studio MCP command: {:?}", studio_mcp_cmd);
 
@@ -327,14 +248,12 @@ async fn do_start(
                     "You are BloxBot, an expert Roblox game developer working directly inside Roblox Studio via the official built-in MCP server. ",
                     "You build games by using MCP tools to read, write, and execute code in the live Studio session — never by showing code snippets for the user to paste.\n\n",
 
-                    // ── Workflow ──────────────────────────────────────────
                     "## Workflow\n",
                     "1. **Explore first.** Use `search_game_tree` (depth 5-10), `inspect_instance`, `script_search`, and `script_read` to understand the project before changing anything. Never guess at paths or names.\n",
                     "2. **Edit with tools.** Use `multi_edit` for script changes and `execute_luau` for instance creation, property changes, and batch operations. Never tell the user to paste code.\n",
                     "3. **Verify after.** Re-read scripts with `script_read` and confirm DataModel changes with `inspect_instance` or `search_game_tree`.\n",
                     "4. **Debug with playtests.** Instrument code → `start_stop_play(\"start\")` → simulate input or ask the user to act → `console_output()` + `execute_luau` to probe live state → `start_stop_play(\"stop\")` → fix → repeat.\n\n",
 
-                    // ── Project awareness ─────────────────────────────────
                     "## Project Awareness\n",
                     "At the start of a session, scan the codebase to learn its architecture. Use `search_game_tree` with high depth, then read key scripts. Identify:\n",
                     "- **Frameworks**: Knit, AeroGameFramework, Rojo, Nevermore, Fusion, Roact/React-lua, Rodux, ProfileService, DataStore2, etc. All new code must follow existing patterns.\n",
@@ -344,7 +263,6 @@ async fn do_start(
                     "- **Naming conventions**: PascalCase, camelCase, prefix systems? Be consistent.\n\n",
                     "Carry this context throughout the session. Do not introduce new frameworks or architectural styles unless the user explicitly asks.\n\n",
 
-                    // ── Tool guide ────────────────────────────────────────
                     "## Tool Guide\n\n",
 
                     "### Scripts\n",
@@ -389,7 +307,6 @@ async fn do_start(
                     "- `list_roblox_studios()` — List connected Studio instances\n",
                     "- `set_active_studio(studio_id)` — Target a specific instance before making changes\n\n",
 
-                    // ── Roblox architecture ───────────────────────────────
                     "## Roblox Architecture\n\n",
 
                     "**DataModel**: game → Services → Instances. Key services:\n",
@@ -407,7 +324,6 @@ async fn do_start(
 
                     "**Script types**: `Script` (server), `LocalScript` (client), `ModuleScript` (shared via `require()`). Place them in the correct service.\n\n",
 
-                    // ── Luau style ────────────────────────────────────────
                     "## Luau Style\n",
                     "- Idiomatic Luau: type annotations, string interpolation, `if-then-else` expressions.\n",
                     "- Descriptive names: `player` not `p`, `character` not `char`, `humanoid` not `hum`.\n",
@@ -416,7 +332,6 @@ async fn do_start(
                     "- `task.spawn`, `task.defer`, `task.delay`, `task.wait` — never legacy `spawn`/`wait`/`delay`.\n",
                     "- Clean up: disconnect connections, destroy clones, cancel threads.\n\n",
 
-                    // ── Safety & communication ────────────────────────────
                     "## Safety\n",
                     "- Never overwrite large scripts unless necessary. Prefer targeted `multi_edit`.\n",
                     "- Never invent paths, remotes, or instances without verifying they exist.\n",
@@ -426,7 +341,12 @@ async fn do_start(
                     "## Communication\n",
                     "Be concise and practical. State what you did, not how to do it — the tools already did it. ",
                     "Explain *why* when it's non-obvious. When console errors appear, immediately read the relevant script to diagnose. ",
-                    "If a request is outside what the tools can do (publishing, Team Create, marketplace), say so clearly."
+                    "If a request is outside what the tools can do (publishing, Team Create, marketplace), say so clearly.\n\n",
+
+                    "## MCP Connection Issues\n",
+                    "If any MCP tool call fails or times out, tell the user:\n",
+                    "\"Roblox Studio must be open and configured. See https://create.roblox.com/docs/studio/mcp\"\n",
+                    "Do not retry repeatedly. Ask the user to verify Studio is running with MCP enabled."
                 )
             }
         }
@@ -439,15 +359,12 @@ async fn do_start(
     let workspace = crate::paths::workspace_dir()?;
 
     // Create isolated XDG directories under ~/BloxBot/.opencode/
-    // This prevents the bundled OpenCode from reading/writing to the user's
-    // global ~/.config/opencode, ~/.local/share/opencode, etc.
     let opencode_home = workspace.join(".opencode");
     let xdg_data = opencode_home.join("data");
     let xdg_config = opencode_home.join("config");
     let xdg_cache = opencode_home.join("cache");
     let xdg_state = opencode_home.join("state");
 
-    // Create directories if they don't exist
     for dir in [&xdg_data, &xdg_config, &xdg_cache, &xdg_state] {
         if !dir.exists() {
             std::fs::create_dir_all(dir)
@@ -455,9 +372,6 @@ async fn do_start(
         }
     }
 
-    // Write the config file that OpenCode actually reads on startup.
-    // OPENCODE_CONFIG_CONTENT env var is ignored — OpenCode loads from
-    // {XDG_CONFIG_HOME}/opencode/opencode.json instead.
     let config_dir = xdg_config.join("opencode");
     std::fs::create_dir_all(&config_dir)
         .map_err(|e| format!("Failed to create config dir: {e}"))?;
@@ -466,12 +380,6 @@ async fn do_start(
         .map_err(|e| format!("Failed to write OpenCode config: {e}"))?;
     log::info!("Wrote OpenCode config to {}", config_file.display());
 
-    // Build a minimal PATH with our bundled Node.js bin directory first,
-    // then essential system paths. This ensures npx/npm use our bundled Node.js.
-    //
-    // On Windows, Tauri resolves resource paths with the \\?\ extended-length prefix
-    // (from std::fs::canonicalize). This prefix breaks PATH lookups and child process
-    // resolution, so we strip it.
     let sidecar_dir = crate::paths::sidecar_dir()?;
 
     #[cfg(unix)]
@@ -495,8 +403,6 @@ async fn do_start(
         nodejs_bin, sidecar_path_str
     );
 
-    // Spawn the sidecar via the shell plugin. This automatically resolves
-    // the binary from the `externalBin` config in tauri.conf.json.
     let (rx, child) = app
         .shell()
         .sidecar("opencode")
@@ -516,12 +422,10 @@ async fn do_start(
             "DEBUG",
         ])
         .current_dir(&workspace)
-        // Isolated XDG directories
         .env("XDG_DATA_HOME", &xdg_data)
         .env("XDG_CONFIG_HOME", &xdg_config)
         .env("XDG_CACHE_HOME", &xdg_cache)
         .env("XDG_STATE_HOME", &xdg_state)
-        // Minimal PATH with bundled node/npm/npx first
         .env("PATH", &minimal_path)
         .spawn()
         .map_err(|e| {
@@ -538,15 +442,10 @@ async fn do_start(
         s.child = Some(child);
     }
 
-    // Spawn an event handler for stdout, stderr, and process exit.
-    // This replaces both the BufReader capture tasks and the polling-based
-    // spawn_exit_monitor from the old tokio::process implementation.
+    // Spawn event handler for stdout, stderr, and process exit.
     spawn_event_handler(rx, Arc::clone(state), app.clone());
 
-    // Wait for the server to accept connections by probing the TCP port
-    // directly. No timeout - we loop until either the port is accepting
-    // connections or the process exits (detected via the event handler
-    // setting child to None and status to Error).
+    // Wait for the server to accept TCP connections.
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
 
     loop {
@@ -556,34 +455,20 @@ async fn do_start(
         {
             let s = state.lock().await;
             if s.child.is_none() {
-                if let OpenCodeStatus::Error(ref msg) = s.status {
-                    let err = msg.clone();
-                    log::error!("Process exited before becoming ready: {err}");
-                    return Err(err);
-                }
                 let err = "OpenCode process exited before becoming ready".to_string();
                 log::error!("{err}");
-                drop(s);
-                set_status(state, app, OpenCodeStatus::Error(err.clone())).await;
                 return Err(err);
             }
         }
 
-        // Try to open a TCP connection. If the process has bound the port
-        // and is accepting connections, this succeeds immediately.
         if tokio::net::TcpStream::connect(addr).await.is_ok() {
             log::info!("Server listening on port {port}");
-            set_status(state, app, OpenCodeStatus::Running).await;
             return Ok(port);
         }
     }
 }
 
-/// Spawn an event handler task that processes stdout/stderr and handles
-/// process termination logging.
-///
-/// Runs on a dedicated OS thread with its own tokio runtime because the
-/// shell plugin's `CommandEvent` receiver is not `Send`.
+/// Spawn an event handler task for stdout/stderr/exit.
 fn spawn_event_handler(
     rx: tauri::async_runtime::Receiver<CommandEvent>,
     state: SharedOpenCodeState,
@@ -607,9 +492,7 @@ fn spawn_event_handler(
     });
 }
 
-/// Sidecar stderr lines matching these substrings are high-frequency
-/// noise (polling, per-request logs, bus events, tool registry chatter)
-/// that add no diagnostic value at normal log levels.
+/// Sidecar stderr lines matching these are high-frequency noise.
 const NOISY_PATTERNS: &[&str] = &[
     "path=/mcp request",
     "path=/global/health request",
@@ -620,9 +503,6 @@ const NOISY_PATTERNS: &[&str] = &[
     "service=permission",
 ];
 
-/// Parse the sidecar's own log level from its structured output.
-/// Lines look like: `INFO  2026-02-12T... message` or `DEBUG ...`.
-/// Returns the extracted level and the original line (for logging).
 fn parse_sidecar_level(line: &str) -> log::Level {
     let trimmed = line.trim_start();
     if trimmed.starts_with("ERROR") {
@@ -634,18 +514,14 @@ fn parse_sidecar_level(line: &str) -> log::Level {
     } else if trimmed.starts_with("INFO") {
         log::Level::Info
     } else {
-        // Unstructured line (e.g. stack trace, raw output) — default to warn
         log::Level::Warn
     }
 }
 
-/// Returns `true` if the line is high-frequency noise that should be
-/// suppressed at normal verbosity.
 fn is_noisy_sidecar_line(line: &str) -> bool {
     NOISY_PATTERNS.iter().any(|p| line.contains(p))
 }
 
-/// Process shell plugin events until the process terminates.
 async fn process_events(
     mut rx: tauri::async_runtime::Receiver<CommandEvent>,
     state: &SharedOpenCodeState,
@@ -672,10 +548,14 @@ async fn process_events(
                     log::trace!(target: "opencode::stderr", "{trimmed}");
                 } else {
                     match parse_sidecar_level(trimmed) {
-                        log::Level::Error => log::error!(target: "opencode::stderr", "{trimmed}"),
+                        log::Level::Error => {
+                            log::error!(target: "opencode::stderr", "{trimmed}")
+                        }
                         log::Level::Warn => log::warn!(target: "opencode::stderr", "{trimmed}"),
                         log::Level::Info => log::info!(target: "opencode::stderr", "{trimmed}"),
-                        log::Level::Debug => log::debug!(target: "opencode::stderr", "{trimmed}"),
+                        log::Level::Debug => {
+                            log::debug!(target: "opencode::stderr", "{trimmed}")
+                        }
                         _ => log::debug!(target: "opencode::stderr", "{trimmed}"),
                     }
                 }
@@ -689,8 +569,8 @@ async fn process_events(
     }
 }
 
-/// Handle process termination. Sets the appropriate status so the
-/// frontend can show an error with a manual retry button.
+/// Handle process termination. Logs, clears state, and exits the app.
+/// The app cannot function without the OpenCode sidecar.
 async fn handle_process_exit(
     state: &SharedOpenCodeState,
     app: &AppHandle,
@@ -700,237 +580,25 @@ async fn handle_process_exit(
     s.child = None;
 
     if payload.code == Some(0) {
-        log::info!("Process exited cleanly");
-        s.status = OpenCodeStatus::Stopped;
-        emit_status(app, &s.status, s.port);
-        return;
+        log::info!("OpenCode process exited cleanly");
+        app.exit(0);
+    } else {
+        log::error!(
+            "OpenCode process exited with code {:?} (signal {:?})",
+            payload.code,
+            payload.signal
+        );
+        app.exit(1);
     }
-
-    let raw_msg = format!(
-        "Exited with code {:?} (signal {:?})",
-        payload.code, payload.signal
-    );
-    log::warn!("Process exited: {raw_msg}");
-
-    // Present a human-friendly message to the user; the raw details
-    // are already in the log for debugging.
-    let user_msg = match payload.code {
-        Some(code) => format!("The server exited unexpectedly (code {code})."),
-        None => match payload.signal {
-            Some(sig) => format!("The server was terminated by signal {sig}."),
-            None => "The server stopped unexpectedly.".to_string(),
-        },
-    };
-    s.status = OpenCodeStatus::Error(user_msg);
-    emit_status(app, &s.status, s.port);
 }
 
 /// Gracefully stop the OpenCode sidecar process.
-pub async fn stop_all(state: &SharedOpenCodeState, app: &AppHandle) {
-    let has_child = {
-        let s = state.lock().await;
-        s.child.is_some()
-    };
-
-    if !has_child {
-        return;
-    }
-
+pub async fn stop_all(state: &SharedOpenCodeState, _app: &AppHandle) {
     let mut s = state.lock().await;
     if let Some(child) = s.child.take() {
         let _ = child.kill();
     }
-    s.status = OpenCodeStatus::Stopped;
     s.port = 0;
-    emit_status(app, &s.status, 0);
-}
-
-// ── Tauri commands ──────────────────────────────────────────────────────
-
-/// Get the current OpenCode server status. Used for the initial status
-/// check when the frontend first loads (in case it missed earlier events).
-#[tauri::command]
-pub async fn get_opencode_status(
-    state: tauri::State<'_, SharedOpenCodeState>,
-) -> Result<(OpenCodeStatus, u16), String> {
-    let s = state.lock().await;
-    Ok((s.status.clone(), s.port))
-}
-
-/// Restart the OpenCode server. Gracefully tears down all processes
-/// (MCP + sidecar) then starts fresh. Called from the frontend retry button.
-#[tauri::command]
-pub async fn restart_opencode(
-    state: tauri::State<'_, SharedOpenCodeState>,
-    app: AppHandle,
-) -> Result<u16, String> {
-    // Stop everything first (no-op if already stopped)
-    stop_all(state.inner(), &app).await;
-    // Clean up any orphans that survived
-    cleanup_stale_processes();
-    // Small delay for ports to be released by the OS
-    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-    // Start fresh
-    start_opencode_server(state.inner().clone(), app).await
-}
-
-/// Check whether the Roblox Studio process is actually running.
-///
-/// OpenCode reports "connected" when its stdio transport to the StudioMCP
-/// binary is alive, but that can remain true after Roblox Studio closes.
-/// This function provides a ground-truth check so we can override stale
-/// "connected" statuses.
-async fn is_studio_process_running() -> bool {
-    #[cfg(target_os = "macos")]
-    {
-        // pgrep -x matches the exact process name (no substring matching).
-        // RobloxStudio is the process from the .app bundle.
-        tokio::process::Command::new("pgrep")
-            .args(["-x", "RobloxStudio"])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .await
-            .map(|s| s.success())
-            .unwrap_or(false)
-    }
-    #[cfg(target_os = "windows")]
-    {
-        // tasklist exits 0 if the filter matches at least one process.
-        tokio::process::Command::new("tasklist")
-            .args(["/FI", "IMAGENAME eq RobloxStudioBeta.exe", "/NH"])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
-            .output()
-            .await
-            .map(|o| {
-                let out = String::from_utf8_lossy(&o.stdout);
-                // tasklist always exits 0; check stdout for the process name.
-                out.contains("RobloxStudioBeta.exe")
-            })
-            .unwrap_or(false)
-    }
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    {
-        // Unsupported platform - skip the check and trust OpenCode.
-        true
-    }
-}
-
-/// Poll the Studio MCP server status via the OpenCode server's /mcp
-/// endpoint. The official Studio MCP binary handles the actual connection
-/// to Roblox Studio - we just ask OpenCode for its status and then
-/// cross-check that Studio is actually running as a process.
-#[tauri::command]
-pub async fn poll_studio_status(
-    state: tauri::State<'_, SharedOpenCodeState>,
-) -> Result<StudioStatusResult, String> {
-    let oc_port = {
-        let s = state.lock().await;
-        if !matches!(s.status, OpenCodeStatus::Running) {
-            return Ok(StudioStatusResult {
-                status: "unknown".into(),
-                error: None,
-            });
-        }
-        s.port
-    };
-    let workspace = crate::paths::workspace_dir()?;
-    let client = http_client();
-
-    let workspace_str = workspace.to_string_lossy().to_string();
-    let mcp_url = format!("http://{LOOPBACK}:{oc_port}/mcp");
-
-    match client
-        .get(&mcp_url)
-        .header("x-opencode-directory", &workspace_str)
-        .query(&[("directory", &workspace_str)])
-        .send()
-        .await
-    {
-        Ok(resp) if resp.status().is_success() => {
-            if let Ok(body) = resp.json::<serde_json::Value>().await {
-                log::trace!("OpenCode /mcp response: {body}");
-                if let Some(rs) = body.get("roblox-studio") {
-                    let status_str = rs
-                        .get("status")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown");
-
-                    match status_str {
-                        "connected" => {
-                            // OpenCode reports "connected" when the stdio
-                            // transport to StudioMCP is alive, but Studio
-                            // itself may have closed. Verify the process.
-                            if is_studio_process_running().await {
-                                Ok(StudioStatusResult {
-                                    status: "connected".into(),
-                                    error: None,
-                                })
-                            } else {
-                                log::info!(
-                                    "MCP reports connected but Studio process not found"
-                                );
-                                Ok(StudioStatusResult {
-                                    status: "disconnected".into(),
-                                    error: None,
-                                })
-                            }
-                        }
-                        "failed" => {
-                            let err = rs.get("error").and_then(|v| v.as_str()).map(String::from);
-                            Ok(StudioStatusResult {
-                                status: "failed".into(),
-                                error: err,
-                            })
-                        }
-                        "disabled" => Ok(StudioStatusResult {
-                            status: "disabled".into(),
-                            error: None,
-                        }),
-                        "needs_auth" | "needs_client_registration" => Ok(StudioStatusResult {
-                            status: "needs_auth".into(),
-                            error: None,
-                        }),
-                        _ => Ok(StudioStatusResult {
-                            status: "disconnected".into(),
-                            error: None,
-                        }),
-                    }
-                } else {
-                    Ok(StudioStatusResult {
-                        status: "unknown".into(),
-                        error: None,
-                    })
-                }
-            } else {
-                Ok(StudioStatusResult {
-                    status: "unknown".into(),
-                    error: None,
-                })
-            }
-        }
-        Ok(resp) => {
-            log::warn!("OpenCode /mcp returned HTTP {}", resp.status());
-            Ok(StudioStatusResult {
-                status: "unknown".into(),
-                error: None,
-            })
-        }
-        Err(e) => {
-            log::warn!("OpenCode /mcp request failed: {e}");
-            Ok(StudioStatusResult {
-                status: "unknown".into(),
-                error: None,
-            })
-        }
-    }
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct StudioStatusResult {
-    pub status: String,
-    pub error: Option<String>,
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────
@@ -939,43 +607,12 @@ pub struct StudioStatusResult {
 mod tests {
     use super::*;
 
-    // ── OpenCodeStatus & OpenCodeState ────────────────────────────────
-
     #[test]
-    fn default_state_is_stopped_port_zero() {
+    fn default_state_is_port_zero() {
         let state = OpenCodeState::default();
-        assert!(matches!(state.status, OpenCodeStatus::Stopped));
         assert_eq!(state.port, 0);
         assert!(state.child.is_none());
     }
-
-    #[test]
-    fn status_serializes_to_expected_json() {
-        let stopped = serde_json::to_value(&OpenCodeStatus::Stopped).unwrap();
-        assert_eq!(stopped, serde_json::json!("Stopped"));
-
-        let starting = serde_json::to_value(&OpenCodeStatus::Starting).unwrap();
-        assert_eq!(starting, serde_json::json!("Starting"));
-
-        let running = serde_json::to_value(&OpenCodeStatus::Running).unwrap();
-        assert_eq!(running, serde_json::json!("Running"));
-
-        let error = serde_json::to_value(&OpenCodeStatus::Error("boom".into())).unwrap();
-        assert_eq!(error, serde_json::json!({"Error": "boom"}));
-    }
-
-    #[test]
-    fn status_payload_serializes_correctly() {
-        let payload = StatusPayload {
-            status: OpenCodeStatus::Running,
-            port: 59200,
-        };
-        let json = serde_json::to_value(&payload).unwrap();
-        assert_eq!(json["port"], 59200);
-        assert_eq!(json["status"], "Running");
-    }
-
-    // ── Constants ────────────────────────────────────────────────────
 
     #[test]
     fn port_range_within_iana_dynamic_range() {
@@ -987,8 +624,6 @@ mod tests {
     fn loopback_is_ipv4() {
         assert_eq!(LOOPBACK, "127.0.0.1");
     }
-
-    // ── parse_sidecar_level ──────────────────────────────────────────
 
     #[test]
     fn parse_sidecar_level_error() {
@@ -1038,8 +673,6 @@ mod tests {
         );
     }
 
-    // ── is_noisy_sidecar_line ────────────────────────────────────────
-
     #[test]
     fn noisy_patterns_detected() {
         assert!(is_noisy_sidecar_line("path=/mcp request id=123"));
@@ -1058,41 +691,15 @@ mod tests {
         assert!(!is_noisy_sidecar_line(""));
     }
 
-    // ── studio_mcp_command ───────────────────────────────────────────
-
     #[test]
     fn studio_mcp_command_returns_non_empty_vec() {
         let cmd = studio_mcp_command();
         assert!(!cmd.is_empty());
-        // On macOS, first element should be the StudioMCP path
         #[cfg(target_os = "macos")]
         assert!(cmd[0].contains("StudioMCP"));
-        // On Windows, first element should be cmd.exe
         #[cfg(target_os = "windows")]
         assert_eq!(cmd[0], "cmd.exe");
     }
-
-    // ── StudioStatusResult ───────────────────────────────────────────
-
-    #[test]
-    fn studio_status_result_serializes() {
-        let result = StudioStatusResult {
-            status: "connected".into(),
-            error: None,
-        };
-        let json = serde_json::to_value(&result).unwrap();
-        assert_eq!(json["status"], "connected");
-        assert!(json["error"].is_null());
-
-        let result_err = StudioStatusResult {
-            status: "failed".into(),
-            error: Some("timeout".into()),
-        };
-        let json_err = serde_json::to_value(&result_err).unwrap();
-        assert_eq!(json_err["error"], "timeout");
-    }
-
-    // ── find_available_port ──────────────────────────────────────────
 
     #[tokio::test]
     async fn find_available_port_returns_port_in_range() {
@@ -1100,44 +707,4 @@ mod tests {
         assert!(port >= OC_PORT_START);
         assert!(port < OC_PORT_START + PORT_RANGE);
     }
-
-    #[tokio::test]
-    async fn find_available_port_skips_occupied_port() {
-        // Bind the first port so find_available_port must skip it
-        let listener = tokio::net::TcpListener::bind((LOOPBACK, OC_PORT_START))
-            .await
-            .expect("failed to bind test port");
-        let port = find_available_port(OC_PORT_START).await;
-        assert!(port > OC_PORT_START, "should skip the occupied port");
-        assert!(port < OC_PORT_START + PORT_RANGE);
-        drop(listener);
-    }
-
-    // ── strip_win_prefix (Windows only) ──────────────────────────────
-
-    #[cfg(windows)]
-    #[test]
-    fn strip_win_prefix_removes_extended_prefix() {
-        let path = std::path::Path::new(r"\\?\C:\Users\test\bin");
-        assert_eq!(strip_win_prefix(path), r"C:\Users\test\bin");
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn strip_win_prefix_no_op_for_normal_paths() {
-        let path = std::path::Path::new(r"C:\Users\test\bin");
-        assert_eq!(strip_win_prefix(path), r"C:\Users\test\bin");
-    }
-
-    // ── is_studio_process_running ───────────────────────────────────
-
-    #[tokio::test]
-    async fn is_studio_process_running_returns_bool() {
-        // Smoke test: the function should complete without panicking
-        // and return a bool. In CI (where Studio is never running)
-        // this will be false; locally it depends on whether Studio is
-        // open - either result is valid.
-        let _running = is_studio_process_running().await;
-    }
 }
-
