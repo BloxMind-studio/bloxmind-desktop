@@ -29,6 +29,7 @@ export function sseDispatch(
 
   const currentSessionId = activeSessionIdRef.current;
 
+  try {
   switch (event.type) {
     case "session.created": {
       const { info } = event.properties;
@@ -202,5 +203,8 @@ export function sseDispatch(
       }
       break;
     }
+  }
+  } catch (err) {
+    console.warn("sseDispatch: malformed event, skipping", event.type, err);
   }
 }

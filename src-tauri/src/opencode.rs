@@ -569,10 +569,11 @@ async fn process_events(
     }
 }
 
-/// Handle process termination. Logs and clears state.
+/// Handle process termination. Logs, clears state, and exits the app.
+/// The app cannot function without the OpenCode sidecar.
 async fn handle_process_exit(
     state: &SharedOpenCodeState,
-    _app: &AppHandle,
+    app: &AppHandle,
     payload: &tauri_plugin_shell::process::TerminatedPayload,
 ) {
     let mut s = state.lock().await;
@@ -580,12 +581,14 @@ async fn handle_process_exit(
 
     if payload.code == Some(0) {
         log::info!("OpenCode process exited cleanly");
+        app.exit(0);
     } else {
         log::error!(
             "OpenCode process exited with code {:?} (signal {:?})",
             payload.code,
             payload.signal
         );
+        app.exit(1);
     }
 }
 
