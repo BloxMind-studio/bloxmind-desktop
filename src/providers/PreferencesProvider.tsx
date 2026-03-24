@@ -42,7 +42,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setHiddenModels(new Set(configData.hiddenModels));
   }, [configData]);
 
-  // Model selection: prefer last used model, fall back to first connected provider's default
+  // Restore last used model if its provider is still connected
   useEffect(() => {
     if (!configData || connectedProviders.length === 0) return;
     if (configData.lastModel && connectedProviders.includes(splitModelKey(configData.lastModel)[0])) {
