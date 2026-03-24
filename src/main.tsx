@@ -11,7 +11,12 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <PostHogProvider
       apiKey={POSTHOG_API_KEY}
-      options={{ api_host: POSTHOG_API_HOST, defaults: "2026-01-30" }}
+      options={{
+        api_host: POSTHOG_API_HOST,
+        defaults: "2026-01-30",
+        advanced_disable_toolbar_metrics: true,
+        disable_session_recording: true,
+      }}
     >
       <App />
     </PostHogProvider>

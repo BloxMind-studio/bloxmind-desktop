@@ -445,8 +445,13 @@ async fn do_start(
     // Spawn event handler for stdout, stderr, and process exit.
     spawn_event_handler(rx, Arc::clone(state), app.clone());
 
-    // Wait for the server to accept TCP connections.
-    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    // Wait for the HTTP server to be fully ready.
+    // Probe /session to ensure app routes (not just /global/health) are registered.
+    let health_url = format!("http://{LOOPBACK}:{port}/session");
+    let http_client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {e}"))?;
 
     loop {
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
@@ -461,9 +466,14 @@ async fn do_start(
             }
         }
 
-        if tokio::net::TcpStream::connect(addr).await.is_ok() {
-            log::info!("Server listening on port {port}");
-            return Ok(port);
+        match http_client.get(&health_url).send().await {
+            Ok(resp) => {
+                log::info!("Server ready on port {port} (status {})", resp.status());
+                return Ok(port);
+            }
+            Err(_) => {
+                log::debug!("Server not ready yet, retrying...");
+            }
         }
     }
 }
