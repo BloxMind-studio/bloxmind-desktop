@@ -472,7 +472,7 @@ async fn do_start(
                 return Ok(port);
             }
             Err(_) => {
-                log::debug!("Server not ready yet, retrying...");
+                log::trace!("Server not ready yet, retrying...");
             }
         }
     }

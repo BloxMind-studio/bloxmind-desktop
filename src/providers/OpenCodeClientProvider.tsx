@@ -53,17 +53,23 @@ export function OpenCodeClientProvider({
   useEffect(() => {
     if (ready) return;
 
+    const MAX_PORT_ATTEMPTS = 30; // ~30s before showing error
+    const MAX_SERVER_ATTEMPTS = 15; // ~15s before showing error
+    const POLL_INTERVAL = 1000;
+
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout>;
 
     // Step 1: Poll Tauri command until the sidecar port is available.
     async function waitForPort(): Promise<[number, string]> {
-      while (!cancelled) {
+      for (let attempt = 0; !cancelled; attempt++) {
         try {
           return await invoke<[number, string]>("get_opencode_info");
-        } catch {
-          // Sidecar not started yet - expected during dev startup.
-          await new Promise((r) => { retryTimer = setTimeout(r, 1000); });
+        } catch (err) {
+          if (attempt >= MAX_PORT_ATTEMPTS) {
+            throw new Error(`Sidecar not available after ${MAX_PORT_ATTEMPTS}s: ${err}`);
+          }
+          await new Promise((r) => { retryTimer = setTimeout(r, POLL_INTERVAL); });
         }
       }
       throw new Error("cancelled");
@@ -71,15 +77,20 @@ export function OpenCodeClientProvider({
 
     // Step 2: Poll the HTTP server until it responds.
     async function waitForServer(baseUrl: string): Promise<void> {
-      while (!cancelled) {
+      for (let attempt = 0; !cancelled; attempt++) {
         try {
-          const res = await fetch(`${baseUrl}/session`, { method: "GET" });
+          const res = await fetch(`${baseUrl}/session`, {
+            method: "GET",
+            signal: AbortSignal.timeout(3000),
+          });
           // Any HTTP response means the server is ready (even 4xx).
           if (res.ok || res.status >= 400) return;
         } catch {
-          // Connection refused - server not ready yet.
+          if (attempt >= MAX_SERVER_ATTEMPTS) {
+            throw new Error(`Server not responding after ${MAX_SERVER_ATTEMPTS}s`);
+          }
         }
-        await new Promise((r) => { retryTimer = setTimeout(r, 1000); });
+        await new Promise((r) => { retryTimer = setTimeout(r, POLL_INTERVAL); });
       }
       throw new Error("cancelled");
     }
