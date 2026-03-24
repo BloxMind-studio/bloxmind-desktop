@@ -1,7 +1,7 @@
 import { getVersion } from "@tauri-apps/api/app";
 import { relaunch } from "@tauri-apps/plugin-process";
-import { check, type Update } from "@tauri-apps/plugin-updater";
-import { useEffect, useRef } from "react";
+import { check } from "@tauri-apps/plugin-updater";
+import { useEffect } from "react";
 import { toast } from "sonner";
 
 // ── Semver helpers ──────────────────────────────────────────────────────
@@ -30,8 +30,6 @@ function isPatchOnly(current: SemVer, next: SemVer): boolean {
 // ── Hook ────────────────────────────────────────────────────────────────
 
 export function useUpdater(): void {
-  const updateRef = useRef<Update | null>(null);
-
   useEffect(() => {
     let cancelled = false;
 
@@ -43,8 +41,6 @@ export function useUpdater(): void {
       try {
         const update = await check();
         if (cancelled || !update) return;
-
-        updateRef.current = update;
 
         const currentVersion = await getVersion();
         const current = parseSemver(currentVersion);
