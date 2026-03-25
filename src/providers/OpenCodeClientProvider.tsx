@@ -49,23 +49,52 @@ export function OpenCodeClientProvider({
 
   const sseAbortRef = useRef<AbortController | null>(null);
 
-  // ── Get port from Rust, create client, fetch server state ────────────
+  // ── Get port from Rust, wait for server, create client ────────────
   useEffect(() => {
     if (ready) return;
 
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout>;
 
-    const attempt = async () => {
+    // Step 1: Poll Tauri command until the sidecar port is available.
+    async function waitForPort(): Promise<[number, string]> {
+      while (!cancelled) {
+        try {
+          return await invoke<[number, string]>("get_opencode_info");
+        } catch {
+          await new Promise((r) => { retryTimer = setTimeout(r, 1000); });
+        }
+      }
+      throw new Error("cancelled");
+    }
+
+    // Step 2: Poll the HTTP server until it responds.
+    async function waitForServer(baseUrl: string): Promise<void> {
+      while (!cancelled) {
+        try {
+          const res = await fetch(`${baseUrl}/session`, {
+            method: "GET",
+            signal: AbortSignal.timeout(3000),
+          });
+          if (res.ok || res.status >= 400) return;
+        } catch {
+          // Connection refused or timeout - keep polling.
+        }
+        await new Promise((r) => { retryTimer = setTimeout(r, 1000); });
+      }
+      throw new Error("cancelled");
+    }
+
+    async function init() {
       try {
-        const [ocPort, workspace] = await invoke<[number, string]>("get_opencode_info");
+        const [ocPort, workspace] = await waitForPort();
         if (cancelled) return;
 
-        const newClient = createOpencodeClient({
-          baseUrl: `http://127.0.0.1:${ocPort}`,
-          directory: workspace,
-        });
+        const baseUrl = `http://127.0.0.1:${ocPort}`;
+        await waitForServer(baseUrl);
+        if (cancelled) return;
 
+        const newClient = createOpencodeClient({ baseUrl, directory: workspace });
         await prefetchServerState(newClient, queryClient);
         if (cancelled) return;
 
@@ -76,12 +105,14 @@ export function OpenCodeClientProvider({
         setInitError(null);
       } catch (err) {
         if (cancelled) return;
-        console.error("Failed to initialize, retrying in 3s:", err);
+        console.error("Failed to initialize OpenCode:", err);
         setInitError(String(err));
-        retryTimer = setTimeout(attempt, 3000);
+        // Retry the whole sequence.
+        retryTimer = setTimeout(init, 3000);
       }
-    };
-    attempt();
+    }
+
+    init();
 
     return () => {
       cancelled = true;
