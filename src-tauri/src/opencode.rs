@@ -471,9 +471,12 @@ async fn do_start(
         }
 
         match http_client.get(&health_url).send().await {
-            Ok(resp) => {
+            Ok(resp) if resp.status().is_success() => {
                 log::info!("Server ready on port {port} (status {})", resp.status());
                 return Ok(port);
+            }
+            Ok(resp) => {
+                log::debug!("Health check returned non-success status: {}", resp.status());
             }
             Err(_) => {
                 log::trace!("Server not ready yet, retrying...");
