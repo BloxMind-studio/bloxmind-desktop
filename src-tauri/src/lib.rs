@@ -95,35 +95,23 @@ pub fn run() {
             app.handle()
                 .plugin(tauri_plugin_updater::Builder::new().build())?;
 
-            // ── Show window quickly, start OpenCode in parallel ────
-            // Always show the window after a brief delay so users see
-            // the loading screen. OpenCode startup continues in parallel.
-            let show_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-                if let Some(win) = show_handle.get_webview_window("main") {
-                    let _ = win.show();
-                }
-            });
-
+            // ── Start OpenCode, then show window ─────────────────
+            // The window stays hidden until OpenCode is alive.
+            // If it can't start after retries, exit — there's nothing to show.
             let state = app.state::<SharedOpenCodeState>().inner().clone();
             let handle = app.handle().clone();
             log::info!("BloxBot starting up");
             tauri::async_runtime::spawn(async move {
                 match opencode::start_opencode_server(state, handle.clone()).await {
                     Ok(port) => {
-                        log::info!("OpenCode ready on port {port}");
-                        // Ensure window is visible (may already be from the timer above).
+                        log::info!("OpenCode ready on port {port}, showing window");
                         if let Some(win) = handle.get_webview_window("main") {
                             let _ = win.show();
                         }
                     }
                     Err(e) => {
-                        log::error!("OpenCode failed to start: {e}");
-                        // Show window so user sees the error state and can check for updates.
-                        if let Some(win) = handle.get_webview_window("main") {
-                            let _ = win.show();
-                        }
+                        log::error!("OpenCode failed to start: {e} — exiting");
+                        handle.exit(1);
                     }
                 }
             });

@@ -457,16 +457,8 @@ async fn do_start(
         .build()
         .map_err(|e| format!("Failed to create HTTP client: {e}"))?;
 
-    let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(90);
-
     loop {
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-
-        if tokio::time::Instant::now() > deadline {
-            let err = "OpenCode server did not become ready within 90 seconds".to_string();
-            log::error!("{err}");
-            return Err(err);
-        }
 
         // Check if the process already exited.
         {
