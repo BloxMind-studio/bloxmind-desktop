@@ -445,9 +445,13 @@ async fn do_start(
     // Spawn event handler for stdout, stderr, and process exit.
     spawn_event_handler(rx, Arc::clone(state), app.clone());
 
-    // Wait for the HTTP server to be fully ready.
-    // Probe /session to ensure app routes (not just /global/health) are registered.
-    let health_url = format!("http://{LOOPBACK}:{port}/session");
+    // Wait for the HTTP server to be ready.
+    // Use /global/health instead of /session — the health endpoint responds
+    // immediately while /session triggers full bootstrapping (Bun plugin
+    // installation, project init, LSP setup) that can hang on slow networks
+    // or when antivirus intercepts downloads. The frontend handles the
+    // "still bootstrapping" state via its own polling.
+    let health_url = format!("http://{LOOPBACK}:{port}/global/health");
     let http_client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(2))
         .build()
