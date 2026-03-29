@@ -10,8 +10,6 @@ import { PreferencesProvider } from "@/providers/PreferencesProvider";
 import { QueryProvider } from "@/providers/QueryProvider";
 
 function AppInner() {
-  useUpdater();
-
   return (
     <main className="flex h-full flex-col overflow-hidden">
       <div
@@ -27,6 +25,10 @@ function AppInner() {
 }
 
 function App() {
+  // Run updater at the top level so it works even during loading/error states.
+  // This ensures users on broken builds can still receive fixes.
+  useUpdater();
+
   const activeSessionIdRef = useRef<string | null>(null);
 
   return (
