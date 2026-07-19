@@ -1,7 +1,7 @@
 import { usePostHog } from "@posthog/react";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
+import { desktop } from "@/lib/desktop";
 import { qk } from "@/lib/queryKeys";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 
@@ -19,9 +19,9 @@ export function useStartOAuth() {
       if (!client) throw new Error("No client");
       const res = await client.provider.oauth.authorize({ providerID, method: methodIndex });
       if (!res.data) return undefined;
-      // Always open the URL — in a Tauri app the sidecar can't open a browser itself
+      // The sidecar cannot open a browser itself, so use the safe desktop bridge.
       if (res.data.url) {
-        await openUrl(res.data.url);
+        await desktop.openUrl(res.data.url);
       }
       return { method: res.data.method, instructions: res.data.instructions, url: res.data.url };
     },

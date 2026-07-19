@@ -1,0 +1,31 @@
+appId: ai.bloxbot.desktop
+productName: BloxBot
+directories:
+  output: release
+files:
+  - dist/**
+  - dist-electron/**
+  - package.json
+  - "!node_modules/**"
+npmRebuild: false
+extraResources:
+  - from: resources/bin
+    to: bin
+    filter:
+      - opencode-*
+asar: true
+mac:
+  category: public.app-category.developer-tools
+  icon: src-tauri/icons/icon.icns
+  hardenedRuntime: true
+  target:
+    - dmg
+    - zip
+win:
+  icon: src-tauri/icons/icon.ico
+  target:
+    - nsis
+publish:
+  provider: github
+  owner: paralov
+  repo: app-bloxbot-ai

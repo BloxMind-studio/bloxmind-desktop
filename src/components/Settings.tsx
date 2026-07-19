@@ -1,7 +1,4 @@
-import { getVersion } from "@tauri-apps/api/app";
-import { relaunch } from "@tauri-apps/plugin-process";
-import { check } from "@tauri-apps/plugin-updater";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useCompleteOAuth, useStartOAuth } from "@/hooks/mutations/useOAuth";
 import { useDisconnectProvider, useSetApiKey } from "@/hooks/mutations/useSetApiKey";
@@ -11,8 +8,10 @@ import {
   useAuthMethods,
   useConnectedProviders,
 } from "@/hooks/useProviders";
+import { desktop } from "@/lib/desktop";
 import { usePreferences } from "@/providers/PreferencesProvider";
 import type { ModelInfo, ProviderInfo } from "@/types";
+import type { UpdateInfo } from "@/types/desktop";
 
 // ── Popular providers (same order as OpenCode's web UI) ──────────────
 const POPULAR_PROVIDERS = [
@@ -69,7 +68,8 @@ function Settings({ onClose }: SettingsProps) {
   const [appVersion, setAppVersion] = useState<string | null>(null);
 
   useEffect(() => {
-    getVersion()
+    desktop
+      .getVersion()
       .then(setAppVersion)
       .catch(() => {});
   }, []);
@@ -200,7 +200,13 @@ function Settings({ onClose }: SettingsProps) {
 type ConnectDialogState =
   | { step: "closed" }
   | { step: "methods"; provider: ProviderInfo }
-  | { step: "oauth"; provider: ProviderInfo; methodIndex: number; method: "auto" | "code" | null; instructions: string | null }
+  | {
+      step: "oauth";
+      provider: ProviderInfo;
+      methodIndex: number;
+      method: "auto" | "code" | null;
+      instructions: string | null;
+    }
   | { step: "apikey"; provider: ProviderInfo };
 
 function ProvidersTab() {
@@ -222,6 +228,15 @@ function ProvidersTab() {
   const oauthAbortRef = useRef<AbortController | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
+  const closeDialog = useCallback(() => {
+    oauthAbortRef.current?.abort();
+    oauthAbortRef.current = null;
+    setDialog({ step: "closed" });
+    setApiKeyInput("");
+    setOauthCodeInput("");
+    setError(null);
+  }, []);
+
   useEffect(() => {
     return () => {
       oauthAbortRef.current?.abort();
@@ -238,7 +253,7 @@ function ProvidersTab() {
     }
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
-  }, [dialog.step]);
+  }, [dialog.step, closeDialog]);
 
   // Auto-close dialog when provider becomes connected
   const prevConnectedRef = useRef(connectedProviders);
@@ -251,16 +266,7 @@ function ProvidersTab() {
       toast.success(`${dialog.provider.name} connected`);
       closeDialog();
     }
-  }, [connectedProviders, dialog]);
-
-  function closeDialog() {
-    oauthAbortRef.current?.abort();
-    oauthAbortRef.current = null;
-    setDialog({ step: "closed" });
-    setApiKeyInput("");
-    setOauthCodeInput("");
-    setError(null);
-  }
+  }, [connectedProviders, dialog, closeDialog]);
 
   function getOAuthMethodIndex(providerId: string): number | null {
     const methods = authMethods[providerId];
@@ -288,7 +294,9 @@ function ProvidersTab() {
       setDialog({ step: "methods", provider });
     } else {
       // No auth methods available
-      setError(`No authentication methods available. Required env vars: ${provider.env.join(", ")}`);
+      setError(
+        `No authentication methods available. Required env vars: ${provider.env.join(", ")}`,
+      );
       setDialog({ step: "methods", provider });
     }
   }
@@ -386,12 +394,8 @@ function ProvidersTab() {
   }
 
   // Split providers into connected and unconnected
-  const connected = allProviders.filter(
-    (p) => connectedProviders.includes(p.id),
-  );
-  const unconnected = allProviders.filter(
-    (p) => !connectedProviders.includes(p.id),
-  );
+  const connected = allProviders.filter((p) => connectedProviders.includes(p.id));
+  const unconnected = allProviders.filter((p) => !connectedProviders.includes(p.id));
 
   // Sort unconnected: popular first, then alphabetical
   const sortedUnconnected = useMemo(() => {
@@ -476,7 +480,9 @@ function ProvidersTab() {
       )}
 
       {allProviders.length === 0 && (
-        <div className="mt-8 py-4 text-center text-xs text-muted-foreground">Loading providers...</div>
+        <div className="mt-8 py-4 text-center text-xs text-muted-foreground">
+          Loading providers...
+        </div>
       )}
 
       {/* Connect dialog overlay */}
@@ -508,9 +514,7 @@ function ProvidersTab() {
               </button>
             </div>
 
-            {error && (
-              <p className="mt-3 text-[11px] text-destructive">{error}</p>
-            )}
+            {error && <p className="mt-3 text-[11px] text-destructive">{error}</p>}
 
             {/* Method selection */}
             {dialog.step === "methods" && (
@@ -543,13 +547,14 @@ function ProvidersTab() {
                     Sign in with {dialog.provider.name}
                   </button>
                 )}
-                {getOAuthMethodIndex(dialog.provider.id) !== null && hasApiKeyAuth(dialog.provider.id) && (
-                  <div className="flex items-center gap-2">
-                    <div className="h-px flex-1 bg-border" />
-                    <span className="text-[10px] text-muted-foreground">or</span>
-                    <div className="h-px flex-1 bg-border" />
-                  </div>
-                )}
+                {getOAuthMethodIndex(dialog.provider.id) !== null &&
+                  hasApiKeyAuth(dialog.provider.id) && (
+                    <div className="flex items-center gap-2">
+                      <div className="h-px flex-1 bg-border" />
+                      <span className="text-[10px] text-muted-foreground">or</span>
+                      <div className="h-px flex-1 bg-border" />
+                    </div>
+                  )}
                 {hasApiKeyAuth(dialog.provider.id) && (
                   <button
                     onClick={() => {
@@ -908,14 +913,14 @@ function AboutTab({ appVersion }: { appVersion: string | null }) {
   const [updateError, setUpdateError] = useState<string | null>(null);
 
   // Hold on to the Update handle so we can download it later
-  const updateRef = useRef<Awaited<ReturnType<typeof check>> | null>(null);
+  const updateRef = useRef<UpdateInfo | null>(null);
 
   async function handleCheckForUpdates() {
     setUpdateStatus("checking");
     setUpdateError(null);
     setUpdateVersion(null);
     try {
-      const update = await check();
+      const update = await desktop.checkForUpdate();
       if (!update) {
         setUpdateStatus("up-to-date");
         return;
@@ -935,8 +940,7 @@ function AboutTab({ appVersion }: { appVersion: string | null }) {
     if (!update) return;
     try {
       setUpdateStatus("downloading");
-      await update.downloadAndInstall();
-      await relaunch();
+      await desktop.installUpdate();
     } catch (err) {
       console.error("[about] Failed to install update:", err);
       setUpdateError(err instanceof Error ? err.message : "Installation failed");

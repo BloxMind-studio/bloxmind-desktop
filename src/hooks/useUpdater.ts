@@ -1,8 +1,7 @@
-import { getVersion } from "@tauri-apps/api/app";
-import { relaunch } from "@tauri-apps/plugin-process";
-import { check } from "@tauri-apps/plugin-updater";
 import { useEffect } from "react";
 import { toast } from "sonner";
+
+import { desktop } from "@/lib/desktop";
 
 // ── Semver helpers ──────────────────────────────────────────────────────
 
@@ -11,6 +10,8 @@ interface SemVer {
   minor: number;
   patch: number;
 }
+
+let updaterStarted = false;
 
 function parseSemver(version: string): SemVer | null {
   const match = version.replace(/^v/, "").match(/^(\d+)\.(\d+)\.(\d+)/);
@@ -31,6 +32,9 @@ function isPatchOnly(current: SemVer, next: SemVer): boolean {
 
 export function useUpdater(): void {
   useEffect(() => {
+    if (updaterStarted) return;
+    updaterStarted = true;
+
     let cancelled = false;
 
     async function run() {
@@ -39,10 +43,10 @@ export function useUpdater(): void {
       if (cancelled) return;
 
       try {
-        const update = await check();
+        const update = await desktop.checkForUpdate();
         if (cancelled || !update) return;
 
-        const currentVersion = await getVersion();
+        const currentVersion = await desktop.getVersion();
         const current = parseSemver(currentVersion);
         const next = parseSemver(update.version);
         const patch = current && next ? isPatchOnly(current, next) : false;
@@ -52,8 +56,7 @@ export function useUpdater(): void {
           console.debug(
             `[updater] Auto-installing patch update ${currentVersion} → ${update.version}`,
           );
-          await update.downloadAndInstall();
-          await relaunch();
+          await desktop.installUpdate();
         } else {
           // Minor/major — show persistent toast requiring manual action.
           console.debug(`[updater] Prompting for update ${currentVersion} → ${update.version}`);
@@ -66,8 +69,7 @@ export function useUpdater(): void {
               onClick: async () => {
                 const toastId = toast.loading("Installing update...");
                 try {
-                  await update.downloadAndInstall();
-                  await relaunch();
+                  await desktop.installUpdate();
                 } catch (err) {
                   console.error("[updater] Failed to install update:", err);
                   toast.dismiss(toastId);

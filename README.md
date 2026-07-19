@@ -15,7 +15,7 @@ AI-assisted Roblox development. BloxBot is a free, open-source desktop app that 
 
 BloxBot connects two things:
 
-1. **A desktop app** (Tauri v2  - React frontend, Rust backend) where you chat with AI
+1. **A desktop app** (Electron, Effect, and React) where you chat with AI
 2. **An AI server** ([OpenCode](https://github.com/anomalyco/opencode)) that manages model connections, sessions, and tool use
 
 The AI connects to Roblox Studio through its official built-in MCP server. When you type a message, the AI uses MCP tools to directly inspect and modify your open Studio project.
@@ -48,7 +48,6 @@ Download the installer for your platform from the [releases page](https://github
 
 ### Prerequisites
 
-- [Rust](https://rustup.rs/) (stable)
 - [Node.js](https://nodejs.org/) 22+
 - [pnpm](https://pnpm.io/) 10+
 
@@ -74,10 +73,11 @@ src/                    # React/TypeScript frontend
   lib/                  #   Pure utilities (sseDispatch, queryKeys, splitModelKey)
   providers/            #   Context providers (OpenCodeClient, ActiveSession, Preferences)
   test/                 #   Test setup and utilities
-src-tauri/              # Rust backend
-  src/lib.rs            #   App setup, menu, window management
-  src/opencode.rs       #   OpenCode server lifecycle
-  src/paths.rs          #   Path resolution (sidecar, Node.js)
+electron/               # Electron main process and preload bridge
+  main.ts               #   Secure window, IPC, updates, and lifecycle
+  services/OpenCode.ts  #   Effect-scoped OpenCode process lifecycle
+resources/bin/           # Downloaded, checksum-verified OpenCode server
+src-tauri/               # Legacy shell plus shared installer icons
 ```
 
 ### Key commands
@@ -87,13 +87,13 @@ src-tauri/              # Rust backend
 | `make dev` | Run the full app in dev mode |
 | `make build` | Production build |
 | `make test` | Run frontend tests |
-| `make check` | Test + type-check + lint (frontend + Rust) |
+| `make check` | Test + type-check + lint |
 | `pnpm lint` | Lint frontend code (Biome) |
 
 ## Tech stack
 
 - **Frontend**: React 18, TypeScript, TanStack React Query, Tailwind CSS
-- **Backend**: Rust (Tauri v2)
+- **Desktop runtime**: Electron with Effect-managed services
 - **AI engine**: [OpenCode](https://opencode.ai)
 - **Studio integration**: [Roblox Studio MCP](https://create.roblox.com/docs/studio/mcp) (built-in)
 - **Testing**: Vitest, React Testing Library

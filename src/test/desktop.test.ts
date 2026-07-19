@@ -1,0 +1,28 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+describe("browser desktop fallback", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    window.localStorage.clear();
+    delete window.bloxbot;
+  });
+
+  it("surfaces a useful error instead of waiting forever", async () => {
+    const { desktop } = await import("@/lib/desktop");
+
+    await expect(desktop.getOpenCodeInfo()).rejects.toThrow(
+      "The desktop service is unavailable. Start BloxBot with pnpm dev.",
+    );
+  });
+
+  it("persists preferences while running as a web preview", async () => {
+    const { desktop } = await import("@/lib/desktop");
+
+    await desktop.patchConfig({ lastModel: "openai/gpt-5" });
+
+    await expect(desktop.loadConfig()).resolves.toEqual({
+      lastModel: "openai/gpt-5",
+      hiddenModels: [],
+    });
+  });
+});
