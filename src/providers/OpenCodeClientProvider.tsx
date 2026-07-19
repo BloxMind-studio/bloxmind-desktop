@@ -2,7 +2,7 @@ import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk/v2/c
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import LoadingScreen from "@/components/LoadingScreen";
+import LoadingScreen, { type StartupAnimation } from "@/components/LoadingScreen";
 import { desktop } from "@/lib/desktop";
 import { qk } from "@/lib/queryKeys";
 import { sseDispatch } from "@/lib/sseDispatch";
@@ -11,6 +11,29 @@ const SSE_RECONNECT_DELAY = 3000;
 const SSE_FAILURE_THRESHOLD = 3;
 
 type AppStatus = "waiting" | "ready" | "error";
+export type StartupPhase = "engine" | "connection" | "workspace";
+
+const STARTUP_COPY: Record<StartupPhase, { message: string; animation: StartupAnimation }> = {
+  engine: {
+    message: "Waking things up",
+    animation: "sparkles",
+  },
+  connection: {
+    message: "Connecting the dots",
+    animation: "dots",
+  },
+  workspace: {
+    message: "Setting the stage",
+    animation: "blocks",
+  },
+};
+
+export function getStartupPresentation(phase: StartupPhase): {
+  message: string;
+  animation: StartupAnimation;
+} {
+  return STARTUP_COPY[phase];
+}
 
 interface OpenCodeClientContextValue {
   client: OpencodeClient | null;
@@ -42,6 +65,7 @@ export function OpenCodeClientProvider({
   const queryClient = useQueryClient();
 
   const [status, setStatus] = useState<AppStatus>("waiting");
+  const [startupPhase, setStartupPhase] = useState<StartupPhase>("engine");
   const [port, setPort] = useState(0);
   const [client, setClient] = useState<OpencodeClient | null>(null);
   const [ready, setReady] = useState(false);
@@ -83,9 +107,13 @@ export function OpenCodeClientProvider({
 
     async function init() {
       try {
+        setStatus("waiting");
+        setInitError(null);
+        setStartupPhase("engine");
         const { port: ocPort, workspace, authorization } = await getServerInfo();
         if (cancelled) return;
 
+        setStartupPhase("connection");
         const baseUrl = `http://127.0.0.1:${ocPort}`;
         await waitForServer(baseUrl, authorization);
         if (cancelled) return;
@@ -95,6 +123,7 @@ export function OpenCodeClientProvider({
           directory: workspace,
           headers: { Authorization: authorization },
         });
+        setStartupPhase("workspace");
         await prefetchServerState(newClient, queryClient);
         if (cancelled) return;
 
@@ -106,6 +135,7 @@ export function OpenCodeClientProvider({
       } catch (err) {
         if (cancelled) return;
         console.error("Failed to initialize OpenCode:", err);
+        setStatus("error");
         setInitError(String(err));
       }
     }
@@ -205,11 +235,13 @@ export function OpenCodeClientProvider({
   };
 
   if (!ready) {
+    const startup = getStartupPresentation(startupPhase);
     return (
       <OpenCodeClientContext.Provider value={value}>
         <LoadingScreen
-          message={initError ? "Failed to connect to OpenCode" : "Starting up..."}
+          message={initError ? "Failed to connect to OpenCode" : startup.message}
           detail={initError ?? undefined}
+          animation={initError ? undefined : startup.animation}
           error={!!initError}
           onRetry={initError ? () => desktop.relaunch() : undefined}
         />

@@ -6,6 +6,7 @@ import type { UpdateInfo } from "@/types/desktop";
 interface LoadingScreenProps {
   message?: string;
   detail?: string;
+  animation?: StartupAnimation;
   /** When true, shows the error state with help actions instead of the dot loader. */
   error?: boolean;
   /** Called when the user clicks "Try Again". */
@@ -13,6 +14,8 @@ interface LoadingScreenProps {
   /** When true, shows a spinner on the retry button. */
   retrying?: boolean;
 }
+
+export type StartupAnimation = "sparkles" | "dots" | "blocks";
 
 type UpdateCheckStatus = "idle" | "checking" | "available" | "downloading" | "up-to-date" | "error";
 
@@ -26,6 +29,7 @@ type UpdateCheckStatus = "idle" | "checking" | "available" | "downloading" | "up
 function LoadingScreen({
   message = "Starting up...",
   detail,
+  animation,
   error,
   onRetry,
   retrying,
@@ -65,7 +69,7 @@ function LoadingScreen({
 
   return (
     <div className="flex h-full w-full flex-col items-center justify-center px-6">
-      <div className="animate-fade-in flex flex-col items-center">
+      <div className="animate-fade-in flex w-full max-w-sm flex-col items-center">
         {/* BloxBot face  - inline SVG so we can animate individual parts */}
         <svg
           width="80"
@@ -128,9 +132,15 @@ function LoadingScreen({
         </svg>
 
         {/* Status text */}
-        <p className="mt-5 text-sm font-medium text-foreground/70">{message}</p>
+        <h1 className="mt-5 text-sm font-semibold text-foreground/80">{message}</h1>
 
-        {detail && <p className="mt-1.5 max-w-xs text-center text-xs text-destructive">{detail}</p>}
+        {detail && (
+          <p
+            className={`mt-1.5 max-w-sm text-center text-xs leading-relaxed ${error ? "text-destructive" : "text-muted-foreground"}`}
+          >
+            {detail}
+          </p>
+        )}
 
         {/* Error state: help actions */}
         {error ? (
@@ -257,8 +267,9 @@ function LoadingScreen({
               </a>
             </div>
           </div>
+        ) : animation ? (
+          <StartupAnimationGraphic animation={animation} />
         ) : (
-          /* Loading state: dot animation */
           <div className="mt-4 flex gap-1">
             <span className="bloxbot-dot h-1 w-1 rounded-full bg-foreground/25" />
             <span className="bloxbot-dot h-1 w-1 rounded-full bg-foreground/25 [animation-delay:150ms]" />
@@ -266,6 +277,36 @@ function LoadingScreen({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function StartupAnimationGraphic({ animation }: { animation: StartupAnimation }) {
+  if (animation === "sparkles") {
+    return (
+      <div className="startup-sparkles mt-5" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+      </div>
+    );
+  }
+
+  if (animation === "dots") {
+    return (
+      <div className="startup-connecting mt-5" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+      </div>
+    );
+  }
+
+  return (
+    <div className="startup-blocks mt-5" aria-hidden="true">
+      <span />
+      <span />
+      <span />
     </div>
   );
 }
