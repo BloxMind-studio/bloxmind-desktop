@@ -16,15 +16,20 @@ extraResources:
 asar: true
 mac:
   category: public.app-category.developer-tools
-  icon: src-tauri/icons/icon.icns
+  icon: electron/icons/icon.icns
   hardenedRuntime: true
   target:
     - dmg
     - zip
 win:
-  icon: src-tauri/icons/icon.ico
+  icon: electron/icons/icon.ico
   target:
     - nsis
+linux:
+  category: Development
+  icon: electron/icons/icon.png
+  target:
+    - deb
 publish:
   provider: github
   owner: paralov

@@ -74,10 +74,10 @@ src/                    # React/TypeScript frontend
   providers/            #   Context providers (OpenCodeClient, ActiveSession, Preferences)
   test/                 #   Test setup and utilities
 electron/               # Electron main process and preload bridge
+  icons/                #   Desktop installer icons
   main.ts               #   Secure window, IPC, updates, and lifecycle
   services/OpenCode.ts  #   Effect-scoped OpenCode process lifecycle
 resources/bin/           # Downloaded, checksum-verified OpenCode server
-src-tauri/               # Legacy shell plus shared installer icons
 ```
 
 ### Key commands
