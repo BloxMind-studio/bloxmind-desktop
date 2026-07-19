@@ -14,10 +14,7 @@ function AppInner() {
 
   return (
     <main className="flex h-full flex-col overflow-hidden">
-      <div
-        className="flex h-9 shrink-0 items-center justify-end border-b bg-card px-3"
-        data-tauri-drag-region
-      />
+      <div className="app-titlebar flex h-9 shrink-0 items-center justify-end border-b bg-card px-3" />
       <ErrorBoundary>
         <Chat />
       </ErrorBoundary>

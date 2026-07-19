@@ -1,5 +1,9 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+
+.app-titlebar {
+  -webkit-app-region: drag;
+}
 @import "shadcn/tailwind.css";
 
 @custom-variant dark (&:is(.dark *));

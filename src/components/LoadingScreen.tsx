@@ -1,6 +1,7 @@
-import { relaunch } from "@tauri-apps/plugin-process";
-import { check } from "@tauri-apps/plugin-updater";
 import { useRef, useState } from "react";
+
+import { desktop } from "@/lib/desktop";
+import type { UpdateInfo } from "@/types/desktop";
 
 interface LoadingScreenProps {
   message?: string;
@@ -31,12 +32,12 @@ function LoadingScreen({
 }: LoadingScreenProps) {
   const [updateStatus, setUpdateStatus] = useState<UpdateCheckStatus>("idle");
   const [updateVersion, setUpdateVersion] = useState<string | null>(null);
-  const updateRef = useRef<Awaited<ReturnType<typeof check>> | null>(null);
+  const updateRef = useRef<UpdateInfo | null>(null);
 
   async function handleCheckForUpdates() {
     setUpdateStatus("checking");
     try {
-      const update = await check();
+      const update = await desktop.checkForUpdate();
       if (!update) {
         setUpdateStatus("up-to-date");
         return;
@@ -55,8 +56,7 @@ function LoadingScreen({
     if (!update) return;
     try {
       setUpdateStatus("downloading");
-      await update.downloadAndInstall();
-      await relaunch();
+      await desktop.installUpdate();
     } catch (err) {
       console.error("[loading] Failed to install update:", err);
       setUpdateStatus("error");

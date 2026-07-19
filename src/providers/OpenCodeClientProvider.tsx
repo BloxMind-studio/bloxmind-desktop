@@ -1,9 +1,9 @@
-import { invoke } from "@tauri-apps/api/core";
 import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk/v2/client";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import LoadingScreen from "@/components/LoadingScreen";
+import { desktop } from "@/lib/desktop";
 import { qk } from "@/lib/queryKeys";
 import { sseDispatch } from "@/lib/sseDispatch";
 
@@ -56,16 +56,10 @@ export function OpenCodeClientProvider({
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout>;
 
-    // Step 1: Poll Tauri command until the sidecar port is available.
+    // The desktop service owns startup, its deadline, and process cleanup.
     async function waitForPort(): Promise<[number, string]> {
-      while (!cancelled) {
-        try {
-          return await invoke<[number, string]>("get_opencode_info");
-        } catch {
-          await new Promise((r) => { retryTimer = setTimeout(r, 1000); });
-        }
-      }
-      throw new Error("cancelled");
+      const info = await desktop.getOpenCodeInfo();
+      return [info.port, info.workspace];
     }
 
     // Step 2: Poll the HTTP server until it responds.
@@ -80,7 +74,9 @@ export function OpenCodeClientProvider({
         } catch {
           // Connection refused or timeout - keep polling.
         }
-        await new Promise((r) => { retryTimer = setTimeout(r, 1000); });
+        await new Promise((r) => {
+          retryTimer = setTimeout(r, 1000);
+        });
       }
       throw new Error("cancelled");
     }
@@ -107,8 +103,6 @@ export function OpenCodeClientProvider({
         if (cancelled) return;
         console.error("Failed to initialize OpenCode:", err);
         setInitError(String(err));
-        // Retry the whole sequence.
-        retryTimer = setTimeout(init, 3000);
       }
     }
 
@@ -213,7 +207,7 @@ export function OpenCodeClientProvider({
           message={initError ? "Failed to connect to OpenCode" : "Starting up..."}
           detail={initError ?? undefined}
           error={!!initError}
-          onRetry={initError ? () => window.location.reload() : undefined}
+          onRetry={initError ? () => desktop.relaunch() : undefined}
         />
       </OpenCodeClientContext.Provider>
     );
