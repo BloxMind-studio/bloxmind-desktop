@@ -49,7 +49,7 @@ function makeSession(id: string, title: string, createdAt = Date.now()): Session
 
 /**
  * Build a minimal but real provider tree for integration tests.
- * We skip OpenCodeClientProvider's lifecycle (Tauri listeners, SSE, init)
+ * We skip OpenCodeClientProvider's lifecycle (desktop bridge, SSE, init)
  * and inject the client + ready state directly via the exported context.
  * Everything below that — ActiveSessionProvider, PreferencesProvider,
  * and all components — runs with real code.
@@ -84,7 +84,7 @@ function TestApp({
   );
 }
 
-/** Lazy-import Chat to avoid top-level Tauri calls in module scope */
+/** Lazy-import Chat to avoid top-level desktop bridge calls in module scope */
 import Chat from "@/components/Chat";
 import { Toaster } from "@/components/ui/sonner";
 

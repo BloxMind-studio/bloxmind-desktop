@@ -49,7 +49,7 @@ export function OpenCodeClientProvider({
 
   const sseAbortRef = useRef<AbortController | null>(null);
 
-  // ── Get port from Rust, wait for server, create client ────────────
+  // Get port from Electron, wait for the server, then create the client.
   useEffect(() => {
     if (ready) return;
 
