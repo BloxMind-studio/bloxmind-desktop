@@ -359,6 +359,140 @@
   }
 }
 
+/* ── Roblox Studio screenshot walkthrough ─────────────────────── */
+
+@keyframes studio-screenshot-zoom {
+  0%, 12%, 100% { transform: scale(1); }
+  38%, 72% { transform: scale(var(--studio-zoom)); }
+}
+
+@keyframes studio-screenshot-cursor {
+  0%, 8%, 92%, 100% {
+    opacity: 0.35;
+    transform: translate(-3px, -3px) scale(0.86);
+  }
+  28%, 78% {
+    opacity: 1;
+    transform: translate(-3px, -3px) scale(1);
+  }
+}
+
+@keyframes studio-screenshot-ring {
+  0%, 18%, 100% {
+    opacity: 0;
+    transform: scale(0.55);
+  }
+  38%, 70% {
+    opacity: 0.85;
+    transform: scale(1);
+  }
+  82% {
+    opacity: 0;
+    transform: scale(1.35);
+  }
+}
+
+.studio-screenshot {
+  --studio-target-x: 50%;
+  --studio-target-y: 50%;
+  --studio-zoom: 2;
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: oklch(0.16 0.008 265);
+  isolation: isolate;
+}
+
+.studio-screenshot--0 {
+  --studio-target-x: 22.5%;
+  --studio-target-y: 67%;
+  --studio-zoom: 2.15;
+}
+
+.studio-screenshot--1 {
+  --studio-target-x: 93.5%;
+  --studio-target-y: 6%;
+  --studio-zoom: 3.4;
+}
+
+.studio-screenshot--2 {
+  --studio-target-x: 66.3%;
+  --studio-target-y: 63%;
+  --studio-zoom: 2.5;
+}
+
+.studio-screenshot--3 {
+  --studio-target-x: 69.4%;
+  --studio-target-y: 34%;
+  --studio-zoom: 2;
+}
+
+.studio-screenshot-camera {
+  position: absolute;
+  inset: 0;
+  transform-origin: var(--studio-target-x) var(--studio-target-y);
+  animation: studio-screenshot-zoom 5.2s ease-in-out infinite;
+  will-change: transform;
+}
+
+.studio-screenshot-camera img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top;
+}
+
+.studio-screenshot-cursor {
+  position: absolute;
+  z-index: 2;
+  top: var(--studio-target-y);
+  left: var(--studio-target-x);
+  width: 22px;
+  height: 26px;
+  color: oklch(0.22 0.012 55);
+  filter: drop-shadow(0 2px 2px oklch(0.05 0.01 260 / 0.65));
+  pointer-events: none;
+  animation: studio-screenshot-cursor 5.2s ease-in-out infinite;
+}
+
+.studio-screenshot-cursor i {
+  position: absolute;
+  top: -12px;
+  left: -12px;
+  width: 32px;
+  height: 32px;
+  border: 2px solid oklch(0.78 0.17 162.48);
+  border-radius: 999px;
+  background: oklch(0.78 0.17 162.48 / 0.16);
+  box-shadow: 0 0 0 5px oklch(0.78 0.17 162.48 / 0.12);
+  animation: studio-screenshot-ring 5.2s ease-in-out infinite;
+}
+
+.studio-screenshot-cursor svg {
+  position: relative;
+  z-index: 1;
+  display: block;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .studio-screenshot-camera,
+  .studio-screenshot-cursor,
+  .studio-screenshot-cursor i {
+    animation: none;
+  }
+
+  .studio-screenshot-cursor {
+    opacity: 1;
+    transform: translate(-3px, -3px);
+  }
+
+  .studio-screenshot-cursor i {
+    opacity: 0.85;
+    transform: scale(1);
+  }
+}
+
 /* ── Toast styles ────────────────────────────────────────────────── */
 /* NOTE: Sonner v2 owns ::before (swipe hit-area) and ::after (expanded
    gap). We use inset box-shadow for the left accent bar instead. */
