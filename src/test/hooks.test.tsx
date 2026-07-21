@@ -12,12 +12,17 @@ import { renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { useRef } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { useMessage, useMessageIds } from "@/hooks/useMessages";
+import {
+  useAllModels,
+  useAllProviders,
+  useAuthMethods,
+  useConnectedProviders,
+} from "@/hooks/useProviders";
+import { useIsBusy, useSessionStatuses } from "@/hooks/useSessionStatuses";
+import { useSessions } from "@/hooks/useSessions";
 import { qk } from "@/lib/queryKeys";
 import type { MessagesCache } from "@/lib/sseDispatch";
-import { useMessageIds, useMessage } from "@/hooks/useMessages";
-import { useAllModels, useAllProviders, useConnectedProviders, useAuthMethods } from "@/hooks/useProviders";
-import { useSessions } from "@/hooks/useSessions";
-import { useSessionStatuses, useIsBusy } from "@/hooks/useSessionStatuses";
 import { ActiveSessionContext } from "@/providers/ActiveSessionProvider";
 
 // ── Test helpers ─────────────────────────────────────────────────────
@@ -29,7 +34,13 @@ function makeQC() {
 }
 
 function makeSession(id: string, title: string): Session {
-  return { id, title, time: { created: Date.now(), updated: Date.now() }, version: 1, parentID: "" } as Session;
+  return {
+    id,
+    title,
+    time: { created: Date.now(), updated: Date.now() },
+    version: 1,
+    parentID: "",
+  } as Session;
 }
 
 /** Minimal wrapper providing QueryClient only */
@@ -103,7 +114,11 @@ describe("useAllProviders", () => {
     const { result } = renderHook(() => useAllProviders(), { wrapper: makeWrapper(qc) });
 
     expect(result.current).toHaveLength(2);
-    expect(result.current[0]).toEqual({ id: "anthropic", name: "Anthropic", env: ["ANTHROPIC_API_KEY"] });
+    expect(result.current[0]).toEqual({
+      id: "anthropic",
+      name: "Anthropic",
+      env: ["ANTHROPIC_API_KEY"],
+    });
   });
 
   it("returns empty array when no data", () => {
@@ -259,7 +274,10 @@ describe("useMessage", () => {
 describe("useSessionStatuses", () => {
   it("returns statuses from cache", () => {
     const qc = makeQC();
-    const statuses = { s1: { type: "busy" } as SessionStatus, s2: { type: "idle" } as SessionStatus };
+    const statuses = {
+      s1: { type: "busy" } as SessionStatus,
+      s2: { type: "idle" } as SessionStatus,
+    };
     qc.setQueryData(qk.statuses, statuses);
 
     const { result } = renderHook(() => useSessionStatuses(), { wrapper: makeWrapper(qc) });

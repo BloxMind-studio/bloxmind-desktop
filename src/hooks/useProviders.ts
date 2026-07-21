@@ -22,7 +22,9 @@ function useProvidersQuery() {
       if (!client) throw new Error("No client");
       const [provRes, authRes] = await Promise.all([
         client.provider.list({}),
-        client.provider.auth({}).catch(() => ({ data: undefined as ProviderAuthResponse | undefined })),
+        client.provider
+          .auth({})
+          .catch(() => ({ data: undefined as ProviderAuthResponse | undefined })),
       ]);
       if (!provRes.data) throw new Error("No provider data");
       if (authRes.data) {
