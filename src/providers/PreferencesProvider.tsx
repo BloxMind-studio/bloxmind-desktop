@@ -45,7 +45,10 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   // Restore last used model if its provider is still connected
   useEffect(() => {
     if (!configData || connectedProviders.length === 0) return;
-    if (configData.lastModel && connectedProviders.includes(splitModelKey(configData.lastModel)[0])) {
+    if (
+      configData.lastModel &&
+      connectedProviders.includes(splitModelKey(configData.lastModel)[0])
+    ) {
       setSelectedModelState(configData.lastModel);
     }
   }, [configData, connectedProviders]);

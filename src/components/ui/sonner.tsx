@@ -1,5 +1,7 @@
 import { Toaster as Sonner, type ToasterProps } from "sonner";
 
+import { useTheme } from "@/components/theme-provider";
+
 /* ── Custom toast icons ──────────────────────────────────────────── */
 
 function ErrorIcon() {
@@ -74,9 +76,11 @@ function WarningIcon() {
 /* ── Toaster component ───────────────────────────────────────────── */
 
 const Toaster = ({ ...props }: ToasterProps) => {
+  const { resolvedTheme } = useTheme();
+
   return (
     <Sonner
-      theme="light"
+      theme={resolvedTheme}
       className="toaster group"
       position="top-right"
       closeButton

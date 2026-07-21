@@ -11,6 +11,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { useRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ChatInput from "@/components/ChatInput";
+import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { qk } from "@/lib/queryKeys";
 import type { MessagesCache } from "@/lib/sseDispatch";
@@ -100,6 +101,7 @@ function seedState(qc: QueryClient, session: Session) {
   qc.setQueryData(qk.config, {
     lastModel: "anthropic/claude-3.5-sonnet",
     hiddenModels: [],
+    theme: "system",
   });
   qc.setQueryData<MessagesCache>(qk.messages(session.id), { messageIds: [], messagesById: {} });
   qc.setQueryData(qk.todos(session.id), []);
@@ -128,29 +130,31 @@ function TestChatInput({
 
   return (
     <QueryClientProvider client={queryClient}>
-      <OpenCodeClientContext.Provider
-        value={{
-          client: client as never,
-          status: clientStatus as "waiting" | "ready" | "error",
-          port: 4096,
-          ready: clientStatus === "ready",
-          initError: null,
-        }}
-      >
-        <ActiveSessionContext.Provider
+      <ThemeProvider>
+        <OpenCodeClientContext.Provider
           value={{
-            activeSessionId: sessionId,
-            selectSession: async () => {},
-            clearSession: () => {},
-            activeSessionIdRef,
+            client: client as never,
+            status: clientStatus as "waiting" | "ready" | "error",
+            port: 4096,
+            ready: clientStatus === "ready",
+            initError: null,
           }}
         >
-          <PreferencesProvider>
-            <ChatInput />
-            <Toaster />
-          </PreferencesProvider>
-        </ActiveSessionContext.Provider>
-      </OpenCodeClientContext.Provider>
+          <ActiveSessionContext.Provider
+            value={{
+              activeSessionId: sessionId,
+              selectSession: async () => {},
+              clearSession: () => {},
+              activeSessionIdRef,
+            }}
+          >
+            <PreferencesProvider>
+              <ChatInput />
+              <Toaster />
+            </PreferencesProvider>
+          </ActiveSessionContext.Provider>
+        </OpenCodeClientContext.Provider>
+      </ThemeProvider>
     </QueryClientProvider>
   );
 }
