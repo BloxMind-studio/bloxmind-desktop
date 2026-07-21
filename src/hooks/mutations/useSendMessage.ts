@@ -1,6 +1,7 @@
 import { usePostHog } from "@posthog/react";
 import { useMutation } from "@tanstack/react-query";
 
+import { detailedAnalyticsProperties } from "@/lib/analytics";
 import { splitModelKey } from "@/lib/splitModelKey";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
@@ -31,10 +32,14 @@ export function useSendMessage() {
         sessionID: activeSessionId,
         parts,
       };
+      let provider: string | undefined;
+      let model: string | undefined;
 
       if (selectedModel) {
         const [providerID, modelID] = splitModelKey(selectedModel);
         if (providerID && modelID) {
+          provider = providerID;
+          model = modelID;
           opts.model = { providerID, modelID };
         }
       }
@@ -43,10 +48,13 @@ export function useSendMessage() {
       if (selectedVariant) opts.variant = selectedVariant;
 
       await client.session.promptAsync(opts as Parameters<typeof client.session.promptAsync>[0]);
-      posthog.capture("message_sent", {
-        model: selectedModel ?? undefined,
-        agent: selectedAgent ?? undefined,
-      });
+      posthog.capture(
+        "message_sent",
+        detailedAnalyticsProperties({
+          provider,
+          model,
+        }),
+      );
     },
   });
 }

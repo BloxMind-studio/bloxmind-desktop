@@ -3,6 +3,7 @@ import { Schema } from "effect";
 const MutableStrings = Schema.mutable(Schema.Array(Schema.String));
 
 export const ThemePreferenceSchema = Schema.Literal("light", "dark", "system");
+export const DetailedAnalyticsPreferenceSchema = Schema.Literal("unset", "enabled", "disabled");
 
 export type ThemePreference = typeof ThemePreferenceSchema.Type;
 
@@ -11,10 +12,18 @@ export const AppConfigSchema = Schema.mutable(
     lastModel: Schema.NullOr(Schema.String),
     hiddenModels: MutableStrings,
     theme: ThemePreferenceSchema,
+    detailedAnalytics: DetailedAnalyticsPreferenceSchema,
   }),
 );
 
 export type AppConfig = typeof AppConfigSchema.Type;
+
+export const DEFAULT_APP_CONFIG: AppConfig = {
+  lastModel: null,
+  hiddenModels: [],
+  theme: "system",
+  detailedAnalytics: "unset",
+};
 
 export const AppConfigPatchSchema = Schema.partial(AppConfigSchema);
 
