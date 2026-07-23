@@ -201,6 +201,9 @@ function createWindow(): Effect.Effect<void, DesktopMainError> {
 
     yield* Effect.sync(() => {
       mainWindow = window;
+      window.webContents.setUserAgent(
+        `${window.webContents.getUserAgent()} BloxBot/${app.getVersion()}`,
+      );
       window.webContents.setWindowOpenHandler(({ url }) => {
         Effect.runFork(
           parseExternalUrl(url).pipe(
