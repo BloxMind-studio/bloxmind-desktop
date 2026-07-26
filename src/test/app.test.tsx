@@ -298,6 +298,12 @@ describe("User journeys", () => {
     await waitFor(() => {
       expect(screen.getByPlaceholderText("Describe what you want to build...")).toBeInTheDocument();
     });
+
+    fireEvent.click(screen.getByRole("button", { name: "Coordinate multiple Studio places" }));
+    await waitFor(() => expect(client.session.promptAsync).toHaveBeenCalled());
+    expect(client.session.promptAsync.mock.calls[0][0].parts[0].text).toContain(
+      "multiple open Roblox Studio places",
+    );
   });
 
   it("switches to the latest session immediately without waiting for older requests", async () => {

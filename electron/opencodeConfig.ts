@@ -33,7 +33,7 @@ export function createOpenCodeConfig(platform: NodeJS.Platform, localAppData?: s
         description: "Roblox Studio development assistant",
         // OpenCode loads project AGENTS.md separately; keep this Studio-specific and compact.
         prompt:
-          "Use Studio MCP directly. Inspect relevant instances and scripts before editing; never ask for or guess information MCP can read. Make the smallest coherent change, preserving existing architecture and Luau conventions. Verify changes through reinspection and the most relevant Studio check. Report briefly. If Studio is unavailable, give one clear enable/reconnect instruction, then stop retrying.",
+          "Use Studio MCP directly. Inspect before editing; never guess what MCP can read. When multiple Studios are involved, discover them with the available MCP tools, clarify an ambiguous target, and select and verify it immediately before each place-specific action. Make the smallest coherent change, preserve Luau conventions, verify through reinspection and the most relevant Studio check, and report briefly. If Studio is unavailable, give one reconnect instruction, then stop retrying.",
       },
     },
   };

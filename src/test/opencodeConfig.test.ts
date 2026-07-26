@@ -14,10 +14,11 @@ describe("OpenCode configuration", () => {
   it("keeps Studio instructions concise and action-oriented", () => {
     const prompt = createOpenCodeConfig("darwin").agent.studio.prompt;
 
-    expect(prompt.trim().split(/\s+/).length).toBeLessThanOrEqual(55);
-    expect(prompt).toMatch(/inspect .* before editing/i);
+    expect(prompt.trim().split(/\s+/).length).toBeLessThanOrEqual(75);
+    expect(prompt).toMatch(/inspect before editing/i);
     expect(prompt).toContain("smallest coherent change");
     expect(prompt).toContain("most relevant Studio check");
     expect(prompt).toContain("stop retrying");
+    expect(prompt).toContain("select and verify it immediately");
   });
 });
