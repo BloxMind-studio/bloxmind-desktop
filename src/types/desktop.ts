@@ -1,4 +1,14 @@
 import { Schema } from "effect";
+import type { ExplorerProgramEnvelope, ExplorerSnapshot } from "../lib/explorer";
+import type { GeneratedProgramArtifact } from "./generatedProgram";
+import {
+  type StudioTargetDiscovery,
+  type StudioTargetProgramEnvelopes,
+  type StudioTargetPrograms,
+  StudioTargetProgramsSchema,
+  StudioTargetSchema,
+  type StudioTargetSelection,
+} from "./studioTarget";
 
 const MutableStrings = Schema.mutable(Schema.Array(Schema.String));
 
@@ -13,6 +23,8 @@ export const AppConfigSchema = Schema.mutable(
     hiddenModels: MutableStrings,
     theme: ThemePreferenceSchema,
     detailedAnalytics: DetailedAnalyticsPreferenceSchema,
+    studioTargetPrograms: Schema.NullOr(StudioTargetProgramsSchema),
+    studioTargetsBySession: Schema.Record({ key: Schema.String, value: StudioTargetSchema }),
   }),
 );
 
@@ -23,6 +35,8 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   hiddenModels: [],
   theme: "system",
   detailedAnalytics: "unset",
+  studioTargetPrograms: null,
+  studioTargetsBySession: {},
 };
 
 export const AppConfigPatchSchema = Schema.partial(AppConfigSchema);
@@ -59,6 +73,8 @@ export const UpdateInfoSchema = Schema.mutable(
 export type UpdateInfo = typeof UpdateInfoSchema.Type;
 
 export interface DesktopApi {
+  compileExplorerProgram(program: ExplorerProgramEnvelope): Promise<GeneratedProgramArtifact>;
+  invokeExplorerProgram(artifact: GeneratedProgramArtifact): Promise<ExplorerSnapshot>;
   getOpenCodeInfo(): Promise<OpenCodeInfo>;
   onOpenCodeStartupProgress(listener: (progress: OpenCodeStartupProgress) => void): () => void;
   getVersion(): Promise<string>;
@@ -68,4 +84,12 @@ export interface DesktopApi {
   checkForUpdate(): Promise<UpdateInfo | null>;
   installUpdate(): Promise<void>;
   relaunch(): Promise<void>;
+  installStudioTargetPrograms(
+    envelopes: StudioTargetProgramEnvelopes,
+  ): Promise<StudioTargetPrograms>;
+  discoverStudioTargets(programs: StudioTargetPrograms): Promise<StudioTargetDiscovery>;
+  selectStudioTarget(
+    programs: StudioTargetPrograms,
+    targetKey: string,
+  ): Promise<StudioTargetSelection>;
 }

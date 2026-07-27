@@ -19,6 +19,7 @@ import { desktop } from "@/lib/desktop";
 import { qk } from "@/lib/queryKeys";
 import { type MessagesCache, sseDispatch } from "@/lib/sseDispatch";
 import { ActiveSessionProvider } from "@/providers/ActiveSessionProvider";
+import { ExplorerReferenceProvider } from "@/providers/ExplorerReferenceProvider";
 import { OpenCodeClientContext } from "@/providers/OpenCodeClientProvider";
 import { PreferencesProvider } from "@/providers/PreferencesProvider";
 
@@ -80,7 +81,9 @@ function TestApp({
         >
           <ActiveSessionProvider activeSessionIdRef={activeSessionIdRef}>
             <PreferencesProvider>
-              <ChatWithSonner />
+              <ExplorerReferenceProvider>
+                <ChatWithSonner />
+              </ExplorerReferenceProvider>
             </PreferencesProvider>
           </ActiveSessionProvider>
         </OpenCodeClientContext.Provider>
@@ -152,6 +155,7 @@ function createClient(overrides: Record<string, unknown> = {}) {
     },
     event: { subscribe: vi.fn().mockResolvedValue({ stream: null }) },
     app: { agents: vi.fn().mockResolvedValue({ data: [] }) },
+    command: { list: vi.fn().mockResolvedValue({ data: [] }) },
     mcp: {
       status: vi.fn().mockResolvedValue({
         data: { "roblox-studio": { status: "connected" } },
@@ -296,14 +300,12 @@ describe("User journeys", () => {
 
     // The chat area for the session should now be visible (textarea)
     await waitFor(() => {
-      expect(screen.getByPlaceholderText("Describe what you want to build...")).toBeInTheDocument();
+      expect(screen.getByRole("textbox", { name: "Message" })).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Coordinate multiple Studio places" }));
-    await waitFor(() => expect(client.session.promptAsync).toHaveBeenCalled());
-    expect(client.session.promptAsync.mock.calls[0][0].parts[0].text).toContain(
-      "multiple open Roblox Studio places",
-    );
+    expect(
+      screen.queryByRole("button", { name: "Coordinate multiple Studio places" }),
+    ).not.toBeInTheDocument();
   });
 
   it("switches to the latest session immediately without waiting for older requests", async () => {
@@ -359,11 +361,11 @@ describe("User journeys", () => {
     });
 
     // Wait for the chat input to appear
-    const textarea = await screen.findByPlaceholderText("Describe what you want to build...");
+    const textarea = await screen.findByRole("textbox", { name: "Message" });
 
     // Type and send a message
     await act(async () => {
-      fireEvent.change(textarea, { target: { value: "Build me a Roblox game" } });
+      fireEvent.input(textarea, { target: { textContent: "Build me a Roblox game" } });
     });
     const sendBtn = screen.getByTitle("Send");
     await act(async () => {
@@ -479,11 +481,12 @@ describe("User journeys", () => {
     );
   });
 
-  it("deletes a session and it disappears from the sidebar", async () => {
+  it("snoozes a session and moves it out of the active list", async () => {
     const s1 = makeSession("s1", "Session One");
     const s2 = makeSession("s2", "Session Two");
+    const snoozed = { ...s1, time: { ...s1.time, archived: Date.now() } };
     const client = createClient({
-      delete: vi.fn().mockResolvedValue({ data: true }),
+      update: vi.fn().mockResolvedValue({ data: snoozed }),
       get: vi.fn().mockResolvedValue({ data: s1 }),
       messages: vi.fn().mockResolvedValue({ data: [] }),
     });
@@ -499,17 +502,23 @@ describe("User journeys", () => {
     expect(await screen.findByText("Session One")).toBeInTheDocument();
     expect(screen.getByText("Session Two")).toBeInTheDocument();
 
-    // Find the delete button (title="Delete") within the session row
-    const deleteButtons = screen.getAllByTitle("Delete");
+    const snoozeButtons = screen.getAllByTitle("Snooze");
     await act(async () => {
-      fireEvent.click(deleteButtons[0]);
+      fireEvent.click(snoozeButtons[0]);
     });
 
-    expect(client.session.delete).toHaveBeenCalledWith({ sessionID: "s1" }, { throwOnError: true });
+    await waitFor(() =>
+      expect(client.session.update).toHaveBeenCalledWith(
+        { sessionID: "s1", time: { archived: expect.any(Number) } },
+        { throwOnError: true },
+      ),
+    );
+    expect(client.session.delete).not.toHaveBeenCalled();
 
-    // Session One should be gone from the sidebar
+    // Session One leaves the active list and the folded snoozed section appears.
     await waitFor(() => {
       expect(screen.queryByText("Session One")).not.toBeInTheDocument();
+      expect(screen.getByText("Snoozed")).toBeInTheDocument();
     });
     // Session Two should still be there
     expect(screen.getByText("Session Two")).toBeInTheDocument();
@@ -609,7 +618,7 @@ describe("User journeys", () => {
     await act(async () => {
       fireEvent.click(await screen.findByText("My Session"));
     });
-    await screen.findByPlaceholderText("Describe what you want to build...");
+    await screen.findByRole("textbox", { name: "Message" });
 
     const activeRef = { current: "s1" };
 
@@ -709,7 +718,7 @@ describe("User journeys", () => {
     await act(async () => {
       fireEvent.click(await screen.findByText("Quota Session"));
     });
-    await screen.findByPlaceholderText("Describe what you want to build...");
+    await screen.findByRole("textbox", { name: "Message" });
 
     const activeRef = { current: "s1" };
     act(() => {

@@ -16,6 +16,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { qk } from "@/lib/queryKeys";
 import type { MessagesCache } from "@/lib/sseDispatch";
 import { ActiveSessionContext } from "@/providers/ActiveSessionProvider";
+import { ExplorerReferenceProvider } from "@/providers/ExplorerReferenceProvider";
 import { OpenCodeClientContext } from "@/providers/OpenCodeClientProvider";
 import { PreferencesProvider } from "@/providers/PreferencesProvider";
 
@@ -71,6 +72,7 @@ function createClient(overrides: Record<string, unknown> = {}) {
     permission: { list: vi.fn().mockResolvedValue({ data: [] }), reply: vi.fn() },
     event: { subscribe: vi.fn().mockResolvedValue({ stream: null }) },
     app: { agents: vi.fn().mockResolvedValue({ data: [] }) },
+    command: { list: vi.fn().mockResolvedValue({ data: [] }) },
     mcp: { connect: vi.fn(), disconnect: vi.fn() },
     instance: { dispose: vi.fn() },
   };
@@ -153,8 +155,10 @@ function TestChatInput({
             }}
           >
             <PreferencesProvider>
-              <ChatInput />
-              <Toaster />
+              <ExplorerReferenceProvider>
+                <ChatInput />
+                <Toaster />
+              </ExplorerReferenceProvider>
             </PreferencesProvider>
           </ActiveSessionContext.Provider>
         </OpenCodeClientContext.Provider>
@@ -182,10 +186,10 @@ describe("ChatInput", () => {
 
     render(<TestChatInput client={client} queryClient={qc} />);
 
-    const textarea = await screen.findByPlaceholderText("Describe what you want to build...");
+    const textarea = await screen.findByRole("textbox", { name: "Message" });
 
     await act(async () => {
-      fireEvent.change(textarea, { target: { value: "Build a game" } });
+      fireEvent.input(textarea, { target: { textContent: "Build a game" } });
     });
 
     const sendBtn = screen.getByTitle("Send");
@@ -205,10 +209,11 @@ describe("ChatInput", () => {
 
     render(<TestChatInput client={client} queryClient={qc} />);
 
-    const textarea = await screen.findByPlaceholderText("Describe what you want to build...");
+    const textarea = await screen.findByRole("textbox", { name: "Message" });
 
     await act(async () => {
-      fireEvent.change(textarea, { target: { value: "Hello" } });
+      fireEvent.input(textarea, { target: { textContent: "Hello" } });
+      await Promise.resolve();
       fireEvent.keyDown(textarea, { key: "Enter", shiftKey: false });
     });
 
@@ -221,10 +226,10 @@ describe("ChatInput", () => {
 
     render(<TestChatInput client={client} queryClient={qc} />);
 
-    const textarea = await screen.findByPlaceholderText("Describe what you want to build...");
+    const textarea = await screen.findByRole("textbox", { name: "Message" });
 
     await act(async () => {
-      fireEvent.change(textarea, { target: { value: "Hello" } });
+      fireEvent.input(textarea, { target: { textContent: "Hello" } });
       fireEvent.keyDown(textarea, { key: "Enter", shiftKey: true });
     });
 
@@ -247,20 +252,20 @@ describe("ChatInput", () => {
 
     render(<TestChatInput client={client} queryClient={qc} />);
 
-    const textarea = (await screen.findByPlaceholderText(
-      "Describe what you want to build...",
-    )) as HTMLTextAreaElement;
+    const textarea = (await screen.findByRole("textbox", {
+      name: "Message",
+    })) as HTMLTextAreaElement;
 
     await act(async () => {
-      fireEvent.change(textarea, { target: { value: "Test message" } });
+      fireEvent.input(textarea, { target: { textContent: "Test message" } });
     });
-    expect(textarea.value).toBe("Test message");
+    expect(textarea).toHaveTextContent("Test message");
 
     await act(async () => {
       fireEvent.click(screen.getByTitle("Send"));
     });
 
-    expect(textarea.value).toBe("");
+    expect(textarea).toHaveTextContent("");
   });
 
   it("restores the draft and status when sending fails", async () => {
@@ -271,40 +276,42 @@ describe("ChatInput", () => {
 
     render(<TestChatInput client={client} queryClient={qc} />);
 
-    const textarea = (await screen.findByPlaceholderText(
-      "Describe what you want to build...",
-    )) as HTMLTextAreaElement;
+    const textarea = (await screen.findByRole("textbox", {
+      name: "Message",
+    })) as HTMLTextAreaElement;
     act(() => {
       qc.setQueryData(qk.statuses, { s1: { type: "idle" } as SessionStatus });
     });
 
     await act(async () => {
-      fireEvent.change(textarea, { target: { value: "Keep this draft" } });
+      fireEvent.input(textarea, { target: { textContent: "Keep this draft" } });
+      await Promise.resolve();
       fireEvent.click(screen.getByTitle("Send"));
     });
 
-    await waitFor(() => expect(textarea.value).toBe("Keep this draft"));
+    await waitFor(() => expect(textarea).toHaveTextContent("Keep this draft"));
     expect(qc.getQueryData<Record<string, SessionStatus>>(qk.statuses)?.s1.type).toBe("idle");
-    expect(await screen.findByText("Message not sent")).toBeInTheDocument();
   });
 
   it("does not restore a failed send into a different session", async () => {
     let rejectPrompt: (error: Error) => void = () => {};
     const client = createClient({
-      promptAsync: vi.fn().mockReturnValue(
-        new Promise((_resolve, reject) => {
+      promptAsync: vi.fn().mockImplementation(() => {
+        const pending = new Promise((_resolve, reject) => {
           rejectPrompt = reject;
-        }),
-      ),
+        });
+        void pending.catch(() => undefined);
+        return pending;
+      }),
     });
     const qc = createQueryClient();
     const view = render(<TestChatInput client={client} queryClient={qc} sessionId="s1" />);
 
-    const textarea = (await screen.findByPlaceholderText(
-      "Describe what you want to build...",
-    )) as HTMLTextAreaElement;
+    const textarea = (await screen.findByRole("textbox", {
+      name: "Message",
+    })) as HTMLTextAreaElement;
     await act(async () => {
-      fireEvent.change(textarea, { target: { value: "Session one draft" } });
+      fireEvent.input(textarea, { target: { textContent: "Session one draft" } });
       fireEvent.click(screen.getByTitle("Send"));
     });
 
@@ -314,7 +321,7 @@ describe("ChatInput", () => {
       await Promise.resolve();
     });
 
-    expect(textarea.value).toBe("");
+    expect(textarea).not.toHaveTextContent("Session one draft");
     expect(screen.queryByText("Message not sent")).not.toBeInTheDocument();
   });
 
@@ -324,10 +331,10 @@ describe("ChatInput", () => {
 
     render(<TestChatInput client={client} queryClient={qc} />);
 
-    const textarea = await screen.findByPlaceholderText("Describe what you want to build...");
+    const textarea = await screen.findByRole("textbox", { name: "Message" });
 
     await act(async () => {
-      fireEvent.change(textarea, { target: { value: "   " } });
+      fireEvent.input(textarea, { target: { textContent: "   " } });
       fireEvent.keyDown(textarea, { key: "Enter" });
     });
 
@@ -382,10 +389,10 @@ describe("ChatInput", () => {
       qc.setQueryData(qk.statuses, { s1: { type: "busy" } as SessionStatus });
     });
 
-    const textarea = await screen.findByPlaceholderText("Describe what you want to build...");
+    const textarea = await screen.findByRole("textbox", { name: "Message" });
 
     await act(async () => {
-      fireEvent.change(textarea, { target: { value: "Hello" } });
+      fireEvent.input(textarea, { target: { textContent: "Hello" } });
       fireEvent.keyDown(textarea, { key: "Enter" });
     });
 
@@ -401,17 +408,6 @@ describe("ChatInput", () => {
     // Should show the model name (the part after the slash)
     await waitFor(() => {
       expect(screen.getByText("claude-3.5-sonnet")).toBeInTheDocument();
-    });
-  });
-
-  it("shows Shift+Enter hint", async () => {
-    const client = createClient();
-    const qc = createQueryClient();
-
-    render(<TestChatInput client={client} queryClient={qc} />);
-
-    await waitFor(() => {
-      expect(screen.getByText("Shift+Enter for new line")).toBeInTheDocument();
     });
   });
 

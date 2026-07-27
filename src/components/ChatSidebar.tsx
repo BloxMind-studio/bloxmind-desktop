@@ -1,9 +1,15 @@
-import { memo, useEffect, useRef, useState } from "react";
+import type { Session } from "@opencode-ai/sdk/v2/client";
+import posthog from "posthog-js/dist/module.full.no-external.js";
+import { type MouseEvent, memo, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { useArchiveSession } from "@/hooks/mutations/useArchiveSession";
 import { useCreateSession } from "@/hooks/mutations/useCreateSession";
 import { useDeleteSession } from "@/hooks/mutations/useDeleteSession";
 import { useRenameSession } from "@/hooks/mutations/useRenameSession";
+import { useUnarchiveSession } from "@/hooks/mutations/useUnarchiveSession";
 import { useSessionStatuses } from "@/hooks/useSessionStatuses";
 import { useSessions } from "@/hooks/useSessions";
+import { analyticsProperties, countBucket } from "@/lib/analytics";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 
 interface ChatSidebarProps {
@@ -51,12 +57,33 @@ const ChatSidebar = memo(function ChatSidebar({
   const { activeSessionId, selectSession } = useActiveSession();
   const { data: sessionStatuses = {} } = useSessionStatuses();
   const createSession = useCreateSession();
+  const archiveSession = useArchiveSession();
   const deleteSession = useDeleteSession();
   const renameSession = useRenameSession();
+  const unarchiveSession = useUnarchiveSession();
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
+  const [snoozedExpanded, setSnoozedExpanded] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{
+    session: Session;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Session | null>(null);
+  const [transitioningSessionId, setTransitioningSessionId] = useState<string | null>(null);
   const editRef = useRef<HTMLInputElement>(null);
+  const cancelDeleteRef = useRef<HTMLButtonElement>(null);
+  const transitionTimerRef = useRef<number | null>(null);
+
+  const { activeSessions, snoozedSessions } = useMemo(() => {
+    const active: Session[] = [];
+    const snoozed: Session[] = [];
+    for (const session of sessions) {
+      (session.time.archived ? snoozed : active).push(session);
+    }
+    return { activeSessions: active, snoozedSessions: snoozed };
+  }, [sessions]);
 
   function handleSelect(id: string) {
     onSessionSelect();
@@ -75,6 +102,39 @@ const ChatSidebar = memo(function ChatSidebar({
     }
   }, [editingId]);
 
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("blur", close);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("blur", close);
+    };
+  }, [contextMenu]);
+
+  useEffect(() => {
+    if (!deleteTarget) return;
+    cancelDeleteRef.current?.focus();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      posthog.capture(
+        "permanent_delete_cancelled",
+        analyticsProperties("sessions", { confirmed: false }),
+      );
+      setDeleteTarget(null);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [deleteTarget]);
+
+  useEffect(
+    () => () => {
+      if (transitionTimerRef.current !== null) window.clearTimeout(transitionTimerRef.current);
+    },
+    [],
+  );
+
   function startRename(session: { id: string; title?: string }) {
     setEditingId(session.id);
     setEditValue(session.title || "Untitled");
@@ -85,6 +145,75 @@ const ChatSidebar = memo(function ChatSidebar({
       renameSession.mutate({ sessionID: editingId, title: editValue.trim() });
     }
     setEditingId(null);
+  }
+
+  function handleSnooze(sessionID: string) {
+    const status = sessionStatuses[sessionID];
+    if (status && status.type !== "idle") return;
+    setTransitioningSessionId(sessionID);
+    transitionTimerRef.current = window.setTimeout(() => {
+      archiveSession.mutate(sessionID, { onSettled: () => setTransitioningSessionId(null) });
+      transitionTimerRef.current = null;
+    }, 180);
+  }
+
+  function handleSnoozedSelect(sessionID: string) {
+    posthog.capture("snoozed_session_opened", analyticsProperties("sessions"));
+    handleSelect(sessionID);
+  }
+
+  function handleUnsnooze(sessionID: string) {
+    setTransitioningSessionId(sessionID);
+    transitionTimerRef.current = window.setTimeout(() => {
+      unarchiveSession.mutate(sessionID, { onSettled: () => setTransitioningSessionId(null) });
+      transitionTimerRef.current = null;
+    }, 180);
+  }
+
+  function openContextMenu(event: MouseEvent, session: Session) {
+    event.preventDefault();
+    setContextMenu({
+      session,
+      x: Math.min(event.clientX, window.innerWidth - 176),
+      y: Math.min(event.clientY, window.innerHeight - 52),
+    });
+  }
+
+  function handleSnoozedToggle() {
+    setSnoozedExpanded((expanded) => {
+      const nextExpanded = !expanded;
+      posthog.capture(
+        "snoozed_section_toggled",
+        analyticsProperties("sessions", {
+          expanded: nextExpanded,
+          count_bucket: countBucket(snoozedSessions.length),
+        }),
+      );
+      return nextExpanded;
+    });
+  }
+
+  function requestDelete(session: Session) {
+    posthog.capture("permanent_delete_requested", analyticsProperties("sessions"));
+    setDeleteTarget(session);
+  }
+
+  function cancelDelete() {
+    posthog.capture(
+      "permanent_delete_cancelled",
+      analyticsProperties("sessions", { confirmed: false }),
+    );
+    setDeleteTarget(null);
+  }
+
+  function confirmDelete() {
+    if (!deleteTarget) return;
+    posthog.capture(
+      "permanent_delete_confirmed",
+      analyticsProperties("sessions", { confirmed: true }),
+    );
+    deleteSession.mutate(deleteTarget.id);
+    setDeleteTarget(null);
   }
 
   return (
@@ -202,14 +331,14 @@ const ChatSidebar = memo(function ChatSidebar({
           </div>
 
           <div className="flex-1 overflow-y-auto overflow-x-hidden py-1">
-            {sessions.length === 0 && (
+            {activeSessions.length === 0 && snoozedSessions.length === 0 && (
               <div className="animate-fade-in px-3 py-6 text-center text-xs text-muted-foreground">
                 No sessions yet.
                 <br />
                 Start a new one to begin.
               </div>
             )}
-            {sessions.map((session, index) => {
+            {activeSessions.map((session, index) => {
               const isActive = session.id === activeSessionId;
               const isEditing = session.id === editingId;
               const status = sessionStatuses[session.id];
@@ -217,10 +346,15 @@ const ChatSidebar = memo(function ChatSidebar({
               return (
                 <div
                   key={session.id}
-                  className="animate-slide-in-left"
+                  className={
+                    transitioningSessionId === session.id
+                      ? "animate-slide-out-left"
+                      : "animate-slide-in-left"
+                  }
                   style={{ animationDelay: `${index * 30}ms` }}
                 >
                   <div
+                    onContextMenu={(event) => openContextMenu(event, session)}
                     className={`group relative mx-1 rounded-md transition-colors duration-150 ${
                       isActive
                         ? "bg-accent text-foreground"
@@ -260,7 +394,7 @@ const ChatSidebar = memo(function ChatSidebar({
                           className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full transition-colors duration-300 ${statusDot(status)}`}
                         />
                         <div className="min-w-0 flex-1">
-                          <div className="truncate text-xs font-medium leading-snug">
+                          <div className="text-xs font-medium leading-snug break-words">
                             {session.title || "Untitled"}
                           </div>
                           <div className="mt-0.5 text-[10px] text-muted-foreground">
@@ -304,10 +438,15 @@ const ChatSidebar = memo(function ChatSidebar({
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            deleteSession.mutate(session.id);
+                            handleSnooze(session.id);
                           }}
-                          className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:text-destructive"
-                          title="Delete"
+                          disabled={status !== undefined && status.type !== "idle"}
+                          className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35"
+                          title={
+                            status && status.type !== "idle"
+                              ? "Wait for session to finish"
+                              : "Snooze"
+                          }
                         >
                           <svg
                             width="10"
@@ -319,8 +458,10 @@ const ChatSidebar = memo(function ChatSidebar({
                             strokeLinecap="round"
                             strokeLinejoin="round"
                           >
-                            <line x1="18" y1="6" x2="6" y2="18" />
-                            <line x1="6" y1="6" x2="18" y2="18" />
+                            <path d="M3 7h18" />
+                            <path d="M5 7l1 13h12l1-13" />
+                            <path d="M9 11h6" />
+                            <path d="M8 4h8l1 3H7l1-3z" />
                           </svg>
                         </button>
                       </div>
@@ -330,6 +471,79 @@ const ChatSidebar = memo(function ChatSidebar({
               );
             })}
           </div>
+
+          {snoozedSessions.length > 0 && (
+            <div className="shrink-0 border-t border-border/70">
+              <button
+                type="button"
+                aria-expanded={snoozedExpanded}
+                onClick={handleSnoozedToggle}
+                className="flex w-full items-center gap-1.5 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <svg
+                  width="10"
+                  height="10"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  className={`transition-transform ${snoozedExpanded ? "rotate-90" : ""}`}
+                >
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+                Snoozed
+                <span className="ml-auto font-normal tabular-nums">{snoozedSessions.length}</span>
+              </button>
+
+              {snoozedExpanded && (
+                <div className="max-h-40 overflow-y-auto overflow-x-hidden pb-1">
+                  {snoozedSessions.map((session) => (
+                    <div
+                      key={session.id}
+                      onContextMenu={(event) => openContextMenu(event, session)}
+                      className={`group relative mx-1 flex min-w-0 items-center rounded-md text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground ${
+                        transitioningSessionId === session.id
+                          ? "animate-slide-out-left"
+                          : "animate-slide-in-left"
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => handleSnoozedSelect(session.id)}
+                        className="min-w-0 flex-1 px-2 py-1.5 text-left"
+                        title={`Open snoozed session ${session.title || "Untitled"}`}
+                      >
+                        <div className="truncate text-[11px] leading-snug opacity-80">
+                          {session.title || "Untitled"}
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleUnsnooze(session.id)}
+                        className="mr-1 flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-focus-within:opacity-100 group-hover:opacity-100"
+                        title="Unsnooze"
+                      >
+                        <svg
+                          width="10"
+                          height="10"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                        >
+                          <path d="M3 7h18" />
+                          <path d="M5 7l1 13h12l1-13" />
+                          <path d="M9 11h6" />
+                          <path d="M12 16v-5" />
+                          <path d="m9.5 13.5 2.5-2.5 2.5 2.5" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="shrink-0 border-t px-3 py-2 space-y-1">
             <button
@@ -352,6 +566,92 @@ const ChatSidebar = memo(function ChatSidebar({
               Settings
             </button>
           </div>
+
+          {contextMenu && (
+            <div
+              className="fixed z-[200] w-44 rounded-md border bg-popover p-1 text-popover-foreground shadow-xl"
+              style={{ left: contextMenu.x, top: contextMenu.y }}
+              onPointerDown={(event) => event.stopPropagation()}
+              role="menu"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                className="flex w-full items-center rounded px-2 py-1.5 text-left text-xs text-destructive transition-colors hover:bg-accent"
+                onClick={() => {
+                  const session = contextMenu.session;
+                  setContextMenu(null);
+                  requestDelete(session);
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          )}
+
+          {deleteTarget &&
+            createPortal(
+              <div
+                className="animate-lightbox-backdrop fixed inset-0 z-[300] flex items-center justify-center bg-black/55 p-4 backdrop-blur-[2px]"
+                onMouseDown={(event) => {
+                  if (event.target === event.currentTarget) cancelDelete();
+                }}
+              >
+                <div
+                  role="alertdialog"
+                  aria-modal="true"
+                  aria-labelledby="delete-session-title"
+                  aria-describedby="delete-session-description"
+                  className="animate-scale-in w-full max-w-sm rounded-xl border bg-card p-5 text-card-foreground shadow-2xl"
+                >
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+                    <svg
+                      width="17"
+                      height="17"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M3 6h18" />
+                      <path d="M8 6V4h8v2" />
+                      <path d="M19 6l-1 14H6L5 6" />
+                    </svg>
+                  </div>
+                  <h2 id="delete-session-title" className="mt-4 text-sm font-semibold">
+                    Delete session?
+                  </h2>
+                  <p
+                    id="delete-session-description"
+                    className="mt-1.5 text-xs leading-relaxed text-muted-foreground"
+                  >
+                    “{deleteTarget.title || "Untitled"}” and its full conversation history will be
+                    permanently deleted. This cannot be undone.
+                  </p>
+                  <div className="mt-5 flex justify-end gap-2">
+                    <button
+                      ref={cancelDeleteRef}
+                      type="button"
+                      onClick={cancelDelete}
+                      className="rounded-md border bg-background px-3 py-1.5 text-xs font-medium transition-colors hover:bg-accent"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={confirmDelete}
+                      className="rounded-md bg-destructive px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </div>,
+              document.body,
+            )}
         </>
       )}
     </div>

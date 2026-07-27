@@ -2,7 +2,11 @@ import type { SessionStatus } from "@opencode-ai/sdk/v2/client";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import posthog from "posthog-js/dist/module.full.no-external.js";
 
-import { detailedAnalyticsProperties } from "@/lib/analytics";
+import {
+  analyticsProperties,
+  detailedAnalyticsProperties,
+  errorAnalyticsProperties,
+} from "@/lib/analytics";
 import { qk } from "@/lib/queryKeys";
 import { splitModelKey } from "@/lib/splitModelKey";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
@@ -12,6 +16,7 @@ import { usePreferences } from "@/providers/PreferencesProvider";
 interface SendMessageInput {
   text: string;
   images?: Array<{ mime: string; url: string; filename?: string }>;
+  studioTargetReference?: string | null;
 }
 
 interface SendMessageContext {
@@ -19,14 +24,14 @@ interface SendMessageContext {
   previousStatus: SessionStatus | undefined;
 }
 
-export function useSendMessage() {
+export function useSendMessage(options?: { onError?: (error: Error) => void }) {
   const { client } = useOpenCodeClient();
   const { activeSessionId } = useActiveSession();
   const { selectedModel, selectedAgent, selectedVariant } = usePreferences();
   const queryClient = useQueryClient();
 
   return useMutation<void, Error, SendMessageInput, SendMessageContext | undefined>({
-    mutationFn: async ({ text, images }: SendMessageInput) => {
+    mutationFn: async ({ text, images, studioTargetReference }: SendMessageInput) => {
       if (!client || !activeSessionId) throw new Error("No client or session");
 
       const parts: Array<{ type: string; [k: string]: unknown }> = [{ type: "text", text }];
@@ -39,6 +44,7 @@ export function useSendMessage() {
         sessionID: activeSessionId,
         parts,
       };
+      if (studioTargetReference) opts.system = studioTargetReference;
       let provider: string | undefined;
       let model: string | undefined;
 
@@ -59,10 +65,16 @@ export function useSendMessage() {
       });
       posthog.capture(
         "message_sent",
-        detailedAnalyticsProperties({
-          provider,
-          model,
-        }),
+        analyticsProperties(
+          "chat",
+          detailedAnalyticsProperties({
+            outcome: "success",
+            has_images: Boolean(images?.length),
+            has_studio_target: Boolean(studioTargetReference),
+            provider,
+            model,
+          }),
+        ),
       );
     },
     onMutate: () => {
@@ -78,7 +90,15 @@ export function useSendMessage() {
       }));
       return context;
     },
-    onError: (_error, _input, context) => {
+    onError: (error, input, context) => {
+      options?.onError?.(error);
+      posthog.capture(
+        "message_send_failed",
+        errorAnalyticsProperties("chat", "send_message", error, {
+          has_images: Boolean(input.images?.length),
+          has_studio_target: Boolean(input.studioTargetReference),
+        }),
+      );
       if (!context) return;
       queryClient.setQueryData<Record<string, SessionStatus>>(qk.statuses, (previous) => {
         if (previous?.[context.sessionID]?.type !== "busy") return previous;

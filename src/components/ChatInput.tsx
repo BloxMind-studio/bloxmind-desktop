@@ -1,13 +1,19 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import PromptEditor, { type PromptEditorHandle } from "@/components/PromptEditor";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Slider } from "@/components/ui/slider";
 import { useAbort } from "@/hooks/mutations/useAbort";
 import { useSendMessage } from "@/hooks/mutations/useSendMessage";
 import { useAgents } from "@/hooks/useAgents";
+import { useCommands } from "@/hooks/useCommands";
 import { useAllModels, useConnectedProviders } from "@/hooks/useProviders";
 import { useIsBusy } from "@/hooks/useSessionStatuses";
 import { splitModelKey } from "@/lib/splitModelKey";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
+import { useExplorerReference } from "@/providers/ExplorerReferenceProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
+import { useStudioTargetOptional } from "@/providers/StudioTargetProvider";
 import type { ModelInfo } from "@/types";
 
 // ── Image attachment helpers ────────────────────────────────────────────
@@ -188,7 +194,7 @@ const SendButton = memo(function SendButton({
             })
           }
           disabled={abort.isPending}
-          className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           title="Stop"
         >
           <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
@@ -200,7 +206,7 @@ const SendButton = memo(function SendButton({
           type="button"
           onClick={onSend}
           disabled={(!text.trim() && !hasAttachments) || !canSend}
-          className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-foreground text-background transition-opacity disabled:opacity-30"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-foreground text-background transition-opacity disabled:opacity-30"
           title="Send"
         >
           <svg
@@ -222,18 +228,12 @@ const SendButton = memo(function SendButton({
   );
 });
 
-const StatusHint = memo(function StatusHint() {
-  return (
-    <div className="mt-1.5 text-center text-[10px] text-muted-foreground/50">
-      Shift+Enter for new line
-    </div>
-  );
-});
-
 function ChatInput() {
+  const { pendingReference, consumeReference, objects } = useExplorerReference();
   const allModels = useAllModels();
   const connectedProviders = useConnectedProviders();
   const agents = useAgents();
+  const commands = useCommands();
   const { activeSessionId, activeSessionIdRef } = useActiveSession();
   const isBusy = useIsBusy(activeSessionId);
   const {
@@ -245,7 +245,7 @@ function ChatInput() {
     setSelectedAgent,
     setSelectedVariant,
   } = usePreferences();
-  const sendMessage = useSendMessage();
+  const studioTargetReference = useStudioTargetOptional()?.promptReference ?? null;
 
   // Available variants for the currently selected model
   const availableVariants = useMemo(() => {
@@ -265,13 +265,48 @@ function ChatInput() {
   const [showAgentPicker, setShowAgentPicker] = useState(false);
   const [modelSearch, setModelSearch] = useState("");
   const [rejectShake, setRejectShake] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const promptEditorRef = useRef<PromptEditorHandle>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const modelSearchRef = useRef<HTMLInputElement>(null);
   const modelPickerRef = useRef<HTMLDivElement>(null);
   const agentPickerRef = useRef<HTMLDivElement>(null);
   const dragCounterRef = useRef(0);
   const rejectTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const previousSessionRef = useRef(activeSessionId);
+  const failedSendRef = useRef<{
+    sessionId: string | null;
+    text: string;
+    attachments: ImageAttachment[];
+  } | null>(null);
+  const sendMessage = useSendMessage({
+    onError: (error) => {
+      const failed = failedSendRef.current;
+      failedSendRef.current = null;
+      if (!failed || activeSessionIdRef.current !== failed.sessionId) return;
+      toast.error("Message not sent", { description: error.message });
+      if (failed.text) promptEditorRef.current?.insertText(failed.text);
+      setAttachments((current) => {
+        const currentIds = new Set(current.map((attachment) => attachment.id));
+        const restored = failed.attachments.filter((attachment) => !currentIds.has(attachment.id));
+        return [...restored, ...current];
+      });
+    },
+  });
+
+  useEffect(() => {
+    if (previousSessionRef.current === activeSessionId) return;
+    previousSessionRef.current = activeSessionId;
+    setText("");
+    setAttachments([]);
+    promptEditorRef.current?.clear();
+  }, [activeSessionId]);
+
+  useEffect(() => {
+    if (!pendingReference) return;
+    promptEditorRef.current?.insertText(pendingReference);
+    consumeReference();
+    requestAnimationFrame(() => promptEditorRef.current?.focus());
+  }, [pendingReference, consumeReference]);
 
   const triggerRejectShake = useCallback(() => {
     setRejectShake(true);
@@ -389,11 +424,6 @@ function ChatInput() {
     [addImageFiles],
   );
 
-  function resizeTextarea(el: HTMLTextAreaElement) {
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
-  }
-
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (modelPickerRef.current && !modelPickerRef.current.contains(e.target as Node)) {
@@ -455,46 +485,27 @@ function ChatInput() {
   );
 
   function handleSubmit() {
-    const trimmed = text.trim();
+    const editorText = promptEditorRef.current?.getText() ?? text;
+    const trimmed = editorText.trim();
     if (!trimmed && attachments.length === 0) return;
     if (isBusy) return;
-    const submittedText = text;
+    const submittedText = editorText;
     const submittedAttachments = attachments;
+    failedSendRef.current = {
+      sessionId: activeSessionId,
+      text: submittedText,
+      attachments: submittedAttachments,
+    };
     const images =
       attachments.length > 0
         ? attachments.map((a) => ({ mime: a.mime, url: a.dataUrl, filename: a.filename }))
         : undefined;
     setText("");
     setAttachments([]);
-    if (textareaRef.current) textareaRef.current.style.height = "auto";
-    sendMessage.mutate(
-      { text: trimmed || " ", images },
-      {
-        onError: (error) => {
-          if (activeSessionIdRef.current !== activeSessionId) return;
-          setText((current) => {
-            if (!submittedText) return current;
-            return current ? `${submittedText}\n${current}` : submittedText;
-          });
-          setAttachments((current) => {
-            const currentIds = new Set(current.map((attachment) => attachment.id));
-            const restored = submittedAttachments.filter(
-              (attachment) => !currentIds.has(attachment.id),
-            );
-            return [...restored, ...current];
-          });
-          toast.error("Message not sent", { description: error.message });
-        },
-      },
-    );
-  }
-
-  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      if (isBusy) return;
-      handleSubmit();
-    }
+    promptEditorRef.current?.clear();
+    void sendMessage
+      .mutateAsync({ text: trimmed || " ", images, studioTargetReference })
+      .catch(() => undefined);
   }
 
   function handleModelClick(model: ModelInfo) {
@@ -508,6 +519,10 @@ function ChatInput() {
     ? (selectedModel.split("/").pop() ?? selectedModel)
     : "Select model";
   const agentDisplay = selectedAgent ?? "Default agent";
+  const selectedVariantIndex = selectedVariant
+    ? Math.max(0, availableVariants.indexOf(selectedVariant) + 1)
+    : 0;
+  const variantDisplay = selectedVariant ?? "Default";
 
   function statusBadge(status?: string) {
     if (status === "beta")
@@ -653,72 +668,52 @@ function ChatInput() {
           )}
         </div>
 
-        {visibleAgents.length > 1 && (
-          <div className="relative" ref={agentPickerRef}>
-            <button
-              onClick={() => {
-                setShowAgentPicker(!showAgentPicker);
-                setShowModelPicker(false);
-              }}
-              className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            >
-              <svg
-                width="10"
-                height="10"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                <circle cx="12" cy="7" r="4" />
-              </svg>
-              {agentDisplay}
-            </button>
-            {showAgentPicker && (
-              <div className="absolute bottom-full left-0 z-50 mb-1 max-h-48 w-56 overflow-y-auto rounded-lg border bg-popover p-1 shadow-lg">
-                {visibleAgents.map((agent) => {
-                  const isSelected = selectedAgent === agent.name;
-                  return (
-                    <button
-                      key={agent.name}
-                      onClick={() => {
-                        setSelectedAgent(agent.name);
-                        setShowAgentPicker(false);
-                      }}
-                      className={`flex w-full flex-col rounded-md px-2 py-1.5 text-left transition-colors ${isSelected ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}
-                    >
-                      <span className="text-xs font-medium">{agent.name}</span>
-                      {agent.description && (
-                        <span className="mt-0.5 line-clamp-1 text-[10px] text-muted-foreground">
-                          {agent.description}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
         {availableVariants.length > 0 && (
-          <button
-            onClick={() => {
-              if (!selectedVariant) setSelectedVariant(availableVariants[0]);
-              else {
-                const idx = availableVariants.indexOf(selectedVariant);
-                if (idx === -1 || idx === availableVariants.length - 1) setSelectedVariant(null);
-                else setSelectedVariant(availableVariants[idx + 1]);
-              }
-            }}
-            className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] capitalize text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            title={`Click to cycle variant (${["default", ...availableVariants].join(" → ")})`}
-          >
-            {selectedVariant ?? "default"}
-          </button>
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] capitalize text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                title={`Effort: ${variantDisplay}`}
+              >
+                {variantDisplay}
+                <svg
+                  width="9"
+                  height="9"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </button>
+            </PopoverTrigger>
+            <PopoverContent side="top" align="start" className="w-64 p-3">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <span className="text-xs font-medium">Reasoning effort</span>
+                <span className="text-[11px] capitalize text-muted-foreground">
+                  {variantDisplay}
+                </span>
+              </div>
+              <Slider
+                min={0}
+                max={availableVariants.length}
+                step={1}
+                value={[selectedVariantIndex]}
+                onValueChange={([index]) =>
+                  setSelectedVariant(index === 0 ? null : availableVariants[index - 1])
+                }
+                aria-label="Reasoning effort"
+              />
+              <div className="mt-2 flex justify-between gap-2 text-[9px] capitalize text-muted-foreground/70">
+                <span>Default</span>
+                <span>{availableVariants[availableVariants.length - 1]}</span>
+              </div>
+            </PopoverContent>
+          </Popover>
         )}
       </div>
 
@@ -783,33 +778,13 @@ function ChatInput() {
           </div>
         )}
 
-        <div className="flex items-start gap-1 px-3 py-2">
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className={`mt-0.5 shrink-0 p-0.5 transition-colors hover:text-foreground ${rejectShake ? "animate-reject-shake text-red-500" : "text-muted-foreground/60"}`}
-            title="Attach images"
-          >
-            <svg
-              width="15"
-              height="15"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-            </svg>
-          </button>
-          <textarea
-            ref={textareaRef}
-            value={text}
-            onChange={(e) => {
-              setText(e.target.value);
-              resizeTextarea(e.target);
-            }}
-            onKeyDown={handleKeyDown}
+        <div className="flex min-h-14 items-start gap-1.5 px-2 pb-2 pt-1.5">
+          <PromptEditor
+            ref={promptEditorRef}
+            commands={commands}
+            objects={objects}
+            onChange={setText}
+            onSubmit={handleSubmit}
             onPaste={(e) => {
               const items = e.clipboardData.items;
               const imageFiles: File[] = [];
@@ -825,19 +800,87 @@ function ChatInput() {
               }
             }}
             placeholder={isDragging ? "Drop images here..." : "Describe what you want to build..."}
-            rows={1}
-            className="max-h-40 min-h-[20px] flex-1 resize-none bg-transparent text-[13px] leading-relaxed placeholder:text-muted-foreground/50 focus:outline-none"
           />
-          <SendButton
-            text={text}
-            hasAttachments={attachments.length > 0}
-            isBusy={isBusy}
-            onSend={handleSubmit}
-          />
+          <div className="flex shrink-0 flex-col items-end gap-1 pt-0.5">
+            {visibleAgents.length > 1 && (
+              <div className="relative" ref={agentPickerRef}>
+                <button
+                  onClick={() => {
+                    setShowAgentPicker(!showAgentPicker);
+                    setShowModelPicker(false);
+                  }}
+                  className="flex max-w-28 items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                >
+                  <svg
+                    width="9"
+                    height="9"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                    <circle cx="12" cy="7" r="4" />
+                  </svg>
+                  <span className="truncate">{agentDisplay}</span>
+                </button>
+                {showAgentPicker && (
+                  <div className="absolute bottom-full right-0 z-50 mb-1 max-h-48 w-56 overflow-y-auto rounded-lg border bg-popover p-1 shadow-lg">
+                    {visibleAgents.map((agent) => {
+                      const isSelected = selectedAgent === agent.name;
+                      return (
+                        <button
+                          key={agent.name}
+                          onClick={() => {
+                            setSelectedAgent(agent.name);
+                            setShowAgentPicker(false);
+                          }}
+                          className={`flex w-full flex-col rounded-md px-2 py-1.5 text-left transition-colors ${isSelected ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}
+                        >
+                          <span className="text-xs font-medium">{agent.name}</span>
+                          {agent.description && (
+                            <span className="mt-0.5 line-clamp-1 text-[10px] text-muted-foreground">
+                              {agent.description}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className={`flex h-7 w-7 items-center justify-center rounded-lg border border-border bg-background transition-colors hover:bg-accent hover:text-foreground ${rejectShake ? "animate-reject-shake text-red-500" : "text-muted-foreground/60"}`}
+                title="Attach images"
+              >
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                </svg>
+              </button>
+              <SendButton
+                text={text}
+                hasAttachments={attachments.length > 0}
+                isBusy={isBusy}
+                onSend={handleSubmit}
+              />
+            </div>
+          </div>
         </div>
       </div>
-
-      <StatusHint />
 
       {lightboxIndex !== null && attachments[lightboxIndex] && (
         <LightboxOverlay

@@ -7,17 +7,35 @@ import type {
   Todo,
 } from "@opencode-ai/sdk/v2/client";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { toast } from "sonner";
+import type { HighlightLanguage } from "@/components/SyntaxHighlightedOutput";
 
 /** Module-level constant to avoid creating a new array on every render. */
 const REMARK_PLUGINS = [remarkGfm];
+const INSTANCE_REFERENCE_PATTERN = /<Instance reference="([^"]+)">([^<]+)<\/Instance>/g;
+const SyntaxHighlightedOutput = lazy(() => import("@/components/SyntaxHighlightedOutput"));
+const HIGHLIGHT_LANGUAGE_ALIASES: Record<string, HighlightLanguage> = {
+  bash: "bash",
+  sh: "bash",
+  shell: "bash",
+  diff: "diff",
+  javascript: "javascript",
+  js: "javascript",
+  json: "json",
+  lua: "lua",
+  luau: "lua",
+  shellsession: "shellsession",
+  console: "shellsession",
+  typescript: "typescript",
+  ts: "typescript",
+  tsx: "tsx",
+  jsx: "tsx",
+};
 
 import { useAnswerQuestion, useRejectQuestion } from "@/hooks/mutations/useAnswerQuestion";
 import { useReplyPermission } from "@/hooks/mutations/useReplyPermission";
-import { useSendMessage } from "@/hooks/mutations/useSendMessage";
 import { useMessage, useMessageIds } from "@/hooks/useMessages";
 import { useActivePermission } from "@/hooks/usePermissions";
 import { useActiveQuestion } from "@/hooks/useQuestions";
@@ -28,9 +46,6 @@ import { type ModelError, presentModelError } from "@/lib/modelError";
 import { getOpenCodeUsageAction, type OpenCodeUsageAction } from "@/lib/usageLimit";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import type { MessageWithParts } from "@/types";
-
-const MULTI_STUDIO_PROMPT =
-  "Help me coordinate work across multiple open Roblox Studio places. Use the Studio MCP tools you currently have to discover the places, ask which place this session should target if unclear, and select and verify that target immediately before every place-specific action. Treat the active place as shared state that another session may change.";
 
 // ── Image lightbox ───────────────────────────────────────────────────────
 
@@ -195,7 +210,7 @@ const ImageLightbox = memo(function ImageLightbox() {
 
 function BloxBotThinking({ label = "Thinking..." }: { label?: string }) {
   return (
-    <div className="flex items-center gap-2 py-0.5">
+    <div className="flex min-h-[21px] items-center gap-2 text-[13px] leading-relaxed text-muted-foreground">
       <svg
         width="20"
         height="20"
@@ -239,7 +254,7 @@ function BloxBotThinking({ label = "Thinking..." }: { label?: string }) {
           strokeLinecap="round"
         />
       </svg>
-      <span className="text-xs text-muted-foreground">{label}</span>
+      <span>{label}</span>
       <span className="flex gap-0.5">
         <span className="bloxbot-dot h-1 w-1 rounded-full bg-foreground/20" />
         <span className="bloxbot-dot h-1 w-1 rounded-full bg-foreground/20 [animation-delay:150ms]" />
@@ -250,13 +265,6 @@ function BloxBotThinking({ label = "Thinking..." }: { label?: string }) {
 }
 
 // ── Constants ───────────────────────────────────────────────────────────
-
-const TOOL_STATUS_COLORS: Record<string, string> = {
-  pending: "border-border bg-muted/50",
-  running: "border-amber-200 bg-amber-50/30 dark:border-amber-900 dark:bg-amber-950/30",
-  completed: "border-border bg-card",
-  error: "border-red-200 bg-red-50/30 dark:border-red-900 dark:bg-red-950/30",
-};
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
@@ -285,32 +293,22 @@ const BashToolView = memo(function BashToolView({
 }) {
   const command = inputField(input, "command");
   const description = inputField(input, "description");
-  const [detailsOpen, setDetailsOpen] = useState<boolean | null>(null);
-  const autoOpen = Boolean(output && output.length < 500);
-  const isOpen = detailsOpen ?? autoOpen;
-
   return (
     <div>
       {description && <div className="mb-1 text-[11px] text-muted-foreground">{description}</div>}
       {command && (
-        <div className="rounded bg-stone-900 px-2.5 py-1.5 font-mono text-[11px] text-stone-100">
-          <span className="select-none text-stone-500">$ </span>
-          {command}
-        </div>
+        <Suspense fallback={<span className="block truncate">$ {command}</span>}>
+          <span className="sr-only">{command}</span>
+          <SyntaxHighlightedOutput code={`$ ${command}`} language="shellsession" />
+        </Suspense>
       )}
       {status === "completed" && output && (
-        <details
-          className="mt-1"
-          open={isOpen}
-          onToggle={(e) => setDetailsOpen((e.target as HTMLDetailsElement).open)}
-        >
-          <summary className="cursor-pointer text-[10px] text-muted-foreground hover:text-foreground">
-            Output ({output.split("\n").length} lines)
-          </summary>
-          <pre className="mt-1 max-h-48 overflow-auto rounded bg-muted p-2 font-mono text-[10px] leading-tight text-foreground">
-            {output.slice(0, 3000)}
-          </pre>
-        </details>
+        <InlineDisclosure
+          text={output.slice(0, 3000)}
+          tone="output"
+          previewLines={3}
+          language="shellsession"
+        />
       )}
       {status === "running" && (
         <div className="mt-1 flex items-center gap-1.5 text-[10px] text-amber-600 dark:text-amber-400">
@@ -325,36 +323,11 @@ const BashToolView = memo(function BashToolView({
 const DiffBlock = memo(function DiffBlock({ oldStr, newStr }: { oldStr: string; newStr: string }) {
   const oldLines = oldStr ? oldStr.split("\n") : [];
   const newLines = newStr ? newStr.split("\n") : [];
-  return (
-    <div className="mt-1.5 overflow-hidden rounded border text-[11px]">
-      {oldLines.length > 0 && (
-        <div className="border-b bg-red-50 px-2.5 py-1 font-mono dark:bg-red-950/40">
-          {oldLines.slice(0, 20).map((line, i) => (
-            <div key={i} className="text-red-700 dark:text-red-400">
-              <span className="mr-2 select-none text-red-400">-</span>
-              {line}
-            </div>
-          ))}
-          {oldLines.length > 20 && (
-            <div className="text-[10px] text-red-400">...{oldLines.length - 20} more lines</div>
-          )}
-        </div>
-      )}
-      {newLines.length > 0 && (
-        <div className="bg-emerald-50 px-2.5 py-1 font-mono dark:bg-emerald-950/40">
-          {newLines.slice(0, 20).map((line, i) => (
-            <div key={i} className="text-emerald-700 dark:text-emerald-400">
-              <span className="mr-2 select-none text-emerald-400">+</span>
-              {line}
-            </div>
-          ))}
-          {newLines.length > 20 && (
-            <div className="text-[10px] text-emerald-400">...{newLines.length - 20} more lines</div>
-          )}
-        </div>
-      )}
-    </div>
-  );
+  const diffText = [
+    ...oldLines.map((line) => `-${line}`),
+    ...newLines.map((line) => `+${line}`),
+  ].join("\n");
+  return <InlineDisclosure text={diffText} tone="output" previewLines={3} language="diff" />;
 });
 
 const EditToolView = memo(function EditToolView({
@@ -392,7 +365,7 @@ const EditToolView = memo(function EditToolView({
       </div>
       {(oldStr || newStr) && <DiffBlock oldStr={oldStr} newStr={newStr} />}
       {status === "completed" && output && (
-        <div className="mt-1 text-[10px] text-emerald-600">{output}</div>
+        <InlineDisclosure text={output} tone="output" previewLines={3} />
       )}
     </div>
   );
@@ -694,31 +667,27 @@ const DefaultToolView = memo(function DefaultToolView({
   status: string;
 }) {
   const title = "title" in input ? inputField(input, "title") : "";
-  const [detailsOpen, setDetailsOpen] = useState(false);
   return (
-    <div>
-      <div className="flex items-center gap-1.5 text-[11px]">
-        <span className="font-semibold text-muted-foreground">{tool}</span>
-        {title && <span className="text-muted-foreground">- {title}</span>}
+    <div className="min-w-0">
+      <div className="flex min-w-0 items-center gap-1.5 text-[13px] leading-relaxed">
+        <span className="min-w-0 break-all font-medium text-muted-foreground/75 transition-colors hover:text-muted-foreground">
+          {tool}
+        </span>
+        {title && <span className="min-w-0 break-words text-muted-foreground">- {title}</span>}
         {status === "running" && (
           <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-amber-400" />
         )}
       </div>
       {status === "completed" && output && (
-        <details
-          className="mt-1"
-          open={detailsOpen}
-          onToggle={(e) => setDetailsOpen((e.target as HTMLDetailsElement).open)}
-        >
-          <summary className="cursor-pointer text-[10px] text-muted-foreground hover:text-foreground">
-            Output
-          </summary>
-          <pre className="mt-1 max-h-32 overflow-auto rounded bg-muted p-2 font-mono text-[10px] leading-tight text-muted-foreground">
-            {typeof output === "string"
+        <InlineDisclosure
+          text={
+            typeof output === "string"
               ? output.slice(0, 2000)
-              : JSON.stringify(output, null, 2).slice(0, 2000)}
-          </pre>
-        </details>
+              : JSON.stringify(output, null, 2).slice(0, 2000)
+          }
+          tone="output"
+          previewLines={3}
+        />
       )}
     </div>
   );
@@ -783,16 +752,28 @@ const markdownComponents: Components = {
     const isBlock = className?.includes("language-");
     if (isBlock) {
       const lang = className?.replace("language-", "") ?? "";
+      const language = HIGHLIGHT_LANGUAGE_ALIASES[lang.toLowerCase()];
+      const code = String(children).replace(/\n$/, "");
       return (
-        <div className="mb-2 overflow-hidden rounded-md border border-border last:mb-0">
+        <div className="mb-2 min-w-0 overflow-hidden pl-3 last:mb-0">
           {lang && (
-            <div className="border-b border-border bg-muted px-2.5 py-1 text-[10px] font-medium text-muted-foreground">
-              {lang}
-            </div>
+            <div className="mb-1 text-[11px] font-medium text-muted-foreground/60">{lang}</div>
           )}
-          <pre className="overflow-x-auto bg-stone-900 px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-stone-100">
-            <code>{children}</code>
-          </pre>
+          {language ? (
+            <Suspense
+              fallback={
+                <pre className="app-scrollbar overflow-x-auto font-mono text-[13px] leading-relaxed text-muted-foreground/80">
+                  {code}
+                </pre>
+              }
+            >
+              <SyntaxHighlightedOutput code={code} language={language} />
+            </Suspense>
+          ) : (
+            <pre className="app-scrollbar overflow-x-auto font-mono text-[13px] leading-relaxed text-muted-foreground/80">
+              {code}
+            </pre>
+          )}
         </div>
       );
     }
@@ -823,40 +804,126 @@ const markdownComponents: Components = {
   },
 };
 
+function decodeReference(value: string) {
+  return value.replace(/&quot;/g, '"').replace(/&amp;/g, "&");
+}
+
+function MessageText({ text }: { text: string }) {
+  const parts: Array<{ type: "text" | "instance"; value: string; label?: string }> = [];
+  let cursor = 0;
+  for (const match of text.matchAll(INSTANCE_REFERENCE_PATTERN)) {
+    const index = match.index ?? 0;
+    if (index > cursor) parts.push({ type: "text", value: text.slice(cursor, index) });
+    parts.push({ type: "instance", value: decodeReference(match[1]), label: match[2] });
+    cursor = index + match[0].length;
+  }
+  if (cursor < text.length) parts.push({ type: "text", value: text.slice(cursor) });
+
+  return parts.map((part, index) =>
+    part.type === "instance" ? (
+      <span
+        key={`${part.value}:${index}`}
+        className="mx-0.5 inline-flex items-center rounded-md border border-blue-500/25 bg-blue-500/10 px-1.5 py-0.5 align-baseline text-[11px] font-medium text-blue-700 dark:text-blue-300"
+        title={part.value}
+      >
+        {part.label}
+      </span>
+    ) : (
+      <Markdown key={index} remarkPlugins={REMARK_PLUGINS} components={markdownComponents}>
+        {part.value}
+      </Markdown>
+    ),
+  );
+}
+
 const TextPartView = memo(
   function TextPartView({ part }: { part: Extract<Part, { type: "text" }> }) {
     return (
       <div className="text-[13px] leading-relaxed">
-        <Markdown remarkPlugins={REMARK_PLUGINS} components={markdownComponents}>
-          {part.text}
-        </Markdown>
+        <MessageText text={part.text} />
       </div>
     );
   },
   (prev, next) => prev.part.text === next.part.text,
 );
 
+function InlineDisclosure({
+  text,
+  tone = "reasoning",
+  previewLines = 1,
+  language,
+}: {
+  text: string;
+  tone?: "reasoning" | "error" | "output";
+  previewLines?: number;
+  language?: HighlightLanguage;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const formatted = useMemo(() => {
+    if (tone !== "output") return { text, structured: false };
+    const trimmed = text.trim();
+    if (!(trimmed.startsWith("{") || trimmed.startsWith("["))) {
+      return { text, structured: false };
+    }
+    try {
+      const value: unknown = JSON.parse(trimmed);
+      if (value === null || typeof value !== "object") return { text, structured: false };
+      return { text: JSON.stringify(value, null, 2), structured: true };
+    } catch {
+      return { text, structured: false };
+    }
+  }, [text, tone]);
+  const toneClass =
+    tone === "error"
+      ? "text-[#d73a49]/60 hover:text-[#d73a49]/85 dark:text-[#ff7b72]/55 dark:hover:text-[#ff7b72]/80"
+      : tone === "output"
+        ? "text-muted-foreground/70 opacity-70 hover:text-muted-foreground hover:opacity-100"
+        : "text-muted-foreground/55 hover:text-muted-foreground";
+  return (
+    <div data-preserve-scroll className={`min-w-0 ${tone === "output" ? "pl-3" : ""}`}>
+      <button
+        type="button"
+        aria-expanded={isOpen}
+        onClick={() => setIsOpen((open) => !open)}
+        className={`block w-full min-w-0 text-left text-[13px] leading-relaxed transition-colors ${toneClass}`}
+      >
+        {formatted.structured || language ? (
+          <Suspense fallback={<span className="line-clamp-3">{formatted.text}</span>}>
+            <span
+              className={`block ${isOpen ? "animate-disclosure-expand" : "animate-disclosure-collapse"}`}
+            >
+              <SyntaxHighlightedOutput
+                code={formatted.text}
+                collapsed={!isOpen}
+                language={language ?? "json"}
+              />
+            </span>
+          </Suspense>
+        ) : (
+          <span
+            className={
+              isOpen
+                ? "animate-disclosure-expand block whitespace-pre-wrap break-all"
+                : previewLines === 1
+                  ? "animate-disclosure-collapse block truncate"
+                  : "animate-disclosure-collapse line-clamp-3 whitespace-pre-wrap"
+            }
+          >
+            {formatted.text}
+          </span>
+        )}
+      </button>
+    </div>
+  );
+}
+
 const ReasoningPartView = memo(function ReasoningPartView({
   part,
 }: {
   part: Extract<Part, { type: "reasoning" }>;
 }) {
-  const [isOpen, setIsOpen] = useState(false);
   if (!part.text) return null;
-  return (
-    <details
-      className="group mt-1"
-      open={isOpen}
-      onToggle={(e) => setIsOpen((e.target as HTMLDetailsElement).open)}
-    >
-      <summary className="cursor-pointer text-[11px] font-medium text-muted-foreground hover:text-foreground">
-        Reasoning
-      </summary>
-      <div className="mt-1 border-l-2 border-border pl-3 text-[12px] leading-relaxed text-muted-foreground">
-        {part.text}
-      </div>
-    </details>
-  );
+  return <InlineDisclosure text={part.text} />;
 });
 
 const ToolPartView = memo(function ToolPartView({
@@ -874,6 +941,10 @@ const ToolPartView = memo(function ToolPartView({
       ? part.state.title
       : undefined;
   const tool = baseToolName(part.tool);
+
+  if (errorMsg) {
+    return <InlineDisclosure text={errorMsg} tone="error" />;
+  }
 
   function renderToolContent() {
     switch (tool) {
@@ -901,9 +972,7 @@ const ToolPartView = memo(function ToolPartView({
   }
 
   return (
-    <div
-      className={`my-1 rounded-md border px-2.5 py-2 ${TOOL_STATUS_COLORS[status] ?? TOOL_STATUS_COLORS.pending}`}
-    >
+    <div className="min-w-0 max-w-full overflow-hidden">
       {title &&
         ![
           "bash",
@@ -916,20 +985,15 @@ const ToolPartView = memo(function ToolPartView({
           "webfetch",
           "todowrite",
         ].includes(tool) && (
-          <div className="mb-1 text-[11px] font-medium text-foreground">{title}</div>
+          <div className="mb-1 break-words text-[11px] font-medium text-foreground">{title}</div>
         )}
       {renderToolContent()}
-      {errorMsg && (
-        <div className="mt-1.5 rounded bg-red-50 px-2 py-1 text-[11px] text-red-600 dark:bg-red-950/40 dark:text-red-400">
-          {errorMsg}
-        </div>
-      )}
     </div>
   );
 });
 
 const StepPartView = memo(function StepPartView() {
-  return <div className="my-2 border-t border-border" />;
+  return <div className="h-6" aria-hidden="true" />;
 });
 
 const StepFinishPartView = memo(function StepFinishPartView({
@@ -955,7 +1019,7 @@ const RetryPartView = memo(function RetryPartView({
   part: Extract<Part, { type: "retry" }>;
 }) {
   return (
-    <div className="my-1 flex items-center gap-1.5 rounded border border-amber-200 bg-amber-50/30 px-2.5 py-1.5 text-[11px] text-amber-700 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-400">
+    <div className="my-1 flex items-center gap-1.5 text-[13px] leading-relaxed text-[#9a6700]/75 dark:text-[#d29922]/75">
       <svg
         width="10"
         height="10"
@@ -971,10 +1035,7 @@ const RetryPartView = memo(function RetryPartView({
       </svg>
       Retrying (attempt {part.attempt})
       {"error" in part && part.error?.data && "message" in part.error.data && (
-        <span className="text-[10px] text-amber-600 dark:text-amber-400">
-          {" "}
-          - {String(part.error.data.message)}
-        </span>
+        <span className="min-w-0 truncate opacity-80"> - {String(part.error.data.message)}</span>
       )}
     </div>
   );
@@ -1007,11 +1068,8 @@ const ModelErrorCard = memo(function ModelErrorCard({ error }: { error: ModelErr
   const presentation = presentModelError(error);
 
   return (
-    <div
-      role="alert"
-      className="my-1 rounded-lg border border-red-200 bg-red-50/60 px-3 py-2.5 text-red-950 dark:border-red-900 dark:bg-red-950/30 dark:text-red-100"
-    >
-      <div className="flex items-start gap-2.5">
+    <div role="alert" className="my-1 text-[#cf222e]/75 dark:text-[#ff7b72]/70">
+      <div className="flex min-w-0 items-start gap-2">
         <svg
           width="16"
           height="16"
@@ -1021,7 +1079,7 @@ const ModelErrorCard = memo(function ModelErrorCard({ error }: { error: ModelErr
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className="mt-0.5 shrink-0 text-red-600 dark:text-red-400"
+          className="mt-0.5 shrink-0"
           aria-hidden="true"
         >
           <circle cx="12" cy="12" r="10" />
@@ -1029,16 +1087,14 @@ const ModelErrorCard = memo(function ModelErrorCard({ error }: { error: ModelErr
           <line x1="12" y1="16" x2="12.01" y2="16" />
         </svg>
         <div className="min-w-0">
-          <div className="text-xs font-semibold">{presentation.title}</div>
-          <div className="mt-0.5 text-[11px] leading-relaxed opacity-80">
-            {presentation.description}
-          </div>
+          <div className="text-[13px] font-medium leading-relaxed">{presentation.title}</div>
+          <div className="text-[13px] leading-relaxed opacity-80">{presentation.description}</div>
           {presentation.detail && presentation.detail !== presentation.description && (
-            <details className="mt-1.5">
-              <summary className="cursor-pointer text-[10px] opacity-65 hover:opacity-100">
+            <details className="mt-1">
+              <summary className="cursor-pointer text-[13px] opacity-55 transition-opacity hover:opacity-100">
                 Provider details
               </summary>
-              <div className="mt-1 break-words font-mono text-[10px] opacity-70">
+              <div className="mt-1 break-words pl-3 font-mono text-[13px] leading-relaxed opacity-70">
                 {presentation.detail.slice(0, 1000)}
               </div>
             </details>
@@ -1460,7 +1516,7 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
         {isUser ? (
           <UserPartsView parts={msg.parts} />
         ) : (
-          <div className="space-y-1">
+          <div className="space-y-2">
             {msg.parts.length === 0 && <BloxBotThinking />}
             {msg.parts.map((part) => (
               <PartRenderer key={part.id} part={part} />
@@ -1506,7 +1562,6 @@ function ChatMessages() {
   const answerQuestion = useAnswerQuestion();
   const rejectQuestion = useRejectQuestion();
   const replyPermission = useReplyPermission();
-  const sendMessage = useSendMessage();
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1531,7 +1586,13 @@ function ChatMessages() {
     const anchor = bottomRef.current;
     if (!el || !anchor) return;
     let rafId = 0;
-    const observer = new MutationObserver(() => {
+    const observer = new MutationObserver((mutations) => {
+      const onlyDisclosureChanges = mutations.every((mutation) => {
+        const target =
+          mutation.target instanceof Element ? mutation.target : mutation.target.parentElement;
+        return target?.closest("[data-preserve-scroll]") !== null;
+      });
+      if (onlyDisclosureChanges) return;
       if (!shouldAutoScroll.current) return;
       if (!rafId) {
         rafId = requestAnimationFrame(() => {
@@ -1579,21 +1640,6 @@ function ChatMessages() {
           <p className="mt-2 text-xs text-muted-foreground">
             Ask me to create scripts, design game mechanics, or modify your Roblox Studio project.
           </p>
-          <button
-            type="button"
-            onClick={() =>
-              sendMessage.mutate(
-                { text: MULTI_STUDIO_PROMPT },
-                {
-                  onError: (error) =>
-                    toast.error("Message not sent", { description: error.message }),
-                },
-              )
-            }
-            className="mt-4 rounded-full border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          >
-            Coordinate multiple Studio places
-          </button>
         </div>
       </div>
     );
@@ -1602,7 +1648,12 @@ function ChatMessages() {
   const virtualItems = virtualizer.getVirtualItems();
 
   return (
-    <div ref={containerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto">
+    <div
+      ref={containerRef}
+      data-chat-scroll
+      onScroll={handleScroll}
+      className="app-scrollbar flex-1 overflow-y-auto [overflow-anchor:none]"
+    >
       <ImageLightbox />
       <div className="mx-auto max-w-2xl px-4 py-4">
         <div

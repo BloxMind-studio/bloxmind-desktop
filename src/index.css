@@ -8,6 +8,41 @@
 
 @custom-variant dark (&:is(.dark *));
 
+.app-scrollbar {
+  scrollbar-color: color-mix(in oklch, var(--foreground) 24%, transparent) transparent;
+  scrollbar-width: thin;
+}
+
+.app-scrollbar::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.app-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.app-scrollbar::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--foreground) 24%, transparent);
+  background-clip: padding-box;
+}
+
+.app-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklch, var(--foreground) 38%, transparent);
+  background-clip: padding-box;
+}
+
+.syntax-token {
+  color: var(--syntax-light);
+  font: inherit;
+}
+
+.dark .syntax-token {
+  color: var(--syntax-dark);
+}
+
 /* ── Custom fonts ────────────────────────────────────────────────── */
 
 @theme inline {
@@ -164,9 +199,39 @@
   to   { opacity: 1; transform: translateX(0); }
 }
 
+@keyframes slide-out-left {
+  from { opacity: 1; transform: translateX(0); max-height: 64px; }
+  to { opacity: 0; transform: translateX(-10px); max-height: 0; }
+}
+
 @keyframes scale-in {
   from { opacity: 0; transform: scale(0.96); }
   to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes picker-in {
+  from { opacity: 0; transform: translateY(-5px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes disclosure-expand {
+  from { opacity: 0.72; }
+  to { opacity: 1; }
+}
+
+@keyframes disclosure-collapse {
+  from { opacity: 0.72; }
+  to { opacity: 1; }
+}
+
+@keyframes side-panel-in {
+  from { width: 0; opacity: 0; transform: translateX(18px); }
+  to { width: 18rem; opacity: 1; transform: translateX(0); }
+}
+
+@keyframes side-panel-out {
+  from { width: 18rem; opacity: 1; transform: translateX(0); }
+  to { width: 0; opacity: 0; transform: translateX(18px); }
 }
 
 .animate-fade-in {
@@ -181,8 +246,47 @@
   animation: slide-in-left 200ms ease-out both;
 }
 
+.animate-slide-out-left {
+  overflow: hidden;
+  animation: slide-out-left 180ms ease-in both;
+}
+
 .animate-scale-in {
   animation: scale-in 200ms ease-out both;
+}
+
+.animate-picker-in {
+  animation: picker-in 160ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-disclosure-expand {
+  animation: disclosure-expand 140ms ease-out both;
+}
+
+.animate-disclosure-collapse {
+  animation: disclosure-collapse 110ms ease-out both;
+}
+
+.animate-side-panel-in {
+  animation: side-panel-in 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-side-panel-out {
+  pointer-events: none;
+  animation: side-panel-out 180ms ease-in both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-picker-in {
+    animation: none;
+  }
+
+  .animate-disclosure-expand,
+  .animate-disclosure-collapse,
+  .animate-side-panel-in,
+  .animate-side-panel-out {
+    animation: none;
+  }
 }
 
 /* ── Reject shake (upload error feedback) ────────────────────────── */

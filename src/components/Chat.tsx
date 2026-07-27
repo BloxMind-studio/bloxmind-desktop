@@ -1,18 +1,23 @@
+import { Boxes, Play } from "lucide-react";
 import posthog from "posthog-js/dist/module.full.no-external.js";
-import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 
 import ChatInput from "@/components/ChatInput";
 import ChatMessages from "@/components/ChatMessages";
 import ChatSidebar from "@/components/ChatSidebar";
+import Explorer from "@/components/Explorer";
 import LoadingScreen from "@/components/LoadingScreen";
+import PlaytestPanel from "@/components/PlaytestPanel";
 import StudioSetup from "@/components/StudioSetup";
+import StudioTargetPicker from "@/components/StudioTargetPicker";
 import { useCreateSession } from "@/hooks/mutations/useCreateSession";
 import { useSessionStatus } from "@/hooks/useSessionStatuses";
 import { useSessions } from "@/hooks/useSessions";
 import { useStudioConnection } from "@/hooks/useStudioConnection";
-import { POSTHOG_PROJECT_TOKEN } from "@/lib/analytics";
+import { analyticsProperties, POSTHOG_PROJECT_TOKEN } from "@/lib/analytics";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
+import { useStudioTargetOptional } from "@/providers/StudioTargetProvider";
 
 const Settings = lazy(() => import("@/components/Settings"));
 
@@ -24,13 +29,26 @@ function Chat() {
   const createSession = useCreateSession();
   const { data: allSessions } = useSessions();
   const studioConnection = useStudioConnection();
+  const studioTarget = useStudioTargetOptional();
+  const hasStudioTarget = studioTarget?.selected !== null && studioTarget?.status === "ready";
 
   // Get active session title from the sessions list
   const activeSessionTitle = allSessions?.find((s) => s.id === activeSessionId)?.title ?? null;
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [explorerCollapsed, setExplorerCollapsed] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showStudioSetup, setShowStudioSetup] = useState(false);
+  const [showPlaytest, setShowPlaytest] = useState(false);
+  const sidePanelOpen = showPlaytest || (hasStudioTarget && !explorerCollapsed);
+  const desiredSidePanel = showPlaytest
+    ? "playtest"
+    : hasStudioTarget && !explorerCollapsed
+      ? "explorer"
+      : null;
+  const [renderedSidePanel, setRenderedSidePanel] = useState<"explorer" | "playtest" | null>(null);
+  const [sidePanelExiting, setSidePanelExiting] = useState(false);
+  const sidePanelTimerRef = useRef<number | null>(null);
 
   const appScreen =
     showStudioSetup || studioConnection.state === "waiting"
@@ -55,7 +73,7 @@ function Chat() {
       app_screen: appScreen,
     };
     posthog.register(screenProperties);
-    posthog.capture("$pageview", screenProperties);
+    posthog.capture("$pageview", analyticsProperties("navigation", screenProperties));
   }, [appScreen]);
 
   useEffect(() => {
@@ -72,9 +90,58 @@ function Chat() {
     }
   }, [activeSessionId, allSessions, clearSession]);
 
+  useEffect(() => {
+    if (sidePanelTimerRef.current !== null) {
+      window.clearTimeout(sidePanelTimerRef.current);
+      sidePanelTimerRef.current = null;
+    }
+    if (desiredSidePanel === renderedSidePanel) {
+      setSidePanelExiting(false);
+      return;
+    }
+    if (renderedSidePanel !== null) {
+      setSidePanelExiting(true);
+      sidePanelTimerRef.current = window.setTimeout(() => {
+        setRenderedSidePanel(desiredSidePanel);
+        setSidePanelExiting(false);
+        sidePanelTimerRef.current = null;
+      }, 180);
+      return;
+    }
+    setRenderedSidePanel(desiredSidePanel);
+    setSidePanelExiting(false);
+  }, [desiredSidePanel, renderedSidePanel]);
+
+  useEffect(
+    () => () => {
+      if (sidePanelTimerRef.current !== null) window.clearTimeout(sidePanelTimerRef.current);
+    },
+    [],
+  );
+
   const handleToggleSidebar = useCallback(() => setSidebarCollapsed((c) => !c), []);
   const handleSessionSelect = useCallback(() => setShowSettings(false), []);
   const handleOpenSettings = useCallback(() => setShowSettings(true), []);
+  const handleToggleExplorer = useCallback(() => {
+    if (showPlaytest) {
+      posthog.capture("playtest_closed", analyticsProperties("playtest"));
+      setShowPlaytest(false);
+      setExplorerCollapsed(false);
+      return;
+    }
+
+    setExplorerCollapsed((collapsed) => !collapsed);
+  }, [showPlaytest]);
+  const handleOpenPlaytest = useCallback(() => {
+    if (!hasStudioTarget) return;
+    posthog.capture("playtest_opened", analyticsProperties("playtest"));
+    setExplorerCollapsed(true);
+    setShowPlaytest(true);
+  }, [hasStudioTarget]);
+  const handleClosePlaytest = useCallback(() => {
+    posthog.capture("playtest_closed", analyticsProperties("playtest"));
+    setShowPlaytest(false);
+  }, []);
 
   // Main chat UI
   return (
@@ -86,7 +153,7 @@ function Chat() {
         onOpenSettings={handleOpenSettings}
       />
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         {showStudioSetup || studioConnection.state === "waiting" ? (
           <StudioSetup
             connected={studioConnection.state === "connected"}
@@ -134,17 +201,54 @@ function Chat() {
           </div>
         ) : (
           <>
-            <div className="flex h-10 shrink-0 items-center border-b px-4">
-              <div className="flex items-center gap-2">
-                <h3 className="truncate text-xs font-semibold">
+            <div className="grid h-10 shrink-0 grid-cols-[minmax(6rem,2fr)_minmax(0,3fr)] items-center border-b px-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <h3 className="min-w-0 flex-1 truncate text-xs font-semibold">
                   {activeSessionTitle || "Untitled"}
                 </h3>
                 {isBusy && (
-                  <span className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400">
+                  <span className="flex max-w-[42%] shrink items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400">
                     <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400" />
-                    {sessionStatus?.type === "retry" ? "Waiting to retry" : "Working"}
+                    <span className="truncate">
+                      {sessionStatus?.type === "retry" ? "Waiting to retry" : "Working"}
+                    </span>
                   </span>
                 )}
+              </div>
+              <div className="ml-2 flex min-w-0 items-center justify-end gap-1.5">
+                <StudioTargetPicker />
+                {hasStudioTarget ? (
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={handleToggleExplorer}
+                      className="inline-flex h-7 items-center rounded-md border bg-background px-2 text-[11px] font-medium text-muted-foreground transition-[background-color,color] hover:bg-accent hover:text-foreground"
+                      aria-pressed={!explorerCollapsed}
+                      title={explorerCollapsed ? "Open Explorer" : "Close Explorer"}
+                    >
+                      <Boxes aria-hidden="true" size={13} />
+                      <span
+                        className={`overflow-hidden whitespace-nowrap transition-[max-width,margin,opacity] duration-200 ${sidePanelOpen ? "ml-0 max-w-0 opacity-0" : "ml-1.5 max-w-16 opacity-100"}`}
+                      >
+                        Explorer
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleOpenPlaytest}
+                      disabled={isBusy}
+                      className="inline-flex h-7 items-center rounded-md bg-foreground px-2 text-[11px] font-semibold text-background transition-opacity hover:opacity-85 disabled:opacity-40"
+                      title={isBusy ? "Wait for the agent to finish" : "Create a playtest plan"}
+                    >
+                      <Play aria-hidden="true" size={13} fill="currentColor" />
+                      <span
+                        className={`overflow-hidden whitespace-nowrap transition-[max-width,margin,opacity] duration-200 ${sidePanelOpen ? "ml-0 max-w-0 opacity-0" : "ml-1.5 max-w-16 opacity-100"}`}
+                      >
+                        Playtest
+                      </span>
+                    </button>
+                  </div>
+                ) : null}
               </div>
             </div>
 
@@ -159,6 +263,22 @@ function Chat() {
           </div>
         )}
       </div>
+      {renderedSidePanel && activeSessionId && !showSettings && !showStudioSetup ? (
+        <div
+          className={`flex w-72 shrink-0 overflow-hidden ${sidePanelExiting ? "animate-side-panel-out" : "animate-side-panel-in"}`}
+        >
+          {renderedSidePanel === "explorer" ? (
+            <Explorer
+              key={`${activeSessionId}:${studioTarget?.selected?.key ?? "unselected"}`}
+              collapsed={false}
+              sessionBusy={isBusy}
+              onToggle={() => setExplorerCollapsed(true)}
+            />
+          ) : (
+            <PlaytestPanel onClose={handleClosePlaytest} />
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }

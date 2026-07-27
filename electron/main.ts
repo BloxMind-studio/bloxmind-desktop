@@ -1,10 +1,10 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { rename, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { app, BrowserWindow, ipcMain, Menu, shell } from "electron";
 import { autoUpdater } from "electron-updater";
-import { Data, Effect, ManagedRuntime, Schema } from "effect";
+import { Data, Effect, Layer, ManagedRuntime, Schema } from "effect";
 
 import {
   type AppConfig,
@@ -13,13 +13,30 @@ import {
   DEFAULT_APP_CONFIG,
   type OpenCodeStartupProgress,
 } from "../src/types/desktop";
+import { ExplorerProgramEnvelopeSchema, ExplorerSnapshotSchema } from "../src/lib/explorer";
+import { GeneratedProgramArtifactSchema } from "../src/types/generatedProgram";
+import {
+  StudioTargetDiscoverySchema,
+  StudioTargetProgramEnvelopesSchema,
+  StudioTargetProgramsSchema,
+  StudioTargetSelectionSchema,
+} from "../src/types/studioTarget";
 import { handleLastWindowClosed } from "./appLifecycle";
 import { channels } from "./channels";
 import { makeOpenCodeLayer, OpenCode } from "./services/OpenCode";
+import {
+  GeneratedProgramRuntime,
+  GeneratedProgramRuntimeLive,
+} from "./services/GeneratedProgramRuntime";
+import { makeStudioMcpBrokerLayer } from "./services/StudioMcpBroker";
 
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
 const defaultConfig: AppConfig = DEFAULT_APP_CONFIG;
 const configMutex = Effect.unsafeMakeSemaphore(1);
+
+function configPath(): string {
+  return join(app.getPath("userData"), "bloxbot-store.json");
+}
 
 let mainWindow: BrowserWindow | null = null;
 let quitting = false;
@@ -29,17 +46,40 @@ class DesktopMainError extends Data.TaggedError("DesktopMainError")<{
   cause?: unknown;
 }> {}
 
+const studioMcpBrokerLayer = makeStudioMcpBrokerLayer({
+  workspace: join(app.getPath("home"), "BloxBot"),
+  localAppData: process.env.LOCALAPPDATA,
+});
+
 const openCodeRuntime = ManagedRuntime.make(
-  makeOpenCodeLayer({
-    binaryCacheDirectory: join(app.getPath("userData"), "opencode"),
-    workspace: join(app.getPath("home"), "BloxBot"),
-    onStartupProgress: (progress: OpenCodeStartupProgress) => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send(channels.openCodeStartupProgress, progress);
-      }
-    },
-  }),
+  Layer.merge(
+    makeOpenCodeLayer({
+      binaryCacheDirectory: join(app.getPath("userData"), "opencode"),
+      workspace: join(app.getPath("home"), "BloxBot"),
+      onStartupProgress: (progress: OpenCodeStartupProgress) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(channels.openCodeStartupProgress, progress);
+        }
+      },
+    }),
+    GeneratedProgramRuntimeLive.pipe(Layer.provide(studioMcpBrokerLayer)),
+  ).pipe(Layer.provide(studioMcpBrokerLayer)),
 );
+
+const expectedContract = (name: string) => ({
+  name,
+  version: "1",
+  inputSchemaVersion: "1",
+  outputSchemaVersion: "1",
+});
+
+function requireContract(contract: { name: string; version: string; inputSchemaVersion: string; outputSchemaVersion: string }, name: string) {
+  const expected = expectedContract(name);
+  if (JSON.stringify(contract) !== JSON.stringify(expected)) {
+    return Effect.fail(new DesktopMainError({ message: `Generated program contract ${name} is invalid` }));
+  }
+  return Effect.void;
+}
 
 function isMissingFile(cause: unknown): boolean {
   return (
@@ -68,7 +108,7 @@ function parseExternalUrl(rawUrl: string) {
 
 const loadConfig = Effect.gen(function* () {
   const contents = yield* Effect.tryPromise({
-    try: () => readFile(join(app.getPath("userData"), "bloxbot-store.json"), "utf8"),
+    try: () => readFile(configPath(), "utf8"),
     catch: (cause) => new DesktopMainError({ message: "Failed to read app configuration", cause }),
   }).pipe(
     Effect.catchAll((error) =>
@@ -105,11 +145,17 @@ function patchConfig(input: unknown) {
     const current = yield* loadConfig;
     const next = { ...current, ...patch };
     yield* Effect.tryPromise({
-      try: () =>
-        writeFile(
-          join(app.getPath("userData"), "bloxbot-store.json"),
-          JSON.stringify(next, null, 2),
-        ),
+      try: async () => {
+        const destination = configPath();
+        const temporary = `${destination}.${process.pid}.tmp`;
+        try {
+          await writeFile(temporary, JSON.stringify(next, null, 2), { mode: 0o600 });
+          await rename(temporary, destination);
+        } catch (cause) {
+          await rm(temporary, { force: true }).catch(() => undefined);
+          throw cause;
+        }
+      },
       catch: (cause) =>
         new DesktopMainError({ message: "Failed to write app configuration", cause }),
     });
@@ -119,6 +165,15 @@ function patchConfig(input: unknown) {
 const runMain = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect);
 
 const registerIpcHandlers = Effect.sync(() => {
+  ipcMain.handle(channels.compileExplorerProgram, (_event, input: unknown) =>
+    openCodeRuntime.runPromise(
+      Effect.gen(function* () {
+        const program = yield* Schema.decodeUnknown(ExplorerProgramEnvelopeSchema)(input);
+        const runtime = yield* GeneratedProgramRuntime;
+        return yield* runtime.compile(program);
+      }),
+    ),
+  );
   ipcMain.handle(channels.getOpenCodeInfo, () =>
     openCodeRuntime.runPromise(
       OpenCode.pipe(Effect.flatMap((service) => service.info)),
@@ -127,6 +182,52 @@ const registerIpcHandlers = Effect.sync(() => {
   ipcMain.handle(channels.getVersion, () => runMain(Effect.sync(() => app.getVersion())));
   ipcMain.handle(channels.loadConfig, () => runMain(loadConfig));
   ipcMain.handle(channels.patchConfig, (_event, patch: unknown) => runMain(patchConfig(patch)));
+  ipcMain.handle(channels.installStudioTargetPrograms, (_event, input: unknown) =>
+    openCodeRuntime.runPromise(
+      Effect.gen(function* () {
+        const envelopes = yield* Schema.decodeUnknown(StudioTargetProgramEnvelopesSchema)(input);
+        yield* requireContract(envelopes.discovery.contract, "studio-target-discovery");
+        yield* requireContract(envelopes.selection.contract, "studio-target-selection");
+        const runtime = yield* GeneratedProgramRuntime;
+        const [discoveryArtifact, selectionArtifact] = yield* Effect.all([
+          runtime.compile(envelopes.discovery),
+          runtime.compile(envelopes.selection),
+        ], { concurrency: "unbounded" });
+        return yield* Schema.decodeUnknown(StudioTargetProgramsSchema)({
+          discovery: { envelope: envelopes.discovery, artifact: discoveryArtifact },
+          selection: { envelope: envelopes.selection, artifact: selectionArtifact },
+        });
+      }),
+    ),
+  );
+  ipcMain.handle(channels.discoverStudioTargets, (_event, input: unknown) =>
+    openCodeRuntime.runPromise(
+      Effect.gen(function* () {
+        yield* Effect.logInfo("[studio-target] discovery requested");
+        const programs = yield* Schema.decodeUnknown(StudioTargetProgramsSchema)(input);
+        yield* requireContract(programs.discovery.artifact.contract, "studio-target-discovery");
+        const runtime = yield* GeneratedProgramRuntime;
+        const result = yield* runtime.invoke({ artifact: programs.discovery.artifact, input: {} });
+        const discovery = yield* Schema.decodeUnknown(StudioTargetDiscoverySchema)(result.value);
+        yield* Effect.logInfo(
+          `[studio-target] discovery completed targets=${discovery.targets.length} selected=${discovery.selectedKey !== null}`,
+        );
+        return discovery;
+      }),
+    ),
+  );
+  ipcMain.handle(channels.selectStudioTarget, (_event, input: unknown, targetKey: unknown) =>
+    openCodeRuntime.runPromise(
+      Effect.gen(function* () {
+        const programs = yield* Schema.decodeUnknown(StudioTargetProgramsSchema)(input);
+        const key = yield* Schema.decodeUnknown(Schema.String.pipe(Schema.minLength(1), Schema.maxLength(512)))(targetKey);
+        yield* requireContract(programs.selection.artifact.contract, "studio-target-selection");
+        const runtime = yield* GeneratedProgramRuntime;
+        const result = yield* runtime.invoke({ artifact: programs.selection.artifact, input: { targetKey: key } });
+        return yield* Schema.decodeUnknown(StudioTargetSelectionSchema)(result.value);
+      }),
+    ),
+  );
   ipcMain.handle(channels.openUrl, (_event, rawUrl: string) =>
     runMain(
       parseExternalUrl(rawUrl).pipe(
@@ -172,6 +273,32 @@ const registerIpcHandlers = Effect.sync(() => {
       }),
     ),
   );
+  ipcMain.handle(channels.invokeExplorerProgram, (_event, input: unknown) =>
+    openCodeRuntime.runPromise(
+      Effect.gen(function* () {
+        const artifact = yield* Schema.decodeUnknown(GeneratedProgramArtifactSchema)(input);
+        if (
+          artifact.contract.name !== "explorer-snapshot" ||
+          artifact.contract.outputSchemaVersion !== "explorer-snapshot-v1"
+        ) {
+          return yield* Effect.fail(
+            new DesktopMainError({ message: "Explorer program contract is invalid" }),
+          );
+        }
+        const runtime = yield* GeneratedProgramRuntime;
+        const result = yield* runtime.invoke({ artifact, input: null });
+        return yield* Schema.decodeUnknown(ExplorerSnapshotSchema)(result.value).pipe(
+          Effect.mapError(
+            (cause) => new DesktopMainError({ message: "Explorer output is invalid", cause }),
+          ),
+        );
+      }).pipe(
+        Effect.tapErrorCause((cause) =>
+          Effect.logError(`[explorer] invocation failed: ${String(cause)}`),
+        ),
+      ),
+    ),
+  );
   ipcMain.handle(channels.relaunch, () =>
     runMain(
       Effect.sync(() => {
@@ -188,7 +315,7 @@ function createWindow(): Effect.Effect<void, DesktopMainError> {
       try: () =>
         new BrowserWindow({
           title: "BloxBot",
-          width: 800,
+          width: 920,
           height: 600,
           minWidth: 520,
           minHeight: 400,

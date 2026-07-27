@@ -6,9 +6,11 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { useUpdater } from "@/hooks/useUpdater";
 import { ActiveSessionProvider } from "@/providers/ActiveSessionProvider";
+import { ExplorerReferenceProvider } from "@/providers/ExplorerReferenceProvider";
 import { OpenCodeClientProvider } from "@/providers/OpenCodeClientProvider";
 import { PreferencesProvider } from "@/providers/PreferencesProvider";
 import { QueryProvider } from "@/providers/QueryProvider";
+import { StudioTargetProvider } from "@/providers/StudioTargetProvider";
 
 function AppInner() {
   useUpdater();
@@ -33,7 +35,11 @@ function App() {
         <OpenCodeClientProvider activeSessionIdRef={activeSessionIdRef}>
           <ActiveSessionProvider activeSessionIdRef={activeSessionIdRef}>
             <PreferencesProvider>
-              <AppInner />
+              <StudioTargetProvider>
+                <ExplorerReferenceProvider>
+                  <AppInner />
+                </ExplorerReferenceProvider>
+              </StudioTargetProvider>
             </PreferencesProvider>
           </ActiveSessionProvider>
         </OpenCodeClientProvider>
