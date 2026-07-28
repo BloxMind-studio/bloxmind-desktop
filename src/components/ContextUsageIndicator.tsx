@@ -75,10 +75,55 @@ function parseContextFromString(text?: string): number | undefined {
 }
 
 /**
+ * Fallback mapping for well-known model families when metadata and
+ * ID/name parsing both fail.
+ */
+function contextFromModelFamily(modelId?: string, modelName?: string): number | undefined {
+  const text = `${modelId ?? ""} ${modelName ?? ""}`.toLowerCase();
+
+  // Anthropic Claude 3.5 Sonnet / Opus / Haiku → 200k
+  if (/(claude-3\.5|claude-3-5|sonnet|opus)/.test(text)) return 200_000;
+  // Claude 3 Opus/Sonnet/Haiku → 200k
+  if (/(claude-3|claude\.3)/.test(text)) return 200_000;
+  // Claude 2.x → 100k
+  if (/(claude-2|claude\.2)/.test(text)) return 100_000;
+
+  // OpenAI GPT-4o / GPT-4 Turbo → 128k
+  if (/(gpt-4o|gpt-4-turbo|gpt-4\.5)/.test(text)) return 128_000;
+  // GPT-4 base → 8k (legacy)
+  if (/gpt-4/.test(text)) return 8_192;
+
+  // Google Gemini 2.5 / 1.5 → 1M
+  if (/(gemini-2\.5|gemini-1\.5)/.test(text)) return 1_048_576;
+  // Gemini 1.0 Pro → 32k
+  if (/gemini/.test(text)) return 32_768;
+
+  // DeepSeek V4 / R1 / Coder → 128k or 1M (assume 1M for latest)
+  if (/(deepseek-v4|deepseek-r1|deepseek-coder-v2)/.test(text)) return 1_048_576;
+  // DeepSeek V3 / V2 → 128k
+  if (/(deepseek-v3|deepseek-v2)/.test(text)) return 128_000;
+
+  // Mistral Large / Medium → 32k/128k
+  if (/mistral-large/.test(text)) return 128_000;
+  if (/mistral/.test(text)) return 32_768;
+
+  // Llama 3.1 / 3.2 → 128k
+  if (/(llama-3\.1|llama-3\.2|llama-3-1|llama-3-2)/.test(text)) return 128_000;
+  // Llama 3 → 8k
+  if (/llama-3/.test(text)) return 8_192;
+
+  // Command R / R+ → 128k
+  if (/command-r/.test(text)) return 128_000;
+
+  return undefined;
+}
+
+/**
  * Resolve the max context window for a given model.
  * 1. Deep-inspect the model object for known metadata properties.
  * 2. Fall back to regex parsing of model.id and model.name.
- * 3. Default to 128_000.
+ * 3. Fall back to known model-family mapping.
+ * 4. Default to 128_000.
  */
 function resolveContextWindow(
   modelId: string | undefined,
@@ -126,9 +171,21 @@ function resolveContextWindow(
       });
       return fromName;
     }
+
+    // Step 3: model-family fallback
+    const fromFamily = contextFromModelFamily(match.id, match.name);
+    if (fromFamily !== undefined) {
+      console.log("[ContextIndicator] Active Model:", {
+        id: match.id,
+        providerId: match.providerId,
+        resolvedLimit: fromFamily,
+        source: "family-fallback",
+      });
+      return fromFamily;
+    }
   }
 
-  // Step 3: fallback regex on the raw modelId string
+  // Step 4: fallback regex on the raw modelId string
   const fromRaw = parseContextFromString(modelId);
   if (fromRaw !== undefined) {
     console.log("[ContextIndicator] Active Model:", {
