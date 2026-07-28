@@ -13,6 +13,7 @@ interface ContextUsageIndicatorProps {
 }
 
 function fmt(n: number) {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}m`;
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
   return String(n);
 }
@@ -126,15 +127,14 @@ const ContextUsageIndicator = memo(function ContextUsageIndicator({
     const max = resolveContextWindow(selectedModel ?? undefined, allModels);
     if (!messagesCache) return { pct: 0, total: 0, max };
 
-    let total = 0;
-    for (const msgId of messagesCache.messageIds) {
-      const msg = messagesCache.messagesById[msgId];
-      if (!msg) continue;
-      const info = msg.info as unknown as { tokens?: { input?: number; total?: number } };
-      const t = info.tokens;
-      if (!t) continue;
-      total += t.input ?? t.total ?? 0;
-    }
+    // Take only the latest assistant message's token count.
+    // prompt_tokens represents the cumulative context for that request,
+    // so summing across all turns inflates the usage artificially.
+    const lastId = messagesCache.messageIds[messagesCache.messageIds.length - 1];
+    const lastMsg = lastId ? messagesCache.messagesById[lastId] : undefined;
+    const info = lastMsg?.info as unknown as { tokens?: { input?: number; total?: number } } | undefined;
+    const t = info?.tokens;
+    const total = t?.input ?? t?.total ?? 0;
 
     return { pct: Math.min(100, Math.round((total / max) * 100)), total, max };
   }, [messagesCache, selectedModel, allModels]);

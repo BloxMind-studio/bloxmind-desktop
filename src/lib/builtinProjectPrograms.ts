@@ -110,6 +110,8 @@ async function run({ callTool }: { input: unknown; callTool: (name: string, args
     if (!path) continue;
 
     const instanceName = typeof row.name === "string" && row.name ? row.name
+      : typeof row.Name === "string" && row.Name ? row.Name
+      : typeof row.properties?.Name === "string" && row.properties?.Name ? row.properties.Name
       : path.split(".").at(-1) ?? path;
 
     // Read the actual script source via MCP.
