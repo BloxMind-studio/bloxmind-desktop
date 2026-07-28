@@ -15,6 +15,7 @@ import { useExplorerReference } from "@/providers/ExplorerReferenceProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
 import { useProjectIndexContext } from "@/providers/ProjectIndexProvider";
 import { useStudioTargetOptional } from "@/providers/StudioTargetProvider";
+import { ContextUsageIndicator } from "@/components/ContextUsageIndicator";
 import type { ModelInfo } from "@/types";
 
 // ── Image attachment helpers ────────────────────────────────────────────
@@ -859,6 +860,7 @@ function ChatInput() {
               </div>
             )}
             <div className="flex items-center gap-1">
+              <ContextUsageIndicator />
               <button
                 onClick={() => fileInputRef.current?.click()}
                 className={`flex h-7 w-7 items-center justify-center rounded-lg border border-border bg-background transition-colors hover:bg-accent hover:text-foreground ${rejectShake ? "animate-reject-shake text-red-500" : "text-muted-foreground/60"}`}
