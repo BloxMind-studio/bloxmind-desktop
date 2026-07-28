@@ -32,8 +32,11 @@ export function useProjectIndex(): {
   const queryClient = useQueryClient();
   const hasStudioTarget = studioTarget?.selected !== null && studioTarget?.status === "ready";
 
+  const targetKey = studioTarget?.selected?.key;
+  const projectIndexKey = targetKey ? [...qk.projectIndex, targetKey] : qk.projectIndex;
+
   const { data, isLoading, error } = useQuery<ProjectSkeleton | null>({
-    queryKey: qk.projectIndex,
+    queryKey: projectIndexKey,
     queryFn: async () => {
       if (!client || !hasStudioTarget) return null;
 
@@ -57,8 +60,8 @@ export function useProjectIndex(): {
   });
 
   const refresh = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: qk.projectIndex });
-  }, [queryClient]);
+    void queryClient.invalidateQueries({ queryKey: projectIndexKey });
+  }, [queryClient, projectIndexKey]);
 
   return {
     skeleton: data ?? null,
@@ -78,16 +81,19 @@ export function useProjectIndexProgram(): {
 } {
   const { client, ready } = useOpenCodeClient();
   const studioTarget = useStudioTargetOptional();
+  const targetKey = studioTarget?.selected?.key;
   const hasStudioTarget = studioTarget?.selected !== null && studioTarget?.status === "ready";
 
+  const programKey = targetKey ? [...qk.projectIndexProgram, targetKey] : qk.projectIndexProgram;
+
   const { data, isLoading } = useQuery<ProjectIndexProgramEnvelope | null>({
-    queryKey: qk.projectIndexProgram,
+    queryKey: programKey,
     queryFn: async () => {
       if (!client || !hasStudioTarget) return null;
 
       // Try to get an AI-generated program first, fall back to built-in.
       try {
-        const generated = await generateProjectIndexProgram(client);
+        const generated = await generateProjectIndexProgram(client, targetKey);
         if (generated) return generated;
       } catch {
         // Fall through to built-in.
@@ -111,6 +117,7 @@ export function useProjectIndexProgram(): {
  */
 async function generateProjectIndexProgram(
   client: NonNullable<ReturnType<typeof useOpenCodeClient>["client"]>,
+  targetKey?: string,
 ): Promise<ProjectIndexProgramEnvelope | null> {
   const INITIAL_SYSTEM_PROMPT = `You generate the private TypeScript data provider for BloxBot's project index panel.
 Discover the currently available Studio MCP tools and return an import-free deterministic read-only TypeScript program.
@@ -124,6 +131,7 @@ Return only the requested structured output.`;
     {
       title: "Project index (temporary)",
       agent: undefined,
+      metadata: { bloxbotHidden: true, purpose: "project-index", targetKey },
     },
     { throwOnError: true },
   );
