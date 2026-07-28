@@ -1,8 +1,11 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Schema } from "effect";
 import { useCallback } from "react";
 
 import { BUILTIN_PROJECT_INDEX_PROGRAM } from "@/lib/builtinProjectPrograms";
 import {
+  ProjectIndexProgramEnvelopeSchema,
+  PROJECT_INDEX_OUTPUT_SCHEMA,
   type ProjectIndexProgramEnvelope,
   type ProjectSkeleton,
   ProjectSkeletonSchema,
@@ -42,8 +45,9 @@ export function useProjectIndex(): {
       const skeleton = await desktop.invokeProjectIndexProgram(program);
       if (!skeleton) return null;
 
-      // Validate the result against our schema.
-      return ProjectSkeletonSchema.decodeUnknownSync(skeleton);
+      // Validate the result against our schema via the runtime Effect system.
+      const decoded = Schema.decodeUnknownSync(ProjectSkeletonSchema)(skeleton);
+      return decoded;
     },
     enabled: ready && !!client && hasStudioTarget,
     // Keep the index around; it only changes when scripts are added/removed.
@@ -108,11 +112,6 @@ export function useProjectIndexProgram(): {
 async function generateProjectIndexProgram(
   client: NonNullable<ReturnType<typeof useOpenCodeClient>["client"]>,
 ): Promise<ProjectIndexProgramEnvelope | null> {
-  const { Schema, Effect } = await import("effect");
-  const { ProjectIndexProgramEnvelopeSchema, PROJECT_INDEX_OUTPUT_SCHEMA } = await import(
-    "@/lib/projectIndex"
-  );
-
   const INITIAL_SYSTEM_PROMPT = `You generate the private TypeScript data provider for BloxBot's project index panel.
 Discover the currently available Studio MCP tools and return an import-free deterministic read-only TypeScript program.
 The source must define async function run({ input, callTool }) and return a project skeleton matching the requested output contract.
@@ -123,7 +122,7 @@ Return only the requested structured output.`;
 
   const response = await client.session.prompt(
     {
-      sessionID: "", // Will be created in a private session
+      sessionID: "",
       system: INITIAL_SYSTEM_PROMPT,
       format: { type: "json_schema", schema: PROJECT_INDEX_OUTPUT_SCHEMA, retryCount: 2 },
       parts: [
@@ -136,7 +135,7 @@ Return only the requested structured output.`;
     { throwOnError: true },
   );
 
-  return Effect.runPromise(
-    Schema.decodeUnknown(ProjectIndexProgramEnvelopeSchema)(response.data.info.structured),
+  return Schema.decodeUnknownSync(ProjectIndexProgramEnvelopeSchema)(
+    response.data.info.structured,
   );
 }

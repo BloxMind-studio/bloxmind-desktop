@@ -9,6 +9,7 @@ import { ActiveSessionProvider } from "@/providers/ActiveSessionProvider";
 import { ExplorerReferenceProvider } from "@/providers/ExplorerReferenceProvider";
 import { OpenCodeClientProvider } from "@/providers/OpenCodeClientProvider";
 import { PreferencesProvider } from "@/providers/PreferencesProvider";
+import { ProjectIndexProvider } from "@/providers/ProjectIndexProvider";
 import { QueryProvider } from "@/providers/QueryProvider";
 import { StudioTargetProvider } from "@/providers/StudioTargetProvider";
 
@@ -37,7 +38,9 @@ function App() {
             <PreferencesProvider>
               <StudioTargetProvider>
                 <ExplorerReferenceProvider>
-                  <AppInner />
+                  <ProjectIndexProvider>
+                    <AppInner />
+                  </ProjectIndexProvider>
                 </ExplorerReferenceProvider>
               </StudioTargetProvider>
             </PreferencesProvider>

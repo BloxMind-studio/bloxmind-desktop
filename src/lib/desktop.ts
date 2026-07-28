@@ -1,10 +1,6 @@
 import { Data, Effect, Schema } from "effect";
 import { ExplorerSnapshotSchema } from "@/lib/explorer";
-import {
-  ProjectSkeletonSchema,
-  type ProjectIndexProgramEnvelope,
-  type ProjectSkeleton,
-} from "@/lib/projectIndex";
+import { ProjectSkeletonSchema } from "@/lib/projectIndex";
 import {
   type AppConfig,
   AppConfigPatchSchema,

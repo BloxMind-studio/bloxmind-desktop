@@ -13,6 +13,7 @@ import { splitModelKey } from "@/lib/splitModelKey";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { useExplorerReference } from "@/providers/ExplorerReferenceProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
+import { useProjectIndexContext } from "@/providers/ProjectIndexProvider";
 import { useStudioTargetOptional } from "@/providers/StudioTargetProvider";
 import type { ModelInfo } from "@/types";
 
@@ -246,6 +247,7 @@ function ChatInput() {
     setSelectedVariant,
   } = usePreferences();
   const studioTargetReference = useStudioTargetOptional()?.promptReference ?? null;
+  const { contextPrompt: projectIndexContext } = useProjectIndexContext();
 
   // Available variants for the currently selected model
   const availableVariants = useMemo(() => {
@@ -503,8 +505,12 @@ function ChatInput() {
     setText("");
     setAttachments([]);
     promptEditorRef.current?.clear();
+    // Combine the studio target reference with the project index context.
+    const systemParts = [studioTargetReference, projectIndexContext]
+      .filter(Boolean)
+      .join("\n\n");
     void sendMessage
-      .mutateAsync({ text: trimmed || " ", images, studioTargetReference })
+      .mutateAsync({ text: trimmed || " ", images, studioTargetReference: systemParts || null })
       .catch(() => undefined);
   }
 

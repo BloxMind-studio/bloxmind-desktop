@@ -1,4 +1,4 @@
-import { Boxes, Play } from "lucide-react";
+import { Boxes, FolderTree, Play } from "lucide-react";
 import posthog from "posthog-js/dist/module.full.no-external.js";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 
@@ -17,9 +17,71 @@ import { useStudioConnection } from "@/hooks/useStudioConnection";
 import { analyticsProperties, POSTHOG_PROJECT_TOKEN } from "@/lib/analytics";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
+import { useProjectIndexContext } from "@/providers/ProjectIndexProvider";
 import { useStudioTargetOptional } from "@/providers/StudioTargetProvider";
 
 const Settings = lazy(() => import("@/components/Settings"));
+
+/**
+ * Compact button that shows the project index state and triggers a re-index.
+ * Placed next to the Explorer/Playtest buttons in the header toolbar.
+ */
+function ProjectIndexButton() {
+  const { skeleton, isLoading, error, refresh } = useProjectIndexContext();
+  const [showTooltip, setShowTooltip] = useState(false);
+  const tooltipTimer = useRef<ReturnType<typeof setTimeout>>();
+
+  const indexed = skeleton !== null;
+  const scriptCount = skeleton?.totalScripts ?? 0;
+  const moduleCount = skeleton?.totalModuleScripts ?? 0;
+
+  const handleClick = useCallback(() => {
+    refresh();
+    setShowTooltip(true);
+    clearTimeout(tooltipTimer.current);
+    tooltipTimer.current = setTimeout(() => setShowTooltip(false), 2500);
+  }, [refresh]);
+
+  useEffect(() => () => clearTimeout(tooltipTimer.current), []);
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={handleClick}
+        disabled={isLoading}
+        className="inline-flex h-7 items-center rounded-md border bg-background px-2 text-[11px] font-medium text-muted-foreground transition-[background-color,color] hover:bg-accent hover:text-foreground disabled:opacity-50"
+        title={indexed ? `${scriptCount} scripts · ${moduleCount} modules` : "Index project structure"}
+      >
+        <div className="relative">
+          <FolderTree aria-hidden="true" size={13} />
+          {indexed && (
+            <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-emerald-500" />
+          )}
+          {isLoading && (
+            <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 animate-ping rounded-full bg-amber-400" />
+          )}
+        </div>
+        {error && (
+          <span className="ml-1.5 text-[11px] text-red-500" title={error}>
+            Error
+          </span>
+        )}
+      </button>
+
+      {showTooltip && indexed && (
+        <div className="animate-fade-in-up absolute right-0 top-9 z-50 whitespace-nowrap rounded-md border bg-popover px-3 py-1.5 text-[11px] text-popover-foreground shadow-lg">
+          Indexed: {scriptCount} scripts · {moduleCount} modules
+        </div>
+      )}
+      {showTooltip && !indexed && !isLoading && !error && (
+        <div className="animate-fade-in-up absolute right-0 top-9 z-50 whitespace-nowrap rounded-md border bg-popover px-3 py-1.5 text-[11px] text-popover-foreground shadow-lg">
+          No scripts found
+        </div>
+      )}
+    </div>
+  );
+}
 
 function Chat() {
   const { ready, initError } = useOpenCodeClient();
@@ -219,6 +281,7 @@ function Chat() {
                 <StudioTargetPicker />
                 {hasStudioTarget ? (
                   <div className="flex shrink-0 items-center gap-1.5">
+                    <ProjectIndexButton />
                     <button
                       type="button"
                       onClick={handleToggleExplorer}
