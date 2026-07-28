@@ -120,22 +120,40 @@ For every Script, ModuleScript, and LocalScript, read the source via the appropr
 Build a dependency graph, identify entry points (modules nothing else depends on), and detect circular dependencies.
 Return only the requested structured output.`;
 
-  const response = await client.session.prompt(
+  const created = await client.session.create(
     {
-      sessionID: "",
-      system: INITIAL_SYSTEM_PROMPT,
-      format: { type: "json_schema", schema: PROJECT_INDEX_OUTPUT_SCHEMA, retryCount: 2 },
-      parts: [
-        {
-          type: "text",
-          text: "Discover the read-only Studio tools and generate the reusable TypeScript project index program.",
-        },
-      ],
+      title: "Project index (temporary)",
+      agent: undefined,
+      permission: [{ permission: "*", pattern: "*", action: "deny" }],
     },
     { throwOnError: true },
   );
+  const planningSessionId = created.data?.id;
+  if (!planningSessionId) throw new Error("Couldn't start the project index planner.");
 
-  return Schema.decodeUnknownSync(ProjectIndexProgramEnvelopeSchema)(
-    response.data.info.structured,
-  );
+  try {
+    const response = await client.session.prompt(
+      {
+        sessionID: planningSessionId,
+        model: undefined,
+        agent: undefined,
+        variant: undefined,
+        format: { type: "json_schema", schema: PROJECT_INDEX_OUTPUT_SCHEMA, retryCount: 2 },
+        system: INITIAL_SYSTEM_PROMPT,
+        parts: [
+          {
+            type: "text",
+            text: "Discover the read-only Studio tools and generate the reusable TypeScript project index program.",
+          },
+        ],
+      },
+      { throwOnError: true },
+    );
+
+    return Schema.decodeUnknownSync(ProjectIndexProgramEnvelopeSchema)(
+      response.data.info.structured,
+    );
+  } finally {
+    await client.session.delete({ sessionID: planningSessionId }).catch(() => undefined);
+  }
 }

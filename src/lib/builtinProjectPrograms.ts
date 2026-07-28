@@ -42,7 +42,10 @@ function parseRequires(source) {
     // Strip whitespace inside the expression.
     expr = expr.replace(/\\s+/g, "");
     // If it's a string literal, extract the value.
-    if ((expr.startsWith('\\"') && expr.endsWith('\\"')) || (expr.startsWith("'") && expr.endsWith("'"))) {
+    if (
+      (expr.startsWith('"') && expr.endsWith('"')) ||
+      (expr.startsWith("'") && expr.endsWith("'"))
+    ) {
       deps.push(expr.slice(1, -1));
       continue;
     }
@@ -103,8 +106,9 @@ async function run({ callTool }: { input: unknown; callTool: (name: string, args
     // Read the actual script source via MCP.
     let source = null;
     try {
+      const scriptPath = path.startsWith("game.") ? path : "game." + path;
       const scriptData = normalizeMcpResult(
-        await callTool("read_script", { script_path: "game." + path })
+        await callTool("read_script", { script_path: scriptPath })
       );
       // The result may be { source: "..." } or just the source string.
       if (typeof scriptData === "string") source = scriptData;

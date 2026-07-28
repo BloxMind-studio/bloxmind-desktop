@@ -250,6 +250,11 @@ function ChatInput() {
   const studioTargetReference = useStudioTargetOptional()?.promptReference ?? null;
   const { contextPrompt: projectIndexContext } = useProjectIndexContext();
 
+  const systemPrompt = useMemo(() => {
+    const parts = [studioTargetReference, projectIndexContext].filter(Boolean);
+    return parts.length ? parts.join("\n\n") : null;
+  }, [studioTargetReference, projectIndexContext]);
+
   // Available variants for the currently selected model
   const availableVariants = useMemo(() => {
     if (!selectedModel) return [];
@@ -506,12 +511,8 @@ function ChatInput() {
     setText("");
     setAttachments([]);
     promptEditorRef.current?.clear();
-    // Combine the studio target reference with the project index context.
-    const systemParts = [studioTargetReference, projectIndexContext]
-      .filter(Boolean)
-      .join("\n\n");
     void sendMessage
-      .mutateAsync({ text: trimmed || " ", images, studioTargetReference: systemParts || null })
+      .mutateAsync({ text: trimmed || " ", images, studioTargetReference, systemPrompt })
       .catch(() => undefined);
   }
 

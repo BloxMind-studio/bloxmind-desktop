@@ -17,6 +17,7 @@ interface SendMessageInput {
   text: string;
   images?: Array<{ mime: string; url: string; filename?: string }>;
   studioTargetReference?: string | null;
+  systemPrompt?: string | null;
 }
 
 interface SendMessageContext {
@@ -31,7 +32,7 @@ export function useSendMessage(options?: { onError?: (error: Error) => void }) {
   const queryClient = useQueryClient();
 
   return useMutation<void, Error, SendMessageInput, SendMessageContext | undefined>({
-    mutationFn: async ({ text, images, studioTargetReference }: SendMessageInput) => {
+    mutationFn: async ({ text, images, studioTargetReference, systemPrompt }: SendMessageInput) => {
       if (!client || !activeSessionId) throw new Error("No client or session");
 
       const parts: Array<{ type: string; [k: string]: unknown }> = [{ type: "text", text }];
@@ -44,7 +45,7 @@ export function useSendMessage(options?: { onError?: (error: Error) => void }) {
         sessionID: activeSessionId,
         parts,
       };
-      if (studioTargetReference) opts.system = studioTargetReference;
+      if (systemPrompt) opts.system = systemPrompt;
       let provider: string | undefined;
       let model: string | undefined;
 
@@ -71,6 +72,7 @@ export function useSendMessage(options?: { onError?: (error: Error) => void }) {
             outcome: "success",
             has_images: Boolean(images?.length),
             has_studio_target: Boolean(studioTargetReference),
+            has_system_prompt: Boolean(systemPrompt),
             provider,
             model,
           }),
@@ -92,13 +94,14 @@ export function useSendMessage(options?: { onError?: (error: Error) => void }) {
     },
     onError: (error, input, context) => {
       options?.onError?.(error);
-      posthog.capture(
-        "message_send_failed",
-        errorAnalyticsProperties("chat", "send_message", error, {
-          has_images: Boolean(input.images?.length),
-          has_studio_target: Boolean(input.studioTargetReference),
-        }),
-      );
+        posthog.capture(
+          "message_send_failed",
+          errorAnalyticsProperties("chat", "send_message", error, {
+            has_images: Boolean(input.images?.length),
+            has_studio_target: Boolean(input.studioTargetReference),
+            has_system_prompt: Boolean(input.systemPrompt),
+          }),
+        );
       if (!context) return;
       queryClient.setQueryData<Record<string, SessionStatus>>(qk.statuses, (previous) => {
         if (previous?.[context.sessionID]?.type !== "busy") return previous;

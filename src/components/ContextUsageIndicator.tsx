@@ -1,9 +1,5 @@
 import { memo, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
 
-import type { MessagesCache } from "@/lib/sseDispatch";
-import { qk } from "@/lib/queryKeys";
-import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
 import { useAllModels } from "@/hooks/useProviders";
 import type { ModelInfo } from "@/types";
@@ -89,88 +85,33 @@ function resolveContextWindow(
   if (match) {
     // 1. Known model lookup
     const known = lookupKnownModel(match.id, match.name);
-    if (known !== undefined) {
-      console.log("[ContextIndicator] Active Model:", {
-        id: match.id,
-        providerId: match.providerId,
-        resolvedLimit: known,
-        source: "known-lookup",
-      });
-      return known;
-    }
+    if (known !== undefined) return known;
 
     // 2. Strict regex on model.id and model.name
     const fromId = parseContextWindowFromId(match.id);
-    if (fromId !== undefined) {
-      console.log("[ContextIndicator] Active Model:", {
-        id: match.id,
-        providerId: match.providerId,
-        resolvedLimit: fromId,
-        source: "id-regex",
-      });
-      return fromId;
-    }
+    if (fromId !== undefined) return fromId;
 
     const fromName = parseContextWindowFromId(match.name);
-    if (fromName !== undefined) {
-      console.log("[ContextIndicator] Active Model:", {
-        id: match.id,
-        providerId: match.providerId,
-        resolvedLimit: fromName,
-        source: "name-regex",
-      });
-      return fromName;
-    }
+    if (fromName !== undefined) return fromName;
   }
 
   // 3. Strict regex on raw modelId string
   const fromRaw = parseContextWindowFromId(modelId);
-  if (fromRaw !== undefined) {
-    console.log("[ContextIndicator] Active Model:", {
-      id: modelId,
-      resolvedLimit: fromRaw,
-      source: "raw-regex",
-    });
-    return fromRaw;
-  }
+  if (fromRaw !== undefined) return fromRaw;
 
-  console.log("[ContextIndicator] Active Model:", {
-    id: modelId,
-    resolvedLimit: 128_000,
-    source: "default",
-  });
   return 128_000;
 }
 
 const ContextUsageIndicator = memo(function ContextUsageIndicator({
   className = "",
 }: ContextUsageIndicatorProps) {
-  const { activeSessionId } = useActiveSession();
   const { selectedModel } = usePreferences();
   const allModels = useAllModels();
 
-  const { data: messagesCache } = useQuery<MessagesCache | undefined>({
-    queryKey: activeSessionId ? qk.messages(activeSessionId) : ["no-session"],
-    queryFn: async () => undefined,
-    enabled: !!activeSessionId,
-  });
-
   const usage = useMemo(() => {
     const max = resolveContextWindow(selectedModel ?? undefined, allModels);
-    if (!messagesCache) return { pct: 0, total: 0, max };
-
-    let total = 0;
-    for (const msgId of messagesCache.messageIds) {
-      const msg = messagesCache.messagesById[msgId];
-      if (!msg) continue;
-      const info = msg.info as unknown as { tokens?: { input?: number; total?: number } };
-      const t = info.tokens;
-      if (!t) continue;
-      total += t.input ?? t.total ?? 0;
-    }
-
-    return { pct: Math.min(100, Math.round((total / max) * 100)), total, max };
-  }, [messagesCache, selectedModel, allModels]);
+    return { pct: 0, total: 0, max };
+  }, [selectedModel, allModels]);
 
   const tone =
     usage.pct >= 90
