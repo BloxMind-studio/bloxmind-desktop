@@ -1,5 +1,9 @@
 import { memo, useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
+import type { MessagesCache } from "@/lib/sseDispatch";
+import { qk } from "@/lib/queryKeys";
+import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
 import { useAllModels } from "@/hooks/useProviders";
 import type { ModelInfo } from "@/types";
@@ -106,12 +110,31 @@ const ContextUsageIndicator = memo(function ContextUsageIndicator({
   className = "",
 }: ContextUsageIndicatorProps) {
   const { selectedModel } = usePreferences();
+  const { activeSessionId } = useActiveSession();
   const allModels = useAllModels();
+  const queryClient = useQueryClient();
+
+  // Read-only cache observation — does NOT overwrite the query cache.
+  const messagesCache = activeSessionId
+    ? queryClient.getQueryData<MessagesCache>(qk.messages(activeSessionId))
+    : undefined;
 
   const usage = useMemo(() => {
     const max = resolveContextWindow(selectedModel ?? undefined, allModels);
-    return { pct: 0, total: 0, max };
-  }, [selectedModel, allModels]);
+    if (!messagesCache) return { pct: 0, total: 0, max };
+
+    let total = 0;
+    for (const msgId of messagesCache.messageIds) {
+      const msg = messagesCache.messagesById[msgId];
+      if (!msg) continue;
+      const info = msg.info as unknown as { tokens?: { input?: number; total?: number } };
+      const t = info.tokens;
+      if (!t) continue;
+      total += t.input ?? t.total ?? 0;
+    }
+
+    return { pct: Math.min(100, Math.round((total / max) * 100)), total, max };
+  }, [messagesCache, selectedModel, allModels]);
 
   const tone =
     usage.pct >= 90
