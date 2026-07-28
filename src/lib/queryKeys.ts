@@ -12,4 +12,6 @@ export const qk = {
   permissions: (id: string) => ["sessions", id, "permissions"] as const,
   config: ["config"] as const,
   studioConnection: ["studio-connection"] as const,
+  projectIndex: ["project-index"] as const,
+  projectIndexProgram: ["project-index", "program"] as const,
 };

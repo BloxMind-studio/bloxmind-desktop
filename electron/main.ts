@@ -14,6 +14,7 @@ import {
   type OpenCodeStartupProgress,
 } from "../src/types/desktop";
 import { ExplorerProgramEnvelopeSchema, ExplorerSnapshotSchema } from "../src/lib/explorer";
+import { ProjectIndexProgramEnvelopeSchema, ProjectSkeletonSchema } from "../src/lib/projectIndex";
 import { GeneratedProgramArtifactSchema } from "../src/types/generatedProgram";
 import {
   StudioTargetDiscoverySchema,
@@ -295,6 +296,41 @@ const registerIpcHandlers = Effect.sync(() => {
       }).pipe(
         Effect.tapErrorCause((cause) =>
           Effect.logError(`[explorer] invocation failed: ${String(cause)}`),
+        ),
+      ),
+    ),
+  );
+  ipcMain.handle(channels.compileProjectIndexProgram, (_event, input: unknown) =>
+    openCodeRuntime.runPromise(
+      Effect.gen(function* () {
+        const program = yield* Schema.decodeUnknown(ProjectIndexProgramEnvelopeSchema)(input);
+        const runtime = yield* GeneratedProgramRuntime;
+        return yield* runtime.compile(program);
+      }),
+    ),
+  );
+  ipcMain.handle(channels.invokeProjectIndexProgram, (_event, input: unknown) =>
+    openCodeRuntime.runPromise(
+      Effect.gen(function* () {
+        const artifact = yield* Schema.decodeUnknown(GeneratedProgramArtifactSchema)(input);
+        if (
+          artifact.contract.name !== "project-index" ||
+          artifact.contract.outputSchemaVersion !== "project-index-skeleton-v1"
+        ) {
+          return yield* Effect.fail(
+            new DesktopMainError({ message: "Project index program contract is invalid" }),
+          );
+        }
+        const runtime = yield* GeneratedProgramRuntime;
+        const result = yield* runtime.invoke({ artifact, input: null });
+        return yield* Schema.decodeUnknown(ProjectSkeletonSchema)(result.value).pipe(
+          Effect.mapError(
+            (cause) => new DesktopMainError({ message: "Project index output is invalid", cause }),
+          ),
+        );
+      }).pipe(
+        Effect.tapErrorCause((cause) =>
+          Effect.logError(`[project-index] invocation failed: ${String(cause)}`),
         ),
       ),
     ),

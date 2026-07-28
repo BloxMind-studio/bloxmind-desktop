@@ -13,4 +13,6 @@ export const channels = {
   discoverStudioTargets: "studio-target:discover",
   installStudioTargetPrograms: "studio-target:install-programs",
   selectStudioTarget: "studio-target:select",
+  compileProjectIndexProgram: "project-index:compile-program",
+  invokeProjectIndexProgram: "project-index:invoke-program",
 } as const;

@@ -1,6 +1,11 @@
 import { Data, Effect, Schema } from "effect";
 import { ExplorerSnapshotSchema } from "@/lib/explorer";
 import {
+  ProjectSkeletonSchema,
+  type ProjectIndexProgramEnvelope,
+  type ProjectSkeleton,
+} from "@/lib/projectIndex";
+import {
   type AppConfig,
   AppConfigPatchSchema,
   AppConfigSchema,
@@ -38,6 +43,16 @@ interface DesktopEffects {
     ? (input: Input) => Effect.Effect<Output, DesktopError>
     : never;
   readonly invokeExplorerProgram: DesktopApi["invokeExplorerProgram"] extends (
+    input: infer Input,
+  ) => Promise<infer Output>
+    ? (input: Input) => Effect.Effect<Output, DesktopError>
+    : never;
+  readonly compileProjectIndexProgram: DesktopApi["compileProjectIndexProgram"] extends (
+    input: infer Input,
+  ) => Promise<infer Output>
+    ? (input: Input) => Effect.Effect<Output, DesktopError>
+    : never;
+  readonly invokeProjectIndexProgram: DesktopApi["invokeProjectIndexProgram"] extends (
     input: infer Input,
   ) => Promise<infer Output>
     ? (input: Input) => Effect.Effect<Output, DesktopError>
@@ -86,6 +101,8 @@ const loadBrowserConfig = Effect.gen(function* () {
 const browserEffects: DesktopEffects = {
   compileExplorerProgram: () =>
     Effect.fail(new DesktopError({ message: "Explorer requires the desktop app." })),
+  compileProjectIndexProgram: () =>
+    Effect.fail(new DesktopError({ message: "Project index requires the desktop app." })),
   getOpenCodeInfo: Effect.fail(
     new DesktopError({
       message: "The desktop service is unavailable. Start BloxBot with pnpm dev.",
@@ -116,6 +133,8 @@ const browserEffects: DesktopEffects = {
   ),
   invokeExplorerProgram: () =>
     Effect.fail(new DesktopError({ message: "Explorer requires the desktop app." })),
+  invokeProjectIndexProgram: () =>
+    Effect.fail(new DesktopError({ message: "Project index requires the desktop app." })),
   relaunch: Effect.sync(() => window.location.reload()),
   installStudioTargetPrograms: () =>
     Effect.fail(
@@ -157,6 +176,10 @@ function makeBridgeEffects(api: DesktopApi): DesktopEffects {
       invoke("Failed to compile Explorer program", () => api.compileExplorerProgram(program)).pipe(
         decodeBridgeValue("Explorer program artifact is invalid", GeneratedProgramArtifactSchema),
       ),
+    compileProjectIndexProgram: (program) =>
+      invoke("Failed to compile project index program", () => api.compileProjectIndexProgram(program)).pipe(
+        decodeBridgeValue("Project index program artifact is invalid", GeneratedProgramArtifactSchema),
+      ),
     getOpenCodeInfo: invoke("Failed to get OpenCode connection details", () =>
       api.getOpenCodeInfo(),
     ).pipe(decodeBridgeValue("OpenCode connection details are invalid", OpenCodeInfoSchema)),
@@ -175,6 +198,10 @@ function makeBridgeEffects(api: DesktopApi): DesktopEffects {
     invokeExplorerProgram: (artifact) =>
       invoke("Failed to invoke Explorer program", () => api.invokeExplorerProgram(artifact)).pipe(
         decodeBridgeValue("Explorer snapshot is invalid", ExplorerSnapshotSchema),
+      ),
+    invokeProjectIndexProgram: (artifact) =>
+      invoke("Failed to invoke project index program", () => api.invokeProjectIndexProgram(artifact)).pipe(
+        decodeBridgeValue("Project index skeleton is invalid", ProjectSkeletonSchema),
       ),
     relaunch: invoke("Failed to relaunch the app", () => api.relaunch()),
     installStudioTargetPrograms: (envelopes) =>
@@ -202,6 +229,7 @@ const runPromise = <A>(effect: Effect.Effect<A, DesktopError>): Promise<A> =>
 /** Promise-only adapter consumed by React and exposed by the Electron bridge contract. */
 export const desktop: DesktopApi = {
   compileExplorerProgram: (program) => runPromise(desktopEffects.compileExplorerProgram(program)),
+  compileProjectIndexProgram: (program) => runPromise(desktopEffects.compileProjectIndexProgram(program)),
   getOpenCodeInfo: () => runPromise(desktopEffects.getOpenCodeInfo),
   onOpenCodeStartupProgress: (listener: StartupProgressListener) =>
     window.bloxbot?.onOpenCodeStartupProgress(listener) ?? (() => {}),
@@ -212,6 +240,7 @@ export const desktop: DesktopApi = {
   checkForUpdate: () => runPromise(desktopEffects.checkForUpdate),
   installUpdate: () => runPromise(desktopEffects.installUpdate),
   invokeExplorerProgram: (artifact) => runPromise(desktopEffects.invokeExplorerProgram(artifact)),
+  invokeProjectIndexProgram: (artifact) => runPromise(desktopEffects.invokeProjectIndexProgram(artifact)),
   relaunch: () => runPromise(desktopEffects.relaunch),
   installStudioTargetPrograms: (envelopes) =>
     runPromise(desktopEffects.installStudioTargetPrograms(envelopes)),

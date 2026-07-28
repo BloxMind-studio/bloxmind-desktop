@@ -6,6 +6,8 @@ import { channels } from "./channels";
 const api: DesktopApi = {
   compileExplorerProgram: (program) =>
     ipcRenderer.invoke(channels.compileExplorerProgram, program),
+  compileProjectIndexProgram: (program) =>
+    ipcRenderer.invoke(channels.compileProjectIndexProgram, program),
   getOpenCodeInfo: () => ipcRenderer.invoke(channels.getOpenCodeInfo),
   onOpenCodeStartupProgress: (listener) => {
     const handleProgress = (_event: Electron.IpcRendererEvent, progress: OpenCodeStartupProgress) =>
@@ -21,6 +23,8 @@ const api: DesktopApi = {
   installUpdate: () => ipcRenderer.invoke(channels.installUpdate),
   invokeExplorerProgram: (artifact) =>
     ipcRenderer.invoke(channels.invokeExplorerProgram, artifact),
+  invokeProjectIndexProgram: (artifact) =>
+    ipcRenderer.invoke(channels.invokeProjectIndexProgram, artifact),
   relaunch: () => ipcRenderer.invoke(channels.relaunch),
   installStudioTargetPrograms: (envelopes) =>
     ipcRenderer.invoke(channels.installStudioTargetPrograms, envelopes),

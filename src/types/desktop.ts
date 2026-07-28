@@ -1,5 +1,9 @@
 import { Schema } from "effect";
 import type { ExplorerProgramEnvelope, ExplorerSnapshot } from "../lib/explorer";
+import type {
+  ProjectIndexProgramEnvelope,
+  ProjectSkeleton,
+} from "../lib/projectIndex";
 import type { GeneratedProgramArtifact } from "./generatedProgram";
 import {
   type StudioTargetDiscovery,
@@ -75,6 +79,8 @@ export type UpdateInfo = typeof UpdateInfoSchema.Type;
 export interface DesktopApi {
   compileExplorerProgram(program: ExplorerProgramEnvelope): Promise<GeneratedProgramArtifact>;
   invokeExplorerProgram(artifact: GeneratedProgramArtifact): Promise<ExplorerSnapshot>;
+  compileProjectIndexProgram(program: ProjectIndexProgramEnvelope): Promise<GeneratedProgramArtifact>;
+  invokeProjectIndexProgram(artifact: GeneratedProgramArtifact): Promise<ProjectSkeleton>;
   getOpenCodeInfo(): Promise<OpenCodeInfo>;
   onOpenCodeStartupProgress(listener: (progress: OpenCodeStartupProgress) => void): () => void;
   getVersion(): Promise<string>;
