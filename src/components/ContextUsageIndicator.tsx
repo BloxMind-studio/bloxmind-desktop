@@ -17,33 +17,134 @@ function fmt(n: number) {
   return String(n);
 }
 
-function parseContextWindowFromId(modelId?: string): number {
-  const id = (modelId || "").toLowerCase();
-  const m = id.match(/(\d+)\s*([km])/);
-  if (!m) return 128_000;
-  const num = Number(m[1]);
-  const unit = m[2];
-  if (unit === "m") return num * 1_048_576;
-  if (unit === "k") return num * 1024;
-  return num;
+/**
+ * Deep-inspect a model object for any known context-window property.
+ * Returns the numeric value or undefined.
+ */
+function extractContextFromModel(model: ModelInfo): number | undefined {
+  const obj = model as unknown as Record<string, unknown>;
+
+  // Direct top-level properties
+  const direct =
+    obj.contextWindow ??
+    obj.context_length ??
+    obj.max_context_tokens ??
+    obj.maxTokens;
+  if (typeof direct === "number" && direct > 0) return direct;
+
+  // Nested paths
+  const limits = obj.limits as Record<string, unknown> | undefined;
+  if (limits) {
+    const fromLimits = limits.context ?? limits.contextWindow ?? limits.maxTokens;
+    if (typeof fromLimits === "number" && fromLimits > 0) return fromLimits;
+  }
+
+  const info = obj.info as Record<string, unknown> | undefined;
+  if (info) {
+    const fromInfo = info.contextLength ?? info.contextWindow ?? info.maxTokens;
+    if (typeof fromInfo === "number" && fromInfo > 0) return fromInfo;
+  }
+
+  return undefined;
 }
 
-function contextWindowForModel(modelId?: string, allModels?: ModelInfo[]) {
-  if (modelId && allModels) {
-    const match = allModels.find(
-      (m: ModelInfo) => m.id === modelId || `${m.providerId}/${m.id}` === modelId,
-    );
-    if (match) {
-      const meta = match as unknown as Record<string, unknown>;
-      const raw =
-        (meta.contextWindow as number | undefined) ??
-        (meta.context_length as number | undefined) ??
-        (meta.max_context_tokens as number | undefined) ??
-        (meta.maxTokens as number | undefined);
-      if (typeof raw === "number" && raw > 0) return raw;
+/**
+ * Parse a model ID or name string for context-window patterns.
+ * Handles: 1m, 2m, 1.5m → N * 1_000_000
+ *          200k, 128k, 32k → N * 1_000
+ */
+function parseContextFromString(text?: string): number | undefined {
+  if (!text) return undefined;
+  const lower = text.toLowerCase();
+
+  // Match patterns like "1m", "2m", "1.5m"
+  const mMatch = lower.match(/(\d+(?:\.\d+)?)\s*m/);
+  if (mMatch) {
+    const num = Number.parseFloat(mMatch[1]);
+    if (!Number.isNaN(num) && num > 0) return Math.round(num * 1_000_000);
+  }
+
+  // Match patterns like "200k", "128k", "32k"
+  const kMatch = lower.match(/(\d+(?:\.\d+)?)\s*k/);
+  if (kMatch) {
+    const num = Number.parseFloat(kMatch[1]);
+    if (!Number.isNaN(num) && num > 0) return Math.round(num * 1_000);
+  }
+
+  return undefined;
+}
+
+/**
+ * Resolve the max context window for a given model.
+ * 1. Deep-inspect the model object for known metadata properties.
+ * 2. Fall back to regex parsing of model.id and model.name.
+ * 3. Default to 128_000.
+ */
+function resolveContextWindow(
+  modelId: string | undefined,
+  allModels: ModelInfo[],
+): number {
+  if (!modelId) return 128_000;
+
+  // Find the matching model object
+  const match = allModels.find(
+    (m) => `${m.providerId}/${m.id}` === modelId || m.id === modelId,
+  );
+
+  if (match) {
+    // Step 1: deep object inspection
+    const fromMeta = extractContextFromModel(match);
+    if (fromMeta !== undefined) {
+      console.log("[ContextIndicator] Active Model:", {
+        id: match.id,
+        providerId: match.providerId,
+        resolvedLimit: fromMeta,
+        source: "metadata",
+      });
+      return fromMeta;
+    }
+
+    // Step 2: regex fallback on model.id and model.name
+    const fromId = parseContextFromString(match.id);
+    if (fromId !== undefined) {
+      console.log("[ContextIndicator] Active Model:", {
+        id: match.id,
+        providerId: match.providerId,
+        resolvedLimit: fromId,
+        source: "id-parse",
+      });
+      return fromId;
+    }
+
+    const fromName = parseContextFromString(match.name);
+    if (fromName !== undefined) {
+      console.log("[ContextIndicator] Active Model:", {
+        id: match.id,
+        providerId: match.providerId,
+        resolvedLimit: fromName,
+        source: "name-parse",
+      });
+      return fromName;
     }
   }
-  return parseContextWindowFromId(modelId);
+
+  // Step 3: fallback regex on the raw modelId string
+  const fromRaw = parseContextFromString(modelId);
+  if (fromRaw !== undefined) {
+    console.log("[ContextIndicator] Active Model:", {
+      id: modelId,
+      resolvedLimit: fromRaw,
+      source: "raw-parse",
+    });
+    return fromRaw;
+  }
+
+  console.log("[ContextIndicator] Active Model:", {
+    id: modelId,
+    resolvedLimit: 128_000,
+    source: "default",
+  });
+  return 128_000;
 }
 
 const ContextUsageIndicator = memo(function ContextUsageIndicator({
@@ -60,7 +161,7 @@ const ContextUsageIndicator = memo(function ContextUsageIndicator({
   });
 
   const usage = useMemo(() => {
-    const max = contextWindowForModel(selectedModel ?? undefined, allModels);
+    const max = resolveContextWindow(selectedModel ?? undefined, allModels);
     if (!messagesCache) return { pct: 0, total: 0, max };
 
     let total = 0;
