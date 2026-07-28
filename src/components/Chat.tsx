@@ -50,6 +50,7 @@ function ProjectIndexButton() {
         type="button"
         onClick={handleClick}
         disabled={isLoading}
+        aria-label={indexed ? `${scriptCount} scripts · ${moduleCount} modules` : "Index project structure"}
         className="inline-flex h-7 items-center rounded-md border bg-background px-2 text-[11px] font-medium text-muted-foreground transition-[background-color,color] hover:bg-accent hover:text-foreground disabled:opacity-50"
         title={indexed ? `${scriptCount} scripts · ${moduleCount} modules` : "Index project structure"}
       >

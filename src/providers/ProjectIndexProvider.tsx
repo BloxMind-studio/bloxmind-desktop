@@ -14,6 +14,17 @@ interface ProjectIndexContextValue {
 const ProjectIndexContext = createContext<ProjectIndexContextValue | null>(null);
 
 /**
+ * Escape XML special characters to prevent prompt injection via script paths
+ * or dependency names that contain <, >, or & characters.
+ */
+function escapeXml(str: string): string {
+  const amp = String.fromCharCode(38) + "amp;";
+  const lt = String.fromCharCode(38) + "lt;";
+  const gt = String.fromCharCode(38) + "gt;";
+  return str.replace(/&/g, amp).replace(/</g, lt).replace(/>/g, gt);
+}
+
+/**
  * Formats the project skeleton into a concise system-prompt snippet
  * that tells the agent about the project structure.
  */
@@ -24,7 +35,7 @@ function formatProjectContext(skeleton: ProjectSkeleton): string {
   lines.push(`Scripts: ${skeleton.totalScripts} · ModuleScripts: ${skeleton.totalModuleScripts}`);
 
   if (skeleton.entryPoints.length > 0) {
-    const entries = skeleton.entryPoints.slice(0, 8);
+    const entries = skeleton.entryPoints.slice(0, 8).map(escapeXml);
     lines.push(`Entry points: ${entries.join(", ")}`);
     if (skeleton.entryPoints.length > 8) {
       lines.push(`  … and ${skeleton.entryPoints.length - 8} more`);
@@ -37,8 +48,10 @@ function formatProjectContext(skeleton: ProjectSkeleton): string {
     lines.push(`Modules (${skeleton.modules.length} total):`);
     for (const mod of shown) {
       const deps =
-        mod.dependencies.length > 0 ? ` → ${mod.dependencies.slice(0, 5).join(", ")}` : "";
-      lines.push(`  ${mod.className} ${mod.path} (${mod.sourceLength}B)${deps}`);
+        mod.dependencies.length > 0
+          ? ` → ${mod.dependencies.slice(0, 5).map(escapeXml).join(", ")}`
+          : "";
+      lines.push(`  ${escapeXml(mod.className)} ${escapeXml(mod.path)} (${mod.sourceLength}B)${deps}`);
     }
     if (skeleton.modules.length > 30) {
       lines.push(`  … and ${skeleton.modules.length - 30} more`);
@@ -48,7 +61,7 @@ function formatProjectContext(skeleton: ProjectSkeleton): string {
   if (skeleton.circularDependencies.length > 0) {
     lines.push(`Circular deps:`);
     for (const [from, to] of skeleton.circularDependencies.slice(0, 5)) {
-      lines.push(`  ${from} ↔ ${to}`);
+      lines.push(`  ${escapeXml(from)} ↔ ${escapeXml(to)}`);
     }
   }
 
@@ -96,6 +109,6 @@ export function useProjectIndexContext() {
  */
 export function useProjectIndexContextOrThrow() {
   const value = useContext(ProjectIndexContext);
-  if (!value) throw new Error("useProjectIndexContext must be used within ProjectIndexProvider");
+  if (!value) throw new Error("useProjectIndexContextOrThrow must be used within ProjectIndexProvider");
   return value;
 }

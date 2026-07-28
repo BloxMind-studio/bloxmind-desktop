@@ -1,5 +1,5 @@
 import { memo, useMemo } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type { MessagesCache } from "@/lib/sseDispatch";
 import { qk } from "@/lib/queryKeys";
@@ -114,10 +114,13 @@ const ContextUsageIndicator = memo(function ContextUsageIndicator({
   const allModels = useAllModels();
   const queryClient = useQueryClient();
 
-  // Read-only cache observation — does NOT overwrite the query cache.
-  const messagesCache = activeSessionId
-    ? queryClient.getQueryData<MessagesCache>(qk.messages(activeSessionId))
-    : undefined;
+  // Subscribe to the messages cache — re-renders when SSE updates the data.
+  // queryFn reads the existing cache without overwriting it (no async () => undefined).
+  const { data: messagesCache } = useQuery<MessagesCache | undefined>({
+    queryKey: activeSessionId ? qk.messages(activeSessionId) : ["no-session"],
+    queryFn: () => queryClient.getQueryData<MessagesCache>(qk.messages(activeSessionId!)),
+    enabled: !!activeSessionId,
+  });
 
   const usage = useMemo(() => {
     const max = resolveContextWindow(selectedModel ?? undefined, allModels);

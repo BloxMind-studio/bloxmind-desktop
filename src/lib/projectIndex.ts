@@ -153,7 +153,7 @@ export function parseRequireCalls(source: string): string[] {
  *   script.Parent.ModuleName -> "script.Parent.ModuleName" (relative, kept as-is)
  *   game.ServerScriptService.Module -> "game.ServerScriptService.Module"
  *   game:GetService("ServerScriptService").Module -> "game.ServerScriptService.Module"
- *   ReplicatedStorage.Shared.Util -> "ReplicatedStorage.Shared.Util"
+ *   ReplicatedStorage.Shared.Util -> "game.ReplicatedStorage.Shared.Util" (normalized with game. prefix)
  *   someVariable -> "var:someVariable" (variable reference, not resolvable statically)
  */
 function normaliseRequirePath(expression: string): string | null {

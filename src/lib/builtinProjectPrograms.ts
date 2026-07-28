@@ -51,6 +51,11 @@ function parseRequires(source) {
     }
     // Normalise game:GetService("X") -> game.X
     expr = expr.replace(/game\\s*:\\s*GetService\\s*\\(\\s*["']([^"']+)["']\\s*\\)/g, "game.$1");
+    // Tag simple variable references with var: prefix (lowercase, no dots/colons)
+    if (/^[a-z_][a-zA-Z0-9_]*$/.test(expr)) {
+      deps.push("var:" + expr);
+      continue;
+    }
     // Normalize capitalized service paths (e.g. ReplicatedStorage.Foo) to game. prefix
     if (!expr.startsWith("game.") && !expr.startsWith("script") && /^[A-Z]/.test(expr)) {
       expr = "game." + expr;
