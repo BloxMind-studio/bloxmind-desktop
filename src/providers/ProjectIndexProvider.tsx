@@ -89,3 +89,13 @@ export function useProjectIndexContext() {
   }
   return value;
 }
+
+/**
+ * Like useProjectIndexContext, but throws when the provider is not mounted.
+ * Useful for components that always expect the provider to be present.
+ */
+export function useProjectIndexContextOrThrow() {
+  const value = useContext(ProjectIndexContext);
+  if (!value) throw new Error("useProjectIndexContext must be used within ProjectIndexProvider");
+  return value;
+}

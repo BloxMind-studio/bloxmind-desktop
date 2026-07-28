@@ -46,6 +46,7 @@ export function useSendMessage(options?: { onError?: (error: Error) => void }) {
         parts,
       };
       if (systemPrompt) opts.system = systemPrompt;
+      else if (studioTargetReference) opts.system = studioTargetReference;
       let provider: string | undefined;
       let model: string | undefined;
 

@@ -57,7 +57,7 @@ local Module = require(someVariable)
   it("parses require() at top level of source", () => {
     const source = `require(ReplicatedStorage.Shared.Util)`;
     const deps = parseRequireCalls(source);
-    expect(deps).toEqual(["ReplicatedStorage.Shared.Util"]);
+    expect(deps).toEqual(["game.ReplicatedStorage.Shared.Util"]);
   });
 
   it("handles require() with no arguments gracefully", () => {
@@ -105,11 +105,11 @@ return require(ReplicatedStorage.Shared.Module)
     `;
     const deps = parseRequireCalls(source);
     // ReplicatedStorage starts with uppercase, so it's treated as an absolute path
-    expect(deps).toContain("ReplicatedStorage.Shared.Signal");
-    expect(deps).toContain("ReplicatedStorage.Shared.Config");
-    expect(deps).toContain("ReplicatedStorage.Network");
+    expect(deps).toContain("game.ReplicatedStorage.Shared.Signal");
+    expect(deps).toContain("game.ReplicatedStorage.Shared.Config");
+    expect(deps).toContain("game.ReplicatedStorage.Network");
     expect(deps).toContain("script.Parent.Data");
-    expect(deps).toContain("ReplicatedStorage.Shared.Module");
+    expect(deps).toContain("game.ReplicatedStorage.Shared.Module");
     expect(deps).toHaveLength(5);
   });
 });

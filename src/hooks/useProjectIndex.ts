@@ -124,7 +124,6 @@ Return only the requested structured output.`;
     {
       title: "Project index (temporary)",
       agent: undefined,
-      permission: [{ permission: "*", pattern: "*", action: "deny" }],
     },
     { throwOnError: true },
   );

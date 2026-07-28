@@ -38,16 +38,16 @@ const KNOWN_CAPACITIES: Record<string, number> = {
 
 function lookupKnownModel(modelId: string, modelName: string): number | undefined {
   const text = `${modelId.toLowerCase()} ${modelName.toLowerCase()}`;
-  
+
   // Try matching against known keys
   for (const [key, capacity] of Object.entries(KNOWN_CAPACITIES)) {
     if (text.includes(key)) return capacity;
   }
-  
+
   // Also try matching just the modelId (before slash if present)
-  const baseId = modelId.split('/')[0].toLowerCase();
+  const baseId = modelId.split("/")[0].toLowerCase();
   if (KNOWN_CAPACITIES[baseId]) return KNOWN_CAPACITIES[baseId];
-  
+
   return undefined;
 }
 

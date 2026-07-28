@@ -51,6 +51,10 @@ function parseRequires(source) {
     }
     // Normalise game:GetService("X") -> game.X
     expr = expr.replace(/game\\s*:\\s*GetService\\s*\\(\\s*["']([^"']+)["']\\s*\\)/g, "game.$1");
+    // Normalize capitalized service paths (e.g. ReplicatedStorage.Foo) to game. prefix
+    if (!expr.startsWith("game.") && !expr.startsWith("script") && /^[A-Z]/.test(expr)) {
+      expr = "game." + expr;
+    }
     deps.push(expr);
   }
   return deps;

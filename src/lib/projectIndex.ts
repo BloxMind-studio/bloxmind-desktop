@@ -180,8 +180,12 @@ function normaliseRequirePath(expression: string): string | null {
   );
 
   // If it starts with "game." or a known service name, it's an absolute path.
-  if (/^game\./.test(normalised) || /^[A-Z]/.test(normalised)) {
+  // Normalize to always include the game. prefix for consistent dependency resolution.
+  if (/^game\./.test(normalised)) {
     return normalised;
+  }
+  if (/^[A-Z]/.test(normalised)) {
+    return `game.${normalised}`;
   }
 
   // Relative paths starting with script, shared, etc.
