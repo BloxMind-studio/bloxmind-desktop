@@ -1006,12 +1006,27 @@ const StepFinishPartView = memo(function StepFinishPartView({
 }) {
   const { tokens, cost } = part;
   return (
-    <div className="my-1 flex flex-wrap items-center gap-3 text-[10px] text-muted-foreground">
-      {cost > 0 && <span>${cost.toFixed(4)}</span>}
-      <span>
-        {tokens.input.toLocaleString()} in / {tokens.output.toLocaleString()} out
+    <div className="my-1 flex flex-wrap items-center gap-1.5">
+      {cost > 0 && (
+        <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[9px] font-medium tabular-nums text-muted-foreground">
+          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-500"><line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>
+          {cost.toFixed(4)}
+        </span>
+      )}
+      <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2 py-0.5 text-[9px] font-medium tabular-nums text-blue-600 dark:text-blue-400">
+        <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+        {tokens.input.toLocaleString()} in
       </span>
-      {tokens.cache.read > 0 && <span>{tokens.cache.read.toLocaleString()} cached</span>}
+      <span className="inline-flex items-center gap-1 rounded-full bg-purple-500/10 px-2 py-0.5 text-[9px] font-medium tabular-nums text-purple-600 dark:text-purple-400">
+        <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+        {tokens.output.toLocaleString()} out
+      </span>
+      {tokens.cache.read > 0 && (
+        <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[9px] font-medium tabular-nums text-amber-600 dark:text-amber-400">
+          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /></svg>
+          {tokens.cache.read.toLocaleString()} cached
+        </span>
+      )}
     </div>
   );
 });

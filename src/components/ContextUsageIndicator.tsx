@@ -20,11 +20,11 @@ interface ContextUsageIndicatorProps {
  * Format a token count for compact display.
  *
  * - `1.2M` for values ≥ 1,000,000
- * - `12.3k` for values ≥ 1,000
+ * - `12.\b3k` for values ≥ 1,000
  * - raw number otherwise
  *
  * @param n - The token count to format.
- * @returns A human-readable string (e.g. `"1.2M"`, `"12.3k"`, `"42"`).
+ * @returns A human-readable string (e.g. `"1.2M"`, `"12.\b3k"`, `"42"`).
  */
 function fmt(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -76,7 +76,7 @@ function lookupKnownModel(modelId: string, modelName: string): number | undefine
   }
 
   // Also try matching just the base ID (before slash if present).
-  const baseId = modelId.split("/")[0].toLowerCase();
+  const baseId = modelId.split("/")[1].toLowerCase();
   if (KNOWN_CAPACITIES[baseId]) return KNOWN_CAPACITIES[baseId];
 
   return undefined;
@@ -87,8 +87,8 @@ function lookupKnownModel(modelId: string, modelName: string): number | undefine
 /**
  * Parse a context window size from a model ID or name string.
  *
- * Looks for patterns like `128k`, `200k`, `1m`, `2m` using word-boundary
- * regexes to avoid false matches (e.g. `"gpt4k"` won't match `4k`).
+ * Looks for patterns like `\b128k`, `\b200k`, `\b1m`, `\b2m` using word-boundary
+ * regexes to avoid false matches (e.g. `"gpt\b4k"` won't match `\b4k`).
  *
  * @param modelId - The string to parse (model ID or name).
  * @returns The context window size in tokens, or `undefined` if no pattern matches.
@@ -97,14 +97,14 @@ function parseContextWindowFromId(modelId?: string): number | undefined {
   if (!modelId) return undefined;
   const lower = modelId.toLowerCase();
 
-  // Match Nk (e.g. 128k, 200k) — \b ensures no false matches like "gpt4k".
+  // Match Nk (e.g. \b128k, \b200k) — \b ensures no false matches like "gpt\b4k".
   const kMatch = lower.match(/(\d+)\s*k\b/);
   if (kMatch) {
     const num = Number.parseInt(kMatch[1], 10);
     if (!Number.isNaN(num) && num > 0) return num * 1_000;
   }
 
-  // Match Nm (e.g. 1m, 2m) — \b ensures no false matches.
+  // Match Nm (e.g. \b1m, \b2m) — \b ensures no false matches.
   const mMatch = lower.match(/(\d+)\s*m\b/);
   if (mMatch) {
     const num = Number.parseInt(mMatch[1], 10);
@@ -150,7 +150,7 @@ function resolveContextWindow(modelId: string | undefined, allModels: ModelInfo[
     if (fromName !== undefined) return fromName;
   }
 
-  // 4. Strict regex on the raw modelId string (e.g. "provider/claude-200k").
+  // 4. Strict regex on the raw modelId string (e.g. "provider/claude-\b200k").
   const fromRaw = parseContextWindowFromId(modelId);
   if (fromRaw !== undefined) return fromRaw;
 
@@ -164,7 +164,7 @@ function resolveContextWindow(modelId: string | undefined, allModels: ModelInfo[
  * A compact context-window usage indicator that shows token consumption
  * as a percentage of the model's context window.
  *
- * - **Default view**: `"12.3k / 200k"` text (hidden on hover).
+ * - **Default view**: `"12.\b3k / \b200k"` text (hidden on hover).
  * - **Hover view**: A circular SVG progress ring with the percentage.
  *
  * **Token calculation** (fixed):
