@@ -26,17 +26,38 @@ function normalizeMcpResult(result: unknown): any {
 }`;
 
 /**
- * Inline Luau require() parser that runs inside the Roblox Studio sandbox.
- * This mirrors parseRequireCalls from the TS side but runs in the generated program.
+ * Inline Luau comment stripper + require() parser that runs inside the Roblox Studio sandbox.
+ * This mirrors stripLuauComments + parseRequireCalls from the TS side but runs in the generated program.
  */
 const REQUIRE_PARSER = `
+function stripComments(source) {
+  // Remove block comments --[[ ... ]] (non-greedy, multiline).
+  let result = source.replace(/--\\[\\[[\\s\\S]*?\\]\\]/g, "");
+  // Remove line comments respecting string literals.
+  const lines = result.split("\\n");
+  for (let i = 0; i < lines.length; i++) {
+    let inSingle = false, inDouble = false;
+    const line = lines[i];
+    for (let j = 0; j < line.length - 1; j++) {
+      const ch = line[j], next = line[j + 1];
+      if (inSingle) { if (ch === "\\\\") { j++; continue; } if (ch === "'") inSingle = false; continue; }
+      if (inDouble) { if (ch === "\\\\") { j++; continue; } if (ch === '"') inDouble = false; continue; }
+      if (ch === '"') { inDouble = true; continue; }
+      if (ch === "'") { inSingle = true; continue; }
+      if (ch === "-" && next === "-") { lines[i] = line.slice(0, j); break; }
+    }
+  }
+  return lines.join("\\n");
+}
+
 function parseRequires(source) {
   const deps = [];
+  const cleaned = stripComments(source);
   // Match require(...) capturing the inner expression.
   // Handles nested parens used by :GetService("Foo").
   const re = /require\\s*\\(\\s*((?:[^()]+|\\([^()]*\\))+)\\s*\\)/g;
   let m;
-  while ((m = re.exec(source)) !== null) {
+  while ((m = re.exec(cleaned)) !== null) {
     let expr = m[1].trim();
     if (!expr) continue;
     // Strip whitespace inside the expression.
@@ -154,6 +175,7 @@ async function run({ callTool }: { input: unknown; callTool: (name: string, args
   }
 
   // Detect entry points: modules not required by any other known module.
+  // Also compute dependentsCount for each module.
   const requiredBy = new Map();
   for (const mod of allModules) {
     for (const dep of mod.dependencies) {
@@ -165,7 +187,8 @@ async function run({ callTool }: { input: unknown; callTool: (name: string, args
     .filter((mod) => !requiredBy.has(mod.path) || requiredBy.get(mod.path).size === 0)
     .map((mod) => mod.path);
 
-  // Detect circular dependencies via DFS.
+  // Detect circular dependencies via DFS, deduplicating by canonical cycle key.
+  const seenCycles = new Set();
   const circularDeps = [];
   const visited = new Set();
   const inStack = new Set();
@@ -182,7 +205,11 @@ async function run({ callTool }: { input: unknown; callTool: (name: string, args
       for (const dep of mod.dependencies) {
         if (pathMap.has(dep)) {
           if (inStack.has(dep)) {
-            circularDeps.push([current, dep]);
+            const key = [current, dep].sort().join("\\u2194");
+            if (!seenCycles.has(key)) {
+              seenCycles.add(key);
+              circularDeps.push([current, dep]);
+            }
           } else {
             dfs(dep);
           }
@@ -193,8 +220,52 @@ async function run({ callTool }: { input: unknown; callTool: (name: string, args
   }
   for (const mod of allModules) dfs(mod.path);
 
+  // Identify all modules that are part of a cycle.
+  // These get depth 0 to avoid infinite recursion and inflated values.
+  const cycleMembers = new Set();
+  for (const pair of circularDeps) {
+    cycleMembers.add(pair[0]);
+    cycleMembers.add(pair[1]);
+  }
+
+  // Compute dependency depth via memoised DFS on resolved dependencies.
+  const depthCache = new Map();
+  const computing = new Set();
+  function computeDepth(path) {
+    if (depthCache.has(path)) return depthCache.get(path);
+    if (cycleMembers.has(path)) { depthCache.set(path, 0); return 0; }
+    if (computing.has(path)) return -1;
+    computing.add(path);
+    const mod = pathMap.get(path);
+    let maxDepDepth = 0;
+    if (mod) {
+      for (const dep of mod.dependencies) {
+        if (pathMap.has(dep)) {
+          const depDepth = computeDepth(dep);
+          if (depDepth >= 0 && depDepth + 1 > maxDepDepth) maxDepDepth = depDepth + 1;
+        }
+      }
+    }
+    computing.delete(path);
+    depthCache.set(path, maxDepDepth);
+    return maxDepDepth;
+  }
+
+  // Enrich modules with computed graph fields.
+  const enrichedModules = allModules.map(function (mod) {
+    return {
+      path: mod.path,
+      name: mod.name,
+      className: mod.className,
+      sourceLength: mod.sourceLength,
+      dependencies: mod.dependencies,
+      dependentsCount: (requiredBy.get(mod.path) || new Set()).size,
+      dependencyDepth: computeDepth(mod.path),
+    };
+  });
+
   return {
-    modules: allModules,
+    modules: enrichedModules,
     entryPoints,
     circularDependencies: circularDeps,
     totalScripts,

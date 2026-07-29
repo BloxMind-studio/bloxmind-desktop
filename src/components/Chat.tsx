@@ -34,6 +34,8 @@ function ProjectIndexButton() {
   const indexed = skeleton !== null;
   const scriptCount = skeleton?.totalScripts ?? 0;
   const moduleCount = skeleton?.totalModuleScripts ?? 0;
+  const circularCount = skeleton?.circularDependencies.length ?? 0;
+  const hubCount = skeleton?.modules.filter((m) => m.dependentsCount >= 3).length ?? 0;
 
   const handleClick = useCallback(() => {
     refresh();
@@ -44,20 +46,24 @@ function ProjectIndexButton() {
 
   useEffect(() => () => clearTimeout(tooltipTimer.current), []);
 
+  const summary = `${scriptCount} scripts · ${moduleCount} modules${circularCount > 0 ? ` · ${circularCount} cycles` : ""}`;
+
   return (
     <div className="relative">
       <button
         type="button"
         onClick={handleClick}
         disabled={isLoading}
-        aria-label={indexed ? `${scriptCount} scripts · ${moduleCount} modules` : "Index project structure"}
+        aria-label={indexed ? summary : "Index project structure"}
         className="inline-flex h-7 items-center rounded-md border bg-background px-2 text-[11px] font-medium text-muted-foreground transition-[background-color,color] hover:bg-accent hover:text-foreground disabled:opacity-50"
-        title={indexed ? `${scriptCount} scripts · ${moduleCount} modules` : "Index project structure"}
+        title={indexed ? summary : "Index project structure"}
       >
         <div className="relative">
           <FolderTree aria-hidden="true" size={13} />
           {indexed && (
-            <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            <span
+              className={`absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full ${circularCount > 0 ? "bg-amber-500" : "bg-emerald-500"}`}
+            />
           )}
           {isLoading && (
             <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 animate-ping rounded-full bg-amber-400" />
@@ -73,6 +79,8 @@ function ProjectIndexButton() {
       {showTooltip && indexed && (
         <div className="animate-fade-in-up absolute right-0 top-9 z-50 whitespace-nowrap rounded-md border bg-popover px-3 py-1.5 text-[11px] text-popover-foreground shadow-lg">
           Indexed: {scriptCount} scripts · {moduleCount} modules
+          {hubCount > 0 && ` · ${hubCount} hubs`}
+          {circularCount > 0 && ` · ${circularCount} cycles`}
         </div>
       )}
       {showTooltip && !indexed && !isLoading && !error && (

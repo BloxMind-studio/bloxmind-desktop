@@ -10,6 +10,16 @@ export const ProjectModuleSchema = Schema.Struct({
   className: Schema.String.pipe(Schema.minLength(1), Schema.maxLength(64)),
   sourceLength: Schema.Number.pipe(Schema.int(), Schema.nonNegative()),
   dependencies: Schema.Array(Schema.String.pipe(Schema.minLength(1), Schema.maxLength(1024))),
+  /**
+   * Number of other known modules that depend on this module.
+   * High values indicate "hub" modules that are widely required.
+   */
+  dependentsCount: Schema.Number.pipe(Schema.int(), Schema.nonNegative()),
+  /**
+   * Depth in the dependency graph (0 = no dependencies, 1 = depends only on leaf modules, etc.).
+   * Modules with unresolved dependencies are treated as depth 0 for calculation purposes.
+   */
+  dependencyDepth: Schema.Number.pipe(Schema.int(), Schema.nonNegative()),
 });
 
 export type ProjectModule = typeof ProjectModuleSchema.Type;
@@ -22,9 +32,7 @@ export type ProjectModule = typeof ProjectModuleSchema.Type;
 export const ProjectSkeletonSchema = Schema.Struct({
   modules: Schema.Array(ProjectModuleSchema),
   entryPoints: Schema.Array(Schema.String),
-  circularDependencies: Schema.Array(
-    Schema.Tuple(Schema.String, Schema.String),
-  ),
+  circularDependencies: Schema.Array(Schema.Tuple(Schema.String, Schema.String)),
   totalScripts: Schema.Number.pipe(Schema.int(), Schema.nonNegative()),
   totalModuleScripts: Schema.Number.pipe(Schema.int(), Schema.nonNegative()),
 });
@@ -83,20 +91,36 @@ export const PROJECT_INDEX_OUTPUT_SCHEMA = {
 export const PROJECT_INDEX_SKELETON_OUTPUT_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["modules", "entryPoints", "circularDependencies", "totalScripts", "totalModuleScripts"],
+  required: [
+    "modules",
+    "entryPoints",
+    "circularDependencies",
+    "totalScripts",
+    "totalModuleScripts",
+  ],
   properties: {
     modules: {
       type: "array",
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["path", "name", "className", "sourceLength", "dependencies"],
+        required: [
+          "path",
+          "name",
+          "className",
+          "sourceLength",
+          "dependencies",
+          "dependentsCount",
+          "dependencyDepth",
+        ],
         properties: {
           path: { type: "string", minLength: 1, maxLength: 1024 },
           name: { type: "string", minLength: 1, maxLength: 256 },
           className: { type: "string", minLength: 1, maxLength: 64 },
           sourceLength: { type: "integer", minimum: 0 },
           dependencies: { type: "array", items: { type: "string" } },
+          dependentsCount: { type: "integer", minimum: 0 },
+          dependencyDepth: { type: "integer", minimum: 0 },
         },
       },
     },
@@ -116,6 +140,63 @@ export const PROJECT_INDEX_SKELETON_OUTPUT_SCHEMA = {
 } as const;
 
 /**
+ * Strip Luau line comments (`-- ...`) and block comments (`--[[ ... ]]`)
+ * from source code so that require() calls inside comments are not parsed.
+ */
+export function stripLuauComments(source: string): string {
+  // Remove block comments --[[ ... ]] (non-greedy, multiline).
+  const result = source.replace(/--\[\[[\s\S]*?\]\]/g, "");
+  // Remove line comments -- ... but preserve string contents.
+  // We process line by line, respecting string literals.
+  const lines = result.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    lines[i] = stripLineComment(lines[i]);
+  }
+  return lines.join("\n");
+}
+
+/**
+ * Remove a Luau line comment from a single line, respecting string literals.
+ * A `--` inside a quoted string is not treated as a comment start.
+ */
+function stripLineComment(line: string): string {
+  let inSingle = false;
+  let inDouble = false;
+  for (let i = 0; i < line.length - 1; i++) {
+    const ch = line[i];
+    const next = line[i + 1];
+    if (inSingle) {
+      if (ch === "\\") {
+        i++;
+        continue;
+      }
+      if (ch === "'") inSingle = false;
+      continue;
+    }
+    if (inDouble) {
+      if (ch === "\\") {
+        i++;
+        continue;
+      }
+      if (ch === '"') inDouble = false;
+      continue;
+    }
+    if (ch === '"') {
+      inDouble = true;
+      continue;
+    }
+    if (ch === "'") {
+      inSingle = true;
+      continue;
+    }
+    if (ch === "-" && next === "-") {
+      return line.slice(0, i);
+    }
+  }
+  return line;
+}
+
+/**
  * Parse Luau require() calls from source code.
  *
  * Handles the common Roblox patterns:
@@ -125,16 +206,18 @@ export const PROJECT_INDEX_SKELETON_OUTPUT_SCHEMA = {
  *   require(ReplicatedStorage.Shared.Util)
  *   require(someVariable) -- tracked as a variable reference
  *
+ * Comments are stripped first so require() calls inside comments are ignored.
  * Returns an array of dependency paths as they appear in the require call.
  */
 export function parseRequireCalls(source: string): string[] {
   const deps: string[] = [];
+  const cleanedSource = stripLuauComments(source);
   // Matches require(...) where the inner expression is captured.
   // Handles nested parens for :GetService("...") calls.
   const requirePattern = /\brequire\s*\(\s*((?:[^()]+|\([^()]*\))+)\s*\)/g;
   let match: RegExpExecArray | null;
 
-  while ((match = requirePattern.exec(source)) !== null) {
+  while ((match = requirePattern.exec(cleanedSource)) !== null) {
     const inner = match[1].trim();
     if (!inner) continue;
 
@@ -198,13 +281,28 @@ function normaliseRequirePath(expression: string): string | null {
 }
 
 /**
- * Build a dependency graph from a list of modules.
- * Returns the modules with resolved entry points and circular dependency info.
+ * Input to buildDependencyGraph: a module without the computed graph fields.
+ * The dependentsCount and dependencyDepth are derived by the graph builder.
  */
-export function buildDependencyGraph(
-  modules: ProjectModule[],
-): { entryPoints: string[]; circularDependencies: [string, string][] } {
-  const pathToModule = new Map<string, ProjectModule>();
+export type ProjectModuleInput = Omit<ProjectModule, "dependentsCount" | "dependencyDepth">;
+
+/**
+ * Build a dependency graph from a list of modules.
+ *
+ * Computes:
+ *   - dependentsCount: how many other known modules depend on each module
+ *   - dependencyDepth: longest dependency chain length (0 = leaf, 1 = depends on leaves, …)
+ *   - entryPoints: modules that nothing else depends on
+ *   - circularDependencies: deduplicated pairs of paths that form a cycle
+ *
+ * Returns the enriched modules alongside the entry points and circular dependency info.
+ */
+export function buildDependencyGraph(modules: ProjectModuleInput[]): {
+  modules: ProjectModule[];
+  entryPoints: string[];
+  circularDependencies: [string, string][];
+} {
+  const pathToModule = new Map<string, ProjectModuleInput>();
   for (const mod of modules) {
     pathToModule.set(mod.path, mod);
   }
@@ -226,7 +324,8 @@ export function buildDependencyGraph(
     .filter((mod) => !dependents.has(mod.path) || dependents.get(mod.path)!.size === 0)
     .map((mod) => mod.path);
 
-  // Detect circular dependencies via DFS.
+  // Detect circular dependencies via DFS, deduplicating by canonical cycle key.
+  const seenCycles = new Set<string>();
   const circularDependencies: [string, string][] = [];
   const visited = new Set<string>();
   const inStack = new Set<string>();
@@ -242,7 +341,12 @@ export function buildDependencyGraph(
       for (const dep of mod.dependencies) {
         if (pathToModule.has(dep)) {
           if (inStack.has(dep)) {
-            circularDependencies.push([current, dep]);
+            // Deduplicate: sort the pair so (A,B) and (B,A) map to the same key.
+            const key = [current, dep].sort().join("\u2194");
+            if (!seenCycles.has(key)) {
+              seenCycles.add(key);
+              circularDependencies.push([current, dep]);
+            }
           } else {
             dfs(dep);
           }
@@ -257,5 +361,52 @@ export function buildDependencyGraph(
     dfs(mod.path);
   }
 
-  return { entryPoints, circularDependencies };
+  // Identify all modules that are part of a cycle.
+  // These get depth 0 to avoid infinite recursion and inflated values.
+  const cycleMembers = new Set<string>();
+  for (const [from, to] of circularDependencies) {
+    cycleMembers.add(from);
+    cycleMembers.add(to);
+  }
+
+  // Compute dependency depth via memoised DFS on resolved dependencies.
+  const depthCache = new Map<string, number>();
+  const computing = new Set<string>();
+
+  function computeDepth(path: string): number {
+    if (depthCache.has(path)) return depthCache.get(path)!;
+    // Cycle members get depth 0 directly.
+    if (cycleMembers.has(path)) {
+      depthCache.set(path, 0);
+      return 0;
+    }
+    // Guard against unexpected cycles: if we're already computing this node, skip it.
+    if (computing.has(path)) return -1;
+    computing.add(path);
+
+    const mod = pathToModule.get(path);
+    let maxDepDepth = 0;
+    if (mod) {
+      for (const dep of mod.dependencies) {
+        if (pathToModule.has(dep)) {
+          const depDepth = computeDepth(dep);
+          // Skip cycle edges (depDepth === -1) so they don't inflate depth.
+          if (depDepth >= 0 && depDepth + 1 > maxDepDepth) maxDepDepth = depDepth + 1;
+        }
+      }
+    }
+
+    computing.delete(path);
+    depthCache.set(path, maxDepDepth);
+    return maxDepDepth;
+  }
+
+  // Build enriched modules with computed fields.
+  const enrichedModules: ProjectModule[] = modules.map((mod) => ({
+    ...mod,
+    dependentsCount: dependents.get(mod.path)?.size ?? 0,
+    dependencyDepth: computeDepth(mod.path),
+  }));
+
+  return { modules: enrichedModules, entryPoints, circularDependencies };
 }
