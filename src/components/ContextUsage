@@ -13,6 +13,7 @@ interface ContextUsageIndicatorProps {
 }
 
 function fmt(n: number) {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
   return String(n);
 }
@@ -76,10 +77,15 @@ function parseContextWindowFromId(modelId?: string): number | undefined {
 
 // ── Resolver ────────────────────────────────────────────────────────────
 
-function resolveContextWindow(modelId: string | undefined, allModels: ModelInfo[]): number {
+function resolveContextWindow(
+  modelId: string | undefined,
+  allModels: ModelInfo[],
+): number {
   if (!modelId) return 128_000;
 
-  const match = allModels.find((m) => `${m.providerId}/${m.id}` === modelId || m.id === modelId);
+  const match = allModels.find(
+    (m) => `${m.providerId}/${m.id}` === modelId || m.id === modelId,
+  );
 
   if (match) {
     // 1. Known model lookup
@@ -121,23 +127,38 @@ const ContextUsageIndicator = memo(function ContextUsageIndicator({
     const max = resolveContextWindow(selectedModel ?? undefined, allModels);
     if (!messagesCache) return { pct: 0, total: 0, max };
 
+    // Use the latest message's token snapshot rather than summing across all
+    // messages. info.tokens.input represents the prompt token count for that
+    // specific completion (i.e. the latest context window snapshot), so
+    // summing would overcount and grow unbounded over the session.
     let total = 0;
-    for (const msgId of messagesCache.messageIds) {
-      const msg = messagesCache.messagesById[msgId];
+    for (let i = messagesCache.messageIds.length - 1; i >= 0; i--) {
+      const msg = messagesCache.messagesById[messagesCache.messageIds[i]];
       if (!msg) continue;
       const info = msg.info as unknown as { tokens?: { input?: number; total?: number } };
       const t = info.tokens;
-      if (!t) continue;
-      total += t.input ?? t.total ?? 0;
+      if (t) {
+        total = t.input ?? t.total ?? 0;
+        break;
+      }
     }
 
     return { pct: Math.min(100, Math.round((total / max) * 100)), total, max };
   }, [messagesCache, selectedModel, allModels]);
 
   const tone =
-    usage.pct >= 90 ? "text-red-500" : usage.pct >= 70 ? "text-amber-500" : "text-muted-foreground";
+    usage.pct >= 90
+      ? "text-red-500"
+      : usage.pct >= 70
+        ? "text-amber-500"
+        : "text-muted-foreground";
 
-  const ring = usage.pct >= 90 ? "#ef4444" : usage.pct >= 70 ? "#f59e0b" : "#10b981";
+  const ring =
+    usage.pct >= 90
+      ? "#ef4444"
+      : usage.pct >= 70
+        ? "#f59e0b"
+        : "#10b981";
 
   const r = 18;
   const circ = 2 * Math.PI * r;
@@ -153,15 +174,7 @@ const ContextUsageIndicator = memo(function ContextUsageIndicator({
 
       <div className="hidden group-hover:block">
         <svg width="28" height="28" viewBox="0 0 48 48" className="-ml-0.5">
-          <circle
-            cx="24"
-            cy="24"
-            r={r}
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="4"
-            opacity="0.15"
-          />
+          <circle cx="24" cy="24" r={r} fill="none" stroke="currentColor" strokeWidth="4" opacity="0.15" />
           <circle
             cx="24"
             cy="24"

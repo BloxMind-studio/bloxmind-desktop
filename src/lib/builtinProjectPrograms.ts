@@ -118,7 +118,6 @@ async function run({ callTool }: { input: unknown; callTool: (name: string, args
     "StarterPack", "StarterPlayer", "Chat", "Teams",
   ]);
 
-  const modules = [];
   const byPath = new Map();
 
   for (const row of rows) {
@@ -130,8 +129,14 @@ async function run({ callTool }: { input: unknown; callTool: (name: string, args
       : typeof row.path === "string" ? row.path : "";
     if (!path) continue;
 
-    const instanceName = typeof row.name === "string" && row.name ? row.name
-      : path.split(".").at(-1) ?? path;
+    // Resolve the instance name with the same fallback chain as the Explorer program:
+    // row.properties.Name -> row.Name -> row.name -> last path segment.
+    const properties = row?.properties && typeof row.properties === "object" ? row.properties : {};
+    const instanceName =
+      typeof properties.Name === "string" && properties.Name ? properties.Name :
+      typeof row.Name === "string" && row.Name ? row.Name :
+      typeof row.name === "string" && row.name ? row.name :
+      path.split(".").at(-1) ?? path;
 
     // Read the actual script source via MCP.
     let source = null;
@@ -188,10 +193,14 @@ async function run({ callTool }: { input: unknown; callTool: (name: string, args
     .map((mod) => mod.path);
 
   // Detect circular dependencies via DFS, deduplicating by canonical cycle key.
+  // Also collect all nodes that participate in any cycle by tracing the recursion
+  // stack when a back-edge is found.
   const seenCycles = new Set();
   const circularDeps = [];
   const visited = new Set();
   const inStack = new Set();
+  const stackArr = [];
+  const cycleMembers = new Set();
   const pathMap = new Map();
   for (const mod of allModules) pathMap.set(mod.path, mod);
 
@@ -200,6 +209,7 @@ async function run({ callTool }: { input: unknown; callTool: (name: string, args
     if (visited.has(current)) return;
     visited.add(current);
     inStack.add(current);
+    stackArr.push(current);
     const mod = pathMap.get(current);
     if (mod) {
       for (const dep of mod.dependencies) {
@@ -210,6 +220,13 @@ async function run({ callTool }: { input: unknown; callTool: (name: string, args
               seenCycles.add(key);
               circularDeps.push([current, dep]);
             }
+            // Mark all nodes on the stack between dep and current as cycle members.
+            const idx = stackArr.indexOf(dep);
+            if (idx !== -1) {
+              for (let i = idx; i < stackArr.length; i++) {
+                cycleMembers.add(stackArr[i]);
+              }
+            }
           } else {
             dfs(dep);
           }
@@ -217,18 +234,12 @@ async function run({ callTool }: { input: unknown; callTool: (name: string, args
       }
     }
     inStack.delete(current);
+    stackArr.pop();
   }
   for (const mod of allModules) dfs(mod.path);
 
-  // Identify all modules that are part of a cycle.
-  // These get depth 0 to avoid infinite recursion and inflated values.
-  const cycleMembers = new Set();
-  for (const pair of circularDeps) {
-    cycleMembers.add(pair[0]);
-    cycleMembers.add(pair[1]);
-  }
-
   // Compute dependency depth via memoised DFS on resolved dependencies.
+  // Cycle members get depth 0 to avoid infinite recursion and inflated values.
   const depthCache = new Map();
   const computing = new Set();
   function computeDepth(path) {

@@ -95,14 +95,14 @@ export function useSendMessage(options?: { onError?: (error: Error) => void }) {
     },
     onError: (error, input, context) => {
       options?.onError?.(error);
-        posthog.capture(
-          "message_send_failed",
-          errorAnalyticsProperties("chat", "send_message", error, {
-            has_images: Boolean(input.images?.length),
-            has_studio_target: Boolean(input.studioTargetReference),
-            has_system_prompt: Boolean(input.systemPrompt),
-          }),
-        );
+      posthog.capture(
+        "message_send_failed",
+        errorAnalyticsProperties("chat", "send_message", error, {
+          has_images: Boolean(input.images?.length),
+          has_studio_target: Boolean(input.studioTargetReference),
+          has_system_prompt: Boolean(input.systemPrompt),
+        }),
+      );
       if (!context) return;
       queryClient.setQueryData<Record<string, SessionStatus>>(qk.statuses, (previous) => {
         if (previous?.[context.sessionID]?.type !== "busy") return previous;

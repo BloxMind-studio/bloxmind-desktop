@@ -478,7 +478,7 @@ describe("buildDependencyGraph", () => {
     expect(main?.dependencyDepth).toBe(2);
   });
 
-  it("computes dependencyDepth as 0 for modules in a cycle", () => {
+  it("computes dependencyDepth as 0 for modules in a 2-node cycle", () => {
     const modules: ProjectModuleInput[] = [
       {
         path: "game.ServerScriptService.A",
@@ -503,6 +503,44 @@ describe("buildDependencyGraph", () => {
     // Modules in cycles get depth 0 to avoid infinite recursion.
     expect(a?.dependencyDepth).toBe(0);
     expect(b?.dependencyDepth).toBe(0);
+  });
+
+  it("computes dependencyDepth as 0 for all nodes in a 3-node cycle", () => {
+    // A -> B -> C -> A: the back-edge is C->A, but B is also part of the cycle.
+    // The cycle member detection must trace the full stack, not just the endpoints.
+    const modules: ProjectModuleInput[] = [
+      {
+        path: "game.ServerScriptService.A",
+        name: "A",
+        className: "ModuleScript",
+        sourceLength: 100,
+        dependencies: ["game.ServerScriptService.B"],
+      },
+      {
+        path: "game.ServerScriptService.B",
+        name: "B",
+        className: "ModuleScript",
+        sourceLength: 100,
+        dependencies: ["game.ServerScriptService.C"],
+      },
+      {
+        path: "game.ServerScriptService.C",
+        name: "C",
+        className: "ModuleScript",
+        sourceLength: 100,
+        dependencies: ["game.ServerScriptService.A"],
+      },
+    ];
+
+    const { modules: enriched } = buildDependencyGraph(modules);
+    const a = enriched.find((m) => m.path === "game.ServerScriptService.A");
+    const b = enriched.find((m) => m.path === "game.ServerScriptService.B");
+    const c = enriched.find((m) => m.path === "game.ServerScriptService.C");
+
+    // All three nodes participate in the cycle and should get depth 0.
+    expect(a?.dependencyDepth).toBe(0);
+    expect(b?.dependencyDepth).toBe(0);
+    expect(c?.dependencyDepth).toBe(0);
   });
 
   it("returns enriched modules with all computed fields", () => {

@@ -325,16 +325,21 @@ export function buildDependencyGraph(modules: ProjectModuleInput[]): {
     .map((mod) => mod.path);
 
   // Detect circular dependencies via DFS, deduplicating by canonical cycle key.
+  // Also collect all nodes that participate in any cycle by tracing the recursion
+  // stack when a back-edge is found (handles cycles longer than 2).
   const seenCycles = new Set<string>();
   const circularDependencies: [string, string][] = [];
   const visited = new Set<string>();
   const inStack = new Set<string>();
+  const stackArr: string[] = [];
+  const cycleMembers = new Set<string>();
 
   function dfs(current: string) {
     if (inStack.has(current)) return;
     if (visited.has(current)) return;
     visited.add(current);
     inStack.add(current);
+    stackArr.push(current);
 
     const mod = pathToModule.get(current);
     if (mod) {
@@ -347,6 +352,13 @@ export function buildDependencyGraph(modules: ProjectModuleInput[]): {
               seenCycles.add(key);
               circularDependencies.push([current, dep]);
             }
+            // Mark all nodes on the stack between dep and current as cycle members.
+            const idx = stackArr.indexOf(dep);
+            if (idx !== -1) {
+              for (let i = idx; i < stackArr.length; i++) {
+                cycleMembers.add(stackArr[i]);
+              }
+            }
           } else {
             dfs(dep);
           }
@@ -355,18 +367,11 @@ export function buildDependencyGraph(modules: ProjectModuleInput[]): {
     }
 
     inStack.delete(current);
+    stackArr.pop();
   }
 
   for (const mod of modules) {
     dfs(mod.path);
-  }
-
-  // Identify all modules that are part of a cycle.
-  // These get depth 0 to avoid infinite recursion and inflated values.
-  const cycleMembers = new Set<string>();
-  for (const [from, to] of circularDependencies) {
-    cycleMembers.add(from);
-    cycleMembers.add(to);
   }
 
   // Compute dependency depth via memoised DFS on resolved dependencies.
