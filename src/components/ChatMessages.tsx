@@ -11,6 +11,7 @@ import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { HighlightLanguage } from "@/components/SyntaxHighlightedOutput";
+import { RobloxInstanceCard } from "@/components/RobloxInstanceCard";
 
 /** Module-level constant to avoid creating a new array on every render. */
 const REMARK_PLUGINS = [remarkGfm];
@@ -966,6 +967,8 @@ const ToolPartView = memo(function ToolPartView({
         return <WebFetchToolView input={input} status={status} />;
       case "todowrite":
         return <TodoWriteToolView input={input} />;
+      case "inspect_instance":
+        return <RobloxInstanceCard output={typeof output === "string" ? output : JSON.stringify(output, null, 2)} />;
       default:
         return <DefaultToolView tool={tool} input={input} output={output} status={status} />;
     }

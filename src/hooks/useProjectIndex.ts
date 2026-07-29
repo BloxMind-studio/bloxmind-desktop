@@ -15,11 +15,21 @@ import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 import { useStudioTargetOptional } from "@/providers/StudioTargetProvider";
 import { desktop } from "@/lib/desktop";
 
+// ── useProjectIndex ──────────────────────────────────────────────────────
+
 /**
  * Compile and invoke the project index program to build a dependency graph
  * of all scripts in the current Roblox Studio place.
  *
- * Returns null when Studio isn't connected or the index hasn't been built yet.
+ * Uses the built-in program ({@link BUILTIN_PROJECT_INDEX_PROGRAM}) via the
+ * `GeneratedProgramRuntime` desktop bridge. The result is validated against
+ * {@link ProjectSkeletonSchema} before being returned.
+ *
+ * The query is cached for 30 seconds (`staleTime`) and retries twice on
+ * failure. Returns `null` when Studio isn't connected or the index hasn't
+ * been built yet.
+ *
+ * @returns The project skeleton, loading state, error message, and a refresh callback.
  */
 export function useProjectIndex(): {
   skeleton: ProjectSkeleton | null;
@@ -32,6 +42,7 @@ export function useProjectIndex(): {
   const queryClient = useQueryClient();
   const hasStudioTarget = studioTarget?.selected !== null && studioTarget?.status === "ready";
 
+  // Per-target query key so switching Studio targets re-indexes.
   const targetKey = studioTarget?.selected?.key;
   const projectIndexKey = targetKey ? [...qk.projectIndex, targetKey] : qk.projectIndex;
 
@@ -71,9 +82,18 @@ export function useProjectIndex(): {
   };
 }
 
+// ── useProjectIndexProgram ───────────────────────────────────────────────
+
 /**
- * Get the project index program envelope (compiled or built-in).
+ * Get the project index program envelope (AI-generated or built-in fallback).
+ *
+ * Tries to generate an AI-tailored program first (via
+ * {@link generateProjectIndexProgram}); if that fails or returns null,
+ * falls back to {@link BUILTIN_PROJECT_INDEX_PROGRAM}.
+ *
  * Used by the AI agent to understand the project structure.
+ *
+ * @returns The program envelope and loading state.
  */
 export function useProjectIndexProgram(): {
   program: ProjectIndexProgramEnvelope | null;
@@ -96,7 +116,7 @@ export function useProjectIndexProgram(): {
         const generated = await generateProjectIndexProgram(client, targetKey);
         if (generated) return generated;
       } catch {
-        // Fall through to built-in.
+        // Fall through to built-in on any error.
       }
 
       return BUILTIN_PROJECT_INDEX_PROGRAM;
@@ -111,9 +131,22 @@ export function useProjectIndexProgram(): {
   };
 }
 
+// ── AI program generation ────────────────────────────────────────────────
+
 /**
  * Ask the AI to generate a project index program tailored to the current place.
- * This mirrors the pattern used by generateExplorerProgram in lib/explorer.ts.
+ *
+ * Creates a temporary hidden session, sends a prompt with the
+ * {@link PROJECT_INDEX_OUTPUT_SCHEMA} as a structured-output constraint,
+ * decodes the response into a {@link ProjectIndexProgramEnvelope}, and
+ * deletes the session in a `finally` block.
+ *
+ * This mirrors the pattern used by `generateExplorerProgram` in `lib/explorer.ts`.
+ *
+ * @param client - The OpenCode client instance.
+ * @param targetKey - Optional Studio target key for session metadata.
+ * @returns The generated program envelope, or `null` if generation fails.
+ * @throws If session creation or prompting fails (caught by the caller).
  */
 async function generateProjectIndexProgram(
   client: NonNullable<ReturnType<typeof useOpenCodeClient>["client"]>,
@@ -127,6 +160,7 @@ For every Script, ModuleScript, and LocalScript, read the source via the appropr
 Build a dependency graph, identify entry points (modules nothing else depends on), and detect circular dependencies.
 Return only the requested structured output.`;
 
+  // Create a temporary hidden session for the planning prompt.
   const created = await client.session.create(
     {
       title: "Project index (temporary)",
@@ -157,10 +191,12 @@ Return only the requested structured output.`;
       { throwOnError: true },
     );
 
+    // Decode the structured output into our envelope schema.
     return Schema.decodeUnknownSync(ProjectIndexProgramEnvelopeSchema)(
       response.data.info.structured,
     );
   } finally {
+    // Always clean up the temporary session, even on error.
     await client.session.delete({ sessionID: planningSessionId }).catch(() => undefined);
   }
 }
