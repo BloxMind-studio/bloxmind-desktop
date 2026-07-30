@@ -8,9 +8,9 @@ import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 import type { MessageWithParts } from "@/types";
 
-const NOOP_KEY = ["__noop__"] as const;
-const EMPTY_IDS: string[] = [];
-const EMPTY_CACHE: MessagesCache = { messageIds: [], messagesById: {} };
+export const NOOP_KEY = ["__noop__"] as const;
+export const EMPTY_IDS: string[] = [];
+export const EMPTY_CACHE: MessagesCache = { messageIds: [], messagesById: {} };
 
 export function mergeMessagesSnapshot(
   before: MessagesCache | undefined,

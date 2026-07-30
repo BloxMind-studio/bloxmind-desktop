@@ -137,16 +137,31 @@ function formatPropertyValue(value: unknown): string {
  * `properties` fields. We handle both the raw object and the MCP content
  * wrapper format.
  */
+function safeJsonParse(input: string): Record<string, unknown> | unknown[] | null {
+  try {
+    return JSON.parse(input);
+  } catch {
+    // Escape raw control characters (e.g. literal tab sent as `\t`) that
+    // prevent JSON parsing. This handles malformed JSON from tool outputs
+    // where escape sequences were not properly encoded.
+    const sanitized = input.replace(/[\x00-\x1F\x7F]/g, (char) => {
+      const code = char.charCodeAt(0);
+      return `\\u${code.toString(16).padStart(4, '0')}`;
+    });
+    try {
+      return JSON.parse(sanitized);
+    } catch {
+      return null;
+    }
+  }
+}
+
 function parseInspectOutput(output: string): ParsedInstance | null {
   try {
-    const raw = JSON.parse(output);
+    const raw = safeJsonParse(output) as any;
 
-    // Handle MCP content wrapper: { content: [{ type: "json", json: {...} }] }
-    const data =
-      raw?.content?.[0]?.json ??
-      raw?.content?.[0]?.text ??
-      raw?.json ??
-      raw;
+    // @ts-ignore - type workaround for MCP wrapper
+    const data = (raw as any)?.content?.[0]?.json ?? (raw as any)?.content?.[0]?.text ?? (raw as any)?.json ?? raw;
 
     // If the data is still a string, try parsing it again.
     const obj = typeof data === "string" ? JSON.parse(data) : data;
@@ -172,7 +187,7 @@ function parseInspectOutput(output: string): ParsedInstance | null {
     const properties: Record<string, unknown> = {};
 
     // Collect properties from the top-level object, excluding meta fields.
-    const metaKeys = new Set(["className", "ClassName", "path", "fullPath", "content", "type"]);
+    const metaKeys = new Set(["className", "ClassName", "path", "fullPath", "content", "type", "properties"]);
     for (const [key, value] of Object.entries(obj)) {
       if (!metaKeys.has(key) && value !== null && value !== undefined) {
         properties[key] = value;
