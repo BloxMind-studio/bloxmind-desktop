@@ -1552,17 +1552,18 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
       setTimeout(() => setCopied(false), 2000);
     });
   }, [msg]);
-
   const handleRegenerate = useCallback(async () => {
     if (!client || !activeSessionId || isBusy || !msg || msg.info.role !== "assistant") return;
     setRegenerating(true);
+  
     try {
       const cache = queryClient.getQueryData<MessagesCache>(qk.messages(activeSessionId));
       const allIds = cache?.messageIds ?? [];
-
-      // Find the last user message to re-send as the prompt.
+  
+      // 1. Find the last user message to re-send
       let lastUserText = "";
       let lastUserId: string | undefined;
+      
       for (let i = allIds.length - 1; i >= 0; i--) {
         const m = cache?.messagesById[allIds[i]];
         if (!m) continue;
@@ -1576,36 +1577,43 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
           break;
         }
       }
-      if (!lastUserText || !lastUserId) return;
-
-      // Truncate conversation history up to and including the original user prompt.
+  
+      if (!lastUserText || !lastUserId) {
+        console.warn("[Regenerate] No target user message found.");
+        return;
+      }
+  
+      // 2. Truncate conversation history locally (Keep up to last user message)
       queryClient.setQueryData<MessagesCache>(qk.messages(activeSessionId), (prev) => {
         if (!prev) return prev;
-        const cutoffIndex = prev.messageIds.indexOf(lastUserId);
+        const cutoffIndex = prev.messageIds.indexOf(lastUserId!);
         const truncatedIds = cutoffIndex >= 0 ? prev.messageIds.slice(0, cutoffIndex + 1) : prev.messageIds;
+        
         const messagesById: MessagesCache["messagesById"] = {};
         for (const id of truncatedIds) {
-          const m = prev.messagesById[id];
-          if (m) messagesById[id] = m;
+          if (prev.messagesById[id]) {
+            messagesById[id] = prev.messagesById[id];
+          }
         }
-        return {
-          messageIds: truncatedIds,
-          messagesById,
-        };
+        return { messageIds: truncatedIds, messagesById };
       });
-
-      // Refresh Roblox context so regeneration uses fresh workspace/editor state.
-      const studioTargetKey = [...qk.projectIndex, ...qk.studioConnection].join(".");
-      await queryClient.invalidateQueries({ queryKey: qk.projectIndex });
-      await queryClient.invalidateQueries({ queryKey: qk.studioConnection });
-      await queryClient.invalidateQueries({ queryKey: qk.messages(activeSessionId), exact: true });
-
-      // Build the prompt options matching useSendMessage.
+  
+      // 3. Safely refresh Roblox Context (Don't let studio disconnect block regeneration)
+      try {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: qk.projectIndex }),
+          queryClient.invalidateQueries({ queryKey: qk.studioConnection })
+        ]);
+      } catch (ctxErr) {
+        console.warn("[Regenerate] Context refresh warning:", ctxErr);
+      }
+  
+      // 4. Build options payload
       const opts: Record<string, unknown> = {
         sessionID: activeSessionId,
         parts: [{ type: "text", text: lastUserText }],
-        reset: true,
       };
+  
       if (selectedModel) {
         const [providerID, modelID] = splitModelKey(selectedModel);
         if (providerID && modelID) {
@@ -1614,19 +1622,41 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
       }
       if (selectedAgent) opts.agent = selectedAgent;
       if (selectedVariant) opts.variant = selectedVariant;
+  
+      // 5. Attempt to delete the old assistant message on the server before regenerating
+      if (msg?.info?.id && typeof (client.session as any).deleteMessage === "function") {
+        try {
+          await (client.session as any).deleteMessage({
+            sessionID: activeSessionId,
+            messageID: msg.info.id,
+          });
+        } catch {
+          // ignore server-side cleanup failures
+        }
+      }
 
-      // Re-send the last user prompt to trigger a new generation.
+      // 6. Trigger new stream generation
       await client.session.promptAsync(
         opts as Parameters<typeof client.session.promptAsync>[0],
-        { throwOnError: true },
+        { throwOnError: true }
       );
-    } catch {
-      // Silently fail if regeneration fails.
+  
+    } catch (err) {
+      console.error("[Regenerate Failed]:", err);
     } finally {
       setRegenerating(false);
     }
   }, [client, activeSessionId, isBusy, msg, queryClient, selectedModel, selectedAgent, selectedVariant]);
-
+  console.log(msg);
+  console.log(messageIds);
+  console.log(isLastAssistant);
+  console.log(isBusy);
+  console.log(regenerating);
+  console.log(selectedModel);
+  console.log(selectedAgent);
+  console.log(selectedVariant);
+  console.log(copied);
+  
   if (!msg) return null;
 
   const isUser = msg.info.role === "user";
