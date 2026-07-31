@@ -1690,12 +1690,6 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
   const hasText = msg.parts.some((p) => p.type === "text");
   const isLastAssistant = !isUser && msg.info.id === messageIds[messageIds.length - 1];
 
-  // Find this message's index in the conversation to associate with a checkpoint
-  const messageIndex = isUser ? -1 : messageIds.indexOf(msg.info.id);
-  // Each assistant message corresponds to a checkpoint at index = floor(messageIndex / 2)
-  // (user msg at 0, assistant at 1 -> checkpoint 0, user at 2, assistant at 3 -> checkpoint 1, etc.)
-  const associatedCheckpointIndex = messageIndex >= 0 ? Math.floor(messageIndex / 2) : -1;
-
   return (
     <div className={`animate-fade-in-up flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div
@@ -1712,58 +1706,32 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
               msg.info.error.name !== "MessageAbortedError" && (
                 <ModelErrorCard error={msg.info.error} />
               )}
-            {!isBusy && (
+            {isLastAssistant && !isBusy && (
               <div className="flex items-center justify-end gap-1 pt-1">
-                {isLastAssistant && (
-                  <button
-                    type="button"
-                    onClick={handleCheckpoint}
-                    disabled={isBusy}
-                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground/40 transition-colors hover:text-muted-foreground hover:bg-accent/50 disabled:opacity-50"
-                    title="Save checkpoint"
+                <button
+                  type="button"
+                  onClick={handleCheckpoint}
+                  disabled={isBusy}
+                  className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground/40 transition-colors hover:text-muted-foreground hover:bg-accent/50 disabled:opacity-50"
+                  title="Save checkpoint"
+                >
+                  <svg
+                    width="11"
+                    height="11"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
                   >
-                    <svg
-                      width="11"
-                      height="11"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-                      <polyline points="17 21 17 13 7 13 7 21" />
-                      <polyline points="7 3 7 8 15 8" />
-                    </svg>
-                    <span>Checkpoint</span>
-                  </button>
-                )}
-                {checkpointCount > 0 && associatedCheckpointIndex >= 0 && associatedCheckpointIndex < checkpointCount && (
-                  <button
-                    type="button"
-                    onClick={() => handleRestoreCheckpoint(associatedCheckpointIndex)}
-                    disabled={isBusy}
-                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground/40 transition-colors hover:text-muted-foreground hover:bg-accent/50 disabled:opacity-50"
-                    title={`Restore to checkpoint #${associatedCheckpointIndex + 1}`}
-                  >
-                    <svg
-                      width="11"
-                      height="11"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <polyline points="1 4 1 10 7 10" />
-                      <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
-                    </svg>
-                    <span>Restore #{associatedCheckpointIndex + 1}</span>
-                  </button>
-                )}
-                {checkpointCount > 0 && isLastAssistant && (
+                    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                    <polyline points="17 21 17 13 7 13 7 21" />
+                    <polyline points="7 3 7 8 15 8" />
+                  </svg>
+                  <span>Checkpoint</span>
+                </button>
+                {checkpointCount > 0 && (
                   <button
                     type="button"
                     onClick={() => handleRestoreCheckpoint()}
@@ -1784,7 +1752,7 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
                       <polyline points="1 4 1 10 7 10" />
                       <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
                     </svg>
-                    <span>Restore Latest</span>
+                    <span>Restore ({checkpointCount})</span>
                   </button>
                 )}
                 {hasText && (
