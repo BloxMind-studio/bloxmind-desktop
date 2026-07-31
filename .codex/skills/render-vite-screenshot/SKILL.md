@@ -1,6 +1,6 @@
 ---
 name: render-vite-screenshot
-description: Render and capture BloxBot UI changes through an isolated temporary Vite page and headless browser. Use when screenshots, visual verification, or PR images are needed without launching Electron, activating application windows, using desktop screen capture, or disrupting the user's workspace.
+description: Render and capture RoAgent UI changes through an isolated temporary Vite page and headless browser. Use when screenshots, visual verification, or PR images are needed without launching Electron, activating application windows, using desktop screen capture, or disrupting the user's workspace.
 ---
 
 # Render Vite Screenshot
@@ -27,7 +27,7 @@ Capture only the UI under review. Never launch, focus, resize, inspect, or scree
    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
      --headless --disable-gpu --hide-scrollbars \
      --window-size=1200,800 \
-     --screenshot=/tmp/bloxbot-screenshot.png \
+     --screenshot=/tmp/roagent-screenshot.png \
      http://localhost:1422/screenshot.html
    ```
 

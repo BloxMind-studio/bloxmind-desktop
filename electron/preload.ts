@@ -34,4 +34,4 @@ const api: DesktopApi = {
     ipcRenderer.invoke(channels.selectStudioTarget, programs, targetKey),
 };
 
-contextBridge.exposeInMainWorld("bloxbot", api);
+contextBridge.exposeInMainWorld("roagent", api);

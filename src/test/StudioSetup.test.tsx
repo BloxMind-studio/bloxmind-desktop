@@ -41,7 +41,7 @@ describe("StudioSetup", () => {
     ).toBeVisible();
     expect(screen.getByRole("button", { name: "Check again" })).toBeVisible();
     expect(document.querySelectorAll("img")).toHaveLength(1);
-    expect(screen.queryByText(/Connect BloxBot|Studio connection|Ready for BloxBot/)).toBeNull();
+    expect(screen.queryByText(/Connect RoAgent|Studio connection|Ready for RoAgent/)).toBeNull();
   });
 
   it("celebrates when Studio connects", () => {

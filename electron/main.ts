@@ -36,7 +36,7 @@ const defaultConfig: AppConfig = DEFAULT_APP_CONFIG;
 const configMutex = Effect.unsafeMakeSemaphore(1);
 
 function configPath(): string {
-  return join(app.getPath("userData"), "bloxbot-store.json");
+  return join(app.getPath("userData"), "roagent-store.json");
 }
 
 let mainWindow: BrowserWindow | null = null;
@@ -48,7 +48,7 @@ class DesktopMainError extends Data.TaggedError("DesktopMainError")<{
 }> {}
 
 const studioMcpBrokerLayer = makeStudioMcpBrokerLayer({
-  workspace: join(app.getPath("home"), "BloxBot"),
+  workspace: join(app.getPath("home"), "RoAgent"),
   localAppData: process.env.LOCALAPPDATA,
 });
 
@@ -56,7 +56,7 @@ const openCodeRuntime = ManagedRuntime.make(
   Layer.merge(
     makeOpenCodeLayer({
       binaryCacheDirectory: join(app.getPath("userData"), "opencode"),
-      workspace: join(app.getPath("home"), "BloxBot"),
+      workspace: join(app.getPath("home"), "RoAgent"),
       onStartupProgress: (progress: OpenCodeStartupProgress) => {
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send(channels.openCodeStartupProgress, progress);
@@ -350,7 +350,7 @@ function createWindow(): Effect.Effect<void, DesktopMainError> {
     const window = yield* Effect.try({
       try: () =>
         new BrowserWindow({
-          title: "BloxBot",
+          title: "RoAgent",
           width: 920,
           height: 600,
           minWidth: 520,
@@ -371,7 +371,7 @@ function createWindow(): Effect.Effect<void, DesktopMainError> {
     yield* Effect.sync(() => {
       mainWindow = window;
       window.webContents.setUserAgent(
-        `${window.webContents.getUserAgent()} BloxBot/${app.getVersion()}`,
+        `${window.webContents.getUserAgent()} RoAgent/${app.getVersion()}`,
       );
       window.webContents.setWindowOpenHandler(({ url }) => {
         Effect.runFork(

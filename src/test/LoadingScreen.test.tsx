@@ -66,7 +66,7 @@ describe("startup progress", () => {
     expect(screen.getByRole("heading", { name: "Setup couldn't finish" })).toBeVisible();
     expect(
       screen.getByText(
-        "BloxBot couldn't download its setup files. Check your internet connection, VPN, or firewall, then restart setup.",
+        "RoAgent couldn't download its setup files. Check your internet connection, VPN, or firewall, then restart setup.",
       ),
     ).toBeVisible();
     expect(screen.getByRole("button", { name: "Restart setup" })).toBeVisible();

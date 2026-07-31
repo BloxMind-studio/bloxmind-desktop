@@ -152,7 +152,7 @@ async function generateProjectIndexProgram(
   client: NonNullable<ReturnType<typeof useOpenCodeClient>["client"]>,
   targetKey?: string,
 ): Promise<ProjectIndexProgramEnvelope | null> {
-  const INITIAL_SYSTEM_PROMPT = `You generate the private TypeScript data provider for BloxBot's project index panel.
+  const INITIAL_SYSTEM_PROMPT = `You generate the private TypeScript data provider for RoAgent's project index panel.
 Discover the currently available Studio MCP tools and return an import-free deterministic read-only TypeScript program.
 The source must define async function run({ input, callTool }) and return a project skeleton matching the requested output contract.
 Use callTool directly with the exact discovered tool names and arguments. It must never modify the place.
@@ -165,7 +165,7 @@ Return only the requested structured output.`;
     {
       title: "Project index (temporary)",
       agent: undefined,
-      metadata: { bloxbotHidden: true, purpose: "project-index", targetKey },
+      metadata: { roagentHidden: true, purpose: "project-index", targetKey },
     },
     { throwOnError: true },
   );

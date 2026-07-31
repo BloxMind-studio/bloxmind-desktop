@@ -62,7 +62,7 @@ export function useUpdater(): void {
           // Minor/major — show persistent toast requiring manual action.
           console.debug(`[updater] Prompting for update ${currentVersion} → ${update.version}`);
 
-          toast(`BloxBot ${update.version} is available`, {
+          toast(`RoAgent ${update.version} is available`, {
             className: "update-available-toast",
             description: createElement(UpdateReleaseNotes, { body: update.body }),
             duration: Number.POSITIVE_INFINITY,

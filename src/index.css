@@ -343,45 +343,45 @@
   animation: lightbox-slide-right 250ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-/* ── BloxBot loading face ────────────────────────────────────────── */
+/* ── RoAgent loading face ────────────────────────────────────────── */
 
-@keyframes bloxbot-float {
+@keyframes roagent-float {
   0%, 100% { transform: translateY(0); }
   50%      { transform: translateY(-4px); }
 }
 
-@keyframes bloxbot-blink {
+@keyframes roagent-blink {
   0%, 92%, 100% { transform: scaleY(1); }
   95%           { transform: scaleY(0.08); }
 }
 
-@keyframes bloxbot-dot-pulse {
+@keyframes roagent-dot-pulse {
   0%, 100% { opacity: 0.25; }
   50%      { opacity: 0.8; }
 }
 
 /* Gentle side-to-side sway for inline thinking indicator */
-@keyframes bloxbot-think {
+@keyframes roagent-think {
   0%, 100% { transform: translateY(0) rotate(0deg); }
   25%      { transform: translateY(-1px) rotate(-3deg); }
   75%      { transform: translateY(-1px) rotate(3deg); }
 }
 
-.bloxbot-face {
-  animation: bloxbot-float 2.5s ease-in-out infinite;
+.roagent-face {
+  animation: roagent-float 2.5s ease-in-out infinite;
 }
 
-.bloxbot-face-think {
-  animation: bloxbot-think 1.8s ease-in-out infinite;
+.roagent-face-think {
+  animation: roagent-think 1.8s ease-in-out infinite;
 }
 
-.bloxbot-eye {
+.roagent-eye {
   transform-origin: center;
-  animation: bloxbot-blink 4s ease-in-out infinite;
+  animation: roagent-blink 4s ease-in-out infinite;
 }
 
-.bloxbot-dot {
-  animation: bloxbot-dot-pulse 1.2s ease-in-out infinite;
+.roagent-dot {
+  animation: roagent-dot-pulse 1.2s ease-in-out infinite;
 }
 
 /* ── Playful startup progress ───────────────────────────────────── */

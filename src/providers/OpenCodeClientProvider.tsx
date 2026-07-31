@@ -129,7 +129,7 @@ export function getStartupErrorPresentation(error: unknown): StartupErrorPresent
     return {
       message: "Setup couldn't finish",
       detail:
-        "BloxBot couldn't download its setup files. Check your internet connection, VPN, or firewall, then restart setup.",
+        "RoAgent couldn't download its setup files. Check your internet connection, VPN, or firewall, then restart setup.",
       technicalDetail,
     };
   }
@@ -138,7 +138,7 @@ export function getStartupErrorPresentation(error: unknown): StartupErrorPresent
     return {
       message: "This computer isn't supported yet",
       detail:
-        "BloxBot couldn't find a compatible setup package for this system. Check for an app update or contact support.",
+        "RoAgent couldn't find a compatible setup package for this system. Check for an app update or contact support.",
       technicalDetail,
     };
   }
@@ -146,7 +146,7 @@ export function getStartupErrorPresentation(error: unknown): StartupErrorPresent
   return {
     message: "Setup couldn't finish",
     detail:
-      "BloxBot hit a problem while preparing its local engine. Restart setup, or check for an app update if it happens again.",
+      "RoAgent hit a problem while preparing its local engine. Restart setup, or check for an app update if it happens again.",
     technicalDetail,
   };
 }

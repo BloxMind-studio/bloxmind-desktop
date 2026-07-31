@@ -16,18 +16,18 @@ if (import.meta.env.PROD && POSTHOG_PROJECT_TOKEN) {
     api_host: POSTHOG_API_HOST,
     person_profiles: "always",
     capture_pageview: false,
-    // BloxBot intentionally contains "bot", which matches PostHog's bot heuristic.
+    // RoAgent intentionally contains "bot", which matches PostHog's bot heuristic.
     opt_out_useragent_filter: true,
   });
   posthog.register({
-    $current_url: "bloxbot://app/loading",
+    $current_url: "roagent://app/loading",
     $host: "app",
     $pathname: "/loading",
-    app: "bloxbot",
+    app: "roagent",
     analytics_schema_version: ANALYTICS_SCHEMA_VERSION,
     analytics_detail_enabled: false,
     app_platform: navigator.platform,
-    app_runtime: window.bloxbot ? "electron" : "browser",
+    app_runtime: window.roagent ? "electron" : "browser",
     app_screen: "loading",
     app_user_agent: navigator.userAgent,
   });

@@ -51,7 +51,7 @@ export interface OpenCodeService {
   readonly info: Effect.Effect<OpenCodeInfo, OpenCodeError>;
 }
 
-export class OpenCode extends Context.Tag("@bloxbot/OpenCode")<OpenCode, OpenCodeService>() {}
+export class OpenCode extends Context.Tag("@roagent/OpenCode")<OpenCode, OpenCodeService>() {}
 
 type NetworkConnection = Pick<
   Systeminformation.NetworkConnectionsData,

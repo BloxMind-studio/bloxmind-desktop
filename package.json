@@ -1,5 +1,5 @@
 {
-  "name": "bloxbot",
+  "name": "roagent",
   "private": true,
   "version": "0.8.0",
   "description": "AI-assisted Roblox development from a secure desktop app",
@@ -10,10 +10,10 @@
     "name": "OscarWoHA",
     "email": "3245494+OscarWoHA@users.noreply.github.com"
   },
-  "homepage": "https://bloxbot.ai",
+  "homepage": "https://roagent.ai",
   "repository": {
     "type": "git",
-    "url": "https://github.com/paralov/app-bloxbot-ai.git"
+    "url": "https://github.com/YUouriii/app-roagent.git"
   },
   "scripts": {
     "dev": "vite",

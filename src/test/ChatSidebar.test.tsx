@@ -2,7 +2,7 @@
  * Component tests for ChatSidebar.
  *
  * Tests session list rendering, create/delete/rename interactions,
- * and session filtering (BloxBot-only vs all).
+ * and session filtering (RoAgent-only vs all).
  */
 
 import type { Session } from "@opencode-ai/sdk/v2/client";

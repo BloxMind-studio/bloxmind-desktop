@@ -29,10 +29,10 @@ test("excludes changelog link references from the oldest release", () => {
 
 test("puts end-user installers before changelog notes", () => {
   const notes = releaseNotes(changelog, "1.2.3");
-  assert.match(notes, /BloxBot-1\.2\.3-mac\.dmg/);
-  assert.match(notes, /BloxBot-Setup-1\.2\.3\.exe/);
-  assert.match(notes, /BloxBot-1\.2\.3-linux-amd64\.deb/);
-  assert.ok(notes.indexOf("## Download BloxBot") < notes.indexOf("### Added"));
+  assert.match(notes, /RoAgent-1\.2\.3-mac\.dmg/);
+  assert.match(notes, /RoAgent-Setup-1\.2\.3\.exe/);
+  assert.match(notes, /RoAgent-1\.2\.3-linux-amd64\.deb/);
+  assert.ok(notes.indexOf("## Download RoAgent") < notes.indexOf("### Added"));
 });
 
 test("fails when the version is absent", () => {

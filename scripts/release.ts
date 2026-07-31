@@ -109,7 +109,7 @@ async function publish(releaseDirectory: string): Promise<void> {
 
   const existingRelease = inspectRelease(tag);
   const action = releaseAction(existingRelease, remoteTagExists(tag));
-  const temporaryDirectory = await mkdtemp(join(tmpdir(), "bloxbot-release-"));
+  const temporaryDirectory = await mkdtemp(join(tmpdir(), "roagent-release-"));
   const notesPath = join(temporaryDirectory, "release-notes.md");
 
   try {
@@ -123,7 +123,7 @@ async function publish(releaseDirectory: string): Promise<void> {
         "--target",
         target,
         "--title",
-        `BloxBot ${tag}`,
+        `RoAgent ${tag}`,
         "--notes-file",
         notesPath,
       ]);
@@ -136,7 +136,7 @@ async function publish(releaseDirectory: string): Promise<void> {
         "--target",
         target,
         "--title",
-        `BloxBot ${tag}`,
+        `RoAgent ${tag}`,
         "--notes-file",
         notesPath,
       ]);

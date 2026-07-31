@@ -40,7 +40,7 @@ const snapshot = {
 
 describe("Explorer data boundary", () => {
   it("keeps private Explorer sessions out of the chat list", () => {
-    expect(isVisibleSession({ metadata: { bloxbotHidden: true } } as never)).toBe(false);
+    expect(isVisibleSession({ metadata: { roagentHidden: true } } as never)).toBe(false);
     expect(isVisibleSession({ metadata: {} } as never)).toBe(true);
   });
 
@@ -118,7 +118,7 @@ describe("Explorer data boundary", () => {
     ).resolves.toEqual(structured);
 
     expect(create).toHaveBeenCalledWith(
-      expect.objectContaining({ metadata: { bloxbotHidden: true, purpose: "explorer" } }),
+      expect.objectContaining({ metadata: { roagentHidden: true, purpose: "explorer" } }),
       { throwOnError: true },
     );
     expect(prompt).toHaveBeenCalledWith(

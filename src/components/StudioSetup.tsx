@@ -64,7 +64,7 @@ function StudioSetup({ connected, checking, onCheck, onContinue }: StudioSetupPr
           </div>
           <h1 className="mt-5 font-serif text-3xl italic">Studio connected</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            BloxBot is in the driver&apos;s seat. You&apos;re ready to build.
+            RoAgent is in the driver&apos;s seat. You&apos;re ready to build.
           </p>
           <button
             type="button"
@@ -82,7 +82,7 @@ function StudioSetup({ connected, checking, onCheck, onContinue }: StudioSetupPr
     <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-6 py-5">
       <section className="animate-fade-in-up w-full max-w-2xl" aria-labelledby="studio-setup-title">
         <header className="flex items-center gap-4">
-          <BloxBotFace />
+          <RoAgentFace />
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
               One tiny setup
@@ -205,7 +205,7 @@ function StudioScreenshot({ step, image, alt }: { step: number; image: string; a
   );
 }
 
-function BloxBotFace() {
+function RoAgentFace() {
   return (
     <svg
       width="52"
@@ -213,12 +213,12 @@ function BloxBotFace() {
       viewBox="0 0 512 512"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      className="bloxbot-face shrink-0"
+      className="roagent-face shrink-0"
       aria-hidden="true"
     >
       <rect x="32" y="32" width="448" height="448" rx="112" fill="currentColor" />
       <rect
-        className="bloxbot-eye"
+        className="roagent-eye"
         x="144"
         y="176"
         width="72"
@@ -227,7 +227,7 @@ function BloxBotFace() {
         fill="var(--background)"
       />
       <rect
-        className="bloxbot-eye"
+        className="roagent-eye"
         x="296"
         y="176"
         width="72"
