@@ -1780,7 +1780,7 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
                     </svg>
                     <span>Restore #{associatedCheckpointIndex + 1}</span>
                   </button>
-                ) : checkpointCount > 0 && isLastAssistant ? (
+                ) : isLastAssistant && checkpointCount > 0 ? (
                   <button
                     type="button"
                     onClick={() => handleRestoreCheckpoint()}
