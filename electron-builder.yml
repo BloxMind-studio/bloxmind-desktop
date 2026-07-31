@@ -14,12 +14,10 @@ mac:
   icon: electron/icons/icon.icns
   identity: null
   hardenedRuntime: true
-  artifactName: BloxMind-${version}-mac-${arch}.${ext}
+  artifactName: BloxMind-${version}-mac.${ext}
   target:
-    - target: default
-      arch:
-        - x64
-        - arm64
+    - dmg
+    - zip
 win:
   icon: electron/icons/icon.ico
   artifactName: BloxMind-Setup-${version}.${ext}
