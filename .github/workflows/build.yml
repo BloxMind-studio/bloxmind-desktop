@@ -13,8 +13,11 @@ jobs:
       matrix:
         include:
           - platform: macos-latest
-            target: universal-apple-darwin
-            builder_args: --mac --universal
+            target: macos-x64
+            builder_args: --mac --x64
+          - platform: macos-latest
+            target: macos-arm64
+            builder_args: --mac --arm64
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
             builder_args: --win --x64
@@ -72,11 +75,13 @@ jobs:
       - name: Stage release files
         shell: bash
         working-directory: repo
+        env:
+          ARTIFACT_GLOB: ${{ matrix.target == 'macos-x64' && '*x64*' || matrix.target == 'macos-arm64' && '*arm64*' || '*' }}
         run: |
           mkdir staged-release
           find release -maxdepth 1 -type f \( \
             -name '*.dmg' -o -name '*.zip' -o -name '*.exe' -o -name '*.deb' -o -name 'latest*.yml' \
-          \) -exec cp {} staged-release/ \;
+          \) -name "${{ matrix.target == 'macos-x64' && '*x64*' || matrix.target == 'macos-arm64' && '*arm64*' || '*' }}" -exec cp {} staged-release/ \;
 
       - name: Upload release files
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

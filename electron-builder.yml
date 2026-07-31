@@ -1,22 +1,24 @@
 appId: ai.BloxMind.desktop
 productName: BloxMind
 directories:
-  output: release
+  output: "release"
+  buildResources: "build"
 files:
-  - dist/**
-  - dist-electron/**
-  - package.json
-  - "!node_modules/**"
+  - "dist/**/*"
+  - "package.json"
 npmRebuild: false
 asar: true
 mac:
   category: public.app-category.developer-tools
   icon: electron/icons/icon.icns
+  identity: null
   hardenedRuntime: true
-  artifactName: BloxMind-${version}-mac.${ext}
+  artifactName: BloxMind-${version}-mac-${arch}.${ext}
   target:
-    - dmg
-    - zip
+    - target: default
+      arch:
+        - x64
+        - arm64
 win:
   icon: electron/icons/icon.ico
   artifactName: BloxMind-Setup-${version}.${ext}
