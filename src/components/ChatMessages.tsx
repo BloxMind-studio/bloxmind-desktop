@@ -1647,16 +1647,6 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
       setRegenerating(false);
     }
   }, [client, activeSessionId, isBusy, msg, queryClient, selectedModel, selectedAgent, selectedVariant]);
-  console.log(msg);
-  console.log(messageIds);
-  console.log(isLastAssistant);
-  console.log(isBusy);
-  console.log(regenerating);
-  console.log(selectedModel);
-  console.log(selectedAgent);
-  console.log(selectedVariant);
-  console.log(copied);
-  
   if (!msg) return null;
 
   const isUser = msg.info.role === "user";
