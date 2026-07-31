@@ -1590,6 +1590,7 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
       const opts: Record<string, unknown> = {
         sessionID: activeSessionId,
         parts: [{ type: "text", text: lastUserText }],
+        reset: true,
       };
       if (selectedModel) {
         const [providerID, modelID] = splitModelKey(selectedModel);
