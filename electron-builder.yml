@@ -1,5 +1,5 @@
-appId: ai.roagent.desktop
-productName: RoAgent
+appId: ai.BloxMind.desktop
+productName: BloxMind
 directories:
   output: release
 files:
@@ -13,22 +13,22 @@ mac:
   category: public.app-category.developer-tools
   icon: electron/icons/icon.icns
   hardenedRuntime: true
-  artifactName: RoAgent-${version}-mac.${ext}
+  artifactName: BloxMind-${version}-mac.${ext}
   target:
     - dmg
     - zip
 win:
   icon: electron/icons/icon.ico
-  artifactName: RoAgent-Setup-${version}.${ext}
+  artifactName: BloxMind-Setup-${version}.${ext}
   target:
     - nsis
 linux:
   category: Development
   icon: electron/icons/icon.png
-  artifactName: RoAgent-${version}-linux-amd64.${ext}
+  artifactName: BloxMind-${version}-linux-amd64.${ext}
   target:
     - deb
 publish:
   provider: github
   owner: YUouriii
-  repo: app-roagent
+  repo: app-BloxMind

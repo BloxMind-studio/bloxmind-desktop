@@ -24,7 +24,7 @@ import {
   StudioTargetSelectionSchema,
 } from "@/types/studioTarget";
 
-const CONFIG_KEY = "roagent-config";
+const CONFIG_KEY = "BloxMind-config";
 const DEFAULT_CONFIG: AppConfig = DEFAULT_APP_CONFIG;
 
 export class DesktopError extends Data.TaggedError("DesktopError")<{
@@ -101,7 +101,7 @@ const browserEffects: DesktopEffects = {
     Effect.fail(new DesktopError({ message: "Project index requires the desktop app." })),
   getOpenCodeInfo: Effect.fail(
     new DesktopError({
-      message: "The desktop service is unavailable. Start RoAgent with pnpm dev.",
+      message: "The desktop service is unavailable. Start BloxMind with pnpm dev.",
     }),
   ),
   getVersion: Effect.succeed("0.5.2"),
@@ -215,8 +215,8 @@ function makeBridgeEffects(api: DesktopApi): DesktopEffects {
   };
 }
 
-export const desktopEffects: DesktopEffects = window.roagent
-  ? makeBridgeEffects(window.roagent)
+export const desktopEffects: DesktopEffects = window.BloxMind
+  ? makeBridgeEffects(window.BloxMind)
   : browserEffects;
 
 const runPromise = <A>(effect: Effect.Effect<A, DesktopError>): Promise<A> =>
@@ -228,7 +228,7 @@ export const desktop: DesktopApi = {
   compileProjectIndexProgram: (program) => runPromise(desktopEffects.compileProjectIndexProgram(program)),
   getOpenCodeInfo: () => runPromise(desktopEffects.getOpenCodeInfo),
   onOpenCodeStartupProgress: (listener: StartupProgressListener) =>
-    window.roagent?.onOpenCodeStartupProgress(listener) ?? (() => {}),
+    window.BloxMind?.onOpenCodeStartupProgress(listener) ?? (() => {}),
   getVersion: () => runPromise(desktopEffects.getVersion),
   openUrl: (url) => runPromise(desktopEffects.openUrl(url)),
   loadConfig: () => runPromise(desktopEffects.loadConfig),

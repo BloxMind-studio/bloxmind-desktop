@@ -34,7 +34,7 @@ describe("Studio target program generation", () => {
     expect(result.discovery.contract.name).toBe("studio-target-discovery");
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
-        metadata: { roagentHidden: true, purpose: "studio-target-programs" },
+        metadata: { BloxMindHidden: true, purpose: "studio-target-programs" },
       }),
       { throwOnError: true },
     );

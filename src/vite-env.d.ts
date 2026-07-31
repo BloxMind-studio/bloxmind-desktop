@@ -12,6 +12,6 @@ declare global {
   }
 
   interface Window {
-    roagent?: DesktopApi;
+    BloxMind?: DesktopApi;
   }
 }

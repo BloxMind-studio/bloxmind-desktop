@@ -233,7 +233,7 @@ describe("User journeys", () => {
 
     render(<TestApp client={client} queryClient={queryClient} />);
 
-    const consentTitle = await screen.findByText("Help improve RoAgent");
+    const consentTitle = await screen.findByText("Help improve BloxMind");
     expect(consentTitle).toBeVisible();
     expect(consentTitle.closest("[data-sonner-toast]")).toHaveClass("analytics-consent-toast");
     fireEvent.click(screen.getByRole("button", { name: "Share usage" }));
@@ -774,7 +774,7 @@ describe("User journeys", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Don't show again" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(window.localStorage.getItem("roagent:usage-limit:free-tier:hidden")).toBe("true");
+    expect(window.localStorage.getItem("BloxMind:usage-limit:free-tier:hidden")).toBe("true");
   });
 
   it("SSE session.created adds a new session to the sidebar", async () => {

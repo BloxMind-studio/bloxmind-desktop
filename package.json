@@ -1,5 +1,5 @@
 {
-  "name": "roagent",
+  "name": "BloxMind",
   "private": true,
   "version": "0.8.0",
   "description": "AI-assisted Roblox development from a secure desktop app",
@@ -10,10 +10,10 @@
     "name": "OscarWoHA",
     "email": "3245494+OscarWoHA@users.noreply.github.com"
   },
-  "homepage": "https://roagent.ai",
+  "homepage": "https://BloxMind.ai",
   "repository": {
     "type": "git",
-    "url": "https://github.com/YUouriii/app-roagent.git"
+    "url": "https://github.com/YUouriii/app-BloxMind.git"
   },
   "scripts": {
     "dev": "vite",

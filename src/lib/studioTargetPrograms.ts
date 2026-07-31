@@ -37,7 +37,7 @@ const OUTPUT_SCHEMA = {
   },
 } as const;
 
-const SYSTEM_PROMPT = `You generate two deterministic, import-free TypeScript programs for RoAgent's Studio target picker.
+const SYSTEM_PROMPT = `You generate two deterministic, import-free TypeScript programs for BloxMind's Studio target picker.
 First inspect the Studio MCP capabilities available to you. Do not assume tool names, argument names, result shapes, or target identifiers.
 Return envelopes for:
 1. discovery: contract name "studio-target-discovery", version "1", inputSchemaVersion "1", outputSchemaVersion "1". Its async function run({ input, callTool }) lists connected Roblox Studio sessions/places and the currently selected target. Return { targets: [{ key, label, detail }], selectedKey }. Keys must be opaque stable strings suitable for passing back to the selector. Labels/details are user-facing. detail may be null.
@@ -56,8 +56,8 @@ export async function generateStudioTargetPrograms(
 ): Promise<StudioTargetProgramEnvelopes> {
   const created = await client.session.create(
     {
-      title: "RoAgent Studio target setup",
-      metadata: { roagentHidden: true, purpose: "studio-target-programs" },
+      title: "BloxMind Studio target setup",
+      metadata: { BloxMindHidden: true, purpose: "studio-target-programs" },
     },
     { throwOnError: true },
   );

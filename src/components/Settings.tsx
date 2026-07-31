@@ -960,7 +960,7 @@ function AppearanceTab() {
     <div className="mx-auto w-full max-w-md px-6 py-8">
       <h4 className="font-serif text-lg italic text-foreground">Appearance</h4>
       <p className="mt-1 text-xs text-muted-foreground">
-        Choose how RoAgent looks. System follows your OS preference.
+        Choose how BloxMind looks. System follows your OS preference.
       </p>
 
       <div className="mt-6">
@@ -1029,7 +1029,7 @@ function PrivacyTab() {
     <div className="mx-auto w-full max-w-md px-6 py-8">
       <h4 className="font-serif text-lg italic text-foreground">Privacy</h4>
       <p className="mt-1 text-xs text-muted-foreground">
-        RoAgent uses PostHog's standard product analytics with persistent device and session
+        BloxMind uses PostHog's standard product analytics with persistent device and session
         identifiers plus a person profile. Feature flags and other PostHog products use the same
         profile. Detailed usage is always your choice.
       </p>
@@ -1114,7 +1114,7 @@ function AboutTab({ appVersion }: { appVersion: string | null }) {
 
   return (
     <div className="mx-auto w-full max-w-md px-6 py-8">
-      <h4 className="font-serif text-lg italic text-foreground">About RoAgent</h4>
+      <h4 className="font-serif text-lg italic text-foreground">About BloxMind</h4>
       <p className="mt-1 text-xs text-muted-foreground">
         AI-assisted Roblox development, right from your desktop.
       </p>
@@ -1128,7 +1128,7 @@ function AboutTab({ appVersion }: { appVersion: string | null }) {
           <div className="flex items-center justify-between">
             <div>
               <span className="text-sm font-medium">
-                RoAgent{appVersion && <span className="font-mono"> v{appVersion}</span>}
+                BloxMind{appVersion && <span className="font-mono"> v{appVersion}</span>}
               </span>
             </div>
             {updateStatus === "idle" && (
@@ -1271,7 +1271,7 @@ function AboutTab({ appVersion }: { appVersion: string | null }) {
           ))}
         </div>
         <p className="mt-3 px-1 text-[11px] leading-relaxed text-muted-foreground">
-          RoAgent is powered by these projects. Thank you to the teams behind them.
+          BloxMind is powered by these projects. Thank you to the teams behind them.
         </p>
       </div>
 
@@ -1282,7 +1282,7 @@ function AboutTab({ appVersion }: { appVersion: string | null }) {
         </div>
         <div className="space-y-1.5">
           <a
-            href="https://roagent.ai"
+            href="https://BloxMind.ai"
             target="_blank"
             rel="noreferrer"
             className="flex h-9 w-full items-center gap-2 rounded-lg border bg-card px-3.5 text-xs transition-colors hover:bg-accent"
@@ -1304,7 +1304,7 @@ function AboutTab({ appVersion }: { appVersion: string | null }) {
             Website
           </a>
           <a
-            href="https://github.com/YUouriii/app-roagent"
+            href="https://github.com/YUouriii/app-BloxMind"
             target="_blank"
             rel="noreferrer"
             className="flex h-9 w-full items-center gap-2 rounded-lg border bg-card px-3.5 text-xs transition-colors hover:bg-accent"

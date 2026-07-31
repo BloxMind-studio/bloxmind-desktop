@@ -190,7 +190,7 @@ export const EXPLORER_SNAPSHOT_OUTPUT_SCHEMA = {
   $defs: { node: NODE_JSON_SCHEMA },
 } as const;
 
-const INITIAL_SYSTEM_PROMPT = `You generate the private TypeScript data provider for RoAgent's Explorer panel.
+const INITIAL_SYSTEM_PROMPT = `You generate the private TypeScript data provider for BloxMind's Explorer panel.
 Discover the currently available Studio MCP tools and return an import-free deterministic read-only TypeScript program.
 The source must define async function run({ input, callTool }) and return an Explorer snapshot matching the requested output contract. Use callTool directly with the exact discovered tool names and arguments. It must never modify the place.
 Do not run a recurring model-mediated replay. The app will compile this source once and invoke it directly for every refresh.
@@ -211,8 +211,8 @@ async function withPrivateSession<T>(
 ): Promise<T> {
   const created = await client.session.create(
     {
-      title: "RoAgent Explorer sync",
-      metadata: { roagentHidden: true, purpose: "explorer" },
+      title: "BloxMind Explorer sync",
+      metadata: { BloxMindHidden: true, purpose: "explorer" },
     },
     { throwOnError: true },
   );

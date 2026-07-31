@@ -75,7 +75,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setDetailedAnalyticsCollection(detailedEnabled);
 
     if (configData.detailedAnalytics === "unset") {
-      toast("Help improve RoAgent", {
+      toast("Help improve BloxMind", {
         id: "detailed-analytics-consent",
         className: "analytics-consent-toast",
         description:

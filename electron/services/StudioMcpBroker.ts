@@ -44,14 +44,14 @@ export interface StudioMcpBrokerService {
   ) => Effect.Effect<CallToolResult, StudioMcpBrokerError>;
 }
 
-export class StudioMcpBroker extends Context.Tag("@roagent/StudioMcpBroker")<
+export class StudioMcpBroker extends Context.Tag("@BloxMind/StudioMcpBroker")<
   StudioMcpBroker,
   StudioMcpBrokerService
 >() {}
 
 class SdkStudioMcpUpstream implements StudioMcpUpstream {
   private readonly client = new Client(
-    { name: "roagent-studio-broker", version: "1.0.0" },
+    { name: "BloxMind-studio-broker", version: "1.0.0" },
     { capabilities: {} },
   );
 
@@ -161,7 +161,7 @@ export async function startStudioMcpBroker(
   >();
   function makeSession() {
     const server = new Server(
-      { name: "roagent-studio-broker", version: "1.0.0" },
+      { name: "BloxMind-studio-broker", version: "1.0.0" },
       { capabilities: { tools: { listChanged: true } } },
     );
     server.setRequestHandler(ListToolsRequestSchema, () => upstream.listTools());

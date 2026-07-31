@@ -4,14 +4,14 @@ describe("browser desktop fallback", () => {
   beforeEach(() => {
     vi.resetModules();
     window.localStorage.clear();
-    delete window.roagent;
+    delete window.BloxMind;
   });
 
   it("surfaces a useful error instead of waiting forever", async () => {
     const { desktop } = await import("@/lib/desktop");
 
     await expect(desktop.getOpenCodeInfo()).rejects.toThrow(
-      "The desktop service is unavailable. Start RoAgent with pnpm dev.",
+      "The desktop service is unavailable. Start BloxMind with pnpm dev.",
     );
   });
 
@@ -32,7 +32,7 @@ describe("browser desktop fallback", () => {
 
   it("rejects malformed persisted values through the config schema", async () => {
     window.localStorage.setItem(
-      "roagent-config",
+      "BloxMind-config",
       JSON.stringify({ lastModel: 42, hiddenModels: "not-an-array" }),
     );
     const { desktop } = await import("@/lib/desktop");

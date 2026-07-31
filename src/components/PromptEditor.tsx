@@ -429,7 +429,7 @@ export default forwardRef<PromptEditorHandle, PromptEditorProps>(function Prompt
   return (
     <LexicalComposer
       initialConfig={{
-        namespace: "RoAgentPrompt",
+        namespace: "BloxMindPrompt",
         nodes: [PromptTokenNode],
         onError: (error) => {
           throw error;

@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to RoAgent are documented in this file.
+All notable changes to BloxMind are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -57,7 +57,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
-- Added visible progress while RoAgent checks the Roblox Studio connection.
+- Added visible progress while BloxMind checks the Roblox Studio connection.
 
 ### Fixed
 
@@ -67,7 +67,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
-- Added clear startup stages plus real percentage and transfer-speed feedback while RoAgent downloads OpenCode.
+- Added clear startup stages plus real percentage and transfer-speed feedback while BloxMind downloads OpenCode.
 
 ### Changed
 
@@ -82,7 +82,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Fixed
 
 - Restored desktop analytics by injecting the PostHog EU project token during CI builds and loading PostHog's self-contained Electron renderer bundle.
-- Replaced analytics' current page URL with stable `roagent://app/<screen>` metadata.
+- Replaced analytics' current page URL with stable `BloxMind://app/<screen>` metadata.
 
 ## [0.6.2] - 2026-07-21
 
@@ -121,16 +121,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Added
 
 - Added a guided, screenshot-based Roblox Studio connection flow that detects the built-in MCP server and reconnects automatically.
-- Added detailed startup progress while RoAgent prepares its workspace, downloads OpenCode, and starts the local AI service.
+- Added detailed startup progress while BloxMind prepares its workspace, downloads OpenCode, and starts the local AI service.
 - Added Light, Dark, and System appearance settings, with System following the operating system theme automatically.
 - Added native Electron installers for Apple Silicon and Intel macOS, 64-bit Windows, and 64-bit Debian-based Linux.
 
 ### Changed
 
 - Replaced the Tauri and Rust desktop shell with Electron, using a typed, context-isolated bridge between the app and desktop runtime.
-- OpenCode is now downloaded on first launch instead of bundled with the app. RoAgent selects the newest compatible stable `1.x` release, caches it per platform, and reuses a verified cached copy when offline.
+- OpenCode is now downloaded on first launch instead of bundled with the app. BloxMind selects the newest compatible stable `1.x` release, caches it per platform, and reuses a verified cached copy when offline.
 - Reworked desktop services and startup orchestration around Effect for predictable cleanup, bounded startup failures, and clearer error reporting.
-- Closing the final window now fully quits RoAgent and its OpenCode process; on macOS, the Dock icon is hidden as the app exits.
+- Closing the final window now fully quits BloxMind and its OpenCode process; on macOS, the Dock icon is hidden as the app exits.
 - Updated the build and release pipeline for Electron packages, macOS signing and notarization, GitHub releases, and automatic updates.
 
 ### Fixed
@@ -146,15 +146,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - OpenCode downloads are restricted to official GitHub release assets and verified with SHA-256 digests before installation and on every cache reuse.
 - Electron runs with context isolation, renderer sandboxing, Node.js integration disabled, validated IPC payloads, and external navigation blocked.
 
-[Unreleased]: https://github.com/YUouriii/app-roagent/compare/v0.8.0...HEAD
-[0.8.0]: https://github.com/YUouriii/app-roagent/compare/v0.7.1...v0.8.0
-[0.7.1]: https://github.com/YUouriii/app-roagent/compare/v0.7.0...v0.7.1
-[0.7.0]: https://github.com/YUouriii/app-roagent/compare/v0.6.7...v0.7.0
-[0.6.7]: https://github.com/YUouriii/app-roagent/compare/v0.6.6...v0.6.7
-[0.6.6]: https://github.com/YUouriii/app-roagent/compare/v0.6.5...v0.6.6
-[0.6.5]: https://github.com/YUouriii/app-roagent/compare/v0.6.4...v0.6.5
-[0.6.4]: https://github.com/YUouriii/app-roagent/compare/v0.6.3...v0.6.4
-[0.6.3]: https://github.com/YUouriii/app-roagent/compare/v0.6.2...v0.6.3
-[0.6.2]: https://github.com/YUouriii/app-roagent/compare/v0.6.1...v0.6.2
-[0.6.1]: https://github.com/YUouriii/app-roagent/compare/v0.6.0...v0.6.1
-[0.6.0]: https://github.com/YUouriii/app-roagent/compare/v0.5.2...v0.6.0
+[Unreleased]: https://github.com/YUouriii/app-BloxMind/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/YUouriii/app-BloxMind/compare/v0.7.1...v0.8.0
+[0.7.1]: https://github.com/YUouriii/app-BloxMind/compare/v0.7.0...v0.7.1
+[0.7.0]: https://github.com/YUouriii/app-BloxMind/compare/v0.6.7...v0.7.0
+[0.6.7]: https://github.com/YUouriii/app-BloxMind/compare/v0.6.6...v0.6.7
+[0.6.6]: https://github.com/YUouriii/app-BloxMind/compare/v0.6.5...v0.6.6
+[0.6.5]: https://github.com/YUouriii/app-BloxMind/compare/v0.6.4...v0.6.5
+[0.6.4]: https://github.com/YUouriii/app-BloxMind/compare/v0.6.3...v0.6.4
+[0.6.3]: https://github.com/YUouriii/app-BloxMind/compare/v0.6.2...v0.6.3
+[0.6.2]: https://github.com/YUouriii/app-BloxMind/compare/v0.6.1...v0.6.2
+[0.6.1]: https://github.com/YUouriii/app-BloxMind/compare/v0.6.0...v0.6.1
+[0.6.0]: https://github.com/YUouriii/app-BloxMind/compare/v0.5.2...v0.6.0

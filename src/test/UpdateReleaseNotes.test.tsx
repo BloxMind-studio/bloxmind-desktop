@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { parseReleaseNotes, UpdateReleaseNotes } from "@/components/UpdateReleaseNotes";
 
 const releaseHtml = `
-  <h2>Download RoAgent</h2>
+  <h2>Download BloxMind</h2>
   <ul><li><a href="https://example.com/app.dmg">macOS (.dmg)</a></li></ul>
   <h3>Added</h3>
   <ul><li>Coordinate work across multiple Studio places.</li></ul>

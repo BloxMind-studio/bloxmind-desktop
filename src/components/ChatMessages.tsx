@@ -213,9 +213,9 @@ const ImageLightbox = memo(function ImageLightbox() {
   );
 });
 
-// ── Inline RoAgent thinking indicator ────────────────────────────────────
+// ── Inline BloxMind thinking indicator ────────────────────────────────────
 
-function RoAgentThinking({ label = "Thinking..." }: { label?: string }) {
+function BloxMindThinking({ label = "Thinking..." }: { label?: string }) {
   return (
     <div className="flex min-h-[21px] items-center gap-2 text-[13px] leading-relaxed text-muted-foreground">
       <svg
@@ -224,7 +224,7 @@ function RoAgentThinking({ label = "Thinking..." }: { label?: string }) {
         viewBox="0 0 512 512"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
-        className="roagent-face-think shrink-0"
+        className="BloxMind-face-think shrink-0"
         aria-hidden="true"
       >
         <rect
@@ -237,7 +237,7 @@ function RoAgentThinking({ label = "Thinking..." }: { label?: string }) {
           className="text-foreground"
         />
         <rect
-          className="roagent-eye"
+          className="BloxMind-eye"
           x="144"
           y="176"
           width="72"
@@ -246,7 +246,7 @@ function RoAgentThinking({ label = "Thinking..." }: { label?: string }) {
           fill="var(--background)"
         />
         <rect
-          className="roagent-eye"
+          className="BloxMind-eye"
           x="296"
           y="176"
           width="72"
@@ -263,9 +263,9 @@ function RoAgentThinking({ label = "Thinking..." }: { label?: string }) {
       </svg>
       <span>{label}</span>
       <span className="flex gap-0.5">
-        <span className="roagent-dot h-1 w-1 rounded-full bg-foreground/20" />
-        <span className="roagent-dot h-1 w-1 rounded-full bg-foreground/20 [animation-delay:150ms]" />
-        <span className="roagent-dot h-1 w-1 rounded-full bg-foreground/20 [animation-delay:300ms]" />
+        <span className="BloxMind-dot h-1 w-1 rounded-full bg-foreground/20" />
+        <span className="BloxMind-dot h-1 w-1 rounded-full bg-foreground/20 [animation-delay:150ms]" />
+        <span className="BloxMind-dot h-1 w-1 rounded-full bg-foreground/20 [animation-delay:300ms]" />
       </span>
     </div>
   );
@@ -1134,8 +1134,8 @@ const USAGE_LIMIT_WINDOW = 24 * 60 * 60 * 1000;
 function usageLimitStorageKeys(action: OpenCodeUsageAction) {
   const suffix = action.reason === "free_tier_limit" ? "free-tier" : "account-rate-limit";
   return {
-    seen: `roagent:usage-limit:${suffix}:seen`,
-    hidden: `roagent:usage-limit:${suffix}:hidden`,
+    seen: `BloxMind:usage-limit:${suffix}:seen`,
+    hidden: `BloxMind:usage-limit:${suffix}:hidden`,
   };
 }
 
@@ -1633,7 +1633,7 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
           <UserPartsView parts={msg.parts} />
         ) : (
           <div className="space-y-2">
-            {msg.parts.length === 0 && <RoAgentThinking />}
+            {msg.parts.length === 0 && <BloxMindThinking />}
             {msg.parts.map((part) => (
               <PartRenderer key={part.id} part={part} />
             ))}
@@ -1753,7 +1753,7 @@ const BusyThinkingIndicator = memo(function BusyThinkingIndicator({
   lastMessage: MessageWithParts | undefined;
 }) {
   if (status?.type !== "busy" || !lastMessage || lastMessage.info.role !== "user") return null;
-  return <RoAgentThinking />;
+  return <BloxMindThinking />;
 });
 
 function ChatMessages() {

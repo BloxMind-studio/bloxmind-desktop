@@ -16,7 +16,7 @@ import type { OpenCodeStartupProgress } from "../types/desktop";
 const temporaryDirectories: string[] = [];
 
 async function makeTemporaryDirectory() {
-  const directory = await mkdtemp(join(tmpdir(), "roagent-opencode-test-"));
+  const directory = await mkdtemp(join(tmpdir(), "BloxMind-opencode-test-"));
   temporaryDirectories.push(directory);
   return directory;
 }

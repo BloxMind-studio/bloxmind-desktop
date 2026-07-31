@@ -255,7 +255,7 @@ function findCompatibleRelease(fetchFn: Fetch, archiveName: string) {
           const response = await fetchFn(`${OPEN_CODE_API}?per_page=${RELEASES_PER_PAGE}&page=${page}`, {
           headers: {
             Accept: "application/vnd.github+json",
-            "User-Agent": "RoAgent",
+            "User-Agent": "BloxMind",
             "X-GitHub-Api-Version": "2022-11-28",
           },
           signal: AbortSignal.any([signal, AbortSignal.timeout(LOOKUP_TIMEOUT_MS)]),
@@ -432,7 +432,7 @@ function installRelease(
               AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
             ]);
             const response = await fetchFn(release.asset.browser_download_url, {
-              headers: { "User-Agent": "RoAgent" },
+              headers: { "User-Agent": "BloxMind" },
               signal: downloadSignal,
             });
             return {

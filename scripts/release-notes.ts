@@ -1,14 +1,14 @@
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
-const REPOSITORY_URL = "https://github.com/YUouriii/app-roagent";
+const REPOSITORY_URL = "https://github.com/YUouriii/app-BloxMind";
 
 export function releaseAssetNames(version: string): string[] {
   return [
-    `RoAgent-${version}-mac.dmg`,
-    `RoAgent-${version}-mac.zip`,
-    `RoAgent-Setup-${version}.exe`,
-    `RoAgent-${version}-linux-amd64.deb`,
+    `BloxMind-${version}-mac.dmg`,
+    `BloxMind-${version}-mac.zip`,
+    `BloxMind-Setup-${version}.exe`,
+    `BloxMind-${version}-linux-amd64.deb`,
     "latest-mac.yml",
     "latest.yml",
     "latest-linux.yml",
@@ -33,7 +33,7 @@ export function releaseNotes(changelog: string, version: string): string {
   const download = `${REPOSITORY_URL}/releases/download/${tag}`;
   const [dmg, , exe, deb] = releaseAssetNames(version);
   return [
-    "## Download RoAgent",
+    "## Download BloxMind",
     "",
     `- [macOS (.dmg)](${download}/${dmg})`,
     `- [Windows (.exe)](${download}/${exe})`,

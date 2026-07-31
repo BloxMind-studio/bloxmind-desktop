@@ -43,7 +43,7 @@ export interface GeneratedProgramRuntimeService {
   ) => Effect.Effect<GeneratedProgramResult, GeneratedProgramRuntimeError>;
 }
 
-export class GeneratedProgramRuntime extends Context.Tag("@roagent/GeneratedProgramRuntime")<
+export class GeneratedProgramRuntime extends Context.Tag("@BloxMind/GeneratedProgramRuntime")<
   GeneratedProgramRuntime,
   GeneratedProgramRuntimeService
 >() {}

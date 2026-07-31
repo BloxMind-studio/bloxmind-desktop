@@ -1,8 +1,8 @@
-# RoAgent
+# BloxMind
 
-AI-assisted Roblox development. RoAgent is a free, open-source desktop app that connects any AI model to Roblox Studio's official MCP server, so you can build games by describing what you want.
+AI-assisted Roblox development. BloxMind is a free, open-source desktop app that connects any AI model to Roblox Studio's official MCP server, so you can build games by describing what you want.
 
-**[Download the latest release](https://github.com/YUouriii/app-roagent/releases/latest)** | **[Website](https://roagent.ai)**
+**[Download the latest release](https://github.com/YUouriii/app-BloxMind/releases/latest)** | **[Website](https://BloxMind.ai)**
 
 ## What it does
 
@@ -13,7 +13,7 @@ AI-assisted Roblox development. RoAgent is a free, open-source desktop app that 
 
 ## How it works
 
-RoAgent connects two things:
+BloxMind connects two things:
 
 1. **A desktop app** (Electron, Effect, and React) where you chat with AI
 2. **An AI server** ([OpenCode](https://github.com/anomalyco/opencode)) that manages model connections, sessions, and tool use
@@ -22,29 +22,29 @@ The AI connects to Roblox Studio through its official built-in MCP server. When 
 
 ## Installation
 
-Download the installer for your platform from the [releases page](https://github.com/YUouriii/app-roagent/releases/latest):
+Download the installer for your platform from the [releases page](https://github.com/YUouriii/app-BloxMind/releases/latest):
 
 | Platform | File |
 |----------|------|
-| macOS (Apple Silicon and Intel) | `RoAgent-x.y.z-mac.dmg` |
-| Windows (64-bit) | `RoAgent-Setup-x.y.z.exe` |
-| Debian / Ubuntu (64-bit) | `RoAgent-x.y.z-linux-amd64.deb` |
+| macOS (Apple Silicon and Intel) | `BloxMind-x.y.z-mac.dmg` |
+| Windows (64-bit) | `BloxMind-Setup-x.y.z.exe` |
+| Debian / Ubuntu (64-bit) | `BloxMind-x.y.z-linux-amd64.deb` |
 
 ### Setup
 
-1. Install and open RoAgent
+1. Install and open BloxMind
 2. Open Roblox Studio and open (or create) a place
 3. In Studio, open **Assistant** settings (three-dot menu) → **MCP Servers** → enable **Studio as MCP server**
-4. Connect an AI provider in RoAgent's Settings → Providers
+4. Connect an AI provider in BloxMind's Settings → Providers
 5. Start building
 
 ### Platform notes
 
-**macOS**: The app is signed and notarized. Open the `.dmg` and drag RoAgent to Applications.
+**macOS**: The app is signed and notarized. Open the `.dmg` and drag BloxMind to Applications.
 
 **Windows**: SmartScreen may warn about an unknown publisher. Click "More info" then "Run anyway".
 
-**Linux**: Install the `.deb` with your software center or `sudo apt install ./RoAgent-*.deb`.
+**Linux**: Install the `.deb` with your software center or `sudo apt install ./BloxMind-*.deb`.
 
 ## Development
 
@@ -67,7 +67,7 @@ Production builds require `VITE_POSTHOG_PROJECT_TOKEN`. Copy `.env.example` to
 `.env.local` for local packaging. GitHub Actions injects the public project token
 from the `POSTHOG_PROJECT_TOKEN` repository variable when building release artifacts.
 
-On first launch, RoAgent downloads the newest compatible OpenCode `1.x.x`
+On first launch, BloxMind downloads the newest compatible OpenCode `1.x.x`
 release and verifies its SHA-256 digest. Later launches check for compatible
 minor and patch updates and can fall back to the newest verified cached copy
 when offline.
