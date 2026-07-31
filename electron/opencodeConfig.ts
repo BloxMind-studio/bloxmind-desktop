@@ -7,7 +7,8 @@ export function studioMcpCommand(platform: NodeJS.Platform, localAppData?: strin
 
   if (platform === "win32") {
     const dataDirectory = localAppData ?? "C:\\Users\\Default\\AppData\\Local";
-    return ["cmd.exe", "/c", join(dataDirectory, "Roblox", "mcp.bat")];
+    const cmd = process.env.COMSPEC ?? "cmd.exe";
+    return [cmd, "/c", join(dataDirectory, "Roblox", "mcp.bat")];
   }
 
   return ["studio-mcp"];

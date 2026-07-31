@@ -51,7 +51,6 @@ import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
 import { qk } from "@/lib/queryKeys";
 import { splitModelKey } from "@/lib/splitModelKey";
-import { sseDispatch } from "@/lib/sseDispatch";
 import type { MessagesCache } from "@/lib/sseDispatch";
 import type { MessageWithParts } from "@/types";
 
