@@ -2,7 +2,7 @@
 
 AI-assisted Roblox development. BloxMind is a free, open-source desktop app that connects any AI model to Roblox Studio's official MCP server, so you can build games by describing what you want.
 
-**[Download the latest release](https://github.com/YUouriii/app-BloxMind/releases/latest)** | **[Website](https://BloxMind.ai)**
+**[Download the latest release](https://github.com/YUouriii/app-BloxMind-ai/releases/latest)** | **[Website](https://BloxMind.ai)**
 
 ## What it does
 
@@ -22,11 +22,12 @@ The AI connects to Roblox Studio through its official built-in MCP server. When 
 
 ## Installation
 
-Download the installer for your platform from the [releases page](https://github.com/YUouriii/app-BloxMind/releases/latest):
+Download the installer for your platform from the [releases page](https://github.com/YUouriii/app-BloxMind-ai/releases/latest):
 
 | Platform | File |
 |----------|------|
-| macOS (Apple Silicon and Intel) | `BloxMind-x.y.z-mac.dmg` |
+| macOS Apple Silicon | `BloxMind-x.y.z-mac-arm64.dmg` |
+| macOS Intel | `BloxMind-x.y.z-mac-x64.dmg` |
 | Windows (64-bit) | `BloxMind-Setup-x.y.z.exe` |
 | Debian / Ubuntu (64-bit) | `BloxMind-x.y.z-linux-amd64.deb` |
 
@@ -40,7 +41,7 @@ Download the installer for your platform from the [releases page](https://github
 
 ### Platform notes
 
-**macOS**: The app is signed and notarized. Open the `.dmg` and drag BloxMind to Applications.
+**macOS**: The app is signed and notarized. Open the `.dmg` for your processor and drag BloxMind to Applications.
 
 **Windows**: SmartScreen may warn about an unknown publisher. Click "More info" then "Run anyway".
 
