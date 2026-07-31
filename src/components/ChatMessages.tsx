@@ -1644,33 +1644,45 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
     });
   }, [msg]);
 
-  // Checkpoint: save current conversation state to localStorage
-  const handleCheckpoint = useCallback(() => {
+  // Auto-checkpoint: save current conversation state to localStorage with sliding window of 5
+  const autoCheckpoint = useCallback(() => {
     if (!activeSessionId) return;
     const cache = queryClient.getQueryData<MessagesCache>(qk.messages(activeSessionId));
     if (!cache || cache.messageIds.length === 0) return;
-    const key = `BloxMind:checkpoint:${activeSessionId}`;
-    window.localStorage.setItem(key, JSON.stringify(cache));
+    const listKey = `BloxMind:checkpoints:${activeSessionId}`;
+    const existing = JSON.parse(window.localStorage.getItem(listKey) ?? "[]") as string[];
+    const newCheckpoint = JSON.stringify(cache);
+    // Drop oldest if we have 5 already
+    const updated = [...existing, newCheckpoint].slice(-5);
+    window.localStorage.setItem(listKey, JSON.stringify(updated));
   }, [activeSessionId, queryClient]);
 
-  // Restore: load saved checkpoint from localStorage
-  const handleRestoreCheckpoint = useCallback(() => {
-    if (!activeSessionId) return;
-    const key = `BloxMind:checkpoint:${activeSessionId}`;
-    const saved = window.localStorage.getItem(key);
-    if (!saved) return;
-    try {
-      const cache = JSON.parse(saved) as MessagesCache;
-      queryClient.setQueryData(qk.messages(activeSessionId), cache);
-    } catch {
-      // ignore invalid checkpoint data
-    }
-  }, [activeSessionId, queryClient]);
+  // Manual checkpoint (same as auto)
+  const handleCheckpoint = useCallback(() => autoCheckpoint(), [autoCheckpoint]);
 
-  // Check if a checkpoint exists for this session
-  const hasCheckpoint = activeSessionId
-    ? Boolean(window.localStorage.getItem(`BloxMind:checkpoint:${activeSessionId}`))
-    : false;
+  // Restore: load a specific checkpoint by index from localStorage
+  const handleRestoreCheckpoint = useCallback(
+    (index?: number) => {
+      if (!activeSessionId) return;
+      const listKey = `BloxMind:checkpoints:${activeSessionId}`;
+      const saved = JSON.parse(window.localStorage.getItem(listKey) ?? "[]") as string[];
+      if (saved.length === 0) return;
+      const targetIndex = index ?? saved.length - 1;
+      if (targetIndex < 0 || targetIndex >= saved.length) return;
+      try {
+        const cache = JSON.parse(saved[targetIndex]) as MessagesCache;
+        queryClient.setQueryData(qk.messages(activeSessionId), cache);
+      } catch {
+        // ignore invalid checkpoint data
+      }
+    },
+    [activeSessionId, queryClient],
+  );
+
+  // Get checkpoint count for this session
+  const checkpointCount = activeSessionId
+    ? (JSON.parse(window.localStorage.getItem(`BloxMind:checkpoints:${activeSessionId}`) ?? "[]") as string[]).length
+    : 0;
 
   if (!msg) return null;
 
@@ -1694,40 +1706,38 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
               msg.info.error.name !== "MessageAbortedError" && (
                 <ModelErrorCard error={msg.info.error} />
               )}
-            {(hasText || isLastAssistant) && (
+            {isLastAssistant && !isBusy && (
               <div className="flex items-center justify-end gap-1 pt-1">
-                {isLastAssistant && !isBusy && (
-                  <button
-                    type="button"
-                    onClick={handleCheckpoint}
-                    disabled={isBusy}
-                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground/40 transition-colors hover:text-muted-foreground hover:bg-accent/50 disabled:opacity-50"
-                    title="Save checkpoint"
+                <button
+                  type="button"
+                  onClick={handleCheckpoint}
+                  disabled={isBusy}
+                  className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground/40 transition-colors hover:text-muted-foreground hover:bg-accent/50 disabled:opacity-50"
+                  title="Save checkpoint"
+                >
+                  <svg
+                    width="11"
+                    height="11"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
                   >
-                    <svg
-                      width="11"
-                      height="11"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-                      <polyline points="17 21 17 13 7 13 7 21" />
-                      <polyline points="7 3 7 8 15 8" />
-                    </svg>
-                    <span>Checkpoint</span>
-                  </button>
-                )}
-                {isLastAssistant && !isBusy && hasCheckpoint && (
+                    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                    <polyline points="17 21 17 13 7 13 7 21" />
+                    <polyline points="7 3 7 8 15 8" />
+                  </svg>
+                  <span>Checkpoint</span>
+                </button>
+                {checkpointCount > 0 && (
                   <button
                     type="button"
-                    onClick={handleRestoreCheckpoint}
+                    onClick={() => handleRestoreCheckpoint()}
                     disabled={isBusy}
                     className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground/40 transition-colors hover:text-muted-foreground hover:bg-accent/50 disabled:opacity-50"
-                    title="Restore checkpoint"
+                    title={`Restore checkpoint (${checkpointCount} saved)`}
                   >
                     <svg
                       width="11"
@@ -1742,7 +1752,7 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
                       <polyline points="1 4 1 10 7 10" />
                       <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
                     </svg>
-                    <span>Restore</span>
+                    <span>Restore ({checkpointCount})</span>
                   </button>
                 )}
                 {hasText && (
@@ -1816,6 +1826,7 @@ function ChatMessages() {
   const lastMessage = useMessage(messageIds[messageIds.length - 1] ?? "");
   const sessionError = useSessionError();
   const { activeSessionId } = useActiveSession();
+  const queryClient = useQueryClient();
   const sessionStatus = useSessionStatus(activeSessionId);
   const isBusy = sessionStatus !== undefined && sessionStatus.type !== "idle";
   const usageAction = getOpenCodeUsageAction(sessionStatus);
@@ -1827,6 +1838,24 @@ function ChatMessages() {
   const answerQuestion = useAnswerQuestion();
   const rejectQuestion = useRejectQuestion();
   const replyPermission = useReplyPermission();
+
+  // Auto-checkpoint: save state before each new user prompt
+  const prevMessageCountRef = useRef(0);
+  useEffect(() => {
+    if (!activeSessionId || messageIds.length === 0) return;
+    // When a new message is added and the previous count was > 0, auto-checkpoint
+    if (messageIds.length > prevMessageCountRef.current && prevMessageCountRef.current > 0) {
+      const cache = queryClient.getQueryData<MessagesCache>(qk.messages(activeSessionId));
+      if (cache && cache.messageIds.length > 0) {
+        const listKey = `BloxMind:checkpoints:${activeSessionId}`;
+        const existing = JSON.parse(window.localStorage.getItem(listKey) ?? "[]") as string[];
+        const newCheckpoint = JSON.stringify(cache);
+        const updated = [...existing, newCheckpoint].slice(-5);
+        window.localStorage.setItem(listKey, JSON.stringify(updated));
+      }
+    }
+    prevMessageCountRef.current = messageIds.length;
+  }, [messageIds.length, activeSessionId, queryClient]);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
