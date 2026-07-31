@@ -5,6 +5,7 @@ directories:
   buildResources: "build"
 files:
   - "dist/**/*"
+  - "dist-electron/**/*"
   - "package.json"
 npmRebuild: false
 asar: true
