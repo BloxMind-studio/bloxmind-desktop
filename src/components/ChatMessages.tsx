@@ -1644,17 +1644,24 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
     });
   }, [msg]);
 
-  // Auto-checkpoint: save current conversation state to localStorage with sliding window of 5
+  // Auto-checkpoint: save current conversation state to localStorage with strict FIFO cap of 5
   const autoCheckpoint = useCallback(() => {
     if (!activeSessionId) return;
     const cache = queryClient.getQueryData<MessagesCache>(qk.messages(activeSessionId));
     if (!cache || cache.messageIds.length === 0) return;
     const listKey = `BloxMind:checkpoints:${activeSessionId}`;
+    const totalKey = `BloxMind:checkpoints:total:${activeSessionId}`;
     const existing = JSON.parse(window.localStorage.getItem(listKey) ?? "[]") as string[];
     const newCheckpoint = JSON.stringify(cache);
-    // Drop oldest if we have 5 already
-    const updated = [...existing, newCheckpoint].slice(-5);
+    // Strict FIFO: append new, cap at 5 (oldest purged automatically)
+    const updated = [...existing, newCheckpoint];
+    if (updated.length > 5) {
+      updated.shift(); // Remove oldest (FIFO)
+    }
     window.localStorage.setItem(listKey, JSON.stringify(updated));
+    // Track total created for offset calculation
+    const totalCreated = parseInt(window.localStorage.getItem(totalKey) ?? "0") + 1;
+    window.localStorage.setItem(totalKey, String(totalCreated));
   }, [activeSessionId, queryClient]);
 
   // Manual checkpoint (same as auto)
@@ -1868,7 +1875,7 @@ function ChatMessages() {
   const rejectQuestion = useRejectQuestion();
   const replyPermission = useReplyPermission();
 
-  // Auto-checkpoint: save state before each new user prompt
+  // Auto-checkpoint: save state before each new user prompt (strict FIFO cap of 5)
   const prevMessageCountRef = useRef(0);
   useEffect(() => {
     if (!activeSessionId || messageIds.length === 0) return;
@@ -1877,10 +1884,18 @@ function ChatMessages() {
       const cache = queryClient.getQueryData<MessagesCache>(qk.messages(activeSessionId));
       if (cache && cache.messageIds.length > 0) {
         const listKey = `BloxMind:checkpoints:${activeSessionId}`;
+        const totalKey = `BloxMind:checkpoints:total:${activeSessionId}`;
         const existing = JSON.parse(window.localStorage.getItem(listKey) ?? "[]") as string[];
         const newCheckpoint = JSON.stringify(cache);
-        const updated = [...existing, newCheckpoint].slice(-5);
+        // Strict FIFO: append new, cap at 5 (oldest purged)
+        const updated = [...existing, newCheckpoint];
+        if (updated.length > 5) {
+          updated.shift(); // Remove oldest (FIFO)
+        }
         window.localStorage.setItem(listKey, JSON.stringify(updated));
+        // Track total created for offset calculation
+        const totalCreated = parseInt(window.localStorage.getItem(totalKey) ?? "0") + 1;
+        window.localStorage.setItem(totalKey, String(totalCreated));
       }
     }
     prevMessageCountRef.current = messageIds.length;
