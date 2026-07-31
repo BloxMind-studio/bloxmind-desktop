@@ -59,8 +59,7 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           GH_TOKEN: ${{ github.token }}
-        run: |
-          pnpm exec electron-builder ${{ matrix.builder_args }} --publish never --config.appOutDir=release/${{ matrix.target }} --config.directories.output=release
+        run: pnpm exec electron-builder ${{ matrix.builder_args }} --publish never
 
       - name: Stage release files
         shell: bash
