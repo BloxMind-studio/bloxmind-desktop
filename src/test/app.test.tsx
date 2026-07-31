@@ -666,7 +666,11 @@ describe("User journeys", () => {
       );
     });
 
-    // The bash command should be visible
+    // The bash command should be visible after expanding the thinking block
+    await waitFor(() => {
+      expect(screen.getByText("Thought process")).toBeInTheDocument();
+    });
+    await fireEvent.click(screen.getByText("Thought process"));
     await waitFor(() => {
       expect(screen.getByText("List source files")).toBeInTheDocument();
       expect(screen.getByText("ls -la src/")).toBeInTheDocument();
