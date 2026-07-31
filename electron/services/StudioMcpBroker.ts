@@ -12,6 +12,7 @@ import {
   type Tool,
 } from "@modelcontextprotocol/sdk/types.js";
 import { randomUUID } from "node:crypto";
+import { access, mkdir } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { Context, Data, Effect, Layer } from "effect";
 
@@ -59,6 +60,24 @@ class SdkStudioMcpUpstream implements StudioMcpUpstream {
   static async connect(command: string[], cwd: string): Promise<SdkStudioMcpUpstream> {
     const [executable, ...args] = command;
     if (!executable) throw new Error("Studio MCP command is empty");
+
+    // Ensure the working directory exists before spawning the process.
+    await mkdir(cwd, { recursive: true });
+
+    // On Windows, verify the batch file exists before spawning cmd.exe.
+    if (process.platform === "win32" && args.length > 0) {
+      const batPath = args[args.length - 1];
+      try {
+        await access(batPath);
+      } catch {
+        throw new Error(
+          `Studio MCP batch file not found at ${batPath}. Ensure Roblox Studio is installed and the MCP server is enabled.`,
+        );
+      }
+    }
+
+    process.stderr.write(`[studio-mcp] spawning ${executable} ${args.join(" ")} in ${cwd}\n`);
+
     const transport = new StdioClientTransport({
       command: executable,
       args,
