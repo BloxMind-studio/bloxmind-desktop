@@ -1562,6 +1562,7 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
 
       // Find the last user message to re-send as the prompt.
       let lastUserText = "";
+      let lastUserId: string | undefined;
       for (let i = allIds.length - 1; i >= 0; i--) {
         const m = cache?.messagesById[allIds[i]];
         if (!m) continue;
@@ -1571,20 +1572,33 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
             .map((p: Part) => (p as Extract<Part, { type: "text" }>).text)
             .join("\n")
             .trim();
+          lastUserId = allIds[i];
           break;
         }
       }
-      if (!lastUserText) return;
+      if (!lastUserText || !lastUserId) return;
 
-      // Remove the old assistant response from local state immediately.
+      // Truncate conversation history up to and including the original user prompt.
       queryClient.setQueryData<MessagesCache>(qk.messages(activeSessionId), (prev) => {
         if (!prev) return prev;
-        const { [msg.info.id]: _removed, ...rest } = prev.messagesById;
+        const cutoffIndex = prev.messageIds.indexOf(lastUserId);
+        const truncatedIds = cutoffIndex >= 0 ? prev.messageIds.slice(0, cutoffIndex + 1) : prev.messageIds;
+        const messagesById: MessagesCache["messagesById"] = {};
+        for (const id of truncatedIds) {
+          const m = prev.messagesById[id];
+          if (m) messagesById[id] = m;
+        }
         return {
-          messageIds: prev.messageIds.filter((id) => id !== msg.info.id),
-          messagesById: rest,
+          messageIds: truncatedIds,
+          messagesById,
         };
       });
+
+      // Refresh Roblox context so regeneration uses fresh workspace/editor state.
+      const studioTargetKey = [...qk.projectIndex, ...qk.studioConnection].join(".");
+      await queryClient.invalidateQueries({ queryKey: qk.projectIndex });
+      await queryClient.invalidateQueries({ queryKey: qk.studioConnection });
+      await queryClient.invalidateQueries({ queryKey: qk.messages(activeSessionId), exact: true });
 
       // Build the prompt options matching useSendMessage.
       const opts: Record<string, unknown> = {
@@ -1606,12 +1620,6 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
         opts as Parameters<typeof client.session.promptAsync>[0],
         { throwOnError: true },
       );
-
-      // Invalidate messages to force a clean refetch from the backend,
-      // ensuring the old response stays removed and the new one appears cleanly.
-      if (activeSessionId) {
-        await queryClient.invalidateQueries({ queryKey: qk.messages(activeSessionId), exact: true });
-      }
     } catch {
       // Silently fail if regeneration fails.
     } finally {
