@@ -1589,10 +1589,34 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
         return;
       }
   
-      // 3. Switch active session to the new one
-      await selectSession(newSessionID);
+      // 3. Delete the old session from backend to fully isolate contexts
+      try {
+        await client.session.delete({ sessionID: activeSessionId }, { throwOnError: true });
+      } catch {
+        // ignore cleanup failures
+      }
   
-      // 4. Safely refresh Roblox Context (Don't let studio disconnect block regeneration)
+      // 4. Clear all old session caches to avoid stale state
+      queryClient.removeQueries({ queryKey: qk.messages(activeSessionId) });
+      queryClient.removeQueries({ queryKey: qk.todos(activeSessionId) });
+      queryClient.removeQueries({ queryKey: qk.questions(activeSessionId) });
+      queryClient.removeQueries({ queryKey: qk.permissions(activeSessionId) });
+      queryClient.removeQueries({ queryKey: qk.session(activeSessionId) });
+      queryClient.removeQueries({ queryKey: qk.statuses });
+      
+      // 5. Switch active session to the new one
+      await selectSession(newSessionID);
+      
+      // 6. Ensure new session starts with empty local message cache
+      queryClient.setQueryData(qk.messages(newSessionID), { messageIds: [], messagesById: {} });
+      queryClient.setQueryData<Record<string, SessionStatus>>(qk.statuses, (prev) => {
+        if (!prev) return { [newSessionID!]: { type: "idle" } };
+        const next = { ...prev, [newSessionID!]: { type: "idle" } };
+        delete next[activeSessionId];
+        return next;
+      });
+  
+      // 7. Safely refresh Roblox Context (Don't let studio disconnect block regeneration)
       try {
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: qk.projectIndex }),
@@ -1602,7 +1626,7 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
         console.warn("[Regenerate] Context refresh warning:", ctxErr);
       }
   
-      // 5. Build options payload for the new session
+      // 8. Build options payload for the new session
       const opts: Record<string, unknown> = {
         sessionID: newSessionID,
         parts: [{ type: "text", text: lastUserText }],
@@ -1617,7 +1641,7 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
       if (selectedAgent) opts.agent = selectedAgent;
       if (selectedVariant) opts.variant = selectedVariant;
   
-      // 6. Trigger new stream generation in fresh session
+      // 9. Trigger new stream generation in fresh session
       await client.session.promptAsync(
         opts as Parameters<typeof client.session.promptAsync>[0],
         { throwOnError: true }
