@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
-const REPOSITORY_URL = "https://github.com/YUouriii/app-BloxMind";
+const REPOSITORY_URL = "https://github.com/YUouriii/app-BloxMind-ai";
 
 export function releaseAssetNames(version: string): string[] {
   return [

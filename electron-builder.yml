@@ -31,4 +31,4 @@ linux:
 publish:
   provider: github
   owner: YUouriii
-  repo: app-BloxMind
+  repo: app-BloxMind-ai
