@@ -47,10 +47,7 @@ import { useTodos } from "@/hooks/useTodos";
 import { type ModelError, presentModelError } from "@/lib/modelError";
 import { getOpenCodeUsageAction, type OpenCodeUsageAction } from "@/lib/usageLimit";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
-import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
-import { usePreferences } from "@/providers/PreferencesProvider";
 import { qk } from "@/lib/queryKeys";
-import { splitModelKey } from "@/lib/splitModelKey";
 import type { MessagesCache } from "@/lib/sseDispatch";
 import type { MessageWithParts } from "@/types";
 
@@ -1529,11 +1526,8 @@ const UserPartsView = memo(
 const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: string }) {
   const msg = useMessage(messageId);
   const [copied, setCopied] = useState(false);
-  const [regenerating, setRegenerating] = useState(false);
-  const { activeSessionId, selectSession } = useActiveSession();
-  const { client } = useOpenCodeClient();
+  const { activeSessionId } = useActiveSession();
   const queryClient = useQueryClient();
-  const { selectedModel, selectedAgent, selectedVariant } = usePreferences();
   const sessionStatus = useSessionStatus(activeSessionId);
   const isBusy = sessionStatus?.type === "busy";
   const messageIds = useMessageIds();
@@ -1552,107 +1546,35 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
       setTimeout(() => setCopied(false), 2000);
     });
   }, [msg]);
-  const handleRegenerate = useCallback(async () => {
-    if (!client || !activeSessionId || isBusy || !msg || msg.info.role !== "assistant") return;
-    setRegenerating(true);
-  
+
+  // Checkpoint: save current conversation state to localStorage
+  const handleCheckpoint = useCallback(() => {
+    if (!activeSessionId) return;
+    const cache = queryClient.getQueryData<MessagesCache>(qk.messages(activeSessionId));
+    if (!cache || cache.messageIds.length === 0) return;
+    const key = `BloxMind:checkpoint:${activeSessionId}`;
+    window.localStorage.setItem(key, JSON.stringify(cache));
+  }, [activeSessionId, queryClient]);
+
+  // Restore: load saved checkpoint from localStorage
+  const handleRestoreCheckpoint = useCallback(() => {
+    if (!activeSessionId) return;
+    const key = `BloxMind:checkpoint:${activeSessionId}`;
+    const saved = window.localStorage.getItem(key);
+    if (!saved) return;
     try {
-      const cache = queryClient.getQueryData<MessagesCache>(qk.messages(activeSessionId));
-      const allIds = cache?.messageIds ?? [];
-  
-      // 1. Find the last user message to re-send
-      let lastUserText = "";
-      
-      for (let i = allIds.length - 1; i >= 0; i--) {
-        const m = cache?.messagesById[allIds[i]];
-        if (!m) continue;
-        if (m.info.role === "user") {
-          lastUserText = m.parts
-            .filter((p: Part) => p.type === "text")
-            .map((p: Part) => (p as Extract<Part, { type: "text" }>).text)
-            .join("\n")
-            .trim();
-          break;
-        }
-      }
-  
-      if (!lastUserText) {
-        console.warn("[Regenerate] No target user message found.");
-        return;
-      }
-  
-      // 2. Create a fresh session so the backend cannot reuse the old context
-      const created = await client.session.create({}, { throwOnError: true });
-      const newSessionID = created.data?.id;
-      if (!newSessionID) {
-        console.error("[Regenerate] Failed to create new session.");
-        return;
-      }
-  
-      // 3. Delete the old session from backend to fully isolate contexts
-      try {
-        await client.session.delete({ sessionID: activeSessionId }, { throwOnError: true });
-      } catch {
-        // ignore cleanup failures
-      }
-  
-      // 4. Clear all old session caches to avoid stale state
-      queryClient.removeQueries({ queryKey: qk.messages(activeSessionId) });
-      queryClient.removeQueries({ queryKey: qk.todos(activeSessionId) });
-      queryClient.removeQueries({ queryKey: qk.questions(activeSessionId) });
-      queryClient.removeQueries({ queryKey: qk.permissions(activeSessionId) });
-      queryClient.removeQueries({ queryKey: qk.session(activeSessionId) });
-      queryClient.removeQueries({ queryKey: qk.statuses });
-      
-      // 5. Switch active session to the new one
-      await selectSession(newSessionID);
-      
-      // 6. Ensure new session starts with empty local message cache
-      queryClient.setQueryData(qk.messages(newSessionID), { messageIds: [], messagesById: {} });
-      queryClient.setQueryData<Record<string, SessionStatus>>(qk.statuses, (prev) => {
-        if (!prev) return { [newSessionID!]: { type: "idle" } };
-        const next = { ...prev, [newSessionID!]: { type: "idle" } };
-        delete next[activeSessionId];
-        return next;
-      });
-  
-      // 7. Safely refresh Roblox Context (Don't let studio disconnect block regeneration)
-      try {
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: qk.projectIndex }),
-          queryClient.invalidateQueries({ queryKey: qk.studioConnection })
-        ]);
-      } catch (ctxErr) {
-        console.warn("[Regenerate] Context refresh warning:", ctxErr);
-      }
-  
-      // 8. Build options payload for the new session
-      const opts: Record<string, unknown> = {
-        sessionID: newSessionID,
-        parts: [{ type: "text", text: lastUserText }],
-      };
-  
-      if (selectedModel) {
-        const [providerID, modelID] = splitModelKey(selectedModel);
-        if (providerID && modelID) {
-          opts.model = { providerID, modelID };
-        }
-      }
-      if (selectedAgent) opts.agent = selectedAgent;
-      if (selectedVariant) opts.variant = selectedVariant;
-  
-      // 9. Trigger new stream generation in fresh session
-      await client.session.promptAsync(
-        opts as Parameters<typeof client.session.promptAsync>[0],
-        { throwOnError: true }
-      );
-  
-    } catch (err) {
-      console.error("[Regenerate Failed]:", err);
-    } finally {
-      setRegenerating(false);
+      const cache = JSON.parse(saved) as MessagesCache;
+      queryClient.setQueryData(qk.messages(activeSessionId), cache);
+    } catch {
+      // ignore invalid checkpoint data
     }
-  }, [client, activeSessionId, isBusy, msg, queryClient, selectedModel, selectedAgent, selectedVariant, selectSession]);
+  }, [activeSessionId, queryClient]);
+
+  // Check if a checkpoint exists for this session
+  const hasCheckpoint = activeSessionId
+    ? Boolean(window.localStorage.getItem(`BloxMind:checkpoint:${activeSessionId}`))
+    : false;
+
   if (!msg) return null;
 
   const isUser = msg.info.role === "user";
@@ -1682,47 +1604,50 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
                 {isLastAssistant && !isBusy && (
                   <button
                     type="button"
-                    onClick={handleRegenerate}
-                    disabled={regenerating || isBusy}
+                    onClick={handleCheckpoint}
+                    disabled={isBusy}
                     className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground/40 transition-colors hover:text-muted-foreground hover:bg-accent/50 disabled:opacity-50"
-                    title="Regenerate response"
+                    title="Save checkpoint"
                   >
-                    {regenerating ? (
-                      <>
-                        <svg
-                          width="11"
-                          height="11"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2.5"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          className="animate-spin"
-                        >
-                          <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
-                          <path d="M21 3v5h-5" />
-                        </svg>
-                        <span>Regenerating</span>
-                      </>
-                    ) : (
-                      <>
-                        <svg
-                          width="11"
-                          height="11"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <polyline points="23 4 23 10 17 10" />
-                          <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-                        </svg>
-                        <span>Regenerate</span>
-                      </>
-                    )}
+                    <svg
+                      width="11"
+                      height="11"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                      <polyline points="17 21 17 13 7 13 7 21" />
+                      <polyline points="7 3 7 8 15 8" />
+                    </svg>
+                    <span>Checkpoint</span>
+                  </button>
+                )}
+                {isLastAssistant && !isBusy && hasCheckpoint && (
+                  <button
+                    type="button"
+                    onClick={handleRestoreCheckpoint}
+                    disabled={isBusy}
+                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground/40 transition-colors hover:text-muted-foreground hover:bg-accent/50 disabled:opacity-50"
+                    title="Restore checkpoint"
+                  >
+                    <svg
+                      width="11"
+                      height="11"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <polyline points="1 4 1 10 7 10" />
+                      <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+                    </svg>
+                    <span>Restore</span>
                   </button>
                 )}
                 {hasText && (
