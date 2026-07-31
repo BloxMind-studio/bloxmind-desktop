@@ -1233,28 +1233,125 @@ const UsageLimitDialog = memo(function UsageLimitDialog({
   );
 });
 
-const PartRenderer = memo(function PartRenderer({ part }: { part: Part }) {
-  switch (part.type) {
-    case "text":
-      return <TextPartView part={part} />;
-    case "reasoning":
-      return <ReasoningPartView part={part} />;
-    case "tool":
-      return <ToolPartView part={part} />;
-    case "step-start":
-      return <StepPartView />;
-    case "step-finish":
-      return <StepFinishPartView part={part} />;
-    case "retry":
-      return <RetryPartView part={part} />;
-    case "compaction":
-      return <CompactionPartView />;
-    case "snapshot":
-    case "patch":
-      return null;
-    default:
-      return null;
+// ── Collapsible thinking block ──────────────────────────────────────────
+
+const ThinkingBlock = memo(function ThinkingBlock({ parts }: { parts: Part[] }) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  if (parts.length === 0) return null;
+
+  // Collect tool names for the summary
+  const toolNames = parts
+    .filter((p) => p.type === "tool")
+    .map((p) => baseToolName((p as Extract<Part, { type: "tool" }>).tool))
+    .filter((name, idx, arr) => arr.indexOf(name) === idx); // dedupe
+
+  const hasTools = toolNames.length > 0;
+  const hasReasoning = parts.some((p) => p.type === "reasoning");
+  const hasSteps = parts.some((p) => p.type === "step-start" || p.type === "step-finish");
+
+  if (!hasTools && !hasReasoning && !hasSteps) return null;
+
+  return (
+    <div className="mb-2">
+      <button
+        type="button"
+        onClick={() => setIsOpen((open) => !open)}
+        className="flex w-full items-center gap-1.5 rounded-md bg-muted/50 px-2.5 py-1.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted"
+      >
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className={`transition-transform ${isOpen ? "rotate-90" : ""}`}
+        >
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="shrink-0"
+        >
+          <circle cx="12" cy="12" r="10" />
+          <path d="M12 16v-4" />
+          <path d="M12 8h.01" />
+        </svg>
+        <span className="font-medium">
+          {hasTools ? `Thought process` : "Reasoning"}
+          {hasTools && (
+            <span className="ml-1 text-muted-foreground/60">
+              ({toolNames.join(", ")})
+            </span>
+          )}
+        </span>
+      </button>
+      {isOpen && (
+        <div className="mt-1.5 space-y-1.5 border-l-2 border-muted pl-3">
+          {parts.map((part) => {
+            switch (part.type) {
+              case "reasoning":
+                return <ReasoningPartView key={part.id} part={part as Extract<Part, { type: "reasoning" }>} />;
+              case "tool":
+                return <ToolPartView key={part.id} part={part as Extract<Part, { type: "tool" }>} />;
+              case "step-start":
+                return <StepPartView key={part.id} />;
+              case "step-finish":
+                return <StepFinishPartView key={part.id} part={part as Extract<Part, { type: "step-finish" }>} />;
+              case "retry":
+                return <RetryPartView key={part.id} part={part as Extract<Part, { type: "retry" }>} />;
+              case "compaction":
+                return <CompactionPartView key={part.id} />;
+              default:
+                return null;
+            }
+          })}
+        </div>
+      )}
+    </div>
+  );
+});
+
+// ── Smart part renderer: groups thinking parts, renders text outside ────
+
+const SmartPartsRenderer = memo(function SmartPartsRenderer({ parts }: { parts: Part[] }) {
+  // Separate parts into thinking groups and text parts
+  const thinkingParts: Part[] = [];
+  const textParts: Part[] = [];
+
+  for (const part of parts) {
+    if (part.type === "text") {
+      textParts.push(part);
+    } else if (
+      part.type === "reasoning" ||
+      part.type === "tool" ||
+      part.type === "step-start" ||
+      part.type === "step-finish" ||
+      part.type === "retry" ||
+      part.type === "compaction"
+    ) {
+      thinkingParts.push(part);
+    }
   }
+
+  return (
+    <>
+      {thinkingParts.length > 0 && <ThinkingBlock parts={thinkingParts} />}
+      {textParts.map((part) => (
+        <TextPartView key={part.id} part={part as Extract<Part, { type: "text" }>} />
+      ))}
+    </>
+  );
 });
 
 // ── Inline todo panel ───────────────────────────────────────────────────
@@ -1591,9 +1688,7 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
         ) : (
           <div className="space-y-2">
             {msg.parts.length === 0 && <BloxMindThinking />}
-            {msg.parts.map((part) => (
-              <PartRenderer key={part.id} part={part} />
-            ))}
+            <SmartPartsRenderer parts={msg.parts} />
             {"error" in msg.info &&
               msg.info.error &&
               msg.info.error.name !== "MessageAbortedError" && (
