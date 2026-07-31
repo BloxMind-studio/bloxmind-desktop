@@ -33,3 +33,4 @@ publish:
   provider: github
   owner: YUouriii
   repo: app-BloxMind-ai
+  vPrefixedTagName: true
