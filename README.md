@@ -109,4 +109,4 @@ electron/               # Electron main process and preload bridge
 
 ## License
 
-[MIT](LICENSE)
+[GNU GENERAL PUBLIC LICENSE Version 3](LICENSE)
