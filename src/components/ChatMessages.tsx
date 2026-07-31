@@ -6,6 +6,7 @@ import type {
   SessionStatus,
   Todo,
 } from "@opencode-ai/sdk/v2/client";
+import { useQueryClient } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Markdown, { type Components } from "react-markdown";
@@ -46,6 +47,12 @@ import { useTodos } from "@/hooks/useTodos";
 import { type ModelError, presentModelError } from "@/lib/modelError";
 import { getOpenCodeUsageAction, type OpenCodeUsageAction } from "@/lib/usageLimit";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
+import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
+import { usePreferences } from "@/providers/PreferencesProvider";
+import { qk } from "@/lib/queryKeys";
+import { splitModelKey } from "@/lib/splitModelKey";
+import { sseDispatch } from "@/lib/sseDispatch";
+import type { MessagesCache } from "@/lib/sseDispatch";
 import type { MessageWithParts } from "@/types";
 
 // ── Image lightbox ───────────────────────────────────────────────────────
@@ -1522,9 +1529,101 @@ const UserPartsView = memo(
 
 const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: string }) {
   const msg = useMessage(messageId);
+  const [copied, setCopied] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
+  const { activeSessionId } = useActiveSession();
+  const { client } = useOpenCodeClient();
+  const queryClient = useQueryClient();
+  const { selectedModel, selectedAgent, selectedVariant } = usePreferences();
+  const sessionStatus = useSessionStatus(activeSessionId);
+  const isBusy = sessionStatus?.type === "busy";
+  const messageIds = useMessageIds();
+
+  const handleCopy = useCallback(() => {
+    if (!msg) return;
+    // Copy only the final user-facing response text.
+    // Take the last text part to avoid including intermediate reasoning.
+    const textParts = msg.parts.filter((p) => p.type === "text");
+    const lastText = textParts[textParts.length - 1];
+    if (!lastText) return;
+    const text = (lastText as Extract<Part, { type: "text" }>).text.trim();
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }, [msg]);
+
+  const handleRegenerate = useCallback(async () => {
+    if (!client || !activeSessionId || isBusy || !msg || msg.info.role !== "assistant") return;
+    setRegenerating(true);
+    try {
+      const cache = queryClient.getQueryData<MessagesCache>(qk.messages(activeSessionId));
+      const allIds = cache?.messageIds ?? [];
+
+      // Find the last user message to re-send as the prompt.
+      let lastUserText = "";
+      for (let i = allIds.length - 1; i >= 0; i--) {
+        const m = cache?.messagesById[allIds[i]];
+        if (!m) continue;
+        if (m.info.role === "user") {
+          lastUserText = m.parts
+            .filter((p: Part) => p.type === "text")
+            .map((p: Part) => (p as Extract<Part, { type: "text" }>).text)
+            .join("\n")
+            .trim();
+          break;
+        }
+      }
+      if (!lastUserText) return;
+
+      // Remove the old assistant response from local state immediately.
+      queryClient.setQueryData<MessagesCache>(qk.messages(activeSessionId), (prev) => {
+        if (!prev) return prev;
+        const { [msg.info.id]: _removed, ...rest } = prev.messagesById;
+        return {
+          messageIds: prev.messageIds.filter((id) => id !== msg.info.id),
+          messagesById: rest,
+        };
+      });
+
+      // Build the prompt options matching useSendMessage.
+      const opts: Record<string, unknown> = {
+        sessionID: activeSessionId,
+        parts: [{ type: "text", text: lastUserText }],
+      };
+      if (selectedModel) {
+        const [providerID, modelID] = splitModelKey(selectedModel);
+        if (providerID && modelID) {
+          opts.model = { providerID, modelID };
+        }
+      }
+      if (selectedAgent) opts.agent = selectedAgent;
+      if (selectedVariant) opts.variant = selectedVariant;
+
+      // Re-send the last user prompt to trigger a new generation.
+      await client.session.promptAsync(
+        opts as Parameters<typeof client.session.promptAsync>[0],
+        { throwOnError: true },
+      );
+
+      // Invalidate messages to force a clean refetch from the backend,
+      // ensuring the old response stays removed and the new one appears cleanly.
+      if (activeSessionId) {
+        await queryClient.invalidateQueries({ queryKey: qk.messages(activeSessionId), exact: true });
+      }
+    } catch {
+      // Silently fail if regeneration fails.
+    } finally {
+      setRegenerating(false);
+    }
+  }, [client, activeSessionId, isBusy, msg, queryClient, selectedModel, selectedAgent, selectedVariant]);
+
   if (!msg) return null;
 
   const isUser = msg.info.role === "user";
+  const hasText = msg.parts.some((p) => p.type === "text");
+  const isLastAssistant = !isUser && msg.info.id === messageIds[messageIds.length - 1];
 
   return (
     <div className={`animate-fade-in-up flex ${isUser ? "justify-end" : "justify-start"}`}>
@@ -1544,6 +1643,100 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
               msg.info.error.name !== "MessageAbortedError" && (
                 <ModelErrorCard error={msg.info.error} />
               )}
+            {(hasText || isLastAssistant) && (
+              <div className="flex items-center justify-end gap-1 pt-1">
+                {isLastAssistant && !isBusy && (
+                  <button
+                    type="button"
+                    onClick={handleRegenerate}
+                    disabled={regenerating || isBusy}
+                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground/40 transition-colors hover:text-muted-foreground hover:bg-accent/50 disabled:opacity-50"
+                    title="Regenerate response"
+                  >
+                    {regenerating ? (
+                      <>
+                        <svg
+                          width="11"
+                          height="11"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="animate-spin"
+                        >
+                          <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+                          <path d="M21 3v5h-5" />
+                        </svg>
+                        <span>Regenerating</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg
+                          width="11"
+                          height="11"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <polyline points="23 4 23 10 17 10" />
+                          <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                        </svg>
+                        <span>Regenerate</span>
+                      </>
+                    )}
+                  </button>
+                )}
+                {hasText && (
+                  <button
+                    type="button"
+                    onClick={handleCopy}
+                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground/40 transition-colors hover:text-muted-foreground hover:bg-accent/50"
+                    title="Copy message"
+                  >
+                    {copied ? (
+                      <>
+                        <svg
+                          width="11"
+                          height="11"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="text-emerald-500"
+                        >
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                        <span className="text-emerald-500">Copied</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg
+                          width="11"
+                          height="11"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                        </svg>
+                        <span>Copy</span>
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
