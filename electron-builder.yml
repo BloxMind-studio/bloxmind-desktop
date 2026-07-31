@@ -14,7 +14,7 @@ mac:
   icon: electron/icons/icon.icns
   identity: null
   hardenedRuntime: true
-  artifactName: BloxMind-${version}-mac.${ext}
+  artifactName: BloxMind-${version}-mac-${arch}.${ext}
   target:
     - dmg
     - zip

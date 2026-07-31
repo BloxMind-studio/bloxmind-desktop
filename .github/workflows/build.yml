@@ -13,8 +13,8 @@ jobs:
       matrix:
         include:
           - platform: macos-latest
-            target: universal-apple-darwin
-            builder_args: --mac --universal
+            target: apple-darwin
+            builder_args: --mac --x64 --arm64
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
             builder_args: --win --x64

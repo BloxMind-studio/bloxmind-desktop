@@ -7,6 +7,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-07-31
+
+### Changed
+
+- Split the macOS release into separate Apple Silicon (arm64) and Intel (x64) installers, roughly halving each download.
+
 ## [0.8.0] - 2026-07-27
 
 ### Added
@@ -146,15 +152,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - OpenCode downloads are restricted to official GitHub release assets and verified with SHA-256 digests before installation and on every cache reuse.
 - Electron runs with context isolation, renderer sandboxing, Node.js integration disabled, validated IPC payloads, and external navigation blocked.
 
-[Unreleased]: https://github.com/YUouriii/app-BloxMind/compare/v0.8.0...HEAD
-[0.8.0]: https://github.com/YUouriii/app-BloxMind/compare/v0.7.1...v0.8.0
-[0.7.1]: https://github.com/YUouriii/app-BloxMind/compare/v0.7.0...v0.7.1
-[0.7.0]: https://github.com/YUouriii/app-BloxMind/compare/v0.6.7...v0.7.0
-[0.6.7]: https://github.com/YUouriii/app-BloxMind/compare/v0.6.6...v0.6.7
-[0.6.6]: https://github.com/YUouriii/app-BloxMind/compare/v0.6.5...v0.6.6
-[0.6.5]: https://github.com/YUouriii/app-BloxMind/compare/v0.6.4...v0.6.5
-[0.6.4]: https://github.com/YUouriii/app-BloxMind/compare/v0.6.3...v0.6.4
-[0.6.3]: https://github.com/YUouriii/app-BloxMind/compare/v0.6.2...v0.6.3
-[0.6.2]: https://github.com/YUouriii/app-BloxMind/compare/v0.6.1...v0.6.2
-[0.6.1]: https://github.com/YUouriii/app-BloxMind/compare/v0.6.0...v0.6.1
-[0.6.0]: https://github.com/YUouriii/app-BloxMind/compare/v0.5.2...v0.6.0
+[Unreleased]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.8.0...v0.8.1
+[0.8.0]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.7.1...v0.8.0
+[0.7.1]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.7.0...v0.7.1
+[0.7.0]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.6.7...v0.7.0
+[0.6.7]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.6.6...v0.6.7
+[0.6.6]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.6.5...v0.6.6
+[0.6.5]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.6.4...v0.6.5
+[0.6.4]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.6.3...v0.6.4
+[0.6.3]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.6.2...v0.6.3
+[0.6.2]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.6.1...v0.6.2
+[0.6.1]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.6.0...v0.6.1
+[0.6.0]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.5.2...v0.6.0

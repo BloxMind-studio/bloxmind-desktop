@@ -29,7 +29,8 @@ test("excludes changelog link references from the oldest release", () => {
 
 test("puts end-user installers before changelog notes", () => {
   const notes = releaseNotes(changelog, "1.2.3");
-  assert.match(notes, /BloxMind-1\.2\.3-mac\.dmg/);
+  assert.match(notes, /BloxMind-1\.2\.3-mac-arm64\.dmg/);
+  assert.match(notes, /BloxMind-1\.2\.3-mac-x64\.dmg/);
   assert.match(notes, /BloxMind-Setup-1\.2\.3\.exe/);
   assert.match(notes, /BloxMind-1\.2\.3-linux-amd64\.deb/);
   assert.ok(notes.indexOf("## Download BloxMind") < notes.indexOf("### Added"));
