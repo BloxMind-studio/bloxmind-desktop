@@ -1530,7 +1530,7 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
   const msg = useMessage(messageId);
   const [copied, setCopied] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
-  const { activeSessionId } = useActiveSession();
+  const { activeSessionId, selectSession } = useActiveSession();
   const { client } = useOpenCodeClient();
   const queryClient = useQueryClient();
   const { selectedModel, selectedAgent, selectedVariant } = usePreferences();
@@ -1562,7 +1562,6 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
   
       // 1. Find the last user message to re-send
       let lastUserText = "";
-      let lastUserId: string | undefined;
       
       for (let i = allIds.length - 1; i >= 0; i--) {
         const m = cache?.messagesById[allIds[i]];
@@ -1573,32 +1572,27 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
             .map((p: Part) => (p as Extract<Part, { type: "text" }>).text)
             .join("\n")
             .trim();
-          lastUserId = allIds[i];
           break;
         }
       }
   
-      if (!lastUserText || !lastUserId) {
+      if (!lastUserText) {
         console.warn("[Regenerate] No target user message found.");
         return;
       }
   
-      // 2. Truncate conversation history locally (Keep up to last user message)
-      queryClient.setQueryData<MessagesCache>(qk.messages(activeSessionId), (prev) => {
-        if (!prev) return prev;
-        const cutoffIndex = prev.messageIds.indexOf(lastUserId!);
-        const truncatedIds = cutoffIndex >= 0 ? prev.messageIds.slice(0, cutoffIndex + 1) : prev.messageIds;
-        
-        const messagesById: MessagesCache["messagesById"] = {};
-        for (const id of truncatedIds) {
-          if (prev.messagesById[id]) {
-            messagesById[id] = prev.messagesById[id];
-          }
-        }
-        return { messageIds: truncatedIds, messagesById };
-      });
+      // 2. Create a fresh session so the backend cannot reuse the old context
+      const created = await client.session.create({}, { throwOnError: true });
+      const newSessionID = created.data?.id;
+      if (!newSessionID) {
+        console.error("[Regenerate] Failed to create new session.");
+        return;
+      }
   
-      // 3. Safely refresh Roblox Context (Don't let studio disconnect block regeneration)
+      // 3. Switch active session to the new one
+      await selectSession(newSessionID);
+  
+      // 4. Safely refresh Roblox Context (Don't let studio disconnect block regeneration)
       try {
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: qk.projectIndex }),
@@ -1608,9 +1602,9 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
         console.warn("[Regenerate] Context refresh warning:", ctxErr);
       }
   
-      // 4. Build options payload
+      // 5. Build options payload for the new session
       const opts: Record<string, unknown> = {
-        sessionID: activeSessionId,
+        sessionID: newSessionID,
         parts: [{ type: "text", text: lastUserText }],
       };
   
@@ -1623,19 +1617,7 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
       if (selectedAgent) opts.agent = selectedAgent;
       if (selectedVariant) opts.variant = selectedVariant;
   
-      // 5. Attempt to delete the old assistant message on the server before regenerating
-      if (msg?.info?.id && typeof (client.session as any).deleteMessage === "function") {
-        try {
-          await (client.session as any).deleteMessage({
-            sessionID: activeSessionId,
-            messageID: msg.info.id,
-          });
-        } catch {
-          // ignore server-side cleanup failures
-        }
-      }
-
-      // 6. Trigger new stream generation
+      // 6. Trigger new stream generation in fresh session
       await client.session.promptAsync(
         opts as Parameters<typeof client.session.promptAsync>[0],
         { throwOnError: true }
@@ -1646,7 +1628,7 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
     } finally {
       setRegenerating(false);
     }
-  }, [client, activeSessionId, isBusy, msg, queryClient, selectedModel, selectedAgent, selectedVariant]);
+  }, [client, activeSessionId, isBusy, msg, queryClient, selectedModel, selectedAgent, selectedVariant, selectSession]);
   if (!msg) return null;
 
   const isUser = msg.info.role === "user";
