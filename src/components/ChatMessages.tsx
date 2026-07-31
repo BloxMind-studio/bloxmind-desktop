@@ -1701,7 +1701,20 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
   // Each user+assistant pair = 1 turn, so assistant at index i -> checkpoint floor(i/2)
   const messageIndex = isUser ? -1 : messageIds.indexOf(msg.info.id);
   const associatedCheckpointIndex = messageIndex >= 0 ? Math.floor(messageIndex / 2) : -1;
-  const hasAssociatedCheckpoint = associatedCheckpointIndex >= 0 && associatedCheckpointIndex < checkpointCount;
+
+  // Account for FIFO purging: the checkpoint list may have had older entries shifted out.
+  // The message's checkpoint id is "associatedCheckpointIndex + 1" in creation order.
+  // Checkpoints are stored 0-based, so the stored slot is:
+  //   slot = associatedCheckpointIndex - (totalCreated - checkpointCount)
+  //   (only if >= 0, meaning it hasn't been purged yet)
+  const totalCreated = activeSessionId
+    ? parseInt(window.localStorage.getItem(`BloxMind:checkpoints:total:${activeSessionId}`) ?? "0")
+    : 0;
+  const purgedCount = Math.max(0, totalCreated - checkpointCount);
+  const storedSlot = associatedCheckpointIndex - purgedCount;
+  const hasAssociatedCheckpoint =
+    associatedCheckpointIndex >= 0 && storedSlot >= 0 && storedSlot < checkpointCount;
+  const restoreIndex = storedSlot >= 0 ? storedSlot : undefined;
 
   return (
     <div className={`animate-fade-in-up flex ${isUser ? "justify-end" : "justify-start"}`}>
@@ -1747,7 +1760,7 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
                 {hasAssociatedCheckpoint ? (
                   <button
                     type="button"
-                    onClick={() => handleRestoreCheckpoint(associatedCheckpointIndex)}
+                    onClick={() => handleRestoreCheckpoint(restoreIndex)}
                     disabled={isBusy}
                     className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground/40 transition-colors hover:text-muted-foreground hover:bg-accent/50 disabled:opacity-50"
                     title={`Restore to checkpoint #${associatedCheckpointIndex + 1}`}
