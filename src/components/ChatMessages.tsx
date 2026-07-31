@@ -8,7 +8,19 @@ import type {
 } from "@opencode-ai/sdk/v2/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  lazy,
+  memo,
+  Suspense,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { HighlightLanguage } from "@/components/SyntaxHighlightedOutput";
@@ -36,6 +48,22 @@ const HIGHLIGHT_LANGUAGE_ALIASES: Record<string, HighlightLanguage> = {
   jsx: "tsx",
 };
 
+// Tools that render their own compact header (icon + path/command) and
+// therefore shouldn't also get the generic title line in ToolPartView.
+// Hoisted to module scope so we don't allocate a new array + call
+// Array#includes on every render of every tool part.
+const TOOLS_WITH_OWN_HEADER = new Set([
+  "bash",
+  "edit",
+  "read",
+  "write",
+  "glob",
+  "grep",
+  "task",
+  "webfetch",
+  "todowrite",
+]);
+
 import { useAnswerQuestion, useRejectQuestion } from "@/hooks/mutations/useAnswerQuestion";
 import { useReplyPermission } from "@/hooks/mutations/useReplyPermission";
 import { useMessage, useMessageIds } from "@/hooks/useMessages";
@@ -52,31 +80,47 @@ import type { MessagesCache } from "@/lib/sseDispatch";
 import type { MessageWithParts } from "@/types";
 
 // ── Image lightbox ───────────────────────────────────────────────────────
+//
+// Previously this used a module-level mutable `let setLightboxState` that any
+// component could call into via `openLightbox(...)`. That "worked" but is a
+// hidden global: it silently breaks if the tree unmounts/remounts (e.g. two
+// chat panes, StrictMode double-invoke, route transitions racing a click),
+// and there's no way to tell at a glance where the dependency comes from.
+// A context with a stable API object gives the same call-from-anywhere
+// ergonomics without the shared mutable global.
 
 interface LightboxState {
   urls: string[];
   index: number;
 }
 
-/** Module-level lightbox setter  - avoids prop drilling through memoized bubbles. */
-let setLightboxState: ((state: LightboxState | null) => void) | null = null;
-
-function openLightbox(urls: string[], index: number) {
-  setLightboxState?.({ urls, index });
+interface LightboxApi {
+  open: (urls: string[], index: number) => void;
 }
 
-const ImageLightbox = memo(function ImageLightbox() {
+const LightboxContext = createContext<LightboxApi | null>(null);
+
+function useLightbox(): LightboxApi {
+  const ctx = useContext(LightboxContext);
+  // Fallback no-op keeps callers safe if ever rendered outside the provider
+  // (e.g. isolated unit tests for UserPartsView) instead of throwing.
+  return ctx ?? { open: () => {} };
+}
+
+const LightboxProvider = memo(function LightboxProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const [state, setState] = useState<LightboxState | null>(null);
   const [slideDir, setSlideDir] = useState<"left" | "right" | null>(null);
   const [animKey, setAnimKey] = useState(0);
   const isOpen = state !== null;
 
-  useEffect(() => {
-    setLightboxState = setState;
-    return () => {
-      setLightboxState = null;
-    };
-  }, []);
+  const api = useMemo<LightboxApi>(
+    () => ({ open: (urls, index) => setState({ urls, index }) }),
+    [],
+  );
 
   useEffect(() => {
     if (!isOpen) return;
@@ -103,11 +147,6 @@ const ImageLightbox = memo(function ImageLightbox() {
     return () => window.removeEventListener("keydown", handleKey);
   }, [isOpen]);
 
-  if (!state) return null;
-
-  const { urls, index } = state;
-  const hasMultiple = urls.length > 1;
-
   function goNext(e: React.MouseEvent) {
     e.stopPropagation();
     setSlideDir("left");
@@ -130,83 +169,88 @@ const ImageLightbox = memo(function ImageLightbox() {
         : "animate-lightbox-image";
 
   return (
-    <div
-      className="animate-lightbox-backdrop fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm"
-      onClick={() => setState(null)}
-    >
-      <button
-        onClick={() => setState(null)}
-        className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
-      >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+    <LightboxContext.Provider value={api}>
+      {children}
+      {state && (
+        <div
+          className="animate-lightbox-backdrop fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm"
+          onClick={() => setState(null)}
         >
-          <line x1="18" y1="6" x2="6" y2="18" />
-          <line x1="6" y1="6" x2="18" y2="18" />
-        </svg>
-      </button>
-
-      {hasMultiple && (
-        <button
-          onClick={goPrev}
-          className="absolute left-4 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white transition-all hover:scale-110 hover:bg-white/20"
-        >
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
+          <button
+            onClick={() => setState(null)}
+            className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
           >
-            <polyline points="15 18 9 12 15 6" />
-          </svg>
-        </button>
-      )}
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
 
-      <img
-        key={animKey}
-        src={urls[index]}
-        alt={`Attachment ${index + 1} of ${urls.length}`}
-        className={`max-h-[85vh] max-w-[90vw] rounded-lg object-contain shadow-2xl ${slideClass}`}
-        onClick={(e) => e.stopPropagation()}
-      />
+          {state.urls.length > 1 && (
+            <button
+              onClick={goPrev}
+              className="absolute left-4 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white transition-all hover:scale-110 hover:bg-white/20"
+            >
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+            </button>
+          )}
 
-      {hasMultiple && (
-        <button
-          onClick={goNext}
-          className="absolute right-4 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white transition-all hover:scale-110 hover:bg-white/20"
-        >
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <polyline points="9 18 15 12 9 6" />
-          </svg>
-        </button>
-      )}
+          <img
+            key={animKey}
+            src={state.urls[state.index]}
+            alt={`Attachment ${state.index + 1} of ${state.urls.length}`}
+            className={`max-h-[85vh] max-w-[90vw] rounded-lg object-contain shadow-2xl ${slideClass}`}
+            onClick={(e) => e.stopPropagation()}
+          />
 
-      {hasMultiple && (
-        <div className="animate-fade-in-up absolute bottom-6 left-1/2 -translate-x-1/2 rounded-full bg-black/50 px-3 py-1 text-xs font-medium text-white/80 backdrop-blur-sm">
-          {index + 1} / {urls.length}
+          {state.urls.length > 1 && (
+            <button
+              onClick={goNext}
+              className="absolute right-4 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white transition-all hover:scale-110 hover:bg-white/20"
+            >
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </button>
+          )}
+
+          {state.urls.length > 1 && (
+            <div className="animate-fade-in-up absolute bottom-6 left-1/2 -translate-x-1/2 rounded-full bg-black/50 px-3 py-1 text-xs font-medium text-white/80 backdrop-blur-sm">
+              {state.index + 1} / {state.urls.length}
+            </div>
+          )}
         </div>
       )}
-    </div>
+    </LightboxContext.Provider>
   );
 });
 
@@ -268,8 +312,6 @@ function BloxMindThinking({ label = "Thinking..." }: { label?: string }) {
   );
 }
 
-// ── Constants ───────────────────────────────────────────────────────────
-
 // ── Helpers ─────────────────────────────────────────────────────────────
 
 function baseToolName(tool: string): string {
@@ -283,8 +325,70 @@ function inputField(input: Record<string, unknown>, key: string): string {
   return "";
 }
 
+// ── Shared todo row (used by both the inline tool view and the TodoPanel) ─
+
+function TodoStatusIcon({ status }: { status: Todo["status"] }) {
+  if (status === "completed") {
+    return (
+      <svg
+        width="11"
+        height="11"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="text-emerald-500"
+      >
+        <polyline points="20 6 9 17 4 12" />
+      </svg>
+    );
+  }
+  if (status === "in_progress") {
+    return (
+      <span className="inline-block h-2.5 w-2.5 animate-pulse rounded-full border-2 border-amber-400" />
+    );
+  }
+  if (status === "cancelled") {
+    return (
+      <svg
+        width="11"
+        height="11"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="text-muted-foreground"
+      >
+        <line x1="18" y1="6" x2="6" y2="18" />
+        <line x1="6" y1="6" x2="18" y2="18" />
+      </svg>
+    );
+  }
+  return <span className="inline-block h-2.5 w-2.5 rounded-full border-2 border-muted-foreground/40" />;
+}
+
+function todoTextClass(status: Todo["status"]): string {
+  if (status === "completed") return "text-muted-foreground line-through";
+  if (status === "cancelled") return "text-muted-foreground/50 line-through";
+  return "text-foreground";
+}
+
+function TodoRow({ todo, iconTopClass = "mt-px" }: { todo: Todo; iconTopClass?: string }) {
+  return (
+    <div className="flex items-start gap-1.5 text-[11px]">
+      <span className={`shrink-0 ${iconTopClass}`}>
+        <TodoStatusIcon status={todo.status} />
+      </span>
+      <span className={todoTextClass(todo.status)}>{todo.content}</span>
+    </div>
+  );
+}
+
 // ── Tool-specific renderers ─────────────────────────────────────────────
-// (These are unchanged from the original  - they don't use the store)
 
 const BashToolView = memo(function BashToolView({
   input,
@@ -605,55 +709,7 @@ const TodoWriteToolView = memo(function TodoWriteToolView({
   return (
     <div className="space-y-0.5">
       {items.map((todo, idx) => (
-        <div key={idx} className="flex items-start gap-1.5 text-[11px]">
-          <span className="mt-px shrink-0">
-            {todo.status === "completed" ? (
-              <svg
-                width="11"
-                height="11"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="text-emerald-500"
-              >
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-            ) : todo.status === "in_progress" ? (
-              <span className="inline-block h-2.5 w-2.5 animate-pulse rounded-full border-2 border-amber-400" />
-            ) : todo.status === "cancelled" ? (
-              <svg
-                width="11"
-                height="11"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="text-muted-foreground"
-              >
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            ) : (
-              <span className="inline-block h-2.5 w-2.5 rounded-full border-2 border-muted-foreground/40" />
-            )}
-          </span>
-          <span
-            className={
-              todo.status === "completed"
-                ? "text-muted-foreground line-through"
-                : todo.status === "cancelled"
-                  ? "text-muted-foreground/50 line-through"
-                  : "text-foreground"
-            }
-          >
-            {todo.content}
-          </span>
-        </div>
+        <TodoRow key={idx} todo={todo} iconTopClass="mt-px" />
       ))}
     </div>
   );
@@ -971,7 +1027,11 @@ const ToolPartView = memo(function ToolPartView({
       case "todowrite":
         return <TodoWriteToolView input={input} />;
       case "inspect_instance":
-        return <RobloxInstanceCard output={typeof output === "string" ? output : JSON.stringify(output, null, 2)} />;
+        return (
+          <RobloxInstanceCard
+            output={typeof output === "string" ? output : JSON.stringify(output, null, 2)}
+          />
+        );
       default:
         return <DefaultToolView tool={tool} input={input} output={output} status={status} />;
     }
@@ -979,20 +1039,9 @@ const ToolPartView = memo(function ToolPartView({
 
   return (
     <div className="min-w-0 max-w-full overflow-hidden">
-      {title &&
-        ![
-          "bash",
-          "edit",
-          "read",
-          "write",
-          "glob",
-          "grep",
-          "task",
-          "webfetch",
-          "todowrite",
-        ].includes(tool) && (
-          <div className="mb-1 break-words text-[11px] font-medium text-foreground">{title}</div>
-        )}
+      {title && !TOOLS_WITH_OWN_HEADER.has(tool) && (
+        <div className="mb-1 break-words text-[11px] font-medium text-foreground">{title}</div>
+      )}
       {renderToolContent()}
     </div>
   );
@@ -1240,11 +1289,10 @@ const ThinkingBlock = memo(function ThinkingBlock({ parts }: { parts: Part[] }) 
 
   if (parts.length === 0) return null;
 
-  // Collect tool names for the summary
   const toolNames = parts
     .filter((p) => p.type === "tool")
     .map((p) => baseToolName((p as Extract<Part, { type: "tool" }>).tool))
-    .filter((name, idx, arr) => arr.indexOf(name) === idx); // dedupe
+    .filter((name, idx, arr) => arr.indexOf(name) === idx);
 
   const hasTools = toolNames.length > 0;
   const hasReasoning = parts.some((p) => p.type === "reasoning");
@@ -1289,11 +1337,7 @@ const ThinkingBlock = memo(function ThinkingBlock({ parts }: { parts: Part[] }) 
         </svg>
         <span className="font-medium">
           {hasTools ? `Thought process` : "Reasoning"}
-          {hasTools && (
-            <span className="ml-1 text-muted-foreground/60">
-              ({toolNames.join(", ")})
-            </span>
-          )}
+          {hasTools && <span className="ml-1 text-muted-foreground/60">({toolNames.join(", ")})</span>}
         </span>
       </button>
       {isOpen && (
@@ -1325,7 +1369,6 @@ const ThinkingBlock = memo(function ThinkingBlock({ parts }: { parts: Part[] }) 
 // ── Smart part renderer: groups thinking parts, renders text outside ────
 
 const SmartPartsRenderer = memo(function SmartPartsRenderer({ parts }: { parts: Part[] }) {
-  // Separate parts into thinking groups and text parts
   const thinkingParts: Part[] = [];
   const textParts: Part[] = [];
 
@@ -1376,55 +1419,7 @@ const TodoPanel = memo(function TodoPanel({ todos }: { todos: Todo[] }) {
       </div>
       <div className="mt-2 space-y-1">
         {todos.map((todo, idx) => (
-          <div key={idx} className="flex items-start gap-1.5 text-[11px]">
-            <span className="mt-0.5 shrink-0">
-              {todo.status === "completed" ? (
-                <svg
-                  width="11"
-                  height="11"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="text-emerald-500"
-                >
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-              ) : todo.status === "in_progress" ? (
-                <span className="inline-block h-2.5 w-2.5 animate-pulse rounded-full border-2 border-amber-400" />
-              ) : todo.status === "cancelled" ? (
-                <svg
-                  width="11"
-                  height="11"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="text-muted-foreground"
-                >
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              ) : (
-                <span className="inline-block h-2.5 w-2.5 rounded-full border-2 border-muted-foreground/40" />
-              )}
-            </span>
-            <span
-              className={
-                todo.status === "completed"
-                  ? "text-muted-foreground line-through"
-                  : todo.status === "cancelled"
-                    ? "text-muted-foreground/50 line-through"
-                    : "text-foreground"
-              }
-            >
-              {todo.content}
-            </span>
-          </div>
+          <TodoRow key={idx} todo={todo} iconTopClass="mt-0.5" />
         ))}
       </div>
     </div>
@@ -1579,6 +1574,7 @@ const PermissionPrompt = memo(function PermissionPrompt({
 
 const UserPartsView = memo(
   function UserPartsView({ parts }: { parts: Part[] }) {
+    const { open } = useLightbox();
     const fileParts: Extract<Part, { type: "file" }>[] = [];
     const textParts: Extract<Part, { type: "text" }>[] = [];
     for (const p of parts) {
@@ -1594,7 +1590,7 @@ const UserPartsView = memo(
               <button
                 key={p.id}
                 type="button"
-                onClick={() => openLightbox(fileUrls, i)}
+                onClick={() => open(fileUrls, i)}
                 className="block cursor-zoom-in overflow-hidden rounded-lg border border-white/20 transition-opacity hover:opacity-80"
               >
                 <img
@@ -1618,16 +1614,152 @@ const UserPartsView = memo(
   (prev, next) => prev.parts === next.parts,
 );
 
+// ── Checkpoints ──────────────────────────────────────────────────────────
+//
+// Previously this logic (read/write/restore + the FIFO-cap-of-5 bookkeeping)
+// was duplicated in three places: MessageBubble's autoCheckpoint, its
+// checkpointCount calculation, and ChatMessages' auto-checkpoint effect.
+// Beyond the duplication, reading localStorage directly during render meant
+// a checkpoint saved from ChatMessages would NOT be reflected in an already
+// -rendered MessageBubble until something else happened to re-render it.
+//
+// This external store fixes both: one source of truth per session, and
+// every subscriber (any component that calls useCheckpoints for the same
+// session) re-renders when a checkpoint is added or restored anywhere.
+
+const CHECKPOINT_CAP = 5;
+
+interface CheckpointState {
+  list: string[];
+  total: number;
+}
+
+const checkpointStore = new Map<string, CheckpointState>();
+const checkpointListeners = new Map<string, Set<() => void>>();
+
+function checkpointStorageKeys(sessionId: string) {
+  return {
+    list: `BloxMind:checkpoints:${sessionId}`,
+    total: `BloxMind:checkpoints:total:${sessionId}`,
+  };
+}
+
+function loadCheckpointStateFromStorage(sessionId: string): CheckpointState {
+  const keys = checkpointStorageKeys(sessionId);
+  let list: string[] = [];
+  try {
+    const raw = window.localStorage.getItem(keys.list);
+    const parsed: unknown = raw ? JSON.parse(raw) : [];
+    if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) {
+      list = parsed;
+    }
+  } catch {
+    // Corrupted checkpoint data shouldn't crash the chat - just start fresh.
+    list = [];
+  }
+  const totalRaw = Number.parseInt(window.localStorage.getItem(keys.total) ?? "0", 10);
+  const total = Number.isFinite(totalRaw) ? Math.max(totalRaw, list.length) : list.length;
+  return { list, total };
+}
+
+function getCheckpointState(sessionId: string): CheckpointState {
+  let state = checkpointStore.get(sessionId);
+  if (!state) {
+    state = loadCheckpointStateFromStorage(sessionId);
+    checkpointStore.set(sessionId, state);
+  }
+  return state;
+}
+
+function notifyCheckpointListeners(sessionId: string) {
+  for (const cb of checkpointListeners.get(sessionId) ?? []) cb();
+}
+
+function subscribeCheckpoints(sessionId: string, callback: () => void) {
+  let set = checkpointListeners.get(sessionId);
+  if (!set) {
+    set = new Set();
+    checkpointListeners.set(sessionId, set);
+  }
+  set.add(callback);
+  return () => set.delete(callback);
+}
+
+function saveCheckpoint(sessionId: string, cache: MessagesCache) {
+  const current = getCheckpointState(sessionId);
+  const updated = [...current.list, JSON.stringify(cache)];
+  if (updated.length > CHECKPOINT_CAP) updated.shift(); // strict FIFO
+  const next: CheckpointState = { list: updated, total: current.total + 1 };
+  const keys = checkpointStorageKeys(sessionId);
+  try {
+    window.localStorage.setItem(keys.list, JSON.stringify(next.list));
+    window.localStorage.setItem(keys.total, String(next.total));
+  } catch {
+    // Quota exceeded or storage unavailable: keep the in-memory checkpoint
+    // for this session so the feature still works for the rest of the tab
+    // session, even though it won't survive a reload.
+  }
+  checkpointStore.set(sessionId, next);
+  notifyCheckpointListeners(sessionId);
+}
+
+function restoreCheckpoint(
+  sessionId: string,
+  index: number | undefined,
+): MessagesCache | null {
+  const { list } = getCheckpointState(sessionId);
+  if (list.length === 0) return null;
+  const targetIndex = index ?? list.length - 1;
+  if (targetIndex < 0 || targetIndex >= list.length) return null;
+  try {
+    return JSON.parse(list[targetIndex]) as MessagesCache;
+  } catch {
+    return null;
+  }
+}
+
+function useCheckpoints(sessionId: string | null) {
+  const queryClient = useQueryClient();
+
+  const subscribe = useCallback(
+    (callback: () => void) => (sessionId ? subscribeCheckpoints(sessionId, callback) : () => {}),
+    [sessionId],
+  );
+  const getSnapshot = useCallback(
+    () => (sessionId ? getCheckpointState(sessionId) : { list: [], total: 0 }),
+    [sessionId],
+  );
+  const state = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+
+  const save = useCallback(() => {
+    if (!sessionId) return;
+    const cache = queryClient.getQueryData<MessagesCache>(qk.messages(sessionId));
+    if (!cache || cache.messageIds.length === 0) return;
+    saveCheckpoint(sessionId, cache);
+  }, [sessionId, queryClient]);
+
+  const restore = useCallback(
+    (index?: number) => {
+      if (!sessionId) return;
+      const cache = restoreCheckpoint(sessionId, index);
+      if (cache) queryClient.setQueryData(qk.messages(sessionId), cache);
+    },
+    [sessionId, queryClient],
+  );
+
+  return { count: state.list.length, total: state.total, save, restore };
+}
+
 // ── Message bubble ─────────────────────────────────────────────────────
 
 const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: string }) {
   const msg = useMessage(messageId);
   const [copied, setCopied] = useState(false);
   const { activeSessionId } = useActiveSession();
-  const queryClient = useQueryClient();
   const sessionStatus = useSessionStatus(activeSessionId);
   const isBusy = sessionStatus?.type === "busy";
   const messageIds = useMessageIds();
+  const checkpoints = useCheckpoints(activeSessionId);
 
   const handleCopy = useCallback(() => {
     if (!msg) return;
@@ -1644,76 +1776,28 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
     });
   }, [msg]);
 
-  // Auto-checkpoint: save current conversation state to localStorage with strict FIFO cap of 5
-  const autoCheckpoint = useCallback(() => {
-    if (!activeSessionId) return;
-    const cache = queryClient.getQueryData<MessagesCache>(qk.messages(activeSessionId));
-    if (!cache || cache.messageIds.length === 0) return;
-    const listKey = `BloxMind:checkpoints:${activeSessionId}`;
-    const totalKey = `BloxMind:checkpoints:total:${activeSessionId}`;
-    const existing = JSON.parse(window.localStorage.getItem(listKey) ?? "[]") as string[];
-    const newCheckpoint = JSON.stringify(cache);
-    // Strict FIFO: append new, cap at 5 (oldest purged automatically)
-    const updated = [...existing, newCheckpoint];
-    if (updated.length > 5) {
-      updated.shift(); // Remove oldest (FIFO)
-    }
-    window.localStorage.setItem(listKey, JSON.stringify(updated));
-    // Track total created for offset calculation
-    const totalCreated = parseInt(window.localStorage.getItem(totalKey) ?? "0") + 1;
-    window.localStorage.setItem(totalKey, String(totalCreated));
-  }, [activeSessionId, queryClient]);
-
-  // Manual checkpoint (same as auto)
-  const handleCheckpoint = useCallback(() => autoCheckpoint(), [autoCheckpoint]);
-
-  // Restore: load a specific checkpoint by index from localStorage
-  const handleRestoreCheckpoint = useCallback(
-    (index?: number) => {
-      if (!activeSessionId) return;
-      const listKey = `BloxMind:checkpoints:${activeSessionId}`;
-      const saved = JSON.parse(window.localStorage.getItem(listKey) ?? "[]") as string[];
-      if (saved.length === 0) return;
-      const targetIndex = index ?? saved.length - 1;
-      if (targetIndex < 0 || targetIndex >= saved.length) return;
-      try {
-        const cache = JSON.parse(saved[targetIndex]) as MessagesCache;
-        queryClient.setQueryData(qk.messages(activeSessionId), cache);
-      } catch {
-        // ignore invalid checkpoint data
-      }
-    },
-    [activeSessionId, queryClient],
-  );
-
-  // Get checkpoint count for this session
-  const checkpointCount = activeSessionId
-    ? (JSON.parse(window.localStorage.getItem(`BloxMind:checkpoints:${activeSessionId}`) ?? "[]") as string[]).length
-    : 0;
-
   if (!msg) return null;
 
   const isUser = msg.info.role === "user";
   const hasText = msg.parts.some((p) => p.type === "text");
   const isLastAssistant = !isUser && msg.info.id === messageIds[messageIds.length - 1];
 
-  // Calculate which checkpoint index corresponds to this assistant message
-  // Each user+assistant pair = 1 turn, so assistant at index i -> checkpoint floor(i/2)
+  // Calculate which checkpoint index corresponds to this assistant message.
+  // Each user+assistant pair = 1 turn, so assistant at index i -> checkpoint floor(i/2).
+  // NOTE: this assumes strictly alternating user/assistant messages. If a
+  // turn can ever produce more than one assistant message (e.g. a retried
+  // or aborted send), this mapping will drift - flagging here since it's
+  // not fixable without knowing how those messages are actually modeled.
   const messageIndex = isUser ? -1 : messageIds.indexOf(msg.info.id);
   const associatedCheckpointIndex = messageIndex >= 0 ? Math.floor(messageIndex / 2) : -1;
 
-  // Account for FIFO purging: the checkpoint list may have had older entries shifted out.
-  // The message's checkpoint id is "associatedCheckpointIndex + 1" in creation order.
-  // Checkpoints are stored 0-based, so the stored slot is:
-  //   slot = associatedCheckpointIndex - (totalCreated - checkpointCount)
-  //   (only if >= 0, meaning it hasn't been purged yet)
-  const totalCreated = activeSessionId
-    ? parseInt(window.localStorage.getItem(`BloxMind:checkpoints:total:${activeSessionId}`) ?? "0")
-    : 0;
-  const purgedCount = Math.max(0, totalCreated - checkpointCount);
+  // Account for FIFO purging: checkpoints are stored 0-based in a capped
+  // ring buffer, so the message's logical checkpoint number needs to be
+  // translated into the current storage slot.
+  const purgedCount = Math.max(0, checkpoints.total - checkpoints.count);
   const storedSlot = associatedCheckpointIndex - purgedCount;
   const hasAssociatedCheckpoint =
-    associatedCheckpointIndex >= 0 && storedSlot >= 0 && storedSlot < checkpointCount;
+    associatedCheckpointIndex >= 0 && storedSlot >= 0 && storedSlot < checkpoints.count;
   const restoreIndex = storedSlot >= 0 ? storedSlot : undefined;
 
   return (
@@ -1736,7 +1820,7 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
               <div className="flex items-center justify-end gap-1 pt-1">
                 <button
                   type="button"
-                  onClick={handleCheckpoint}
+                  onClick={checkpoints.save}
                   disabled={isBusy}
                   className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground/40 transition-colors hover:text-muted-foreground hover:bg-accent/50 disabled:opacity-50"
                   title="Save checkpoint"
@@ -1760,7 +1844,7 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
                 {hasAssociatedCheckpoint ? (
                   <button
                     type="button"
-                    onClick={() => handleRestoreCheckpoint(restoreIndex)}
+                    onClick={() => checkpoints.restore(restoreIndex)}
                     disabled={isBusy}
                     className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground/40 transition-colors hover:text-muted-foreground hover:bg-accent/50 disabled:opacity-50"
                     title={`Restore to checkpoint #${associatedCheckpointIndex + 1}`}
@@ -1780,13 +1864,13 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
                     </svg>
                     <span>Restore #{associatedCheckpointIndex + 1}</span>
                   </button>
-                ) : isLastAssistant && checkpointCount > 0 ? (
+                ) : isLastAssistant && checkpoints.count > 0 ? (
                   <button
                     type="button"
-                    onClick={() => handleRestoreCheckpoint()}
+                    onClick={() => checkpoints.restore()}
                     disabled={isBusy}
                     className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground/40 transition-colors hover:text-muted-foreground hover:bg-accent/50 disabled:opacity-50"
-                    title={`Restore latest checkpoint (${checkpointCount} saved)`}
+                    title={`Restore latest checkpoint (${checkpoints.count} saved)`}
                   >
                     <svg
                       width="11"
@@ -1801,7 +1885,7 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
                       <polyline points="1 4 1 10 7 10" />
                       <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
                     </svg>
-                    <span>Restore ({checkpointCount})</span>
+                    <span>Restore ({checkpoints.count})</span>
                   </button>
                 ) : null}
                 {hasText && (
@@ -1875,7 +1959,6 @@ function ChatMessages() {
   const lastMessage = useMessage(messageIds[messageIds.length - 1] ?? "");
   const sessionError = useSessionError();
   const { activeSessionId } = useActiveSession();
-  const queryClient = useQueryClient();
   const sessionStatus = useSessionStatus(activeSessionId);
   const isBusy = sessionStatus !== undefined && sessionStatus.type !== "idle";
   const usageAction = getOpenCodeUsageAction(sessionStatus);
@@ -1887,32 +1970,18 @@ function ChatMessages() {
   const answerQuestion = useAnswerQuestion();
   const rejectQuestion = useRejectQuestion();
   const replyPermission = useReplyPermission();
+  const checkpoints = useCheckpoints(activeSessionId);
 
-  // Auto-checkpoint: save state before each new user prompt (strict FIFO cap of 5)
+  // Auto-checkpoint: save state right before each new message is appended
+  // (strict FIFO cap of 5, enforced inside useCheckpoints/saveCheckpoint).
   const prevMessageCountRef = useRef(0);
   useEffect(() => {
-    if (!activeSessionId || messageIds.length === 0) return;
-    // When a new message is added and the previous count was > 0, auto-checkpoint
+    if (messageIds.length === 0) return;
     if (messageIds.length > prevMessageCountRef.current && prevMessageCountRef.current > 0) {
-      const cache = queryClient.getQueryData<MessagesCache>(qk.messages(activeSessionId));
-      if (cache && cache.messageIds.length > 0) {
-        const listKey = `BloxMind:checkpoints:${activeSessionId}`;
-        const totalKey = `BloxMind:checkpoints:total:${activeSessionId}`;
-        const existing = JSON.parse(window.localStorage.getItem(listKey) ?? "[]") as string[];
-        const newCheckpoint = JSON.stringify(cache);
-        // Strict FIFO: append new, cap at 5 (oldest purged)
-        const updated = [...existing, newCheckpoint];
-        if (updated.length > 5) {
-          updated.shift(); // Remove oldest (FIFO)
-        }
-        window.localStorage.setItem(listKey, JSON.stringify(updated));
-        // Track total created for offset calculation
-        const totalCreated = parseInt(window.localStorage.getItem(totalKey) ?? "0") + 1;
-        window.localStorage.setItem(totalKey, String(totalCreated));
-      }
+      checkpoints.save();
     }
     prevMessageCountRef.current = messageIds.length;
-  }, [messageIds.length, activeSessionId, queryClient]);
+  }, [messageIds.length, checkpoints]);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1982,77 +2051,79 @@ function ChatMessages() {
 
   if (messageIds.length === 0 && !isBusy && !sessionError) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center px-6">
-        <ImageLightbox />
-        <div className="animate-fade-in-up text-center">
-          <h2 className="font-serif text-2xl italic text-foreground">
-            What would you like to build?
-          </h2>
-          <p className="mt-2 text-xs text-muted-foreground">
-            Ask me to create scripts, design game mechanics, or modify your Roblox Studio project.
-          </p>
+      <LightboxProvider>
+        <div className="flex flex-1 flex-col items-center justify-center px-6">
+          <div className="animate-fade-in-up text-center">
+            <h2 className="font-serif text-2xl italic text-foreground">
+              What would you like to build?
+            </h2>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Ask me to create scripts, design game mechanics, or modify your Roblox Studio project.
+            </p>
+          </div>
         </div>
-      </div>
+      </LightboxProvider>
     );
   }
 
   const virtualItems = virtualizer.getVirtualItems();
 
   return (
-    <div
-      ref={containerRef}
-      data-chat-scroll
-      onScroll={handleScroll}
-      className="app-scrollbar flex-1 overflow-y-auto [overflow-anchor:none]"
-    >
-      <ImageLightbox />
-      <div className="mx-auto max-w-2xl px-4 py-4">
-        <div
-          style={{ height: `${virtualizer.getTotalSize()}px`, position: "relative", width: "100%" }}
-        >
-          {virtualItems.map((virtualItem) => (
-            <div
-              key={messageIds[virtualItem.index]}
-              data-index={virtualItem.index}
-              ref={virtualizer.measureElement}
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                width: "100%",
-                transform: `translateY(${virtualItem.start}px)`,
-              }}
-            >
-              <div className="pb-4">
-                <MessageBubble messageId={messageIds[virtualItem.index]} />
+    <LightboxProvider>
+      <div
+        ref={containerRef}
+        data-chat-scroll
+        onScroll={handleScroll}
+        className="app-scrollbar flex-1 overflow-y-auto [overflow-anchor:none]"
+      >
+        <div className="mx-auto max-w-2xl px-4 py-4">
+          <div
+            style={{ height: `${virtualizer.getTotalSize()}px`, position: "relative", width: "100%" }}
+          >
+            {virtualItems.map((virtualItem) => (
+              <div
+                key={messageIds[virtualItem.index]}
+                data-index={virtualItem.index}
+                ref={virtualizer.measureElement}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  transform: `translateY(${virtualItem.start}px)`,
+                }}
+              >
+                <div className="pb-4">
+                  <MessageBubble messageId={messageIds[virtualItem.index]} />
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
+          <div className="space-y-4">
+            {todos.length > 0 && <TodoPanel todos={todos} />}
+            {activeQuestion && (
+              <QuestionPrompt
+                question={activeQuestion}
+                onAnswer={handleAnswer}
+                onReject={handleReject}
+              />
+            )}
+            {activePermission && (
+              <PermissionPrompt permission={activePermission} onReply={handleReplyPermission} />
+            )}
+            <BusyThinkingIndicator status={sessionStatus} lastMessage={lastMessage} />
+            {usageAction && (
+              <UsageLimitDialog
+                key={`${usageAction.provider}:${usageAction.reason}`}
+                action={usageAction}
+              />
+            )}
+            {sessionError && !lastMessageHasError && <ModelErrorCard error={sessionError} />}
+          </div>
+          <div ref={bottomRef} />
         </div>
-        <div className="space-y-4">
-          {todos.length > 0 && <TodoPanel todos={todos} />}
-          {activeQuestion && (
-            <QuestionPrompt
-              question={activeQuestion}
-              onAnswer={handleAnswer}
-              onReject={handleReject}
-            />
-          )}
-          {activePermission && (
-            <PermissionPrompt permission={activePermission} onReply={handleReplyPermission} />
-          )}
-          <BusyThinkingIndicator status={sessionStatus} lastMessage={lastMessage} />
-          {usageAction && (
-            <UsageLimitDialog
-              key={`${usageAction.provider}:${usageAction.reason}`}
-              action={usageAction}
-            />
-          )}
-          {sessionError && !lastMessageHasError && <ModelErrorCard error={sessionError} />}
-        </div>
-        <div ref={bottomRef} />
       </div>
-    </div>
+    </LightboxProvider>
   );
 }
 
