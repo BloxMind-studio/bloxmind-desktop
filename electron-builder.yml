@@ -11,7 +11,7 @@ npmRebuild: false
 asar: true
 mac:
   category: public.app-category.developer-tools
-  icon: electron/icons/icon.icns
+  icon: electron/icons/bloxmind.icns
   identity: null
   hardenedRuntime: true
   artifactName: BloxMind-${version}-mac-${arch}.${ext}
@@ -19,13 +19,13 @@ mac:
     - dmg
     - zip
 win:
-  icon: electron/icons/icon.ico
+  icon: electron/icons/bloxmind.ico
   artifactName: BloxMind-Setup-${version}.${ext}
   target:
     - nsis
 linux:
   category: Development
-  icon: electron/icons/icon.png
+  icon: electron/icons/bloxmind.png
   artifactName: BloxMind-${version}-linux-amd64.${ext}
   target:
     - deb
