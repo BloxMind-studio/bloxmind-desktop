@@ -13,6 +13,7 @@ concurrency:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Require the default branch
         if: ${{ github.ref != 'refs/heads/main' }}
@@ -39,6 +40,7 @@ jobs:
   publish:
     needs: [validate, build]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
     env:
@@ -54,4 +56,7 @@ jobs:
           merge-multiple: true
 
       - name: Verify and atomically publish the release
-        run: node scripts/release.ts publish release
+        run: |
+          echo "Starting release publication..."
+          node scripts/release.ts publish release
+          echo "Release published successfully"

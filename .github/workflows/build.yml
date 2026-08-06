@@ -8,6 +8,7 @@ permissions:
 
 jobs:
   build:
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -43,19 +44,31 @@ jobs:
 
       - name: Install dependencies
         working-directory: repo
-        run: pnpm install --frozen-lockfile
+        run: |
+          echo "Starting dependency installation..."
+          pnpm install --frozen-lockfile
+          echo "Dependencies installed successfully"
 
       - name: Run tests
         working-directory: repo
-        run: pnpm test
+        run: |
+          echo "Starting test suite..."
+          pnpm test
+          echo "Tests completed successfully"
 
       - name: Type-check
         working-directory: repo
-        run: pnpm typecheck
+        run: |
+          echo "Starting type check..."
+          pnpm typecheck
+          echo "Type check completed successfully"
 
       - name: Build application
         working-directory: repo
-        run: pnpm build
+        run: |
+          echo "Starting application build..."
+          pnpm build
+          echo "Build completed successfully"
 
       - name: Package application
         shell: bash
@@ -67,7 +80,10 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           GH_TOKEN: ${{ github.token }}
-        run: pnpm exec electron-builder ${{ matrix.builder_args }} --publish never
+        run: |
+          echo "Starting electron-builder packaging for ${{ matrix.target }}..."
+          pnpm exec electron-builder ${{ matrix.builder_args }} --publish never
+          echo "Packaging completed successfully"
 
       - name: Stage release files
         shell: bash
