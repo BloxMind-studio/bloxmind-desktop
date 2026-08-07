@@ -16,6 +16,12 @@ export function useSessionStatuses() {
       return res.data ?? {};
     },
     enabled: ready && !!client,
+    // Watchdog: SSE normally keeps status real-time, but if an event is
+    // missed/dropped (e.g. during a heavy operation or a stall) the session
+    // would otherwise stay "busy" forever and the UI freeze on "Thinking…".
+    // Polling reconciles the status with the server so it recovers.
+    refetchInterval: 5_000,
+    staleTime: 2_500,
   });
 }
 
@@ -35,6 +41,10 @@ export function useSessionStatus(sessionId: string | null): SessionStatus | unde
       return res.data ?? {};
     },
     enabled: ready && !!client,
+    // Watchdog poll (see useSessionStatuses for rationale — both queries share
+    // the same cache key, so a single active interval keeps the cache fresh).
+    refetchInterval: 5_000,
+    staleTime: 2_500,
     select: useCallback(
       (statuses: Record<string, SessionStatus>) => (sessionId ? statuses[sessionId] : undefined),
       [sessionId],

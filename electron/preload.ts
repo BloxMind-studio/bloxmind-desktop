@@ -32,6 +32,46 @@ const api: DesktopApi = {
     ipcRenderer.invoke(channels.discoverStudioTargets, programs),
   selectStudioTarget: (programs, targetKey) =>
     ipcRenderer.invoke(channels.selectStudioTarget, programs, targetKey),
+  // ── Checkpoint system ──────────────────────────────────────────────
+  checkpointCapture: (context) => ipcRenderer.invoke(channels.checkpointCapture, context),
+  checkpointRestore: (input) => ipcRenderer.invoke(channels.checkpointRestore, input),
+  checkpointPreview: (checkpointId, sessionId) =>
+    ipcRenderer.invoke(channels.checkpointPreview, checkpointId, sessionId),
+  checkpointList: (sessionId) => ipcRenderer.invoke(channels.checkpointList, sessionId),
+  checkpointValidate: () => ipcRenderer.invoke(channels.checkpointValidate),
+  // ── Rojo live-sync ────────────────────────────────────────────────
+  rojoStart: (workspace) => ipcRenderer.invoke(channels.rojoStart, workspace),
+  rojoStop: () => ipcRenderer.invoke(channels.rojoStop),
+  rojoStatus: () => ipcRenderer.invoke(channels.rojoStatus),
+  rojoToggle: (workspace) => ipcRenderer.invoke(channels.rojoToggle, workspace),
+  rojoLogs: () => ipcRenderer.invoke(channels.rojoLogs),
+  onRojoLog: (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, entry: { timestamp: number; stream: string; message: string }) =>
+      listener(entry as { timestamp: number; stream: "stdout" | "stderr"; message: string });
+    ipcRenderer.on(channels.onRojoLog, handler);
+    return () => ipcRenderer.removeListener(channels.onRojoLog, handler);
+  },
+  rojoSetup: async (onProgress) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      progress: { phase: string; percent?: number; message: string },
+    ) =>
+      onProgress(
+        progress as {
+          phase: "release-lookup" | "binary-download" | "binary-extract" | "plugin-download" | "plugin-install" | "done";
+          percent?: number;
+          message: string;
+        },
+      );
+    ipcRenderer.on(channels.rojoSetupProgress, handler);
+    try {
+      return await ipcRenderer.invoke(channels.rojoSetup);
+    } finally {
+      ipcRenderer.removeListener(channels.rojoSetupProgress, handler);
+    }
+  },
+  rojoBinaryPath: () => ipcRenderer.invoke(channels.rojoBinaryPath),
+  rojoCheckInstalled: () => ipcRenderer.invoke(channels.rojoCheckInstalled),
 };
 
 contextBridge.exposeInMainWorld("BloxMind", api);

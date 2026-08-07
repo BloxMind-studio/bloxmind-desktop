@@ -216,31 +216,33 @@ function BloxMindFace() {
       className="BloxMind-face shrink-0"
       aria-hidden="true"
     >
-      <rect x="32" y="32" width="448" height="448" rx="112" fill="currentColor" />
-      <rect
-        className="BloxMind-eye"
-        x="144"
-        y="176"
-        width="72"
-        height="72"
-        rx="24"
-        fill="var(--background)"
-      />
-      <rect
-        className="BloxMind-eye"
-        x="296"
-        y="176"
-        width="72"
-        height="72"
-        rx="24"
-        fill="var(--background)"
-      />
-      <path
-        d="M168 328C168 328 204.8 376 256 376C307.2 376 344 328 344 328"
-        stroke="var(--background)"
-        strokeWidth="32"
-        strokeLinecap="round"
-      />
+      <g transform="rotate(-15 256 256)">
+        <rect x="64" y="64" width="384" height="384" rx="64" fill="currentColor" />
+        <rect
+          className="BloxMind-eye"
+          x="148"
+          y="140"
+          width="56"
+          height="56"
+          rx="18"
+          fill="var(--background)"
+        />
+        <rect
+          className="BloxMind-eye"
+          x="308"
+          y="140"
+          width="56"
+          height="56"
+          rx="18"
+          fill="var(--background)"
+        />
+        <path
+          d="M172 296C172 296 204 336 256 336C308 336 340 296 340 296"
+          stroke="var(--background)"
+          strokeWidth="26"
+          strokeLinecap="round"
+        />
+      </g>
     </svg>
   );
 }

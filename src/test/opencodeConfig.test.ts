@@ -16,12 +16,14 @@ describe("OpenCode configuration", () => {
   it("keeps Studio instructions concise and action-oriented", () => {
     const prompt = createOpenCodeConfig(broker).agent.studio.prompt;
 
-    expect(prompt.trim().split(/\s+/).length).toBeLessThanOrEqual(75);
-    expect(prompt).toMatch(/inspect before editing/i);
+    // The prompt carries the Rojo live-sync requirements (which are part of the
+    // durable Agent Runtime contract), so keep it tight but allow for them.
+    expect(prompt.trim().split(/\s+/).length).toBeLessThanOrEqual(110);
+    expect(prompt).toMatch(/inspect only when needed/i);
     expect(prompt).toContain("smallest coherent change");
     expect(prompt).toContain("most relevant Studio check");
-    expect(prompt).toContain("stop retrying");
-    expect(prompt).toContain("select and verify it immediately");
+    expect(prompt).toContain("Rojo");
+    expect(prompt).toContain("stop");
   });
 
   it("connects OpenCode to the loopback broker", () => {

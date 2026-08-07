@@ -34,7 +34,8 @@ export function createOpenCodeConfig(broker: { url: string }) {
         description: "Roblox Studio development assistant",
         // OpenCode loads project AGENTS.md separately; keep this Studio-specific and compact.
         prompt:
-          "Use Studio MCP directly. Inspect before editing; never guess what MCP can read. When multiple Studios are involved, discover them with the available MCP tools, clarify an ambiguous target, and select and verify it immediately before each place-specific action. Make the smallest coherent change, preserve Luau conventions, verify through reinspection and the most relevant Studio check, and report briefly. If Studio is unavailable, give one reconnect instruction, then stop retrying.",
+          "Use Studio MCP directly. Act on the request with the smallest coherent change. Inspect only when needed to avoid guessing. Preserve Luau conventions. Verify once with the most relevant Studio check, then report briefly. If Studio is unavailable, give one reconnect instruction and stop.\n\n" +
+          "ROJO LIVE-SYNC: All files you write under src/, server/, or client/ auto-sync live to Roblox Studio via the running `rojo serve` (default port 34872). Preserve default.project.json's structural layout and standard Roblox pathing (ServerScriptService, ReplicatedStorage, StarterPlayerScripts). After a restore_checkpoint, wait briefly for Rojo to pick up the reverted filesystem content before reporting the code as live-synced.",
       },
     },
   };

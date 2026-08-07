@@ -10,9 +10,25 @@ import {
   type OpenCodeInfo,
   OpenCodeInfoSchema,
   type OpenCodeStartupProgress,
+  type RojoInstallProgress,
+  type RojoInstallResult,
+  type RojoLogEntry,
+  type RojoStatus,
   type UpdateInfo,
   UpdateInfoSchema,
 } from "@/types/desktop";
+import {
+  type CaptureContext,
+  type Checkpoint,
+  type CheckpointRestoreInput,
+  type CheckpointRestoreResult,
+  CheckpointSchema,
+  CheckpointRestoreResultSchema,
+  type RestorePreview,
+  RestorePreviewSchema,
+  type ValidationResult,
+  ValidationResultSchema,
+} from "@/types/checkpoints";
 import { GeneratedProgramArtifactSchema } from "@/types/generatedProgram";
 import {
   type StudioTargetDiscovery,
@@ -71,6 +87,29 @@ interface DesktopEffects {
     programs: StudioTargetPrograms,
     targetKey: string,
   ) => Effect.Effect<StudioTargetSelection, DesktopError>;
+  readonly checkpointCapture: (context: CaptureContext) => Effect.Effect<Checkpoint, DesktopError>;
+  readonly checkpointRestore: (
+    input: CheckpointRestoreInput,
+  ) => Effect.Effect<CheckpointRestoreResult, DesktopError>;
+  readonly checkpointPreview: (
+    checkpointId: string,
+    sessionId: string,
+  ) => Effect.Effect<RestorePreview, DesktopError>;
+  readonly checkpointList: (
+    sessionId: string,
+  ) => Effect.Effect<readonly Checkpoint[], DesktopError>;
+  readonly checkpointValidate: () => Effect.Effect<ValidationResult, DesktopError>;
+  readonly rojoStart: (workspace: string) => Effect.Effect<RojoStatus, DesktopError>;
+  readonly rojoStop: () => Effect.Effect<void, DesktopError>;
+  readonly rojoStatus: () => Effect.Effect<RojoStatus, DesktopError>;
+  readonly rojoToggle: (workspace: string) => Effect.Effect<RojoStatus, DesktopError>;
+  readonly rojoLogs: () => Effect.Effect<RojoLogEntry[], DesktopError>;
+  readonly onRojoLog: (listener: (entry: RojoLogEntry) => void) => () => void;
+  readonly rojoSetup: (
+    onProgress: (progress: RojoInstallProgress) => void,
+  ) => Effect.Effect<RojoInstallResult, DesktopError>;
+  readonly rojoBinaryPath: () => Effect.Effect<string | null, DesktopError>;
+  readonly rojoCheckInstalled: () => Effect.Effect<boolean, DesktopError>;
 }
 
 type StartupProgressListener = (progress: OpenCodeStartupProgress) => void;
@@ -144,6 +183,27 @@ const browserEffects: DesktopEffects = {
     Effect.fail(
       new DesktopError({ message: "Studio targets are only available in the desktop app." }),
     ),
+  checkpointCapture: () =>
+    Effect.fail(new DesktopError({ message: "Checkpointing requires the desktop app." })),
+  checkpointRestore: () =>
+    Effect.fail(new DesktopError({ message: "Checkpointing requires the desktop app." })),
+  checkpointPreview: () =>
+    Effect.fail(new DesktopError({ message: "Checkpointing requires the desktop app." })),
+  checkpointList: () =>
+    Effect.fail(new DesktopError({ message: "Checkpointing requires the desktop app." })),
+  checkpointValidate: () =>
+    Effect.fail(new DesktopError({ message: "Checkpointing requires the desktop app." })),
+  rojoStart: () => Effect.fail(new DesktopError({ message: "Rojo requires the desktop app." })),
+  rojoStop: () => Effect.fail(new DesktopError({ message: "Rojo requires the desktop app." })),
+  rojoStatus: () => Effect.fail(new DesktopError({ message: "Rojo requires the desktop app." })),
+  rojoToggle: () => Effect.fail(new DesktopError({ message: "Rojo requires the desktop app." })),
+  rojoLogs: () => Effect.fail(new DesktopError({ message: "Rojo requires the desktop app." })),
+  onRojoLog: () => () => {},
+  rojoSetup: () => Effect.fail(new DesktopError({ message: "Rojo requires the desktop app." })),
+  rojoBinaryPath: () =>
+    Effect.fail(new DesktopError({ message: "Rojo requires the desktop app." })),
+  rojoCheckInstalled: () =>
+    Effect.fail(new DesktopError({ message: "Rojo requires the desktop app." })),
 };
 
 const invoke = <A>(message: string, operation: () => Promise<A>) =>
@@ -173,8 +233,13 @@ function makeBridgeEffects(api: DesktopApi): DesktopEffects {
         decodeBridgeValue("Explorer program artifact is invalid", GeneratedProgramArtifactSchema),
       ),
     compileProjectIndexProgram: (program) =>
-      invoke("Failed to compile project index program", () => api.compileProjectIndexProgram(program)).pipe(
-        decodeBridgeValue("Project index program artifact is invalid", GeneratedProgramArtifactSchema),
+      invoke("Failed to compile project index program", () =>
+        api.compileProjectIndexProgram(program),
+      ).pipe(
+        decodeBridgeValue(
+          "Project index program artifact is invalid",
+          GeneratedProgramArtifactSchema,
+        ),
       ),
     getOpenCodeInfo: invoke("Failed to get OpenCode connection details", () =>
       api.getOpenCodeInfo(),
@@ -196,9 +261,9 @@ function makeBridgeEffects(api: DesktopApi): DesktopEffects {
         decodeBridgeValue("Explorer snapshot is invalid", ExplorerSnapshotSchema),
       ),
     invokeProjectIndexProgram: (artifact) =>
-      invoke("Failed to invoke project index program", () => api.invokeProjectIndexProgram(artifact)).pipe(
-        decodeBridgeValue("Project index skeleton is invalid", ProjectSkeletonSchema),
-      ),
+      invoke("Failed to invoke project index program", () =>
+        api.invokeProjectIndexProgram(artifact),
+      ).pipe(decodeBridgeValue("Project index skeleton is invalid", ProjectSkeletonSchema)),
     relaunch: invoke("Failed to relaunch the app", () => api.relaunch()),
     installStudioTargetPrograms: (envelopes) =>
       invoke("Failed to install Studio target programs", () =>
@@ -212,6 +277,37 @@ function makeBridgeEffects(api: DesktopApi): DesktopEffects {
       invoke("Failed to select the Studio target", () =>
         api.selectStudioTarget(programs, targetKey),
       ).pipe(decodeBridgeValue("Studio target selection is invalid", StudioTargetSelectionSchema)),
+    checkpointCapture: (context) =>
+      invoke("Failed to capture checkpoint", () => api.checkpointCapture(context)).pipe(
+        decodeBridgeValue("Checkpoint output is invalid", CheckpointSchema),
+      ),
+    checkpointRestore: (input) =>
+      invoke("Failed to restore checkpoint", () => api.checkpointRestore(input)).pipe(
+        decodeBridgeValue("Checkpoint restore result is invalid", CheckpointRestoreResultSchema),
+      ),
+    checkpointPreview: (checkpointId, sessionId) =>
+      invoke("Failed to preview checkpoint", () =>
+        api.checkpointPreview(checkpointId, sessionId),
+      ).pipe(decodeBridgeValue("Checkpoint preview is invalid", RestorePreviewSchema)),
+    checkpointList: (sessionId) =>
+      invoke("Failed to list checkpoints", () => api.checkpointList(sessionId)).pipe(
+        decodeBridgeValue("Checkpoint list is invalid", Schema.Array(CheckpointSchema)),
+      ),
+    checkpointValidate: () =>
+      invoke("Failed to validate workspace", () => api.checkpointValidate()).pipe(
+        decodeBridgeValue("Validation result is invalid", ValidationResultSchema),
+      ),
+    rojoStart: (workspace) => invoke("Failed to start Rojo", () => api.rojoStart(workspace)),
+    rojoStop: () => invoke("Failed to stop Rojo", () => api.rojoStop()),
+    rojoStatus: () => invoke("Failed to get Rojo status", () => api.rojoStatus()),
+    rojoToggle: (workspace) => invoke("Failed to toggle Rojo", () => api.rojoToggle(workspace)),
+    rojoLogs: () => invoke("Failed to get Rojo logs", () => api.rojoLogs()),
+    onRojoLog: (listener) => api.onRojoLog(listener),
+    rojoSetup: (onProgress) =>
+      invoke("Failed to set up Rojo", () => api.rojoSetup(onProgress)),
+    rojoBinaryPath: () => invoke("Failed to get Rojo binary path", () => api.rojoBinaryPath()),
+    rojoCheckInstalled: () =>
+      invoke("Failed to check Rojo installation", () => api.rojoCheckInstalled()),
   };
 }
 
@@ -225,7 +321,8 @@ const runPromise = <A>(effect: Effect.Effect<A, DesktopError>): Promise<A> =>
 /** Promise-only adapter consumed by React and exposed by the Electron bridge contract. */
 export const desktop: DesktopApi = {
   compileExplorerProgram: (program) => runPromise(desktopEffects.compileExplorerProgram(program)),
-  compileProjectIndexProgram: (program) => runPromise(desktopEffects.compileProjectIndexProgram(program)),
+  compileProjectIndexProgram: (program) =>
+    runPromise(desktopEffects.compileProjectIndexProgram(program)),
   getOpenCodeInfo: () => runPromise(desktopEffects.getOpenCodeInfo),
   onOpenCodeStartupProgress: (listener: StartupProgressListener) =>
     window.BloxMind?.onOpenCodeStartupProgress(listener) ?? (() => {}),
@@ -236,11 +333,29 @@ export const desktop: DesktopApi = {
   checkForUpdate: () => runPromise(desktopEffects.checkForUpdate),
   installUpdate: () => runPromise(desktopEffects.installUpdate),
   invokeExplorerProgram: (artifact) => runPromise(desktopEffects.invokeExplorerProgram(artifact)),
-  invokeProjectIndexProgram: (artifact) => runPromise(desktopEffects.invokeProjectIndexProgram(artifact)),
+  invokeProjectIndexProgram: (artifact) =>
+    runPromise(desktopEffects.invokeProjectIndexProgram(artifact)),
   relaunch: () => runPromise(desktopEffects.relaunch),
   installStudioTargetPrograms: (envelopes) =>
     runPromise(desktopEffects.installStudioTargetPrograms(envelopes)),
   discoverStudioTargets: (programs) => runPromise(desktopEffects.discoverStudioTargets(programs)),
   selectStudioTarget: (programs, targetKey) =>
     runPromise(desktopEffects.selectStudioTarget(programs, targetKey)),
+  checkpointCapture: (context) => runPromise(desktopEffects.checkpointCapture(context)),
+  checkpointRestore: (input) => runPromise(desktopEffects.checkpointRestore(input)),
+  checkpointPreview: (checkpointId, sessionId) =>
+    runPromise(desktopEffects.checkpointPreview(checkpointId, sessionId)),
+  checkpointList: async (sessionId) => [
+    ...(await runPromise(desktopEffects.checkpointList(sessionId))),
+  ],
+  checkpointValidate: () => runPromise(desktopEffects.checkpointValidate()),
+  rojoStart: (workspace) => runPromise(desktopEffects.rojoStart(workspace)),
+  rojoStop: () => runPromise(desktopEffects.rojoStop()),
+  rojoStatus: () => runPromise(desktopEffects.rojoStatus()),
+  rojoToggle: (workspace) => runPromise(desktopEffects.rojoToggle(workspace)),
+  rojoLogs: () => runPromise(desktopEffects.rojoLogs()),
+  onRojoLog: (listener) => desktopEffects.onRojoLog(listener),
+  rojoSetup: (onProgress) => runPromise(desktopEffects.rojoSetup(onProgress)),
+  rojoBinaryPath: () => runPromise(desktopEffects.rojoBinaryPath()),
+  rojoCheckInstalled: () => runPromise(desktopEffects.rojoCheckInstalled()),
 };

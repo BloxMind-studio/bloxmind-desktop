@@ -16,6 +16,9 @@ import { usePreferences } from "@/providers/PreferencesProvider";
 import { useProjectIndexContext } from "@/providers/ProjectIndexProvider";
 import { useStudioTargetOptional } from "@/providers/StudioTargetProvider";
 import { ContextUsageIndicator } from "@/components/ContextUsageIndicator";
+import { RojoStatusBadge } from "@/components/RojoStatusBadge";
+import { SetupRojoButton } from "@/components/SetupRojoButton";
+import { RojoConnectBanner } from "@/components/RojoConnectBanner";
 import type { ModelInfo } from "@/types";
 
 // ── Image attachment helpers ────────────────────────────────────────────
@@ -262,6 +265,33 @@ function ChatInput() {
     const model = allModels.find((m) => m.id === modelId);
     return model?.variants ? Object.keys(model.variants) : [];
   }, [selectedModel, allModels]);
+
+  // Auto-select "medium" variant on first model load only.
+  // Once the user interacts with the slider, respect whatever they pick.
+  const previousModelRef = useRef<string | null>(null);
+  const userTouchedVariantRef = useRef(false);
+  useEffect(() => {
+    if (!selectedModel) return;
+    // Only run when the model actually changes
+    if (previousModelRef.current === selectedModel) return;
+    previousModelRef.current = selectedModel;
+    userTouchedVariantRef.current = false;
+    const [, modelId] = splitModelKey(selectedModel);
+    const model = allModels.find((m) => m.id === modelId);
+    const variants = model?.variants ? Object.keys(model.variants) : [];
+    if (variants.includes("medium") && !userTouchedVariantRef.current) {
+      setSelectedVariant("medium");
+    }
+  }, [selectedModel, allModels, setSelectedVariant]);
+
+  // Mark the variant as user-touched when they move the slider
+  const handleVariantChange = useCallback(
+    (index: number) => {
+      userTouchedVariantRef.current = true;
+      setSelectedVariant(index === 0 ? null : availableVariants[index - 1]);
+    },
+    [availableVariants, setSelectedVariant],
+  );
 
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
@@ -676,6 +706,8 @@ function ChatInput() {
           )}
         </div>
 
+        <RojoStatusBadge />
+        <SetupRojoButton />
         {availableVariants.length > 0 && (
           <Popover>
             <PopoverTrigger asChild>
@@ -711,14 +743,14 @@ function ChatInput() {
                 max={availableVariants.length}
                 step={1}
                 value={[selectedVariantIndex]}
-                onValueChange={([index]) =>
-                  setSelectedVariant(index === 0 ? null : availableVariants[index - 1])
-                }
+                onValueChange={([index]) => handleVariantChange(index)}
                 aria-label="Reasoning effort"
               />
               <div className="mt-2 flex justify-between gap-2 text-[9px] capitalize text-muted-foreground/70">
                 <span>Default</span>
-                <span>{availableVariants[availableVariants.length - 1]}</span>
+                {availableVariants.map((variant) => (
+                  <span key={variant}>{variant}</span>
+                ))}
               </div>
             </PopoverContent>
           </Popover>
@@ -902,6 +934,7 @@ function ChatInput() {
           onNext={lightboxNext}
         />
       )}
+      <RojoConnectBanner />
     </div>
   );
 }

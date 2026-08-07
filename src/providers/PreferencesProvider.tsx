@@ -108,8 +108,11 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     ) {
       setSelectedModelState(configData.lastModel);
     }
+    // Restore the persisted default variant (reasoning effort).
+    if (configData.defaultVariant) {
+      setSelectedVariantState(configData.defaultVariant);
+    }
   }, [configData, connectedProviders, selectedModel]);
-
   // Auto-select first agent
   const agents = useAgents();
   useEffect(() => {
@@ -129,6 +132,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 
   const setSelectedVariant = useCallback((variant: string | null) => {
     setSelectedVariantState(variant);
+    patchConfig({ defaultVariant: variant }).catch(() => {});
   }, []);
 
   const toggleModelVisibility = useCallback(

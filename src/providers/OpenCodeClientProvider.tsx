@@ -20,6 +20,8 @@ import type { OpenCodeStartupProgress } from "@/types/desktop";
 
 const SSE_RECONNECT_DELAY = 3000;
 const SSE_FAILURE_THRESHOLD = 3;
+const SSE_HEARTBEAT_TIMEOUT = 30_000; // No events for 30s → force reconnect
+const SSE_HEARTBEAT_INTERVAL = 5_000; // Check every 5s
 
 type AppStatus = "waiting" | "ready" | "error";
 export type StartupPhase = "engine" | "connection" | "workspace";
@@ -280,6 +282,9 @@ export function OpenCodeClientProvider({
     let consecutiveFailures = 0;
     let reconnectToastId: string | number | undefined;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+    let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
+    let lastEventTime = Date.now();
+    let streamAbortController: AbortController | null = null;
 
     function showReconnectToast() {
       if (reconnectToastId != null) return;
@@ -307,9 +312,37 @@ export function OpenCodeClientProvider({
       }, SSE_RECONNECT_DELAY);
     }
 
+    // Heartbeat: if no SSE events arrive for SSE_HEARTBEAT_TIMEOUT,
+    // the connection is likely dead (e.g. network dropped). Force a reconnect.
+    function startHeartbeat() {
+      clearInterval(heartbeatTimer);
+      lastEventTime = Date.now();
+      heartbeatTimer = setInterval(() => {
+        if (abortController.signal.aborted) return;
+        const elapsed = Date.now() - lastEventTime;
+        if (elapsed >= SSE_HEARTBEAT_TIMEOUT) {
+          console.warn(`SSE heartbeat timeout: no events for ${elapsed}ms, forcing reconnect`);
+          consecutiveFailures++;
+          if (consecutiveFailures >= SSE_FAILURE_THRESHOLD) showReconnectToast();
+          // Abort the current stream so the for-await loop breaks.
+          // The outer abortController stays alive so scheduleReconnect can still fire.
+          streamAbortController?.abort();
+          scheduleReconnect();
+        }
+      }, SSE_HEARTBEAT_INTERVAL);
+    }
+
+    function stopHeartbeat() {
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = undefined;
+    }
+
     async function subscribe() {
       try {
         if (!client) return;
+        // Create a fresh per-stream abort controller so the heartbeat can
+        // kill a stuck stream without killing the outer reconnect loop.
+        streamAbortController = new AbortController();
         const sseResult = await client.event.subscribe({}, { throwOnError: true });
         if (!sseResult?.stream) {
           consecutiveFailures++;
@@ -320,13 +353,18 @@ export function OpenCodeClientProvider({
         await reconcileServerState(queryClient, activeSessionIdRef.current);
         consecutiveFailures = 0;
         dismissReconnectToast();
+        startHeartbeat();
 
         for await (const event of sseResult.stream) {
-          if (abortController.signal.aborted) break;
+          if (abortController.signal.aborted || streamAbortController.signal.aborted) break;
+          lastEventTime = Date.now();
           sseDispatch(queryClient, event, activeSessionIdRef, (usage) => {
             captureDetailedAnalytics(posthog, "model_usage", usage);
           });
         }
+
+        stopHeartbeat();
+        streamAbortController = null;
 
         if (!abortController.signal.aborted) {
           consecutiveFailures++;
@@ -334,6 +372,8 @@ export function OpenCodeClientProvider({
           scheduleReconnect();
         }
       } catch (err) {
+        stopHeartbeat();
+        streamAbortController = null;
         if (!abortController.signal.aborted) {
           console.error("SSE stream error:", err);
           consecutiveFailures++;
@@ -347,7 +387,9 @@ export function OpenCodeClientProvider({
 
     return () => {
       abortController.abort();
+      streamAbortController?.abort();
       clearTimeout(reconnectTimer);
+      stopHeartbeat();
       sseAbortRef.current = null;
       dismissReconnectToast();
     };

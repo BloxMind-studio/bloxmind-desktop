@@ -1,5 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
-  <rect width="256" height="256" rx="56" fill="#0ea5e9"/>
-  <path d="M72 64h56v32H72zM128 64h56v32h-56zM72 128h56v32H72zM128 128h56v32h-56z" fill="#ffffff" opacity="0.95"/>
-  <path d="M88 80h16v16H88zM144 80h16v16h-16zM88 144h16v16H88zM144 144h16v16h-16z" fill="#0ea5e9"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <g transform="rotate(-15 256 256)">
+    <rect x="64" y="64" width="384" height="384" rx="64" fill="currentColor"/>
+    <rect x="148" y="140" width="56" height="56" rx="18" fill="var(--background)"/>
+    <rect x="308" y="140" width="56" height="56" rx="18" fill="var(--background)"/>
+    <path d="M172 296C172 296 204 336 256 336C308 336 340 296 340 296" stroke="var(--background)" strokeWidth="26" strokeLinecap="round"/>
+  </g>
 </svg>

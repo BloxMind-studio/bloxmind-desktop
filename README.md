@@ -4,6 +4,8 @@ AI-assisted Roblox development. BloxMind is a free, open-source desktop app that
 
 **[Download the latest release](https://github.com/YUouriii/app-BloxMind-ai/releases/latest)** | **[Website](https://BloxMind.ai)**
 
+> **Note:** This project includes proprietary modifications and new features. See [LICENSE](LICENSE) for ownership and usage terms.
+
 ## What it does
 
 - Chat with AI models (Claude, GPT, Gemini, and more) that can read and modify your Roblox Studio project in real time
@@ -107,6 +109,15 @@ electron/               # Electron main process and preload bridge
 - **Studio integration**: [Roblox Studio MCP](https://create.roblox.com/docs/studio/mcp) (built-in)
 - **Testing**: Vitest, React Testing Library
 
-## License
+---
 
-[GNU GENERAL PUBLIC LICENSE Version 3](LICENSE)
+## 🔒 Copyright & Terms of Use
+
+**Copyright (c) 2026 BloxMind. All Rights Reserved.**
+
+This repository is publicly visible for educational, demonstration, and security review purposes only.
+
+- **No Unauthorized Use:** No part of this codebase (including source code, UI components, graphics, and architectural designs) may be copied, modified, duplicated, sublicensed, redistributed, or used in any commercial or non-commercial derivative works without explicit prior written authorization from the author.
+- **No License Granted:** Publication of this source code on GitHub does not constitute a grant of any license or rights under copyright law.
+
+For inquiries or permission requests, please contact the repository owner.

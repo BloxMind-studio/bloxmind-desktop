@@ -1,5 +1,6 @@
 import { useRef } from "react";
 
+import { BloxMindLogo } from "@/components/BloxMindLogo";
 import Chat from "@/components/Chat";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -18,7 +19,13 @@ function AppInner() {
 
   return (
     <main className="flex h-full flex-col overflow-hidden">
-      <div className="app-titlebar flex h-9 shrink-0 items-center justify-end border-b bg-card px-3" />
+      <div className="app-titlebar flex h-9 shrink-0 items-center justify-between gap-3 border-b bg-card px-3">
+        <div className="flex items-center gap-1.5" title="BloxMind">
+          <BloxMindLogo size={18} />
+          <span className="font-serif text-[12px] italic text-foreground">BloxMind</span>
+        </div>
+        <div />
+      </div>
       <ErrorBoundary>
         <Chat />
       </ErrorBoundary>

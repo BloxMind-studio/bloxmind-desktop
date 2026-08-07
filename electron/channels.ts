@@ -15,4 +15,22 @@ export const channels = {
   selectStudioTarget: "studio-target:select",
   compileProjectIndexProgram: "project-index:compile-program",
   invokeProjectIndexProgram: "project-index:invoke-program",
+  // ── Checkpoint system ──────────────────────────────────────────────
+  checkpointCapture: "checkpoint:capture",
+  checkpointRestore: "checkpoint:restore",
+  checkpointPreview: "checkpoint:preview",
+  checkpointList: "checkpoint:list",
+  checkpointValidate: "checkpoint:validate",
+  // ── Rojo live-sync ─────────────────────────────────────────────────
+  rojoStatus: "rojo:status",
+  rojoToggle: "rojo:toggle",
+  rojoLogs: "rojo:logs",
+  rojoStart: "rojo:start",
+  rojoStop: "rojo:stop",
+  onRojoLog: "rojo:on-log",
+  // ── Rojo 1-click setup ─────────────────────────────────────────────
+  rojoSetup: "rojo:setup",
+  rojoSetupProgress: "rojo:setup-progress",
+  rojoBinaryPath: "rojo:binary-path",
+  rojoCheckInstalled: "rojo:check-installed",
 } as const;

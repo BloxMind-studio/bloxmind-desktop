@@ -30,6 +30,28 @@ import {
   GeneratedProgramRuntimeLive,
 } from "./services/GeneratedProgramRuntime";
 import { makeStudioMcpBrokerLayer } from "./services/StudioMcpBroker";
+import {
+  CheckpointServiceTag,
+  makeCheckpointServiceLayer,
+} from "./services/CheckpointService";
+import {
+  cleanupRojo,
+  makeRojoServerManagerLayer,
+  RojoServerManagerTag,
+} from "./services/RojoServerManager";
+import {
+  makeRojoInstallerLayer,
+  resolvePluginsDirectory,
+  RojoInstallerTag,
+} from "./services/RojoInstaller";
+import {
+  CaptureContextSchema,
+  CheckpointRestoreInputSchema,
+  CheckpointRestoreResultSchema,
+  CheckpointSchema,
+  RestorePreviewSchema,
+  ValidationResultSchema,
+} from "../src/types/checkpoints";
 
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
 const defaultConfig: AppConfig = DEFAULT_APP_CONFIG;
@@ -54,15 +76,41 @@ const studioMcpBrokerLayer = makeStudioMcpBrokerLayer({
 
 const openCodeRuntime = ManagedRuntime.make(
   Layer.merge(
-    makeOpenCodeLayer({
-      binaryCacheDirectory: join(app.getPath("userData"), "opencode"),
-      workspace: join(app.getPath("home"), "BloxMind"),
-      onStartupProgress: (progress: OpenCodeStartupProgress) => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send(channels.openCodeStartupProgress, progress);
-        }
-      },
-    }),
+    Layer.merge(
+      Layer.merge(
+        makeOpenCodeLayer({
+          binaryCacheDirectory: join(app.getPath("userData"), "opencode"),
+          workspace: join(app.getPath("home"), "BloxMind"),
+          onStartupProgress: (progress: OpenCodeStartupProgress) => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send(channels.openCodeStartupProgress, progress);
+            }
+          },
+        }),
+        // The checkpoint service reads Rojo's live-sync status post-restore,
+        // so provide the Rojo server manager layer into it explicitly. Both
+        // are merged into the same managed runtime below.
+        makeCheckpointServiceLayer({
+          storeRoot: join(app.getPath("userData"), "checkpoints"),
+          workspace: join(app.getPath("home"), "BloxMind"),
+        }).pipe(
+          Layer.provide(
+            makeRojoServerManagerLayer({
+              binDirectory: join(app.getPath("userData"), "bin"),
+            }),
+          ),
+        ),
+      ),
+      Layer.merge(
+        makeRojoServerManagerLayer({
+          binDirectory: join(app.getPath("userData"), "bin"),
+        }),
+        makeRojoInstallerLayer({
+          binDirectory: join(app.getPath("userData"), "bin"),
+          pluginsDirectory: resolvePluginsDirectory(),
+        }),
+      ),
+    ),
     GeneratedProgramRuntimeLive.pipe(Layer.provide(studioMcpBrokerLayer)),
   ).pipe(Layer.provide(studioMcpBrokerLayer)),
 );
@@ -343,6 +391,189 @@ const registerIpcHandlers = Effect.sync(() => {
       }),
     ),
   );
+  // ── Checkpoint system ──────────────────────────────────────────────
+  ipcMain.handle(channels.checkpointCapture, (_event, input: unknown) =>
+    openCodeRuntime.runPromise(
+      Effect.gen(function* () {
+        const context = yield* Schema.decodeUnknown(CaptureContextSchema)(input);
+        const service = yield* CheckpointServiceTag;
+        return yield* service.capture(context).pipe(
+          Effect.flatMap((checkpoint) =>
+            Schema.decodeUnknown(CheckpointSchema)(checkpoint).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new DesktopMainError({ message: "Checkpoint capture output is invalid", cause }),
+              ),
+            ),
+          ),
+        );
+      }),
+    ),
+  );
+  ipcMain.handle(channels.checkpointRestore, (_event, input: unknown) =>
+    openCodeRuntime.runPromise(
+      Effect.gen(function* () {
+        const restoreInput = yield* Schema.decodeUnknown(CheckpointRestoreInputSchema)(input);
+        const service = yield* CheckpointServiceTag;
+        return yield* service.restore(restoreInput).pipe(
+          Effect.flatMap((result) =>
+            Schema.decodeUnknown(CheckpointRestoreResultSchema)(result).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new DesktopMainError({ message: "Checkpoint restore output is invalid", cause }),
+              ),
+            ),
+          ),
+        );
+      }),
+    ),
+  );
+  ipcMain.handle(channels.checkpointPreview, (_event, checkpointId: string, sessionId: string) =>
+    openCodeRuntime.runPromise(
+      Effect.gen(function* () {
+        const service = yield* CheckpointServiceTag;
+        return yield* service.preview(checkpointId, sessionId).pipe(
+          Effect.flatMap((preview) =>
+            Schema.decodeUnknown(RestorePreviewSchema)(preview).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new DesktopMainError({ message: "Checkpoint preview output is invalid", cause }),
+              ),
+            ),
+          ),
+        );
+      }),
+    ),
+  );
+  ipcMain.handle(channels.checkpointList, (_event, sessionId: string) =>
+    openCodeRuntime.runPromise(
+      Effect.gen(function* () {
+        const service = yield* CheckpointServiceTag;
+        const history = yield* service.list(sessionId);
+        return yield* Schema.decodeUnknown(Schema.Array(CheckpointSchema))(history).pipe(
+          Effect.mapError(
+            (cause) => new DesktopMainError({ message: "Checkpoint list output is invalid", cause }),
+          ),
+        );
+      }),
+    ),
+  );
+  ipcMain.handle(channels.checkpointValidate, () =>
+    openCodeRuntime.runPromise(
+      Effect.gen(function* () {
+        const service = yield* CheckpointServiceTag;
+        return yield* service.validate().pipe(
+          Effect.flatMap((result) =>
+            Schema.decodeUnknown(ValidationResultSchema)(result).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new DesktopMainError({ message: "Checkpoint validation output is invalid", cause }),
+              ),
+            ),
+          ),
+        );
+      }),
+    ),
+  );
+  // ── Rojo live-sync ────────────────────────────────────────────────
+  ipcMain.handle(channels.rojoStart, (_event, workspace: string) =>
+    openCodeRuntime.runPromise(
+      Effect.gen(function* () {
+        const rojo = yield* RojoServerManagerTag;
+        return yield* rojo.start(workspace);
+      }),
+    ),
+  );
+  ipcMain.handle(channels.rojoStop, () =>
+    openCodeRuntime.runPromise(
+      Effect.gen(function* () {
+        const rojo = yield* RojoServerManagerTag;
+        yield* rojo.stop();
+      }),
+    ),
+  );
+  ipcMain.handle(channels.rojoStatus, () =>
+    openCodeRuntime.runPromise(
+      Effect.gen(function* () {
+        const rojo = yield* RojoServerManagerTag;
+        return yield* rojo.status();
+      }),
+    ),
+  );
+  ipcMain.handle(channels.rojoToggle, (_event, workspace: string) =>
+    openCodeRuntime.runPromise(
+      Effect.gen(function* () {
+        const rojo = yield* RojoServerManagerTag;
+        return yield* rojo.toggle(workspace);
+      }),
+    ),
+  );
+  ipcMain.handle(channels.rojoLogs, () =>
+    openCodeRuntime.runPromise(
+      Effect.gen(function* () {
+        const rojo = yield* RojoServerManagerTag;
+        return yield* rojo.getLogs();
+      }),
+    ),
+  );
+  // ── Rojo 1-click setup ─────────────────────────────────────────────
+  ipcMain.handle(channels.rojoSetup, () =>
+    openCodeRuntime.runPromise(
+      Effect.gen(function* () {
+        const installer = yield* RojoInstallerTag;
+        return yield* installer.install((progress) => {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send(channels.rojoSetupProgress, progress);
+          }
+        });
+      }),
+    ),
+  );
+  ipcMain.handle(channels.rojoBinaryPath, () =>
+    openCodeRuntime.runPromise(
+      Effect.gen(function* () {
+        const installer = yield* RojoInstallerTag;
+        return yield* installer.getBinaryPath();
+      }),
+    ),
+  );
+  ipcMain.handle(channels.rojoCheckInstalled, () =>
+    openCodeRuntime.runPromise(
+      Effect.gen(function* () {
+        const installer = yield* RojoInstallerTag;
+        return yield* installer.checkInstalled();
+      }),
+    ),
+  );
+  // Stream logs to renderer via webContents.send
+  ipcMain.on(channels.onRojoLog, () => {});
+  // Wire up log forwarding: when the renderer subscribes, we register a
+  // listener that forwards each log entry to the active window.
+  {
+    let logListener: ((entry: { timestamp: number; stream: string; message: string }) => void) | null = null;
+    ipcMain.handle("rojo:subscribe-logs", () =>
+      openCodeRuntime.runPromise(
+        Effect.gen(function* () {
+          const rojo = yield* RojoServerManagerTag;
+          if (logListener) return;
+          logListener = (entry) => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send(channels.onRojoLog, entry);
+            }
+          };
+          rojo.onLog(logListener);
+        }),
+      ),
+    );
+    ipcMain.handle("rojo:unsubscribe-logs", () =>
+      openCodeRuntime.runPromise(
+        Effect.gen(function* () {
+          // Listeners are cleaned up on stop; just clear the ref.
+          logListener = null;
+        }),
+      ),
+    );
+  }
 });
 
 function createWindow(): Effect.Effect<void, DesktopMainError> {
@@ -433,6 +664,7 @@ const registerAppLifecycle = Effect.sync(() => {
   app.on("before-quit", (event) => {
     if (quitting) return;
     event.preventDefault();
+    cleanupRojo();
     Effect.runFork(
       Effect.tryPromise({
         try: () => openCodeRuntime.dispose(),
@@ -465,6 +697,19 @@ Effect.runFork(
     yield* registerIpcHandlers;
     yield* Effect.sync(() => Menu.setApplicationMenu(null));
     yield* createWindow();
+    // Auto-start the Rojo server against the BloxMind workspace so that
+    // Roblox Studio can connect immediately without manual setup.
+    // Defer slightly so the window loads first, then start `rojo serve`.
+    setTimeout(() => {
+      openCodeRuntime
+        .runPromise(
+          Effect.gen(function* () {
+            const rojo = yield* RojoServerManagerTag;
+            yield* rojo.start(join(app.getPath("home"), "BloxMind"));
+          }),
+        )
+        .catch(Effect.logWarning);
+    }, 500);
     yield* Effect.sync(() =>
       app.on("activate", () => {
         if (BrowserWindow.getAllWindows().length === 0) {
