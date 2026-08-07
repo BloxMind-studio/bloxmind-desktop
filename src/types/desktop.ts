@@ -59,8 +59,12 @@ const MutableStrings = Schema.mutable(Schema.Array(Schema.String));
 
 export const ThemePreferenceSchema = Schema.Literal("light", "dark", "system");
 export const DetailedAnalyticsPreferenceSchema = Schema.Literal("unset", "enabled", "disabled");
+export const AccentColorSchema = Schema.Literal("blue", "violet", "emerald", "rose", "amber");
+export const LayoutDensitySchema = Schema.Literal("compact", "comfortable");
 
 export type ThemePreference = typeof ThemePreferenceSchema.Type;
+export type AccentColor = typeof AccentColorSchema.Type;
+export type LayoutDensity = typeof LayoutDensitySchema.Type;
 
 export const AppConfigSchema = Schema.mutable(
   Schema.Struct({
@@ -71,6 +75,23 @@ export const AppConfigSchema = Schema.mutable(
     defaultVariant: Schema.NullOr(Schema.String),
     studioTargetPrograms: Schema.NullOr(StudioTargetProgramsSchema),
     studioTargetsBySession: Schema.Record({ key: Schema.String, value: StudioTargetSchema }),
+    // UI customization
+    accentColor: AccentColorSchema,
+    layoutDensity: LayoutDensitySchema,
+    fontSize: Schema.Number.pipe(Schema.between(0.8, 1.2)),
+    soundEffects: Schema.Boolean,
+    // AI engine
+    temperature: Schema.Number.pipe(Schema.between(0, 1)),
+    maxTokens: Schema.Number.pipe(Schema.int(), Schema.between(256, 128_000)),
+    systemPrompt: Schema.String,
+    customApiEndpoint: Schema.NullOr(Schema.String),
+    // Behavior
+    autoScroll: Schema.Boolean,
+    enterToSend: Schema.Boolean,
+    notificationsEnabled: Schema.Boolean,
+    // SSE connection
+    sseReconnectDelay: Schema.Number.pipe(Schema.int(), Schema.between(1_000, 60_000)),
+    sseHeartbeatTimeout: Schema.Number.pipe(Schema.int(), Schema.between(5_000, 120_000)),
   }),
 );
 
@@ -84,6 +105,19 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   defaultVariant: null,
   studioTargetPrograms: null,
   studioTargetsBySession: {},
+  accentColor: "blue",
+  layoutDensity: "comfortable",
+  fontSize: 1,
+  soundEffects: true,
+  temperature: 0.7,
+  maxTokens: 4_096,
+  systemPrompt: "",
+  customApiEndpoint: null,
+  autoScroll: true,
+  enterToSend: true,
+  notificationsEnabled: true,
+  sseReconnectDelay: 3_000,
+  sseHeartbeatTimeout: 30_000,
 };
 
 export const AppConfigPatchSchema = Schema.partial(AppConfigSchema);

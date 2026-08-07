@@ -28,6 +28,19 @@ describe("browser desktop fallback", () => {
       defaultVariant: null,
       studioTargetPrograms: null,
       studioTargetsBySession: {},
+      accentColor: "blue",
+      layoutDensity: "comfortable",
+      fontSize: 1,
+      soundEffects: true,
+      temperature: 0.7,
+      maxTokens: 4096,
+      systemPrompt: "",
+      customApiEndpoint: null,
+      autoScroll: true,
+      enterToSend: true,
+      notificationsEnabled: true,
+      sseReconnectDelay: 3000,
+      sseHeartbeatTimeout: 30000,
     });
   });
 
@@ -46,6 +59,19 @@ describe("browser desktop fallback", () => {
       defaultVariant: null,
       studioTargetPrograms: null,
       studioTargetsBySession: {},
+      accentColor: "blue",
+      layoutDensity: "comfortable",
+      fontSize: 1,
+      soundEffects: true,
+      temperature: 0.7,
+      maxTokens: 4096,
+      systemPrompt: "",
+      customApiEndpoint: null,
+      autoScroll: true,
+      enterToSend: true,
+      notificationsEnabled: true,
+      sseReconnectDelay: 3000,
+      sseHeartbeatTimeout: 30000,
     });
   });
 
@@ -62,6 +88,19 @@ describe("browser desktop fallback", () => {
       defaultVariant: null,
       studioTargetPrograms: null,
       studioTargetsBySession: {},
+      accentColor: "blue",
+      layoutDensity: "comfortable",
+      fontSize: 1,
+      soundEffects: true,
+      temperature: 0.7,
+      maxTokens: 4096,
+      systemPrompt: "",
+      customApiEndpoint: null,
+      autoScroll: true,
+      enterToSend: true,
+      notificationsEnabled: true,
+      sseReconnectDelay: 3000,
+      sseHeartbeatTimeout: 30000,
     });
   });
 

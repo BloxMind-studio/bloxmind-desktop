@@ -59,7 +59,16 @@ const TECHNOLOGIES = [
   { name: "Rojo", url: "https://rojo.space", description: "Sync engine for Roblox" },
 ];
 
-type SettingsTab = "providers" | "models" | "appearance" | "privacy" | "about";
+type SettingsTab =
+  | "general"
+  | "providers"
+  | "models"
+  | "engine"
+  | "behavior"
+  | "connection"
+  | "appearance"
+  | "privacy"
+  | "about";
 
 interface SettingsProps {
   onClose: () => void;
@@ -158,6 +167,64 @@ function Settings({ onClose }: SettingsProps) {
             App
           </div>
           <button
+            onClick={() => setTab("general")}
+            className={`mx-1.5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${
+              tab === "general"
+                ? "bg-accent font-medium text-foreground"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground"
+            }`}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="7" height="7" />
+              <rect x="14" y="3" width="7" height="7" />
+              <rect x="14" y="14" width="7" height="7" />
+              <rect x="3" y="14" width="7" height="7" />
+            </svg>
+            General
+          </button>
+          <button
+            onClick={() => setTab("engine")}
+            className={`mx-1.5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${
+              tab === "engine"
+                ? "bg-accent font-medium text-foreground"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground"
+            }`}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+            </svg>
+            AI Engine
+          </button>
+          <button
+            onClick={() => setTab("behavior")}
+            className={`mx-1.5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${
+              tab === "behavior"
+                ? "bg-accent font-medium text-foreground"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground"
+            }`}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 20V10" />
+              <path d="M18 20V4" />
+              <path d="M6 20v-4" />
+            </svg>
+            Behavior
+          </button>
+          <button
+            onClick={() => setTab("connection")}
+            className={`mx-1.5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${
+              tab === "connection"
+                ? "bg-accent font-medium text-foreground"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground"
+            }`}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+              <polyline points="22,6 12,13 2,6" />
+            </svg>
+            Connection
+          </button>
+          <button
             onClick={() => setTab("appearance")}
             className={`mx-1.5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${
               tab === "appearance"
@@ -231,8 +298,12 @@ function Settings({ onClose }: SettingsProps) {
 
         {/* Content area */}
         <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+          {tab === "general" && <GeneralTab />}
           {tab === "providers" && <ProvidersTab />}
           {tab === "models" && <ModelsTab />}
+          {tab === "engine" && <EngineTab />}
+          {tab === "behavior" && <BehaviorTab />}
+          {tab === "connection" && <ConnectionTab />}
           {tab === "appearance" && <AppearanceTab />}
           {tab === "privacy" && <PrivacyTab />}
           {tab === "about" && <AboutTab appVersion={appVersion} />}
@@ -945,6 +1016,435 @@ function ModelsTab() {
             Connect a provider to see available models.
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// General Tab
+// ═══════════════════════════════════════════════════════════════════════
+
+const ACCENT_COLORS = [
+  { value: "blue" as const, label: "Blue", class: "bg-blue-500" },
+  { value: "violet" as const, label: "Violet", class: "bg-violet-500" },
+  { value: "emerald" as const, label: "Emerald", class: "bg-emerald-500" },
+  { value: "rose" as const, label: "Rose", class: "bg-rose-500" },
+  { value: "amber" as const, label: "Amber", class: "bg-amber-500" },
+];
+
+function GeneralTab() {
+  const {
+    accentColor,
+    setAccentColor,
+    layoutDensity,
+    setLayoutDensity,
+    fontSize,
+    setFontSize,
+    soundEffects,
+    setSoundEffects,
+  } = usePreferences();
+
+  return (
+    <div className="mx-auto w-full max-w-md px-6 py-8">
+      <h4 className="font-serif text-lg italic text-foreground">General</h4>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Customize your BloxMind experience.
+      </p>
+
+      {/* Accent Color */}
+      <div className="mt-6">
+        <div className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Accent Color
+        </div>
+        <div className="flex gap-2">
+          {ACCENT_COLORS.map((color) => (
+            <button
+              key={color.value}
+              type="button"
+              onClick={() => setAccentColor(color.value)}
+              aria-pressed={accentColor === color.value}
+              className={`flex h-9 w-9 items-center justify-center rounded-full border-2 transition-all ${
+                accentColor === color.value
+                  ? "border-foreground scale-110"
+                  : "border-border hover:border-muted-foreground"
+              }`}
+            >
+              <span className={`h-5 w-5 rounded-full ${color.class}`} />
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Layout Density */}
+      <div className="mt-6">
+        <div className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Layout Density
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          {(["compact", "comfortable"] as const).map((density) => (
+            <button
+              key={density}
+              type="button"
+              onClick={() => setLayoutDensity(density)}
+              aria-pressed={layoutDensity === density}
+              className={`rounded-lg border px-3 py-2.5 text-center text-xs transition-colors ${
+                layoutDensity === density
+                  ? "border-foreground bg-accent font-medium text-foreground"
+                  : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground"
+              }`}
+            >
+              {density === "compact" ? "Compact" : "Comfortable"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Font Size */}
+      <div className="mt-6">
+        <div className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Font Size
+        </div>
+        <div className="rounded-lg border bg-card p-3.5">
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-muted-foreground">A</span>
+            <input
+              type="range"
+              min="0.8"
+              max="1.2"
+              step="0.05"
+              value={fontSize}
+              onChange={(e) => setFontSize(parseFloat(e.target.value))}
+              className="h-1.5 flex-1 cursor-pointer appearance-none rounded-full bg-border accent-foreground"
+            />
+            <span className="text-sm font-medium text-foreground">A</span>
+          </div>
+          <div className="mt-1 text-center text-[10px] text-muted-foreground">
+            {Math.round(fontSize * 100)}%
+          </div>
+        </div>
+      </div>
+
+      {/* Sound Effects */}
+      <div className="mt-6">
+        <div className="rounded-lg border bg-card p-3.5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-sm font-medium">Sound Effects</div>
+              <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                Play audio cues for events like sending a message or receiving a response.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={soundEffects}
+              aria-label="Sound effects"
+              onClick={() => setSoundEffects(!soundEffects)}
+              className={`relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                soundEffects ? "bg-foreground" : "bg-border"
+              }`}
+            >
+              <span
+                className={`inline-block h-3.5 w-3.5 rounded-full bg-background transition-transform ${
+                  soundEffects ? "translate-x-4" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// AI Engine Tab
+// ═══════════════════════════════════════════════════════════════════════
+
+function EngineTab() {
+  const {
+    temperature,
+    setTemperature,
+    maxTokens,
+    setMaxTokens,
+    systemPrompt,
+    setSystemPrompt,
+    customApiEndpoint,
+    setCustomApiEndpoint,
+  } = usePreferences();
+
+  return (
+    <div className="mx-auto w-full max-w-md px-6 py-8">
+      <h4 className="font-serif text-lg italic text-foreground">AI Engine</h4>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Configure the behavior of the AI model.
+      </p>
+
+      {/* Temperature */}
+      <div className="mt-6">
+        <div className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Temperature
+        </div>
+        <div className="rounded-lg border bg-card p-3.5">
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] text-muted-foreground">Precise</span>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={temperature}
+              onChange={(e) => setTemperature(parseFloat(e.target.value))}
+              className="h-1.5 flex-1 cursor-pointer appearance-none rounded-full bg-border accent-foreground"
+            />
+            <span className="text-[10px] text-muted-foreground">Creative</span>
+          </div>
+          <div className="mt-1 text-center text-[10px] text-muted-foreground">
+            {temperature.toFixed(2)}
+          </div>
+        </div>
+      </div>
+
+      {/* Max Tokens */}
+      <div className="mt-6">
+        <div className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Max Tokens
+        </div>
+        <div className="rounded-lg border bg-card p-3.5">
+          <input
+            type="number"
+            min={256}
+            max={128_000}
+            step={256}
+            value={maxTokens}
+            onChange={(e) => setMaxTokens(Math.min(128_000, Math.max(256, parseInt(e.target.value) || 256)))}
+            className="h-8 w-full rounded border bg-background px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+          <div className="mt-1 text-[10px] text-muted-foreground">
+            Max tokens per response (256–128,000)
+          </div>
+        </div>
+      </div>
+
+      {/* Custom API Endpoint */}
+      <div className="mt-6">
+        <div className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Custom API Endpoint
+        </div>
+        <div className="rounded-lg border bg-card p-3.5">
+          <input
+            type="text"
+            value={customApiEndpoint ?? ""}
+            onChange={(e) => setCustomApiEndpoint(e.target.value.trim() || null)}
+            placeholder="https://api.example.com/v1"
+            className="h-8 w-full rounded border bg-background px-2 text-xs font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+          <div className="mt-1 text-[10px] text-muted-foreground">
+            Leave empty to use the default endpoint.
+          </div>
+          {customApiEndpoint && (
+            <button
+              onClick={() => setCustomApiEndpoint(null)}
+              className="mt-1 text-[10px] text-muted-foreground underline hover:text-foreground"
+            >
+              Reset to default
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* System Prompt */}
+      <div className="mt-6">
+        <div className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          System Prompt
+        </div>
+        <div className="rounded-lg border bg-card p-3.5">
+          <textarea
+            value={systemPrompt}
+            onChange={(e) => setSystemPrompt(e.target.value)}
+            placeholder="You are a helpful AI assistant..."
+            rows={4}
+            className="h-24 w-full resize-y rounded border bg-background px-2 py-1.5 text-xs font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+          <div className="mt-1 text-[10px] text-muted-foreground">
+            Custom instructions prepended to every conversation.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Behavior Tab
+// ═══════════════════════════════════════════════════════════════════════
+
+function BehaviorTab() {
+  const {
+    autoScroll,
+    setAutoScroll,
+    enterToSend,
+    setEnterToSend,
+    notificationsEnabled,
+    setNotificationsEnabled,
+  } = usePreferences();
+
+  return (
+    <div className="mx-auto w-full max-w-md px-6 py-8">
+      <h4 className="font-serif text-lg italic text-foreground">Behavior</h4>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Control how BloxMind behaves during conversations.
+      </p>
+
+      <div className="mt-6 space-y-3">
+        {/* Auto-scroll */}
+        <div className="rounded-lg border bg-card p-3.5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-sm font-medium">Auto-scroll on new messages</div>
+              <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                Automatically scroll to the bottom when new messages arrive.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={autoScroll}
+              aria-label="Auto-scroll"
+              onClick={() => setAutoScroll(!autoScroll)}
+              className={`relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                autoScroll ? "bg-foreground" : "bg-border"
+              }`}
+            >
+              <span
+                className={`inline-block h-3.5 w-3.5 rounded-full bg-background transition-transform ${
+                  autoScroll ? "translate-x-4" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+
+        {/* Enter to send */}
+        <div className="rounded-lg border bg-card p-3.5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-sm font-medium">Enter to send</div>
+              <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                Press Enter to send a message. When disabled, use Shift+Enter to send.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={enterToSend}
+              aria-label="Enter to send"
+              onClick={() => setEnterToSend(!enterToSend)}
+              className={`relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                enterToSend ? "bg-foreground" : "bg-border"
+              }`}
+            >
+              <span
+                className={`inline-block h-3.5 w-3.5 rounded-full bg-background transition-transform ${
+                  enterToSend ? "translate-x-4" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+
+        {/* Notifications */}
+        <div className="rounded-lg border bg-card p-3.5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-sm font-medium">Notifications</div>
+              <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                Show toast notifications for events like session completion or errors.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={notificationsEnabled}
+              aria-label="Notifications"
+              onClick={() => setNotificationsEnabled(!notificationsEnabled)}
+              className={`relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                notificationsEnabled ? "bg-foreground" : "bg-border"
+              }`}
+            >
+              <span
+                className={`inline-block h-3.5 w-3.5 rounded-full bg-background transition-transform ${
+                  notificationsEnabled ? "translate-x-4" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Connection Tab
+// ═══════════════════════════════════════════════════════════════════════
+
+function ConnectionTab() {
+  const {
+    sseReconnectDelay,
+    setSseReconnectDelay,
+    sseHeartbeatTimeout,
+    setSseHeartbeatTimeout,
+  } = usePreferences();
+
+  return (
+    <div className="mx-auto w-full max-w-md px-6 py-8">
+      <h4 className="font-serif text-lg italic text-foreground">Connection</h4>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Configure SSE connection parameters for the OpenCode engine.
+      </p>
+
+      {/* Reconnect delay */}
+      <div className="mt-6">
+        <div className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Reconnect Delay (ms)
+        </div>
+        <div className="rounded-lg border bg-card p-3.5">
+          <input
+            type="number"
+            min={1_000}
+            max={60_000}
+            step={500}
+            value={sseReconnectDelay}
+            onChange={(e) => setSseReconnectDelay(Math.min(60_000, Math.max(1_000, parseInt(e.target.value) || 1_000)))}
+            className="h-8 w-full rounded border bg-background px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+          <div className="mt-1 text-[10px] text-muted-foreground">
+            Base delay between reconnection attempts (1,000–60,000 ms). Uses exponential backoff.
+          </div>
+        </div>
+      </div>
+
+      {/* Heartbeat timeout */}
+      <div className="mt-6">
+        <div className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Heartbeat Timeout (ms)
+        </div>
+        <div className="rounded-lg border bg-card p-3.5">
+          <input
+            type="number"
+            min={5_000}
+            max={120_000}
+            step={1_000}
+            value={sseHeartbeatTimeout}
+            onChange={(e) => setSseHeartbeatTimeout(Math.min(120_000, Math.max(5_000, parseInt(e.target.value) || 5_000)))}
+            className="h-8 w-full rounded border bg-background px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+          <div className="mt-1 text-[10px] text-muted-foreground">
+            Max time without events before forcing a reconnect (5,000–120,000 ms).
+          </div>
+        </div>
       </div>
     </div>
   );
