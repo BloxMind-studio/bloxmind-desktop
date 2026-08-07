@@ -18,10 +18,14 @@ import { qk } from "@/lib/queryKeys";
 import { sseDispatch } from "@/lib/sseDispatch";
 import type { OpenCodeStartupProgress } from "@/types/desktop";
 
-const SSE_RECONNECT_DELAY = 3000;
-const SSE_FAILURE_THRESHOLD = 3;
-const SSE_HEARTBEAT_TIMEOUT = 30_000; // No events for 30s → force reconnect
-const SSE_HEARTBEAT_INTERVAL = 5_000; // Check every 5s
+export const SSE_RECONNECT_DELAY = 3_000;
+export const SSE_FAILURE_THRESHOLD = 3;
+export const SSE_HEARTBEAT_TIMEOUT = 30_000; // No events for 30s → force reconnect
+export const SSE_HEARTBEAT_INTERVAL = 5_000; // Check every 5s
+export const SSE_POLL_INTERVAL = 1_000; // Server health-check poll interval
+export const SSE_POLL_TIMEOUT = 3_000; // Per-poll request timeout
+export const SIDE_PANEL_EXIT_MS = 180; // Side panel exit animation duration
+export const TOOLTIP_DURATION_MS = 2_500; // Project index tooltip display duration
 
 type AppStatus = "waiting" | "ready" | "error";
 export type StartupPhase = "engine" | "connection" | "workspace";
@@ -215,14 +219,14 @@ export function OpenCodeClientProvider({
           const res = await fetch(`${baseUrl}/session`, {
             headers: { Authorization: authorization },
             method: "GET",
-            signal: AbortSignal.timeout(3000),
+            signal: AbortSignal.timeout(SSE_POLL_TIMEOUT),
           });
           if (res.ok || res.status >= 400) return;
         } catch {
           // Connection refused or timeout - keep polling.
         }
         await new Promise((r) => {
-          retryTimer = setTimeout(r, 1000);
+          retryTimer = setTimeout(r, SSE_POLL_INTERVAL);
         });
       }
       throw new Error("cancelled");

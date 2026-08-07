@@ -16,7 +16,11 @@ import { useSessions } from "@/hooks/useSessions";
 import { useStudioConnection } from "@/hooks/useStudioConnection";
 import { analyticsProperties, POSTHOG_PROJECT_TOKEN } from "@/lib/analytics";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
-import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
+import {
+  SIDE_PANEL_EXIT_MS,
+  TOOLTIP_DURATION_MS,
+  useOpenCodeClient,
+} from "@/providers/OpenCodeClientProvider";
 import { useProjectIndexContext } from "@/providers/ProjectIndexProvider";
 import { useStudioTargetOptional } from "@/providers/StudioTargetProvider";
 
@@ -41,7 +45,7 @@ function ProjectIndexButton() {
     refresh();
     setShowTooltip(true);
     clearTimeout(tooltipTimer.current);
-    tooltipTimer.current = setTimeout(() => setShowTooltip(false), 2500);
+    tooltipTimer.current = setTimeout(() => setShowTooltip(false), TOOLTIP_DURATION_MS);
   }, [refresh]);
 
   useEffect(() => () => clearTimeout(tooltipTimer.current), []);
@@ -176,7 +180,7 @@ function Chat() {
         setRenderedSidePanel(desiredSidePanel);
         setSidePanelExiting(false);
         sidePanelTimerRef.current = null;
-      }, 180);
+      }, SIDE_PANEL_EXIT_MS);
       return;
     }
     setRenderedSidePanel(desiredSidePanel);

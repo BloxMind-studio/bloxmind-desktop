@@ -143,7 +143,7 @@ const browserEffects: DesktopEffects = {
       message: "The desktop service is unavailable. Start BloxMind with pnpm dev.",
     }),
   ),
-  getVersion: Effect.succeed("0.5.2"),
+  getVersion: Effect.succeed("0.9.0"),
   openUrl: (url) =>
     Effect.sync(() => window.open(url, "_blank", "noopener,noreferrer")).pipe(Effect.asVoid),
   loadConfig: loadBrowserConfig,
