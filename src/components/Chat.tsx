@@ -138,6 +138,36 @@ function Chat() {
               ? "chat"
               : "home";
 
+  // Keyboard shortcuts
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
+
+      // Cmd/Ctrl+, → Open settings
+      if (e.key === ",") {
+        e.preventDefault();
+        setShowSettings(true);
+        return;
+      }
+
+      // Cmd/Ctrl+N → New session (when available)
+      if (e.key === "n" && ready) {
+        e.preventDefault();
+        createSession.mutate();
+        return;
+      }
+
+      // Cmd/Ctrl+E → Toggle explorer
+      if (e.key === "e" && hasStudioTarget && !showPlaytest) {
+        e.preventDefault();
+        setExplorerCollapsed((c) => !c);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [ready, hasStudioTarget, showPlaytest, createSession]);
+
   useEffect(() => {
     if (!import.meta.env.PROD || !POSTHOG_PROJECT_TOKEN) return;
 

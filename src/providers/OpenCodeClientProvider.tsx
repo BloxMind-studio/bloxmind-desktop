@@ -311,9 +311,14 @@ export function OpenCodeClientProvider({
 
     function scheduleReconnect() {
       clearTimeout(reconnectTimer);
+      const backoff = Math.min(
+        SSE_RECONNECT_DELAY * 2 ** Math.min(consecutiveFailures, 5),
+        30_000,
+      );
+      const delay = consecutiveFailures === 0 ? SSE_RECONNECT_DELAY : backoff;
       reconnectTimer = setTimeout(() => {
         if (!abortController.signal.aborted) void subscribe();
-      }, SSE_RECONNECT_DELAY);
+      }, delay);
     }
 
     // Heartbeat: if no SSE events arrive for SSE_HEARTBEAT_TIMEOUT,
