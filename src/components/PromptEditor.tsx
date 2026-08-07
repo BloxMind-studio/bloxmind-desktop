@@ -385,16 +385,17 @@ export interface PromptEditorHandle {
 }
 
 interface PromptEditorProps {
-  commands: readonly Command[];
-  objects: readonly ExplorerNode[];
-  placeholder: string;
+  commands: Command[];
+  objects: ExplorerNode[];
+  placeholder?: string;
   onChange(text: string): void;
   onSubmit(): void;
   onPaste?: ClipboardEventHandler<HTMLDivElement>;
+  enterToSend?: boolean;
 }
 
 export default forwardRef<PromptEditorHandle, PromptEditorProps>(function PromptEditor(
-  { commands, objects, placeholder, onChange, onSubmit, onPaste },
+  { commands, objects, placeholder, onChange, onSubmit, onPaste, enterToSend = true },
   ref,
 ) {
   const editorRef = useMemo(() => ({ current: null as LexicalEditor | null }), []);
@@ -444,7 +445,9 @@ export default forwardRef<PromptEditorHandle, PromptEditorProps>(function Prompt
               className="app-scrollbar max-h-48 min-h-10 overflow-y-auto whitespace-pre-wrap pb-2 pt-1 text-[13px] leading-relaxed outline-none"
               aria-label="Message"
               onKeyDown={(event) => {
-                if (event.key !== "Enter" || event.shiftKey) return;
+                if (event.key !== "Enter") return;
+                const shouldSubmit = enterToSend ? !event.shiftKey : event.shiftKey;
+                if (!shouldSubmit) return;
                 if (document.querySelector('[role="listbox"] button')) return;
                 event.preventDefault();
                 onSubmit();

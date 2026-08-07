@@ -38,23 +38,25 @@ function App() {
   const activeSessionIdRef = useRef<string | null>(null);
 
   return (
-    <QueryProvider>
-      <ThemeProvider>
-        <OpenCodeClientProvider activeSessionIdRef={activeSessionIdRef}>
-          <ActiveSessionProvider activeSessionIdRef={activeSessionIdRef}>
-            <PreferencesProvider>
-              <StudioTargetProvider>
-                <ExplorerReferenceProvider>
-                  <ProjectIndexProvider>
-                    <AppInner />
-                  </ProjectIndexProvider>
-                </ExplorerReferenceProvider>
-              </StudioTargetProvider>
-            </PreferencesProvider>
-          </ActiveSessionProvider>
-        </OpenCodeClientProvider>
-      </ThemeProvider>
-    </QueryProvider>
+    <ErrorBoundary>
+      <QueryProvider>
+        <ThemeProvider>
+          <OpenCodeClientProvider activeSessionIdRef={activeSessionIdRef}>
+            <ActiveSessionProvider activeSessionIdRef={activeSessionIdRef}>
+              <PreferencesProvider>
+                <StudioTargetProvider>
+                  <ExplorerReferenceProvider>
+                    <ProjectIndexProvider>
+                      <AppInner />
+                    </ProjectIndexProvider>
+                  </ExplorerReferenceProvider>
+                </StudioTargetProvider>
+              </PreferencesProvider>
+            </ActiveSessionProvider>
+          </OpenCodeClientProvider>
+        </ThemeProvider>
+      </QueryProvider>
+    </ErrorBoundary>
   );
 }
 

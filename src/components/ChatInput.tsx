@@ -246,6 +246,7 @@ function ChatInput() {
     selectedAgent,
     selectedVariant,
     hiddenModels,
+    enterToSend,
     setSelectedModel,
     setSelectedAgent,
     setSelectedVariant,
@@ -822,7 +823,7 @@ function ChatInput() {
           <PromptEditor
             ref={promptEditorRef}
             commands={commands}
-            objects={objects}
+            objects={[...objects]}
             onChange={setText}
             onSubmit={handleSubmit}
             onPaste={(e) => {
@@ -840,6 +841,7 @@ function ChatInput() {
               }
             }}
             placeholder={isDragging ? "Drop images here..." : "Describe what you want to build..."}
+            enterToSend={enterToSend}
           />
           <div className="flex shrink-0 flex-col items-end gap-1 pt-0.5">
             {visibleAgents.length > 1 && (

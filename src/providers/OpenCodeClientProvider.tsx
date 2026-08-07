@@ -1,5 +1,5 @@
 import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk/v2/client";
-import { type QueryClient, useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
 import posthog from "posthog-js/dist/module.full.no-external.js";
 import {
   createContext,
@@ -13,6 +13,7 @@ import {
 import { toast } from "sonner";
 import LoadingScreen, { type StartupProgress } from "@/components/LoadingScreen";
 import { captureDetailedAnalytics } from "@/lib/analytics";
+import { loadConfig } from "@/lib/config";
 import { desktop } from "@/lib/desktop";
 import { qk } from "@/lib/queryKeys";
 import { sseDispatch } from "@/lib/sseDispatch";
@@ -185,6 +186,12 @@ export function OpenCodeClientProvider({
   activeSessionIdRef: React.RefObject<string | null>;
 }) {
   const queryClient = useQueryClient();
+  const { data: configData } = useQuery({
+    queryKey: qk.config,
+    queryFn: loadConfig,
+  });
+  const sseReconnectDelay = configData?.sseReconnectDelay ?? SSE_RECONNECT_DELAY;
+  const sseHeartbeatTimeout = configData?.sseHeartbeatTimeout ?? SSE_HEARTBEAT_TIMEOUT;
 
   const [status, setStatus] = useState<AppStatus>("waiting");
   const [startupPhase, setStartupPhase] = useState<StartupPhase>("engine");
@@ -312,10 +319,10 @@ export function OpenCodeClientProvider({
     function scheduleReconnect() {
       clearTimeout(reconnectTimer);
       const backoff = Math.min(
-        SSE_RECONNECT_DELAY * 2 ** Math.min(consecutiveFailures, 5),
+        sseReconnectDelay * 2 ** Math.min(consecutiveFailures, 5),
         30_000,
       );
-      const delay = consecutiveFailures === 0 ? SSE_RECONNECT_DELAY : backoff;
+      const delay = consecutiveFailures === 0 ? sseReconnectDelay : backoff;
       reconnectTimer = setTimeout(() => {
         if (!abortController.signal.aborted) void subscribe();
       }, delay);
@@ -329,7 +336,7 @@ export function OpenCodeClientProvider({
       heartbeatTimer = setInterval(() => {
         if (abortController.signal.aborted) return;
         const elapsed = Date.now() - lastEventTime;
-        if (elapsed >= SSE_HEARTBEAT_TIMEOUT) {
+        if (elapsed >= sseHeartbeatTimeout) {
           console.warn(`SSE heartbeat timeout: no events for ${elapsed}ms, forcing reconnect`);
           consecutiveFailures++;
           if (consecutiveFailures >= SSE_FAILURE_THRESHOLD) showReconnectToast();
@@ -402,7 +409,7 @@ export function OpenCodeClientProvider({
       sseAbortRef.current = null;
       dismissReconnectToast();
     };
-  }, [client, ready, queryClient, activeSessionIdRef]);
+  }, [client, ready, queryClient, activeSessionIdRef, sseReconnectDelay, sseHeartbeatTimeout]);
 
   const value = useMemo<OpenCodeClientContextValue>(
     () => ({ client, status, port, ready, initError }),

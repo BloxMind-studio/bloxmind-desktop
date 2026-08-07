@@ -8,6 +8,63 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ── UI customization variables ────────────────────────────────────── */
+
+:root {
+  --accent-hsl: 221 83% 58%;
+  --app-font-scale: 1;
+}
+
+html {
+  font-size: calc(16px * var(--app-font-scale));
+}
+
+a, button, input, textarea, select, [role="switch"] {
+  accent-color: hsl(var(--accent-hsl));
+}
+
+::selection {
+  background: hsl(var(--accent-hsl) / 0.3);
+}
+
+a:hover, button:hover, [role="button"]:hover {
+  transition-color: hsl(var(--accent-hsl) / 0.1);
+}
+
+html.layout-compact {
+  --spacing-scale: 0.85;
+}
+
+html.layout-comfortable {
+  --spacing-scale: 1;
+}
+
+html.layout-compact .p-4 {
+  padding: calc(1rem * var(--spacing-scale, 1));
+}
+
+html.layout-compact .px-4 {
+  padding-left: calc(1rem * var(--spacing-scale, 1));
+  padding-right: calc(1rem * var(--spacing-scale, 1));
+}
+
+html.layout-compact .py-3 {
+  padding-top: calc(0.75rem * var(--spacing-scale, 1));
+  padding-bottom: calc(0.75rem * var(--spacing-scale, 1));
+}
+
+html.layout-compact .gap-2 {
+  gap: calc(0.5rem * var(--spacing-scale, 1));
+}
+
+html.layout-compact .gap-3 {
+  gap: calc(0.75rem * var(--spacing-scale, 1));
+}
+
+html.layout-compact .m-0 {
+  margin: 0;
+}
+
 .app-scrollbar {
   scrollbar-color: color-mix(in oklch, var(--foreground) 24%, transparent) transparent;
   scrollbar-width: thin;
