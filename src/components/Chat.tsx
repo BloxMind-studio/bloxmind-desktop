@@ -1,5 +1,4 @@
 import { Boxes, FolderTree, Play } from "lucide-react";
-import posthog from "posthog-js/dist/module.full.no-external.js";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 
 import ChatInput from "@/components/ChatInput";
@@ -15,6 +14,7 @@ import { useSessionStatus } from "@/hooks/useSessionStatuses";
 import { useSessions } from "@/hooks/useSessions";
 import { useStudioConnection } from "@/hooks/useStudioConnection";
 import { analyticsProperties, POSTHOG_PROJECT_TOKEN } from "@/lib/analytics";
+import posthog from "posthog-js/dist/module.full.no-external.js";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import {
   SIDE_PANEL_EXIT_MS,

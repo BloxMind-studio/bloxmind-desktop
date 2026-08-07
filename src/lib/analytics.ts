@@ -1,4 +1,4 @@
-import posthog, { type PostHogInterface, type Properties } from "posthog-js";
+import posthog, { type PostHogInterface, type Properties } from "posthog-js/dist/module.full.no-external.js";
 
 export const POSTHOG_PROJECT_TOKEN = import.meta.env.VITE_POSTHOG_PROJECT_TOKEN?.trim() ?? "";
 export const POSTHOG_API_HOST = "https://eu.i.posthog.com";
@@ -9,7 +9,7 @@ export const ANALYTICS_SCHEMA_VERSION = 1;
 
 export function setDetailedAnalyticsEnabled(enabled: boolean): void {
   detailedAnalyticsEnabled = enabled;
-  posthog.register({ analytics_detail_enabled: enabled });
+  posthog.register?.({ analytics_detail_enabled: enabled });
 }
 
 export function analyticsProperties(feature: string, properties: Properties = {}): Properties {
