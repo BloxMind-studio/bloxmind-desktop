@@ -160,32 +160,35 @@ export function useCheckpointHistory(sessionId: string | undefined) {
           preserveUserEdits: !targetCheckpoint.fullSnapshot,
         });
 
-        // NOTE: The restore is filesystem-only. We deliberately do NOT call
-        // client.session.revert() here — that OpenCode runtime call rewinds
-        // the agent's context window and truncates the session's messages,
-        // which would delete chat history. The checkpoint restore above
-        // (git checkout + journal restore) already reverts the files on disk.
-
-        // Align the agent's runtime context with the restored codebase state.
-        // The files on disk were reverted (e.g. settings like "jump height")
-        // but the session context still reflects the newer messages. Inject a
-        // silent system-level context update so future prompts inspect the
-        // current on-disk code rather than stale chat-derived values.
-        if (client && result && targetCheckpoint.messageId) {
+        // Rewind the agent's conversation context to the restored checkpoint
+        // automatically, so the user never has to type a manual "continue from
+        // this point" message after restoring. The checkpoint's messageId is
+        // the prompt that started the task; reverting the FIRST message after
+        // it keeps that prompt active while dropping the reverted work from
+        // the agent's context — the same revert API undo() and
+        // restoreCheckpoint() use. Reverted messages are only marked, not
+        // deleted, so the Redo flow (session.unrevert) can bring them back.
+        // This replaces the old session.prompt() injection, which surfaced a
+        // noisy system message in the chat and triggered an agent reply.
+        let contextRewound = false;
+        if (client && targetCheckpoint.messageId) {
           try {
-            await client.session.prompt({
-              sessionID: sessionId,
-              parts: [
-                {
-                  type: "text",
-                  text: `[SYSTEM_NOTIFICATION_RESTORE]: The user has restored project files back to checkpoint "${targetCheckpoint.messageId}". Note that subsequent code changes in the chat history have been reverted on disk. Always inspect the current codebase and respect this restored point for any performance parameters, script values, and future edits.`,
-                },
-              ],
-            });
+            const cache = queryClient.getQueryData<MessagesCache>(qk.messages(sessionId));
+            const ids = cache?.messageIds ?? [];
+            const anchorIndex = ids.indexOf(targetCheckpoint.messageId);
+            const firstAfterCheckpoint = anchorIndex >= 0 ? ids[anchorIndex + 1] : undefined;
+            if (firstAfterCheckpoint) {
+              await client.session.revert(
+                { sessionID: sessionId, messageID: firstAfterCheckpoint },
+                { throwOnError: true },
+              );
+              contextRewound = true;
+            }
           } catch (contextErr) {
-            // Context injection is best-effort; don't fail the restore if the
-            // agent runtime rejects it.
-            console.error("Failed to inject restore context into agent:", contextErr);
+            // Context rewind is best-effort: the files are already restored,
+            // so a failed revert only means the agent may still see the
+            // pre-restore conversation context.
+            console.error("Failed to rewind agent context after restore:", contextErr);
           }
         }
 
@@ -193,13 +196,21 @@ export function useCheckpointHistory(sessionId: string | undefined) {
         void queryClient.invalidateQueries({ queryKey: qk.messages(sessionId) });
         void queryClient.invalidateQueries({ queryKey: qk.todos(sessionId) });
         // Subtle status: confirm when the reverted files were live-synced to
-        // Roblox Studio via the running & connected Rojo server.
+        // Roblox Studio via the running & connected Rojo server, and mention
+        // when the agent context was rewound automatically (no manual
+        // follow-up message needed).
+        const contextNote = contextRewound
+          ? "The agent's context was automatically rewound to this checkpoint."
+          : undefined;
         if (result?.rojoSynced) {
-          toast.success(result.message ?? `Reverted to Checkpoint ${result.restoredId}`);
+          toast.success(result.message ?? `Reverted to Checkpoint ${result.restoredId}`, {
+            description: contextNote,
+          });
         } else if (result) {
           toast.info(result.message ?? `Reverted to Checkpoint ${result.restoredId}`, {
             description:
-              "Roblox Studio isn't connected to Rojo — connect via the Rojo plugin to see the reverted code.",
+              "Roblox Studio isn't connected to Rojo — connect via the Rojo plugin to see the reverted code."
+              + (contextNote ? ` ${contextNote}` : ""),
           });
         }
         setLastRestoreSynced(result?.rojoSynced ?? false);
