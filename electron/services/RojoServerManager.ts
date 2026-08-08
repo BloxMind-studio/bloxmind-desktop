@@ -50,6 +50,8 @@ const DEFAULT_ROJO_PORT = 34872;
 const MAX_LOG_ENTRIES = 500;
 const STARTUP_TIMEOUT_MS = 15_000;
 const KILL_GRACE_MS = 500;
+/** Hard upper bound for quit-time cleanup so app shutdown can never hang. */
+const CLEANUP_TIMEOUT_MS = 3_000;
 // Rojo 6.x prints "listening on http://localhost:34872/"; Rojo 7.x prints
 // "Rojo server listening:". Match both so we don't wait for a string that
 // never appears and then kill a healthy server.
@@ -176,9 +178,33 @@ async function killExisting(): Promise<void> {
   current.emitter.removeAllListeners();
 }
 
-/** Call on app quit to ensure no orphaned rojo processes. */
-export function cleanupRojo(): void {
-  void killExisting();
+/**
+ * Race a kill operation against a hard timeout. Never rejects: kill errors
+ * are swallowed and a hung kill is cut off by the timeout, so shutdown flows
+ * can safely await it without hanging. Exported for testability.
+ */
+export function boundedKill(
+  kill: () => Promise<void>,
+  timeoutMs: number = CLEANUP_TIMEOUT_MS,
+): Promise<void> {
+  const work = kill().then(
+    () => undefined,
+    () => undefined,
+  );
+  const timeout = new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, timeoutMs);
+    timer.unref?.();
+  });
+  return Promise.race([work, timeout]);
+}
+
+/**
+ * Call on app quit to ensure no orphaned rojo processes. Returns a promise
+ * that resolves when the kill completes OR when the internal timeout fires;
+ * it never rejects, so quit flows can safely await it without hanging.
+ */
+export function cleanupRojo(): Promise<void> {
+  return boundedKill(() => killExisting(), CLEANUP_TIMEOUT_MS);
 }
 
 const DEFAULT_PROJECT_JSON = {

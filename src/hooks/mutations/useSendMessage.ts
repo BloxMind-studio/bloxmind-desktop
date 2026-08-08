@@ -54,14 +54,7 @@ interface SendMessageContext {
 export function useSendMessage(options?: { onError?: (error: Error) => void }) {
   const { client } = useOpenCodeClient();
   const { activeSessionId } = useActiveSession();
-  const {
-    selectedModel,
-    selectedAgent,
-    selectedVariant,
-    temperature,
-    maxTokens,
-    systemPrompt: customSystemPrompt,
-  } = usePreferences();
+  const { selectedModel, selectedAgent, selectedVariant } = usePreferences();
   const queryClient = useQueryClient();
 
   return useMutation<void, Error, SendMessageInput, SendMessageContext | undefined>({
@@ -83,10 +76,8 @@ export function useSendMessage(options?: { onError?: (error: Error) => void }) {
       };
 
       // System prompt: explicit systemPrompt takes priority over studioTargetReference.
-      // The custom user-configured system prompt takes lowest priority.
       if (systemPrompt) opts.system = systemPrompt;
       else if (studioTargetReference) opts.system = studioTargetReference;
-      else if (customSystemPrompt) opts.system = customSystemPrompt;
 
       // Resolve provider/model from the selected model key (e.g. "anthropic/claude-3.5-sonnet").
       let provider: string | undefined;
@@ -103,8 +94,6 @@ export function useSendMessage(options?: { onError?: (error: Error) => void }) {
 
       if (selectedAgent) opts.agent = selectedAgent;
       if (selectedVariant) opts.variant = selectedVariant;
-      if (temperature !== undefined) opts.temperature = temperature;
-      if (maxTokens !== undefined) opts.maxTokens = maxTokens;
 
       // Send the prompt asynchronously (throws on error via throwOnError).
       await client.session.promptAsync(opts as Parameters<typeof client.session.promptAsync>[0], {

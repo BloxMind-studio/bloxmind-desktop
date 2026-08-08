@@ -2,7 +2,7 @@ import { rename, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { app, BrowserWindow, ipcMain, Menu, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from "electron";
 import { autoUpdater } from "electron-updater";
 import { Data, Effect, Layer, ManagedRuntime, Schema } from "effect";
 
@@ -39,6 +39,7 @@ import {
   makeRojoServerManagerLayer,
   RojoServerManagerTag,
 } from "./services/RojoServerManager";
+import { sweepStaleProcesses, type SweepReport } from "./services/staleProcessSweep";
 import {
   makeRojoInstallerLayer,
   resolvePluginsDirectory,
@@ -63,6 +64,13 @@ function configPath(): string {
 
 let mainWindow: BrowserWindow | null = null;
 let quitting = false;
+/** True once the boot sequence has created the main window. */
+let booted = false;
+/** Non-null while quit-time cleanup is running; guards against reentrancy. */
+let shutdownInFlight: Promise<void> | null = null;
+
+/** Hard upper bound on OpenCode runtime disposal during quit. */
+const OPENCODE_DISPOSE_TIMEOUT_MS = 5_000;
 
 class DesktopMainError extends Data.TaggedError("DesktopMainError")<{
   message: string;
@@ -212,6 +220,56 @@ function patchConfig(input: unknown) {
 }
 
 const runMain = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect);
+
+/**
+ * Best-effort sweep of stale rojo/opencode processes left behind by a
+ * crashed or force-killed session. Must never fail startup — any error is
+ * logged and swallowed.
+ */
+const sweepStaleProcessesEffect = Effect.tryPromise(() => sweepStaleProcesses()).pipe(
+  Effect.tap((report: SweepReport) =>
+    report.skipped
+      ? Effect.logDebug("[startup-sweep] skipped (non-Windows platform)")
+      : Effect.logInfo(
+          `[startup-sweep] stale processes killed=${report.killed.length} failed=${report.failed.length}` +
+            ` skippedLiveParent=${report.skippedLiveParent}` +
+            (report.fallback ? " (name-based fallback: parent discovery failed)" : "") +
+            (report.killed.length > 0
+              ? ` (${report.killed.map((entry) => `${entry.image}#${entry.pid}`).join(", ")})`
+              : ""),
+        ),
+  ),
+  Effect.catchAll((cause) =>
+    Effect.logWarning(`[startup-sweep] sweep failed; continuing startup: ${String(cause)}`),
+  ),
+);
+
+/**
+ * Dispose the OpenCode runtime with a hard timeout so quit can never hang
+ * (e.g. on stuck MCP sessions). The timer is unref'd so it does not keep
+ * the process alive once disposal wins the race.
+ */
+const disposeOpenCodeRuntimeBounded = Effect.tryPromise({
+  try: () =>
+    Promise.race([
+      openCodeRuntime.dispose().then(() => "disposed" as const),
+      new Promise<"timeout">((resolve) => {
+        const timer = setTimeout(() => resolve("timeout"), OPENCODE_DISPOSE_TIMEOUT_MS);
+        timer.unref?.();
+      }),
+    ]),
+  catch: (cause) =>
+    new DesktopMainError({ message: "Failed to stop the OpenCode runtime", cause }),
+}).pipe(
+  Effect.flatMap((result) =>
+    result === "timeout"
+      ? Effect.logWarning(
+          `[shutdown] OpenCode runtime dispose timed out after ${OPENCODE_DISPOSE_TIMEOUT_MS}ms; quitting anyway`,
+        )
+      : Effect.void,
+  ),
+  Effect.catchAll(Effect.logError),
+);
 
 const registerIpcHandlers = Effect.sync(() => {
   ipcMain.handle(channels.compileExplorerProgram, (_event, input: unknown) =>
@@ -664,58 +722,104 @@ const registerAppLifecycle = Effect.sync(() => {
   app.on("before-quit", (event) => {
     if (quitting) return;
     event.preventDefault();
-    cleanupRojo();
-    Effect.runFork(
-      Effect.tryPromise({
-        try: () => openCodeRuntime.dispose(),
-        catch: (cause) =>
-          new DesktopMainError({ message: "Failed to stop the OpenCode runtime", cause }),
-      }).pipe(
-        Effect.catchAll(Effect.logError),
-        Effect.ensuring(
-          Effect.sync(() => {
-            quitting = true;
-            app.quit();
-          }),
-        ),
-      ),
-    );
+    // A second quit trigger while cleanup is running must not fork another
+    // parallel cleanup (which would double-dispose the OpenCode runtime).
+    if (shutdownInFlight !== null) return;
+    // Await both cleanups in parallel, each individually bounded, so quit
+    // can never hang indefinitely. Errors are logged, never thrown.
+    shutdownInFlight = Effect.runPromise(
+      Effect.all(
+        [
+          // cleanupRojo() never rejects; its internal timeout bounds it.
+          Effect.promise(() => cleanupRojo()),
+          disposeOpenCodeRuntimeBounded,
+        ],
+        { concurrency: 2 },
+      ).pipe(Effect.catchAll(Effect.logError)),
+    ).then(() => {
+      quitting = true;
+      app.quit();
+    });
   });
 });
 
-Effect.runFork(
-  Effect.gen(function* () {
-    yield* Effect.sync(() => {
-      autoUpdater.autoDownload = false;
-      autoUpdater.autoInstallOnAppQuit = true;
-    });
-    yield* registerAppLifecycle;
-    yield* Effect.tryPromise({
-      try: () => app.whenReady(),
-      catch: (cause) => new DesktopMainError({ message: "Electron failed to become ready", cause }),
-    });
-    yield* registerIpcHandlers;
-    yield* Effect.sync(() => Menu.setApplicationMenu(null));
-    yield* createWindow();
-    // Auto-start the Rojo server against the BloxMind workspace so that
-    // Roblox Studio can connect immediately without manual setup.
-    // Defer slightly so the window loads first, then start `rojo serve`.
-    setTimeout(() => {
-      openCodeRuntime
-        .runPromise(
-          Effect.gen(function* () {
-            const rojo = yield* RojoServerManagerTag;
-            yield* rojo.start(join(app.getPath("home"), "BloxMind"));
-          }),
-        )
-        .catch(Effect.logWarning);
-    }, 500);
-    yield* Effect.sync(() =>
-      app.on("activate", () => {
-        if (BrowserWindow.getAllWindows().length === 0) {
-          Effect.runFork(createWindow().pipe(Effect.catchAll(Effect.logError)));
-        }
-      }),
-    );
-  }).pipe(Effect.catchAll(Effect.logError)),
-);
+// ── Single-instance lock ─────────────────────────────────────────────
+// A second launch must not race Rojo's fixed port or double background
+// processes. If the lock is already held, quit immediately without
+// starting any services.
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+
+if (!hasSingleInstanceLock) {
+  Effect.runSync(
+    Effect.logWarning(
+      "[single-instance] another BloxMind instance is already running; quitting",
+    ),
+  );
+  // Give the user visible feedback on why nothing launched. showErrorBox is
+  // safe to call before the app is ready.
+  dialog.showErrorBox(
+    "BloxMind is already running",
+    "Another instance of BloxMind is already running. Switch to its window instead of launching a second copy.",
+  );
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    // Ignore events before boot completes (window/IPC handlers not ready) or
+    // while shutting down — the primary instance's own boot/quit already
+    // satisfies the second launch's intent.
+    if (!booted || quitting || shutdownInFlight !== null) return;
+    // Focus/restore the existing window; create one if it was closed/hidden.
+    const window = mainWindow;
+    if (window && !window.isDestroyed()) {
+      if (window.isMinimized()) window.restore();
+      if (!window.isVisible()) window.show();
+      window.focus();
+      return;
+    }
+    Effect.runFork(createWindow().pipe(Effect.catchAll(Effect.logError)));
+  });
+
+  Effect.runFork(
+    Effect.gen(function* () {
+      yield* Effect.sync(() => {
+        autoUpdater.autoDownload = false;
+        autoUpdater.autoInstallOnAppQuit = true;
+      });
+      // Kill leftover rojo/opencode processes from a previous crashed or
+      // force-killed session BEFORE spawning our own. Best-effort: failures
+      // are logged and never block startup.
+      yield* sweepStaleProcessesEffect;
+      yield* registerAppLifecycle;
+      yield* Effect.tryPromise({
+        try: () => app.whenReady(),
+        catch: (cause) => new DesktopMainError({ message: "Electron failed to become ready", cause }),
+      });
+      yield* registerIpcHandlers;
+      yield* Effect.sync(() => Menu.setApplicationMenu(null));
+      yield* createWindow();
+      yield* Effect.sync(() => {
+        booted = true;
+      });
+      // Auto-start the Rojo server against the BloxMind workspace so that
+      // Roblox Studio can connect immediately without manual setup.
+      // Defer slightly so the window loads first, then start `rojo serve`.
+      setTimeout(() => {
+        openCodeRuntime
+          .runPromise(
+            Effect.gen(function* () {
+              const rojo = yield* RojoServerManagerTag;
+              yield* rojo.start(join(app.getPath("home"), "BloxMind"));
+            }),
+          )
+          .catch(Effect.logWarning);
+      }, 500);
+      yield* Effect.sync(() =>
+        app.on("activate", () => {
+          if (BrowserWindow.getAllWindows().length === 0) {
+            Effect.runFork(createWindow().pipe(Effect.catchAll(Effect.logError)));
+          }
+        }),
+      );
+    }).pipe(Effect.catchAll(Effect.logError)),
+  );
+}

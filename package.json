@@ -16,7 +16,7 @@
     "url": "https://github.com/YUouriii/app-BloxMind-ai.git"
   },
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/dev.mjs",
     "build": "tsc && vite build",
     "package": "pnpm build && electron-builder",
     "preview": "vite preview",
