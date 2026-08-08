@@ -7,6 +7,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed Regenerate to replay the Studio target and project index system context, matching what a fresh send attaches.
+- Fixed Regenerate so it never replays legacy injected `[SYSTEM_NOTIFICATION_*]` messages as the prompt.
+- Fixed checkpoint restore so the automatic context rewind only runs for full-snapshot checkpoints, protecting user edits preserved by incremental restores.
+
 ## [0.9.5] - 2026-08-08
 
 ### Added
@@ -16,6 +22,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Fixed
 
 - Fixed the Explorer failing to load by sending the required `datamodel_type: Edit` parameter to Roblox Studio's `search_game_tree` MCP tool.
+- Fixed the Explorer getting permanently stuck after a first failed sync by retrying automatically with capped backoff.
+- Fixed the Explorer hiding the real failure reason — Studio-side errors now surface in the panel banner instead of a generic message.
+- Fixed checkpoint restore so the agent's context rewinds automatically, removing the need to send a manual "continue from here" message.
 
 ## [0.9.2] - 2026-08-08
 
