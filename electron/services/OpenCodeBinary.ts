@@ -4,8 +4,8 @@ import {
   chmod,
   mkdir,
   mkdtemp,
-  readFile,
   readdir,
+  readFile,
   rename,
   rm,
   stat,
@@ -252,14 +252,17 @@ function findCompatibleRelease(fetchFn: Fetch, archiveName: string) {
       const { releasesJson, response } = yield* tryPromise(
         "GitHub release lookup failed",
         async (signal) => {
-          const response = await fetchFn(`${OPEN_CODE_API}?per_page=${RELEASES_PER_PAGE}&page=${page}`, {
-          headers: {
-            Accept: "application/vnd.github+json",
-            "User-Agent": "BloxMind",
-            "X-GitHub-Api-Version": "2022-11-28",
-          },
-          signal: AbortSignal.any([signal, AbortSignal.timeout(LOOKUP_TIMEOUT_MS)]),
-          });
+          const response = await fetchFn(
+            `${OPEN_CODE_API}?per_page=${RELEASES_PER_PAGE}&page=${page}`,
+            {
+              headers: {
+                Accept: "application/vnd.github+json",
+                "User-Agent": "BloxMind",
+                "X-GitHub-Api-Version": "2022-11-28",
+              },
+              signal: AbortSignal.any([signal, AbortSignal.timeout(LOOKUP_TIMEOUT_MS)]),
+            },
+          );
           return {
             releasesJson: response.ok ? await response.json() : undefined,
             response,
@@ -411,9 +414,8 @@ function installRelease(
   reportProgress?: StartupProgressReporter,
 ): Effect.Effect<OpenCodeBinary, OpenCodeBinaryError> {
   return Effect.acquireUseRelease(
-    tryPromise(
-      "Failed to create a temporary OpenCode directory",
-      () => mkdtemp(join(platformDirectory, ".download-")),
+    tryPromise("Failed to create a temporary OpenCode directory", () =>
+      mkdtemp(join(platformDirectory, ".download-")),
     ),
     (temporaryDirectory) => {
       const installDirectory = join(temporaryDirectory, "install");
@@ -493,10 +495,7 @@ function installRelease(
               binarySha256: yield* sha256File(executable),
             };
             yield* tryPromise("Failed to write OpenCode cache metadata", () =>
-              writeFile(
-                join(installDirectory, "metadata.json"),
-                JSON.stringify(metadata, null, 2),
-              ),
+              writeFile(join(installDirectory, "metadata.json"), JSON.stringify(metadata, null, 2)),
             );
             yield* tryPromise("Failed to replace the cached OpenCode version", () =>
               rm(versionDirectory, { recursive: true, force: true }),
@@ -531,11 +530,13 @@ function pruneCache(platformDirectory: string, keep = 2) {
       .sort((left, right) => compareVersions(right, left));
 
     yield* Effect.all(
-      versions.slice(keep).map((version) =>
-        tryPromise(`Failed to prune cached OpenCode v${version.value}`, () =>
-          rm(join(platformDirectory, version.value), { recursive: true, force: true }),
+      versions
+        .slice(keep)
+        .map((version) =>
+          tryPromise(`Failed to prune cached OpenCode v${version.value}`, () =>
+            rm(join(platformDirectory, version.value), { recursive: true, force: true }),
+          ),
         ),
-      ),
       { concurrency: 4, discard: true },
     );
   });
@@ -560,13 +561,7 @@ export function ensureOpenCodeBinary(
     const onlineInstall = Effect.gen(function* () {
       const release = yield* findCompatibleRelease(fetchFn, spec.archiveName);
       const versionDirectory = join(platformDirectory, release.version.value);
-      const cached = yield* readValidCachedBinary(
-        versionDirectory,
-        platform,
-        arch,
-        spec,
-        release,
-      );
+      const cached = yield* readValidCachedBinary(versionDirectory, platform, arch, spec, release);
       const binary =
         cached ??
         (yield* installRelease(

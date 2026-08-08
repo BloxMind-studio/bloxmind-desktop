@@ -1,6 +1,6 @@
-import { exec, type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
+import { type ChildProcessWithoutNullStreams, exec, spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { access, writeFile, mkdir } from "node:fs/promises";
+import { access, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { Data, Effect, Layer } from "effect";
@@ -63,7 +63,7 @@ const ROJO_ERROR_REGEX = /(?:error|failed|cannot|unable to|port already in use)/
 
 /** Remove ANSI color/control sequences that Rojo emits when stdout is a pipe. */
 function stripAnsi(text: string): string {
-  // eslint-disable-next-line no-control-regex
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI CSI sequences begin with ESC by design
   return text.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "");
 }
 
@@ -79,14 +79,10 @@ async function hasClientOnPort(port: number): Promise<boolean> {
   try {
     const stdout = await new Promise<string>((resolve, reject) => {
       const isWindows = process.platform === "win32";
-      exec(
-        isWindows ? "netstat -ano" : "netstat -an",
-        { windowsHide: true },
-        (err, stdout) => {
-          if (err) reject(err);
-          else resolve(stdout);
-        },
-      );
+      exec(isWindows ? "netstat -ano" : "netstat -an", { windowsHide: true }, (err, stdout) => {
+        if (err) reject(err);
+        else resolve(stdout);
+      });
     });
     const portString = String(port);
     const portCol = `:${portString}`;
@@ -210,25 +206,25 @@ export function cleanupRojo(): Promise<void> {
 const DEFAULT_PROJECT_JSON = {
   name: "BloxMind Project",
   tree: {
-    "$className": "DataModel",
-    "ReplicatedStorage": {
-      "$className": "ReplicatedStorage",
-      "BloxMind": {
-        "$path": "src",
+    $className: "DataModel",
+    ReplicatedStorage: {
+      $className: "ReplicatedStorage",
+      BloxMind: {
+        $path: "src",
       },
     },
-    "ServerScriptService": {
-      "$className": "ServerScriptService",
-      "Server": {
-        "$path": "server",
+    ServerScriptService: {
+      $className: "ServerScriptService",
+      Server: {
+        $path: "server",
       },
     },
-    "StarterPlayer": {
-      "$className": "StarterPlayer",
-      "StarterPlayerScripts": {
-        "$className": "StarterPlayerScripts",
-        "Client": {
-          "$path": "client",
+    StarterPlayer: {
+      $className: "StarterPlayer",
+      StarterPlayerScripts: {
+        $className: "StarterPlayerScripts",
+        Client: {
+          $path: "client",
         },
       },
     },
@@ -279,9 +275,7 @@ function buildManager(options: RojoServerManagerOptions): RojoServerManager {
       if (!current || current.child.exitCode !== null) return;
       const connected = yield* Effect.tryPromise(() =>
         hasClientOnPort(current.port ?? DEFAULT_ROJO_PORT),
-      ).pipe(
-        Effect.catchAll(() => Effect.succeed(false)),
-      );
+      ).pipe(Effect.catchAll(() => Effect.succeed(false)));
       if (runtime && runtime === current) {
         runtime.clientConnected = connected;
       }
@@ -300,26 +294,31 @@ function buildManager(options: RojoServerManagerOptions): RojoServerManager {
       // Ensure default.project.json exists — rojo serve requires it.
       yield* Effect.tryPromise({
         try: () => ensureProjectJson(workspace),
-        catch: (cause) => new RojoError({ message: "Failed to create default.project.json", cause }),
+        catch: (cause) =>
+          new RojoError({ message: "Failed to create default.project.json", cause }),
       });
 
       // Prefer the locally downloaded binary (1-click setup) over PATH.
       // The installer writes rojo.exe into the app's userData/bin directory.
-      const binary = process.platform === "win32"
-        ? "rojo.exe"
-        : "rojo";
+      const binary = process.platform === "win32" ? "rojo.exe" : "rojo";
       const localCandidate = join(options.binDirectory, binary);
       const resolvedBinary =
-        (yield* Effect.promise(() => access(localCandidate).then(() => localCandidate, () => null))) ??
-        binary;
+        (yield* Effect.promise(() =>
+          access(localCandidate).then(
+            () => localCandidate,
+            () => null,
+          ),
+        )) ?? binary;
 
       // Bind explicitly to 127.0.0.1 (safe default). The project file is the
       // positional <PROJECT> argument (Rojo 7.x), so we pass it explicitly
       // rather than relying on the CWD.
       const serveArgs = [
         "serve",
-        "--port", String(DEFAULT_ROJO_PORT),
-        "--address", "127.0.0.1",
+        "--port",
+        String(DEFAULT_ROJO_PORT),
+        "--address",
+        "127.0.0.1",
         "default.project.json",
       ];
       const child = spawn(resolvedBinary, serveArgs, {
@@ -526,14 +525,17 @@ function buildManager(options: RojoServerManagerOptions): RojoServerManager {
         if (runtime && runtime.child.exitCode === null) {
           yield* Effect.promise(() => killExisting());
           yield* Effect.logInfo("[rojo] toggled off");
-          return { active: false, port: null, error: null, workspace: null, clientConnected: false };
+          return {
+            active: false,
+            port: null,
+            error: null,
+            workspace: null,
+            clientConnected: false,
+          };
         }
         return yield* start(workspace);
       }),
-    getLogs: () =>
-      Effect.gen(function* () {
-        return runtime ? [...runtime.logs] : [];
-      }),
+    getLogs: () => Effect.sync(() => (runtime ? [...runtime.logs] : [])),
     onLog: (listener: (entry: RojoLogEntry) => void) => {
       if (!runtime) return () => {};
       runtime.emitter.on("log", listener);

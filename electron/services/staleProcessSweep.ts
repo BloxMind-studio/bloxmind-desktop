@@ -54,15 +54,10 @@ export type SweepRunner = (file: string, args: readonly string[]) => Promise<str
 
 const defaultRunner: SweepRunner = (file, args) =>
   new Promise<string>((resolve, reject) => {
-    execFile(
-      file,
-      [...args],
-      { windowsHide: true, timeout: EXEC_TIMEOUT_MS },
-      (error, stdout) => {
-        if (error) reject(error);
-        else resolve(stdout);
-      },
-    );
+    execFile(file, [...args], { windowsHide: true, timeout: EXEC_TIMEOUT_MS }, (error, stdout) => {
+      if (error) reject(error);
+      else resolve(stdout);
+    });
   });
 
 /**
@@ -118,10 +113,7 @@ async function listLivePids(run: SweepRunner): Promise<Set<number> | null> {
 }
 
 export async function sweepStaleProcesses(
-  options: {
-    readonly platform?: NodeJS.Platform;
-    readonly run?: SweepRunner;
-  } = {},
+  options: { readonly platform?: NodeJS.Platform; readonly run?: SweepRunner } = {},
 ): Promise<SweepReport> {
   const platform = options.platform ?? process.platform;
   const run = options.run ?? defaultRunner;

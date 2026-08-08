@@ -20,5 +20,9 @@ export function useSessions() {
       return res.data.filter(isVisibleSession).sort((a, b) => b.time.created - a.time.created);
     },
     enabled: ready && !!client,
+    // Watchdog poll (see useSessionStatuses for rationale): the session list is
+    // normally kept fresh by SSE invalidation, but a dropped or reconnecting
+    // stream could otherwise leave it stale silently. A slow poll reconciles it.
+    refetchInterval: 30_000,
   });
 }

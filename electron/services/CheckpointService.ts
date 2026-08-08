@@ -4,8 +4,8 @@ import {
   access,
   copyFile,
   mkdir,
-  readFile,
   readdir,
+  readFile,
   rename,
   rm,
   writeFile,
@@ -19,10 +19,10 @@ import {
   type CaptureContext,
   CaptureContextSchema,
   type Checkpoint,
-  CheckpointSchema,
   type CheckpointRestoreInput,
   CheckpointRestoreInputSchema,
   type CheckpointRestoreResult,
+  CheckpointSchema,
   type FileChange,
   type RestorePreview,
   RestorePreviewSchema,
@@ -72,12 +72,7 @@ export class CheckpointServiceTag extends Context.Tag("@BloxMind/CheckpointServi
 // ── Helpers ─────────────────────────────────────────────────────────────
 
 function isMissingFile(cause: unknown): boolean {
-  return (
-    cause !== null &&
-    typeof cause === "object" &&
-    "code" in cause &&
-    cause.code === "ENOENT"
-  );
+  return cause !== null && typeof cause === "object" && "code" in cause && cause.code === "ENOENT";
 }
 
 function readJsonFile<A>(
@@ -352,11 +347,7 @@ function makeCapture(
         Effect.flatMap((isRepo) =>
           isRepo
             ? git(
-                [
-                  "stash",
-                  "create",
-                  `bloxmind:${randomBytes(6).toString("hex")}`,
-                ],
+                ["stash", "create", `bloxmind:${randomBytes(6).toString("hex")}`],
                 options.workspace,
               ).pipe(
                 Effect.map((out) => out.trim() || null),
@@ -404,7 +395,8 @@ function restoreFromJournal(
       if (change.operation === "create") {
         yield* Effect.tryPromise({
           try: () => rm(absPath, { force: true }),
-          catch: (cause) => new CheckpointError({ message: `Failed to remove ${change.path}`, cause }),
+          catch: (cause) =>
+            new CheckpointError({ message: `Failed to remove ${change.path}`, cause }),
         });
       } else if (change.preContent !== null) {
         yield* Effect.tryPromise({
@@ -521,7 +513,8 @@ function makeRestore(
         const absPath = resolve(options.workspace, change.path);
         const after = yield* Effect.tryPromise({
           try: () => readTextSafe(absPath),
-          catch: (cause) => new CheckpointError({ message: `Failed to verify ${change.path}`, cause }),
+          catch: (cause) =>
+            new CheckpointError({ message: `Failed to verify ${change.path}`, cause }),
         });
         if (change.operation === "create") {
           if (after !== null) {
@@ -605,9 +598,14 @@ function makePreview(
       const index = yield* loadSessionIndex(options.storeRoot, sessionId);
       const checkpoint = index.history.find((c) => c.id === checkpointId);
       if (!checkpoint) {
-        return yield* Effect.fail(new CheckpointError({ message: `No checkpoint ${checkpointId}` }));
+        return yield* Effect.fail(
+          new CheckpointError({ message: `No checkpoint ${checkpointId}` }),
+        );
       }
-      yield* validateWorkspacePaths(options.workspace, checkpoint.paths.map((c) => c.path));
+      yield* validateWorkspacePaths(
+        options.workspace,
+        checkpoint.paths.map((c) => c.path),
+      );
       const segments = checkpoint.paths.map((c) => ({ path: c.path, operation: c.operation }));
       return yield* Schema.decodeUnknown(RestorePreviewSchema)({
         segments,
@@ -673,8 +671,7 @@ const isNodeProject = (workspace: string): Effect.Effect<boolean, CheckpointErro
   });
 
 const makeValidate =
-  (options: CheckpointServiceOptions) =>
-  (): Effect.Effect<ValidationResult, CheckpointError> =>
+  (options: CheckpointServiceOptions) => (): Effect.Effect<ValidationResult, CheckpointError> =>
     Effect.gen(function* () {
       // Only gate Node/TypeScript projects. For non-Node workspaces (plain
       // folders, game projects, etc.) there is nothing to lint/type-check/test,

@@ -51,6 +51,6 @@
     }
   },
   "files": {
-    "includes": ["src/**/*.ts", "src/**/*.tsx"]
+    "includes": ["src/**/*.ts", "src/**/*.tsx", "electron/**/*.ts", "scripts/**/*.ts"]
   }
 }

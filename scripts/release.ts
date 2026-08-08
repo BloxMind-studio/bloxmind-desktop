@@ -1,7 +1,7 @@
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { changelogSection, releaseAssetNames, releaseNotes } from "./release-notes.ts";
 
@@ -79,7 +79,9 @@ async function readReleaseInputs(): Promise<{
   tag: string;
   version: string;
 }> {
-  const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8")) as {
+  const packageJson = JSON.parse(
+    await readFile(new URL("../package.json", import.meta.url), "utf8"),
+  ) as {
     version?: unknown;
   };
   if (typeof packageJson.version !== "string") throw new Error("package.json has no version");
@@ -91,7 +93,7 @@ async function readReleaseInputs(): Promise<{
 }
 
 async function validate(): Promise<void> {
-  const { tag, version } = await readReleaseInputs();
+  const { tag } = await readReleaseInputs();
   const existingRelease = inspectRelease(tag);
   releaseAction(existingRelease, remoteTagExists(tag));
 

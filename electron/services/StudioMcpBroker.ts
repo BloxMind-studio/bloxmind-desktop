@@ -1,19 +1,19 @@
+import { randomUUID } from "node:crypto";
+import { access, mkdir } from "node:fs/promises";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {
   CallToolRequestSchema,
+  type CallToolResult,
   CallToolResultSchema,
   isInitializeRequest,
   ListToolsRequestSchema,
-  ToolListChangedNotificationSchema,
-  type CallToolResult,
   type Tool,
+  ToolListChangedNotificationSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { randomUUID } from "node:crypto";
-import { access, mkdir } from "node:fs/promises";
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { Context, Data, Effect, Layer } from "effect";
 
 import { studioMcpCommand } from "../opencodeConfig";
@@ -151,14 +151,9 @@ interface BrokerResource extends StudioMcpBrokerService {
   close(): Promise<void>;
 }
 
-export async function startStudioMcpBroker(
-  upstream: StudioMcpUpstream,
-): Promise<BrokerResource> {
+export async function startStudioMcpBroker(upstream: StudioMcpUpstream): Promise<BrokerResource> {
   process.stderr.write("[studio-mcp] broker starting\n");
-  const sessions = new Map<
-    string,
-    { server: Server; transport: StreamableHTTPServerTransport }
-  >();
+  const sessions = new Map<string, { server: Server; transport: StreamableHTTPServerTransport }>();
   function makeSession() {
     const server = new Server(
       { name: "BloxMind-studio-broker", version: "1.0.0" },

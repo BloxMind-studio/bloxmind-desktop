@@ -1,11 +1,13 @@
-import { Boxes, FolderTree, Play } from "lucide-react";
+import { Box, Boxes, FolderTree, Map as MapIcon, Play, Swords } from "lucide-react";
 import posthog from "posthog-js/dist/module.full.no-external.js";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { BloxMindLogo } from "@/components/BloxMindLogo";
 import ChatInput from "@/components/ChatInput";
 import ChatMessages from "@/components/ChatMessages";
 import ChatSidebar from "@/components/ChatSidebar";
 import Explorer from "@/components/Explorer";
 import LoadingScreen from "@/components/LoadingScreen";
+import MeshPanel from "@/components/MeshPanel";
 import PlaytestPanel from "@/components/PlaytestPanel";
 import StudioSetup from "@/components/StudioSetup";
 import StudioTargetPicker from "@/components/StudioTargetPicker";
@@ -114,13 +116,18 @@ function Chat() {
   const [showSettings, setShowSettings] = useState(false);
   const [showStudioSetup, setShowStudioSetup] = useState(false);
   const [showPlaytest, setShowPlaytest] = useState(false);
-  const sidePanelOpen = showPlaytest || (hasStudioTarget && !explorerCollapsed);
+  const [showMesh, setShowMesh] = useState(false);
+  const sidePanelOpen = showPlaytest || showMesh || (hasStudioTarget && !explorerCollapsed);
   const desiredSidePanel = showPlaytest
     ? "playtest"
-    : hasStudioTarget && !explorerCollapsed
-      ? "explorer"
-      : null;
-  const [renderedSidePanel, setRenderedSidePanel] = useState<"explorer" | "playtest" | null>(null);
+    : showMesh
+      ? "mesh"
+      : hasStudioTarget && !explorerCollapsed
+        ? "explorer"
+        : null;
+  const [renderedSidePanel, setRenderedSidePanel] = useState<
+    "explorer" | "playtest" | "mesh" | null
+  >(null);
   const [sidePanelExiting, setSidePanelExiting] = useState(false);
   const sidePanelTimerRef = useRef<number | null>(null);
 
@@ -158,14 +165,14 @@ function Chat() {
       }
 
       // Cmd/Ctrl+E → Toggle explorer
-      if (e.key === "e" && hasStudioTarget && !showPlaytest) {
+      if (e.key === "e" && hasStudioTarget && !showPlaytest && !showMesh) {
         e.preventDefault();
         setExplorerCollapsed((c) => !c);
       }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [ready, hasStudioTarget, showPlaytest, createSession]);
+  }, [ready, hasStudioTarget, showPlaytest, showMesh, createSession]);
 
   useEffect(() => {
     if (!import.meta.env.PROD || !POSTHOG_PROJECT_TOKEN) return;
@@ -234,17 +241,36 @@ function Chat() {
       return;
     }
 
+    if (showMesh) {
+      posthog.capture("mesh_closed", analyticsProperties("mesh"));
+      setShowMesh(false);
+      setExplorerCollapsed(false);
+      return;
+    }
+
     setExplorerCollapsed((collapsed) => !collapsed);
-  }, [showPlaytest]);
+  }, [showPlaytest, showMesh]);
   const handleOpenPlaytest = useCallback(() => {
     if (!hasStudioTarget) return;
     posthog.capture("playtest_opened", analyticsProperties("playtest"));
     setExplorerCollapsed(true);
+    setShowMesh(false);
     setShowPlaytest(true);
   }, [hasStudioTarget]);
   const handleClosePlaytest = useCallback(() => {
     posthog.capture("playtest_closed", analyticsProperties("playtest"));
     setShowPlaytest(false);
+  }, []);
+  const handleOpenMesh = useCallback(() => {
+    if (!hasStudioTarget) return;
+    posthog.capture("mesh_opened", analyticsProperties("mesh"));
+    setExplorerCollapsed(true);
+    setShowPlaytest(false);
+    setShowMesh(true);
+  }, [hasStudioTarget]);
+  const handleCloseMesh = useCallback(() => {
+    posthog.capture("mesh_closed", analyticsProperties("mesh"));
+    setShowMesh(false);
   }, []);
 
   // Main chat UI
@@ -274,8 +300,11 @@ function Chat() {
         ) : !ready ? (
           <LoadingScreen message="Initializing..." />
         ) : !activeSessionId ? (
-          <div className="flex flex-1 flex-col items-center justify-center px-6">
-            <div className="animate-fade-in-up text-center">
+          <div className="app-scrollbar flex flex-1 flex-col items-center justify-center overflow-y-auto px-6 py-8">
+            <div className="animate-fade-in-up w-full max-w-lg text-center">
+              <div className="mb-4 flex justify-center">
+                <BloxMindLogo size={44} className="text-foreground/90" />
+              </div>
               <h2 className="font-serif text-2xl italic text-foreground">
                 What would you like to build?
               </h2>
@@ -303,6 +332,37 @@ function Chat() {
                 </svg>
                 New Session
               </button>
+
+              {/* Capability teaser cards — informational only. */}
+              <div className="mt-8 grid grid-cols-1 gap-2 text-left sm:grid-cols-3">
+                <div className="rounded-lg border bg-card/60 p-3">
+                  <div className="flex items-center gap-1.5 text-[11px] font-semibold text-foreground">
+                    <Swords aria-hidden="true" size={12} className="text-muted-foreground" />
+                    Animations
+                  </div>
+                  <p className="mt-1 text-[10.5px] leading-relaxed text-muted-foreground">
+                    Pro combat combos, dances, and emotes for R15 and R6 rigs.
+                  </p>
+                </div>
+                <div className="rounded-lg border bg-card/60 p-3">
+                  <div className="flex items-center gap-1.5 text-[11px] font-semibold text-foreground">
+                    <MapIcon aria-hidden="true" size={12} className="text-muted-foreground" />
+                    Whole maps
+                  </div>
+                  <p className="mt-1 text-[10.5px] leading-relaxed text-muted-foreground">
+                    Structured plans first, then complete zones, terrain, and lighting.
+                  </p>
+                </div>
+                <div className="rounded-lg border bg-card/60 p-3">
+                  <div className="flex items-center gap-1.5 text-[11px] font-semibold text-foreground">
+                    <Box aria-hidden="true" size={12} className="text-muted-foreground" />
+                    AI meshes
+                  </div>
+                  <p className="mt-1 text-[10.5px] leading-relaxed text-muted-foreground">
+                    Turn a short description into a generated 3D model in Studio.
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
         ) : (
@@ -338,6 +398,20 @@ function Chat() {
                         className={`overflow-hidden whitespace-nowrap transition-[max-width,margin,opacity] duration-200 ${sidePanelOpen ? "ml-0 max-w-0 opacity-0" : "ml-1.5 max-w-16 opacity-100"}`}
                       >
                         Explorer
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleOpenMesh}
+                      disabled={isBusy}
+                      className="inline-flex h-7 items-center rounded-md border bg-background px-2 text-[11px] font-medium text-muted-foreground transition-[background-color,color] hover:bg-accent hover:text-foreground disabled:opacity-40"
+                      title={isBusy ? "Wait for the agent to finish" : "Generate a mesh"}
+                    >
+                      <Box aria-hidden="true" size={13} />
+                      <span
+                        className={`overflow-hidden whitespace-nowrap transition-[max-width,margin,opacity] duration-200 ${sidePanelOpen ? "ml-0 max-w-0 opacity-0" : "ml-1.5 max-w-16 opacity-100"}`}
+                      >
+                        Mesh
                       </span>
                     </button>
                     <button
@@ -381,6 +455,8 @@ function Chat() {
               sessionBusy={isBusy}
               onToggle={() => setExplorerCollapsed(true)}
             />
+          ) : renderedSidePanel === "mesh" ? (
+            <MeshPanel onClose={handleCloseMesh} />
           ) : (
             <PlaytestPanel onClose={handleClosePlaytest} />
           )}

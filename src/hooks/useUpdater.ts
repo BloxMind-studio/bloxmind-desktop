@@ -29,6 +29,13 @@ function isPatchOnly(current: SemVer, next: SemVer): boolean {
   return current.major === next.major && current.minor === next.minor;
 }
 
+/** Numeric semver comparison; returns true only when next is strictly newer. */
+function isNewerThan(next: SemVer, current: SemVer): boolean {
+  return (
+    (next.major - current.major || next.minor - current.minor || next.patch - current.patch) > 0
+  );
+}
+
 // ── Hook ────────────────────────────────────────────────────────────────
 
 export function useUpdater(): void {
@@ -50,7 +57,11 @@ export function useUpdater(): void {
         const currentVersion = await desktop.getVersion();
         const current = parseSemver(currentVersion);
         const next = parseSemver(update.version);
-        const patch = current && next ? isPatchOnly(current, next) : false;
+        // electron-updater reports the latest release even when the app is
+        // already current; only act when the reported version is strictly
+        // newer than what is running.
+        if (cancelled || !current || !next || !isNewerThan(next, current)) return;
+        const patch = isPatchOnly(current, next);
 
         if (patch) {
           // Patch update — auto-install silently.

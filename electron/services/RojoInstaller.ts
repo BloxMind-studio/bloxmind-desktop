@@ -1,10 +1,10 @@
+import { exec } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import { access, chmod, copyFile, mkdir, readdir, rm } from "node:fs/promises";
+import os from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { exec } from "node:child_process";
-import os from "node:os";
 
 import { Data, Effect, Layer } from "effect";
 
@@ -72,10 +72,7 @@ interface LatestRelease {
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
-function toEffectTry<T>(
-  fn: () => Promise<T>,
-  message: string,
-): Effect.Effect<T, RojoInstallError> {
+function toEffectTry<T>(fn: () => Promise<T>, message: string): Effect.Effect<T, RojoInstallError> {
   return Effect.tryPromise({
     try: fn,
     catch: (cause) => new RojoInstallError({ message, cause }),
@@ -263,10 +260,16 @@ function buildInstaller(options: RojoInstallerOptions): RojoInstaller {
   return {
     install: (onProgress) =>
       Effect.gen(function* () {
-        yield* toEffectTry(() => mkdir(options.binDirectory, { recursive: true }), "Failed to create bin directory");
+        yield* toEffectTry(
+          () => mkdir(options.binDirectory, { recursive: true }),
+          "Failed to create bin directory",
+        );
 
         report(onProgress, "release-lookup", "Checking for the latest Rojo release…");
-        const release = yield* toEffectTry(() => getLatestRelease(), "Failed to fetch Rojo release info");
+        const release = yield* toEffectTry(
+          () => getLatestRelease(),
+          "Failed to fetch Rojo release info",
+        );
         const version = release.tag_name.replace(/^v/, "");
 
         const binaryAsset = findBinaryAsset(release);
@@ -274,33 +277,49 @@ function buildInstaller(options: RojoInstallerOptions): RojoInstaller {
         report(onProgress, "binary-download", `Downloading Rojo ${version}…`, 0);
         yield* toEffectTry(
           () =>
-            downloadFile(
-              binaryAsset.browser_download_url,
-              zipTemp,
-              (received, total) => {
-                const pct = total > 0 ? Math.min(100, Math.round((received / total) * 100)) : undefined;
-                report(onProgress, "binary-download", `Downloading Rojo ${version}… ${pct ?? received}%`, pct);
-              },
-            ),
+            downloadFile(binaryAsset.browser_download_url, zipTemp, (received, total) => {
+              const pct =
+                total > 0 ? Math.min(100, Math.round((received / total) * 100)) : undefined;
+              report(
+                onProgress,
+                "binary-download",
+                `Downloading Rojo ${version}… ${pct ?? received}%`,
+                pct,
+              );
+            }),
           "Failed to download Rojo binary",
         );
 
         report(onProgress, "binary-extract", "Extracting Rojo binary…", 100);
         const extractDir = join(options.binDirectory, `extract-${version}`);
         yield* toEffectTry(() => extractZip(zipTemp, extractDir), "Failed to extract Rojo binary");
-        const found = yield* toEffectTry(() => findBinaryInDir(extractDir), "Failed to locate extracted Rojo binary");
+        const found = yield* toEffectTry(
+          () => findBinaryInDir(extractDir),
+          "Failed to locate extracted Rojo binary",
+        );
         if (!found) {
           return yield* Effect.fail(
-            new RojoInstallError({ message: `Could not find ${BINARY_NAME} inside the downloaded archive` }),
+            new RojoInstallError({
+              message: `Could not find ${BINARY_NAME} inside the downloaded archive`,
+            }),
           );
         }
-        yield* toEffectTry(() => mkdir(options.binDirectory, { recursive: true }), "Failed to prepare bin directory");
+        yield* toEffectTry(
+          () => mkdir(options.binDirectory, { recursive: true }),
+          "Failed to prepare bin directory",
+        );
         yield* toEffectTry(() => copyFile(found, binaryPath), "Failed to install Rojo binary");
         if (process.platform !== "win32") {
-          yield* toEffectTry(() => chmod(binaryPath, 0o755), "Failed to mark Rojo binary executable");
+          yield* toEffectTry(
+            () => chmod(binaryPath, 0o755),
+            "Failed to mark Rojo binary executable",
+          );
         }
         yield* toEffectTry(
-          () => rm(extractDir, { recursive: true, force: true }).then(() => rm(zipTemp, { force: true })),
+          () =>
+            rm(extractDir, { recursive: true, force: true }).then(() =>
+              rm(zipTemp, { force: true }),
+            ),
           "Failed to clean up Rojo install temp files",
         );
 
@@ -309,28 +328,42 @@ function buildInstaller(options: RojoInstallerOptions): RojoInstaller {
         report(onProgress, "plugin-download", "Downloading Roblox Studio plugin…", 0);
         yield* toEffectTry(
           () =>
-            downloadFile(
-              pluginAsset.browser_download_url,
-              pluginTemp,
-              (received, total) => {
-                const pct = total > 0 ? Math.min(100, Math.round((received / total) * 100)) : undefined;
-                report(onProgress, "plugin-download", "Downloading Roblox Studio plugin…", pct);
-              },
-            ),
+            downloadFile(pluginAsset.browser_download_url, pluginTemp, (received, total) => {
+              const pct =
+                total > 0 ? Math.min(100, Math.round((received / total) * 100)) : undefined;
+              report(onProgress, "plugin-download", "Downloading Roblox Studio plugin…", pct);
+            }),
           "Failed to download Rojo Studio plugin",
         );
 
         report(onProgress, "plugin-install", "Installing plugin into Roblox Studio…", 100);
-        yield* toEffectTry(() => mkdir(options.pluginsDirectory, { recursive: true }), "Failed to create Studio Plugins folder");
+        yield* toEffectTry(
+          () => mkdir(options.pluginsDirectory, { recursive: true }),
+          "Failed to create Studio Plugins folder",
+        );
         const pluginPath = join(options.pluginsDirectory, PLUGIN_NAME);
-        yield* toEffectTry(() => copyFile(pluginTemp, pluginPath), "Failed to copy plugin into Roblox Studio");
-        yield* toEffectTry(() => rm(pluginTemp, { force: true }), "Failed to clean up plugin temp file");
+        yield* toEffectTry(
+          () => copyFile(pluginTemp, pluginPath),
+          "Failed to copy plugin into Roblox Studio",
+        );
+        yield* toEffectTry(
+          () => rm(pluginTemp, { force: true }),
+          "Failed to clean up plugin temp file",
+        );
 
         // Do not terminate Studio or risk losing unsaved work. The plugin is
         // installed for the next Studio launch; users can restart explicitly.
-        const wasRunning = yield* toEffectTry(() => isRobloxStudioRunning(), "Failed to check if Roblox Studio is running");
+        const wasRunning = yield* toEffectTry(
+          () => isRobloxStudioRunning(),
+          "Failed to check if Roblox Studio is running",
+        );
         if (wasRunning) {
-          report(onProgress, "done", "Rojo is installed. Restart Roblox Studio to load the plugin.", 100);
+          report(
+            onProgress,
+            "done",
+            "Rojo is installed. Restart Roblox Studio to load the plugin.",
+            100,
+          );
         } else {
           report(onProgress, "done", "Rojo environment is fully set up!", 100);
         }
@@ -339,15 +372,36 @@ function buildInstaller(options: RojoInstallerOptions): RojoInstaller {
 
     getBinaryPath: () =>
       Effect.gen(function* () {
-        const exists = yield* toEffectTry(() => access(binaryPath).then(() => true, () => false), "Failed to check Rojo binary");
+        const exists = yield* toEffectTry(
+          () =>
+            access(binaryPath).then(
+              () => true,
+              () => false,
+            ),
+          "Failed to check Rojo binary",
+        );
         return exists ? binaryPath : null;
       }),
     checkInstalled: () =>
       Effect.gen(function* () {
-        const binaryExists = yield* toEffectTry(() => access(binaryPath).then(() => true, () => false), "Failed to check Rojo binary");
+        const binaryExists = yield* toEffectTry(
+          () =>
+            access(binaryPath).then(
+              () => true,
+              () => false,
+            ),
+          "Failed to check Rojo binary",
+        );
         if (!binaryExists) return false;
         const pluginPath = join(options.pluginsDirectory, PLUGIN_NAME);
-        const pluginExists = yield* toEffectTry(() => access(pluginPath).then(() => true, () => false), "Failed to check Rojo plugin");
+        const pluginExists = yield* toEffectTry(
+          () =>
+            access(pluginPath).then(
+              () => true,
+              () => false,
+            ),
+          "Failed to check Rojo plugin",
+        );
         return pluginExists;
       }),
   };

@@ -25,16 +25,30 @@ export function createOpenCodeConfig(broker: { url: string }) {
         type: "remote",
         url: broker.url,
         enabled: true,
+        // generate_mesh runs server-side for minutes; keep OpenCode's MCP
+        // request timeout far above the SDK's 60s default. Honored by recent
+        // OpenCode 1.x builds (per-server timeout fix, PR anomalyco/opencode#8706).
+        timeout: 600_000,
       },
     },
     default_agent: "studio",
+    // Skills are app-managed and safe; let the agent load them without asking.
+    permission: {
+      skill: { "*": "allow" },
+    },
     agent: {
       studio: {
         mode: "primary",
         description: "Roblox Studio development assistant",
+        // Slight sampling focus on top of the model's default temperature for
+        // more consistent Luau output without losing creativity.
+        top_p: 0.95,
         // OpenCode loads project AGENTS.md separately; keep this Studio-specific and compact.
         prompt:
-          "Use Studio MCP directly. Act on the request with the smallest coherent change. Inspect only when needed to avoid guessing. Preserve Luau conventions. Verify once with the most relevant Studio check, then report briefly. If Studio is unavailable, give one reconnect instruction and stop.\n\n" +
+          "Use Studio MCP directly. Inspect only when needed, then act with the smallest coherent change; batch related edits into one pass instead of re-reading the same files. Preserve Luau conventions. Verify once with the most relevant Studio check, then report briefly. If Studio is unavailable, give one reconnect instruction and stop.\n\n" +
+          "ANIMATION: for combat, eating, dance, emote, or reaction requests load the roblox-animation and roblox-animation-runtime skills before authoring.\n\n" +
+          "MAPS: for map, world, level, arena, or obby requests load the roblox-map-planning and roblox-map-building skills, and present the structured plan before building.\n\n" +
+          "SLOW TOOLS: generate_mesh runs for minutes; on timeout inspect the workspace and console before retrying, never insert duplicates.\n\n" +
           "ROJO LIVE-SYNC: All files you write under src/, server/, or client/ auto-sync live to Roblox Studio via the running `rojo serve` (default port 34872). Preserve default.project.json's structural layout and standard Roblox pathing (ServerScriptService, ReplicatedStorage, StarterPlayerScripts). After a restore_checkpoint, wait briefly for Rojo to pick up the reverted filesystem content before reporting the code as live-synced.",
       },
     },

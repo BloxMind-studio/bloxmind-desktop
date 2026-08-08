@@ -5,10 +5,29 @@ All notable changes to BloxMind are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.9.8] - 2026-08-08
+
+### Added
+
+- Added Mesh mode: a side panel that turns a short description into a timeout-safe `generate_mesh` request with style, size, and segmentation options.
+- Added an "Enhance with AI" option to Mesh mode that rewrites a short idea into a detailed, style-aware mesh generation prompt.
+- Added a professional animation skill pack the agent loads on demand for combat combos, hit reactions, eating/drinking, and dance loops on R15 and R6 rigs, covering KeyframeSequence authoring, rig detection, dual-rig variants, pro animation principles, and runtime playback.
+- Added a map-making skill pack that makes the agent plan whole maps with a structured build plan (zones, landmarks, flow, scale, budgets) before executing a seven-phase build pipeline: blockout, structure, terrain, props, lighting, gameplay hooks, and polish.
+
+### Changed
+
+- Improved the UI: consistent slim scrollbars across every panel and picker, visible keyboard focus rings, a richer home screen with capability teaser cards, keyboard shortcut hints in the empty chat, the app version in the titlebar, and full reduced-motion support.
+- Improved agent quality and speed: the workspace now ships a managed AGENTS.md with always-on efficiency and Luau quality conventions (refreshed on launch without touching user content), focused sampling via `top_p`, and prompt rules that batch related edits into a single pass.
+- Extended Biome linting and formatting to the `electron/` and `scripts/` directories and added a dedicated CI job that runs the full unit test suite and type-check on every pull request, so regressions fail fast instead of surfacing in the packaging matrix.
+- CI now generates a unit-test coverage report on every pull request and uploads it as an artifact, making coverage trends visible without running anything locally.
 
 ### Fixed
 
+- Fixed the session list silently going stale if the live event stream dropped and reconnected by adding a slow watchdog poll that reconciles it with the server, matching the existing session-status watchdog.
+- Fixed the packaged app reporting "v0.9.5 is available" while already on v0.9.5 — the update check now compares versions numerically and respects electron-updater's update-not-available signal, so it correctly shows "Up to date".
+- Fixed AI mesh generation timing out after ~60 seconds by raising the Studio MCP request timeout to 10 minutes and teaching the agent to verify the workspace before retrying a timed-out generation.
+- Fixed Mesh mode's "Enhance with AI" failing with "invalid mesh description" on models without structured-output support by falling back to parsing the text response and surfacing structured-output errors clearly.
+- Fixed "Enhance with AI" pasting raw `<structured_output>` tags into the description by unwrapping leaked tags and accepting renamed JSON keys such as `prompt`.
 - Fixed Regenerate to replay the Studio target and project index system context, matching what a fresh send attaches.
 - Fixed Regenerate so it never replays legacy injected `[SYSTEM_NOTIFICATION_*]` messages as the prompt.
 - Fixed checkpoint restore so the automatic context rewind only runs for full-snapshot checkpoints, protecting user edits preserved by incremental restores.
@@ -201,7 +220,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - OpenCode downloads are restricted to official GitHub release assets and verified with SHA-256 digests before installation and on every cache reuse.
 - Electron runs with context isolation, renderer sandboxing, Node.js integration disabled, validated IPC payloads, and external navigation blocked.
 
-[Unreleased]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.9.5...HEAD
+[Unreleased]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.9.8...HEAD
+[0.9.8]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.9.5...v0.9.8
 [0.9.5]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.9.2...v0.9.5
 [0.9.2]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.9.0...v0.9.1

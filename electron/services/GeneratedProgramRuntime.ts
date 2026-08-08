@@ -1,5 +1,5 @@
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { createHash } from "node:crypto";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 import { Context, Data, Effect, Layer, Schema } from "effect";
 import { transform } from "sucrase";
@@ -19,15 +19,9 @@ import { StudioMcpBroker } from "./StudioMcpBroker";
 type CallTool = (name: string, args: Record<string, unknown>) => Promise<CallToolResult>;
 type ProgramFunction = (input: unknown, callTool: CallTool) => Promise<unknown>;
 
-export type GeneratedProgramFailurePhase =
-  | "compile"
-  | "tool-contract"
-  | "runtime"
-  | "output";
+export type GeneratedProgramFailurePhase = "compile" | "tool-contract" | "runtime" | "output";
 
-export class GeneratedProgramRuntimeError extends Data.TaggedError(
-  "GeneratedProgramRuntimeError",
-)<{
+export class GeneratedProgramRuntimeError extends Data.TaggedError("GeneratedProgramRuntimeError")<{
   message: string;
   phase: GeneratedProgramFailurePhase;
   regenerate: true;
@@ -50,11 +44,7 @@ export class GeneratedProgramRuntime extends Context.Tag("@BloxMind/GeneratedPro
 
 class ToolContractError extends Error {}
 
-function runtimeError(
-  phase: GeneratedProgramFailurePhase,
-  message: string,
-  cause: unknown,
-) {
+function runtimeError(phase: GeneratedProgramFailurePhase, message: string, cause: unknown) {
   // The renderer only ever sees the IPC error message, so the underlying
   // reason must travel inside it (e.g. why Studio rejected an Explorer
   // request) instead of being buried in the Effect cause chain.
@@ -128,8 +118,7 @@ export function startGeneratedProgramRuntime(callTool: CallTool): GeneratedProgr
         if (!program) {
           program = yield* Effect.try({
             try: () => makeFunction(invocation.artifact.compiledSource),
-            catch: (cause) =>
-              runtimeError("compile", "Cached generated program is invalid", cause),
+            catch: (cause) => runtimeError("compile", "Cached generated program is invalid", cause),
           });
           functions.set(invocation.artifact.cacheKey, program);
         }

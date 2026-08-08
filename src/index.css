@@ -69,7 +69,6 @@ html.layout-compact .m-0 {
   scrollbar-color: color-mix(in oklch, var(--foreground) 24%, transparent) transparent;
   scrollbar-width: thin;
 }
-
 .app-scrollbar::-webkit-scrollbar {
   width: 10px;
   height: 10px;
@@ -89,6 +88,63 @@ html.layout-compact .m-0 {
 .app-scrollbar::-webkit-scrollbar-thumb:hover {
   background: color-mix(in oklch, var(--foreground) 38%, transparent);
   background-clip: padding-box;
+}
+
+/* ── Global scrollbars ─────────────────────────────────────────────── */
+/* Every scrollable surface gets the same slim, quiet scrollbar so panels,
+   pickers, and lists feel like one app instead of mixed OS defaults. */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklch, var(--foreground) 20%, transparent) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--foreground) 22%, transparent);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklch, var(--foreground) 36%, transparent);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ── Keyboard focus ─────────────────────────────────────────────────── */
+/* Visible focus ring for keyboard users without adding noise on click. */
+
+:focus-visible {
+  outline: 2px solid hsl(var(--accent-hsl) / 0.65);
+  outline-offset: 2px;
+}
+
+/* Keyboard shortcut chips */
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--muted);
+  padding: 1px 5px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--muted-foreground);
 }
 
 .syntax-token {
@@ -334,6 +390,14 @@ html.layout-compact .m-0 {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
   .animate-picker-in {
     animation: none;
   }

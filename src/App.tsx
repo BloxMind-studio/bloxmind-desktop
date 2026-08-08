@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { BloxMindLogo } from "@/components/BloxMindLogo";
 import Chat from "@/components/Chat";
@@ -6,6 +6,7 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { useUpdater } from "@/hooks/useUpdater";
+import { desktop } from "@/lib/desktop";
 import { ActiveSessionProvider } from "@/providers/ActiveSessionProvider";
 import { ExplorerReferenceProvider } from "@/providers/ExplorerReferenceProvider";
 import { OpenCodeClientProvider } from "@/providers/OpenCodeClientProvider";
@@ -16,6 +17,20 @@ import { StudioTargetProvider } from "@/providers/StudioTargetProvider";
 
 function AppInner() {
   useUpdater();
+  const [appVersion, setAppVersion] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    desktop
+      .getVersion()
+      .then((version) => {
+        if (!cancelled) setAppVersion(version);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <main className="flex h-full flex-col overflow-hidden">
@@ -24,7 +39,10 @@ function AppInner() {
           <BloxMindLogo size={18} />
           <span className="font-serif text-[12px] italic text-foreground">BloxMind</span>
         </div>
-        <div />
+        {/* Non-interactive so the titlebar stays draggable. */}
+        <div className="pointer-events-none select-none text-[10px] tabular-nums text-muted-foreground/70">
+          {appVersion ? `v${appVersion}` : ""}
+        </div>
       </div>
       <ErrorBoundary>
         <Chat />

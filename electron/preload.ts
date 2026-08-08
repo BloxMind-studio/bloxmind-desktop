@@ -4,8 +4,7 @@ import type { AppConfig, DesktopApi, OpenCodeStartupProgress } from "../src/type
 import { channels } from "./channels";
 
 const api: DesktopApi = {
-  compileExplorerProgram: (program) =>
-    ipcRenderer.invoke(channels.compileExplorerProgram, program),
+  compileExplorerProgram: (program) => ipcRenderer.invoke(channels.compileExplorerProgram, program),
   compileProjectIndexProgram: (program) =>
     ipcRenderer.invoke(channels.compileProjectIndexProgram, program),
   getOpenCodeInfo: () => ipcRenderer.invoke(channels.getOpenCodeInfo),
@@ -21,15 +20,13 @@ const api: DesktopApi = {
   patchConfig: (patch: Partial<AppConfig>) => ipcRenderer.invoke(channels.patchConfig, patch),
   checkForUpdate: () => ipcRenderer.invoke(channels.checkForUpdate),
   installUpdate: () => ipcRenderer.invoke(channels.installUpdate),
-  invokeExplorerProgram: (artifact) =>
-    ipcRenderer.invoke(channels.invokeExplorerProgram, artifact),
+  invokeExplorerProgram: (artifact) => ipcRenderer.invoke(channels.invokeExplorerProgram, artifact),
   invokeProjectIndexProgram: (artifact) =>
     ipcRenderer.invoke(channels.invokeProjectIndexProgram, artifact),
   relaunch: () => ipcRenderer.invoke(channels.relaunch),
   installStudioTargetPrograms: (envelopes) =>
     ipcRenderer.invoke(channels.installStudioTargetPrograms, envelopes),
-  discoverStudioTargets: (programs) =>
-    ipcRenderer.invoke(channels.discoverStudioTargets, programs),
+  discoverStudioTargets: (programs) => ipcRenderer.invoke(channels.discoverStudioTargets, programs),
   selectStudioTarget: (programs, targetKey) =>
     ipcRenderer.invoke(channels.selectStudioTarget, programs, targetKey),
   // ── Checkpoint system ──────────────────────────────────────────────
@@ -46,8 +43,10 @@ const api: DesktopApi = {
   rojoToggle: (workspace) => ipcRenderer.invoke(channels.rojoToggle, workspace),
   rojoLogs: () => ipcRenderer.invoke(channels.rojoLogs),
   onRojoLog: (listener) => {
-    const handler = (_event: Electron.IpcRendererEvent, entry: { timestamp: number; stream: string; message: string }) =>
-      listener(entry as { timestamp: number; stream: "stdout" | "stderr"; message: string });
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      entry: { timestamp: number; stream: string; message: string },
+    ) => listener(entry as { timestamp: number; stream: "stdout" | "stderr"; message: string });
     ipcRenderer.on(channels.onRojoLog, handler);
     return () => ipcRenderer.removeListener(channels.onRojoLog, handler);
   },
@@ -58,7 +57,13 @@ const api: DesktopApi = {
     ) =>
       onProgress(
         progress as {
-          phase: "release-lookup" | "binary-download" | "binary-extract" | "plugin-download" | "plugin-install" | "done";
+          phase:
+            | "release-lookup"
+            | "binary-download"
+            | "binary-extract"
+            | "plugin-download"
+            | "plugin-install"
+            | "done";
           percent?: number;
           message: string;
         },

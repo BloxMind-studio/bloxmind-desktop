@@ -7,6 +7,7 @@ import { Context, Data, Effect, Layer } from "effect";
 import { networkConnections, type Systeminformation } from "systeminformation";
 
 import type { OpenCodeInfo, OpenCodeStartupProgress } from "../../src/types/desktop";
+import { writeAgentSkills } from "../agentSkills";
 import { createOpenCodeConfig } from "../opencodeConfig";
 import { ensureOpenCodeBinary } from "./OpenCodeBinary";
 import { StudioMcpBroker } from "./StudioMcpBroker";
@@ -197,11 +198,7 @@ function prepareOpenCode(
     const { executable, version } = yield* ensureOpenCodeBinary({
       cacheDirectory: options.binaryCacheDirectory,
       onStartupProgress: options.onStartupProgress,
-    }).pipe(
-      Effect.mapError(
-        (cause) => new OpenCodeError({ message: cause.message, cause }),
-      ),
-    );
+    }).pipe(Effect.mapError((cause) => new OpenCodeError({ message: cause.message, cause })));
     yield* Effect.sync(() => options.onStartupProgress?.({ phase: "starting" }));
     yield* Effect.logInfo(`[opencode] Starting v${version}`);
 
@@ -225,10 +222,12 @@ function prepareOpenCode(
     );
     const config = createOpenCodeConfig(broker.info);
     yield* fileOperation("Failed to write the OpenCode configuration", () =>
-      writeFile(
-        join(configDirectory, "opencode.json"),
-        JSON.stringify(config, null, 2),
-      ),
+      writeFile(join(configDirectory, "opencode.json"), JSON.stringify(config, null, 2)),
+    );
+    // Ship the managed agent skill pack (animation playbook etc.) alongside the
+    // config so OpenCode's native skill discovery sees it at startup.
+    yield* fileOperation("Failed to write the agent skill pack", () =>
+      writeAgentSkills(options.workspace),
     );
 
     const password = yield* Effect.try({

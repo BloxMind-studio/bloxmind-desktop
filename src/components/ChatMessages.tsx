@@ -278,6 +278,17 @@ function ChatMessages() {
             <p className="mt-2 text-xs text-muted-foreground">
               Ask me to create scripts, design game mechanics, or modify your Roblox Studio project.
             </p>
+            <div className="mt-5 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-[10px] text-muted-foreground/80">
+              <span className="inline-flex items-center gap-1.5">
+                <kbd className="kbd">Ctrl</kbd>+<kbd className="kbd">N</kbd> new session
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <kbd className="kbd">Ctrl</kbd>+<kbd className="kbd">E</kbd> explorer
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <kbd className="kbd">Ctrl</kbd>+<kbd className="kbd">,</kbd> settings
+              </span>
+            </div>
           </div>
         </div>
       </LightboxProvider>

@@ -1,11 +1,19 @@
-import { rename, readFile, rm, writeFile } from "node:fs/promises";
+import { readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-
+import { Data, Effect, Layer, ManagedRuntime, Schema } from "effect";
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from "electron";
 import { autoUpdater } from "electron-updater";
-import { Data, Effect, Layer, ManagedRuntime, Schema } from "effect";
-
+import { ExplorerProgramEnvelopeSchema, ExplorerSnapshotSchema } from "../src/lib/explorer";
+import { ProjectIndexProgramEnvelopeSchema, ProjectSkeletonSchema } from "../src/lib/projectIndex";
+import {
+  CaptureContextSchema,
+  CheckpointRestoreInputSchema,
+  CheckpointRestoreResultSchema,
+  CheckpointSchema,
+  RestorePreviewSchema,
+  ValidationResultSchema,
+} from "../src/types/checkpoints";
 import {
   type AppConfig,
   AppConfigPatchSchema,
@@ -13,8 +21,6 @@ import {
   DEFAULT_APP_CONFIG,
   type OpenCodeStartupProgress,
 } from "../src/types/desktop";
-import { ExplorerProgramEnvelopeSchema, ExplorerSnapshotSchema } from "../src/lib/explorer";
-import { ProjectIndexProgramEnvelopeSchema, ProjectSkeletonSchema } from "../src/lib/projectIndex";
 import { GeneratedProgramArtifactSchema } from "../src/types/generatedProgram";
 import {
   StudioTargetDiscoverySchema,
@@ -24,35 +30,25 @@ import {
 } from "../src/types/studioTarget";
 import { handleLastWindowClosed } from "./appLifecycle";
 import { channels } from "./channels";
-import { makeOpenCodeLayer, OpenCode } from "./services/OpenCode";
+import { compareReleaseVersions, parseReleaseVersion } from "./releaseVersion";
+import { CheckpointServiceTag, makeCheckpointServiceLayer } from "./services/CheckpointService";
 import {
   GeneratedProgramRuntime,
   GeneratedProgramRuntimeLive,
 } from "./services/GeneratedProgramRuntime";
-import { makeStudioMcpBrokerLayer } from "./services/StudioMcpBroker";
+import { makeOpenCodeLayer, OpenCode } from "./services/OpenCode";
 import {
-  CheckpointServiceTag,
-  makeCheckpointServiceLayer,
-} from "./services/CheckpointService";
+  makeRojoInstallerLayer,
+  RojoInstallerTag,
+  resolvePluginsDirectory,
+} from "./services/RojoInstaller";
 import {
   cleanupRojo,
   makeRojoServerManagerLayer,
   RojoServerManagerTag,
 } from "./services/RojoServerManager";
-import { sweepStaleProcesses, type SweepReport } from "./services/staleProcessSweep";
-import {
-  makeRojoInstallerLayer,
-  resolvePluginsDirectory,
-  RojoInstallerTag,
-} from "./services/RojoInstaller";
-import {
-  CaptureContextSchema,
-  CheckpointRestoreInputSchema,
-  CheckpointRestoreResultSchema,
-  CheckpointSchema,
-  RestorePreviewSchema,
-  ValidationResultSchema,
-} from "../src/types/checkpoints";
+import { makeStudioMcpBrokerLayer } from "./services/StudioMcpBroker";
+import { type SweepReport, sweepStaleProcesses } from "./services/staleProcessSweep";
 
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
 const defaultConfig: AppConfig = DEFAULT_APP_CONFIG;
@@ -130,21 +126,26 @@ const expectedContract = (name: string) => ({
   outputSchemaVersion: "1",
 });
 
-function requireContract(contract: { name: string; version: string; inputSchemaVersion: string; outputSchemaVersion: string }, name: string) {
+function requireContract(
+  contract: {
+    name: string;
+    version: string;
+    inputSchemaVersion: string;
+    outputSchemaVersion: string;
+  },
+  name: string,
+) {
   const expected = expectedContract(name);
   if (JSON.stringify(contract) !== JSON.stringify(expected)) {
-    return Effect.fail(new DesktopMainError({ message: `Generated program contract ${name} is invalid` }));
+    return Effect.fail(
+      new DesktopMainError({ message: `Generated program contract ${name} is invalid` }),
+    );
   }
   return Effect.void;
 }
 
 function isMissingFile(cause: unknown): boolean {
-  return (
-    cause !== null &&
-    typeof cause === "object" &&
-    "code" in cause &&
-    cause.code === "ENOENT"
-  );
+  return cause !== null && typeof cause === "object" && "code" in cause && cause.code === "ENOENT";
 }
 
 function parseExternalUrl(rawUrl: string) {
@@ -156,9 +157,7 @@ function parseExternalUrl(rawUrl: string) {
     Effect.flatMap((url) =>
       url.protocol === "https:" || url.protocol === "http:"
         ? Effect.succeed(url)
-        : Effect.fail(
-            new DesktopMainError({ message: "Only HTTP and HTTPS links can be opened" }),
-          ),
+        : Effect.fail(new DesktopMainError({ message: "Only HTTP and HTTPS links can be opened" })),
     ),
   );
 }
@@ -180,7 +179,9 @@ const loadConfig = Effect.gen(function* () {
       catch: (cause) => new DesktopMainError({ message: "App configuration is invalid", cause }),
     });
     const candidate =
-      stored !== null && typeof stored === "object" ? { ...defaultConfig, ...stored } : defaultConfig;
+      stored !== null && typeof stored === "object"
+        ? { ...defaultConfig, ...stored }
+        : defaultConfig;
     return yield* Schema.decodeUnknown(AppConfigSchema)(candidate).pipe(
       Effect.mapError(
         (cause) => new DesktopMainError({ message: "App configuration is invalid", cause }),
@@ -258,8 +259,7 @@ const disposeOpenCodeRuntimeBounded = Effect.tryPromise({
         timer.unref?.();
       }),
     ]),
-  catch: (cause) =>
-    new DesktopMainError({ message: "Failed to stop the OpenCode runtime", cause }),
+  catch: (cause) => new DesktopMainError({ message: "Failed to stop the OpenCode runtime", cause }),
 }).pipe(
   Effect.flatMap((result) =>
     result === "timeout"
@@ -282,9 +282,7 @@ const registerIpcHandlers = Effect.sync(() => {
     ),
   );
   ipcMain.handle(channels.getOpenCodeInfo, () =>
-    openCodeRuntime.runPromise(
-      OpenCode.pipe(Effect.flatMap((service) => service.info)),
-    ),
+    openCodeRuntime.runPromise(OpenCode.pipe(Effect.flatMap((service) => service.info))),
   );
   ipcMain.handle(channels.getVersion, () => runMain(Effect.sync(() => app.getVersion())));
   ipcMain.handle(channels.loadConfig, () => runMain(loadConfig));
@@ -296,10 +294,10 @@ const registerIpcHandlers = Effect.sync(() => {
         yield* requireContract(envelopes.discovery.contract, "studio-target-discovery");
         yield* requireContract(envelopes.selection.contract, "studio-target-selection");
         const runtime = yield* GeneratedProgramRuntime;
-        const [discoveryArtifact, selectionArtifact] = yield* Effect.all([
-          runtime.compile(envelopes.discovery),
-          runtime.compile(envelopes.selection),
-        ], { concurrency: "unbounded" });
+        const [discoveryArtifact, selectionArtifact] = yield* Effect.all(
+          [runtime.compile(envelopes.discovery), runtime.compile(envelopes.selection)],
+          { concurrency: "unbounded" },
+        );
         return yield* Schema.decodeUnknown(StudioTargetProgramsSchema)({
           discovery: { envelope: envelopes.discovery, artifact: discoveryArtifact },
           selection: { envelope: envelopes.selection, artifact: selectionArtifact },
@@ -327,10 +325,15 @@ const registerIpcHandlers = Effect.sync(() => {
     openCodeRuntime.runPromise(
       Effect.gen(function* () {
         const programs = yield* Schema.decodeUnknown(StudioTargetProgramsSchema)(input);
-        const key = yield* Schema.decodeUnknown(Schema.String.pipe(Schema.minLength(1), Schema.maxLength(512)))(targetKey);
+        const key = yield* Schema.decodeUnknown(
+          Schema.String.pipe(Schema.minLength(1), Schema.maxLength(512)),
+        )(targetKey);
         yield* requireContract(programs.selection.artifact.contract, "studio-target-selection");
         const runtime = yield* GeneratedProgramRuntime;
-        const result = yield* runtime.invoke({ artifact: programs.selection.artifact, input: { targetKey: key } });
+        const result = yield* runtime.invoke({
+          artifact: programs.selection.artifact,
+          input: { targetKey: key },
+        });
         return yield* Schema.decodeUnknown(StudioTargetSelectionSchema)(result.value);
       }),
     ),
@@ -351,14 +354,37 @@ const registerIpcHandlers = Effect.sync(() => {
     runMain(
       Effect.gen(function* () {
         if (!app.isPackaged) return null;
-        const result = yield* Effect.tryPromise({
-          try: () => autoUpdater.checkForUpdates(),
-          catch: (cause) =>
-            new DesktopMainError({ message: "Failed to check for updates", cause }),
-        });
+        // checkForUpdates resolves with the latest release info even when the
+        // app is already current; only the update-not-available event carries
+        // that signal, so race the promise against it and additionally compare
+        // versions deterministically below.
+        const outcome = yield* Effect.promise(() =>
+          Promise.race([
+            autoUpdater.checkForUpdates().then(
+              (result) => ({ kind: "checked", result }) as const,
+              (cause: unknown) => ({ kind: "failed", cause }) as const,
+            ),
+            new Promise<{ kind: "not-available" }>((resolve) =>
+              autoUpdater.once("update-not-available", () => resolve({ kind: "not-available" })),
+            ),
+          ]),
+        );
+        if (outcome.kind === "failed") {
+          return yield* Effect.fail(
+            new DesktopMainError({ message: "Failed to check for updates", cause: outcome.cause }),
+          );
+        }
+        if (outcome.kind === "not-available") return null;
+        const result = outcome.result;
         if (!result) return null;
+        const latest = parseReleaseVersion(result.updateInfo.version);
+        const current = parseReleaseVersion(app.getVersion());
+        // Already on the latest (or a newer unreleased build): nothing to offer.
+        if (!latest || !current || compareReleaseVersions(latest, current) <= 0) return null;
         const body =
-          typeof result.updateInfo.releaseNotes === "string" ? result.updateInfo.releaseNotes : null;
+          typeof result.updateInfo.releaseNotes === "string"
+            ? result.updateInfo.releaseNotes
+            : null;
         return { version: result.updateInfo.version, body };
       }),
     ),
@@ -460,7 +486,10 @@ const registerIpcHandlers = Effect.sync(() => {
             Schema.decodeUnknown(CheckpointSchema)(checkpoint).pipe(
               Effect.mapError(
                 (cause) =>
-                  new DesktopMainError({ message: "Checkpoint capture output is invalid", cause }),
+                  new DesktopMainError({
+                    message: "Checkpoint capture output is invalid",
+                    cause,
+                  }),
               ),
             ),
           ),
@@ -478,7 +507,10 @@ const registerIpcHandlers = Effect.sync(() => {
             Schema.decodeUnknown(CheckpointRestoreResultSchema)(result).pipe(
               Effect.mapError(
                 (cause) =>
-                  new DesktopMainError({ message: "Checkpoint restore output is invalid", cause }),
+                  new DesktopMainError({
+                    message: "Checkpoint restore output is invalid",
+                    cause,
+                  }),
               ),
             ),
           ),
@@ -495,7 +527,10 @@ const registerIpcHandlers = Effect.sync(() => {
             Schema.decodeUnknown(RestorePreviewSchema)(preview).pipe(
               Effect.mapError(
                 (cause) =>
-                  new DesktopMainError({ message: "Checkpoint preview output is invalid", cause }),
+                  new DesktopMainError({
+                    message: "Checkpoint preview output is invalid",
+                    cause,
+                  }),
               ),
             ),
           ),
@@ -510,7 +545,8 @@ const registerIpcHandlers = Effect.sync(() => {
         const history = yield* service.list(sessionId);
         return yield* Schema.decodeUnknown(Schema.Array(CheckpointSchema))(history).pipe(
           Effect.mapError(
-            (cause) => new DesktopMainError({ message: "Checkpoint list output is invalid", cause }),
+            (cause) =>
+              new DesktopMainError({ message: "Checkpoint list output is invalid", cause }),
           ),
         );
       }),
@@ -525,7 +561,10 @@ const registerIpcHandlers = Effect.sync(() => {
             Schema.decodeUnknown(ValidationResultSchema)(result).pipe(
               Effect.mapError(
                 (cause) =>
-                  new DesktopMainError({ message: "Checkpoint validation output is invalid", cause }),
+                  new DesktopMainError({
+                    message: "Checkpoint validation output is invalid",
+                    cause,
+                  }),
               ),
             ),
           ),
@@ -608,7 +647,9 @@ const registerIpcHandlers = Effect.sync(() => {
   // Wire up log forwarding: when the renderer subscribes, we register a
   // listener that forwards each log entry to the active window.
   {
-    let logListener: ((entry: { timestamp: number; stream: string; message: string }) => void) | null = null;
+    let logListener:
+      | ((entry: { timestamp: number; stream: string; message: string }) => void)
+      | null = null;
     ipcMain.handle("rojo:subscribe-logs", () =>
       openCodeRuntime.runPromise(
         Effect.gen(function* () {
@@ -625,7 +666,7 @@ const registerIpcHandlers = Effect.sync(() => {
     );
     ipcMain.handle("rojo:unsubscribe-logs", () =>
       openCodeRuntime.runPromise(
-        Effect.gen(function* () {
+        Effect.sync(() => {
           // Listeners are cleaned up on stop; just clear the ref.
           logListener = null;
         }),
@@ -668,8 +709,7 @@ function createWindow(): Effect.Effect<void, DesktopMainError> {
             Effect.flatMap((externalUrl) =>
               Effect.tryPromise({
                 try: () => shell.openExternal(externalUrl.href),
-                catch: (cause) =>
-                  new DesktopMainError({ message: "Failed to open URL", cause }),
+                catch: (cause) => new DesktopMainError({ message: "Failed to open URL", cause }),
               }),
             ),
             Effect.catchAll(Effect.logWarning),
@@ -751,9 +791,7 @@ const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
 if (!hasSingleInstanceLock) {
   Effect.runSync(
-    Effect.logWarning(
-      "[single-instance] another BloxMind instance is already running; quitting",
-    ),
+    Effect.logWarning("[single-instance] another BloxMind instance is already running; quitting"),
   );
   // Give the user visible feedback on why nothing launched. showErrorBox is
   // safe to call before the app is ready.
@@ -792,7 +830,8 @@ if (!hasSingleInstanceLock) {
       yield* registerAppLifecycle;
       yield* Effect.tryPromise({
         try: () => app.whenReady(),
-        catch: (cause) => new DesktopMainError({ message: "Electron failed to become ready", cause }),
+        catch: (cause) =>
+          new DesktopMainError({ message: "Electron failed to become ready", cause }),
       });
       yield* registerIpcHandlers;
       yield* Effect.sync(() => Menu.setApplicationMenu(null));

@@ -9,7 +9,9 @@ AI-assisted Roblox development. BloxMind is a free, open-source desktop app that
 ## What it does
 
 - Chat with AI models (Claude, GPT, Gemini, and more) that can read and modify your Roblox Studio project in real time
-- Create scripts, build UI, manipulate the explorer hierarchy, edit properties  - all through natural language
+- Create scripts, build UI, manipulate the explorer hierarchy, edit properties — all through natural language
+- **Mesh mode**: turn a short description into a `generate_mesh` request with style, size, and segmentation options, enhanced by an "Enhance with AI" assistant that expands ideas into detailed, style-aware prompts
+- **Agent skills**: bundled professional skill packs for rich animation authoring (combat combos, hit reactions, eating/drinking, dance loops on R15/R6 rigs) and structured map-making with a seven-phase build pipeline
 - Uses Roblox Studio's [built-in MCP server](https://create.roblox.com/docs/studio/mcp), giving the AI structured access to Studio. No plugins to install
 - Bring your own API key from any supported provider, or connect via OAuth
 
