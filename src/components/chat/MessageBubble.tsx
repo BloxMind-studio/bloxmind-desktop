@@ -9,6 +9,7 @@ import { ModelErrorCard } from "@/components/chat/ErrorViews";
 import { SmartPartsRenderer } from "@/components/chat/partViews";
 import { BloxMindThinking } from "@/components/chat/ThinkingIndicator";
 import { UserPartsView } from "@/components/chat/UserPartsView";
+import { useRegenerateResponse } from "@/hooks/mutations/useRegenerateResponse";
 import { useMessage } from "@/hooks/useMessages";
 import { useSessionStatus } from "@/hooks/useSessionStatuses";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
@@ -33,6 +34,12 @@ export const MessageBubble = memo(function MessageBubble({
   const { activeSessionId } = useActiveSession();
   const sessionStatus = useSessionStatus(activeSessionId);
   const isBusy = sessionStatus?.type === "busy";
+  const regenerate = useRegenerateResponse();
+
+  const handleRegenerate = useCallback(() => {
+    if (regenerate.isPending) return;
+    regenerate.mutate({ assistantMessageId: messageId });
+  }, [regenerate, messageId]);
 
   const handleCopy = useCallback(() => {
     if (!msg) return;
@@ -140,6 +147,35 @@ export const MessageBubble = memo(function MessageBubble({
                     isBusy={isBusy}
                     messageId={messageId}
                   />
+                )}
+                {/* Regenerate button: latest assistant message only. Once the
+                    re-run starts, the session turns busy and this whole
+                    toolbar hides, which doubles as the disabled state. */}
+                {!isUser && isLastIndex && (
+                  <button
+                    type="button"
+                    onClick={handleRegenerate}
+                    disabled={regenerate.isPending}
+                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground/40 transition-all duration-200 hover:scale-105 hover:text-muted-foreground hover:bg-accent/50 active:scale-95 disabled:pointer-events-none disabled:opacity-50"
+                    title="Regenerate this response"
+                  >
+                    <svg
+                      width="11"
+                      height="11"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <polyline points="23 4 23 10 17 10" />
+                      <polyline points="1 20 1 14 7 14" />
+                      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                    </svg>
+                    <span>{regenerate.isPending ? "Regenerating…" : "Regenerate"}</span>
+                  </button>
                 )}
                 {/* Copy button: always visible on finished messages with text */}
                 {shouldShowCopyButton && (
