@@ -7,6 +7,30 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-08-08
+
+### Fixed
+
+- Fixed the Windows app icon by shipping a proper 256x256 icon for electron-builder.
+
+## [0.9.1] - 2026-08-08
+
+### Added
+
+- Added comprehensive settings with General, Appearance, Behavior, Connection, AI Engine, Privacy, and About tabs backed by an extended config schema.
+- Added data management to the Privacy tab with export, import, and clear actions.
+- Added keyboard shortcuts and exponential-backoff reconnection for the OpenCode event stream.
+- Added CSS customization support and a global error boundary for recoverable rendering failures.
+
+### Changed
+
+- Updated the Windows and macOS app icons to the new bloxbot icon set.
+- Hardened process lifecycle management with a single-instance lock, a startup sweep of leftover Rojo and OpenCode processes from crashed sessions, and bounded cleanup on quit so the app can no longer hang.
+
+### Fixed
+
+- Replaced hardcoded version strings and scattered magic numbers with shared constants.
+
 ## [0.9.0] - 2026-08-06
 
 ### Added
@@ -158,7 +182,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - OpenCode downloads are restricted to official GitHub release assets and verified with SHA-256 digests before installation and on every cache reuse.
 - Electron runs with context isolation, renderer sandboxing, Node.js integration disabled, validated IPC payloads, and external navigation blocked.
 
-[Unreleased]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.9.2...HEAD
+[0.9.2]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.9.1...v0.9.2
+[0.9.1]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.7.1...v0.8.0
