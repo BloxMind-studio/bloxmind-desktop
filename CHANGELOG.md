@@ -5,6 +5,12 @@ All notable changes to BloxMind are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.9] - 2026-08-08
+
+### Added
+
+- Enriched the built-in map-building skill with professional Roblox environment authoring: a JSON blueprint contract that keeps every placement grid-aligned and consistent, authoritative stud proportions for walls/doors/corridors, a curated props asset palette cloned from ServerStorage instead of the Toolbox, Future-technology lighting with Bloom/ColorCorrection/SunRays atmosphere, and clean grouping of finished architecture vs interactive objects for streaming.
+
 ## [0.9.8] - 2026-08-08
 
 ### Added
@@ -220,7 +226,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - OpenCode downloads are restricted to official GitHub release assets and verified with SHA-256 digests before installation and on every cache reuse.
 - Electron runs with context isolation, renderer sandboxing, Node.js integration disabled, validated IPC payloads, and external navigation blocked.
 
-[Unreleased]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.9.8...HEAD
+[Unreleased]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.9.9...HEAD
+[0.9.9]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.9.8...v0.9.9
 [0.9.8]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.9.5...v0.9.8
 [0.9.5]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.9.2...v0.9.5
 [0.9.2]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.9.1...v0.9.2

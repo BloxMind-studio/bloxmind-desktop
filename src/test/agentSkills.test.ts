@@ -131,6 +131,37 @@ describe("agent skill pack", () => {
     expect(building).toMatch(/budget/i);
   });
 
+  it("drives construction from a JSON blueprint with grid snapping and stud proportions", () => {
+    const building = AGENT_SKILLS.find((skill) =>
+      skill.relativePath.endsWith("roblox-map-building/SKILL.md"),
+    )?.content;
+    expect(building).toBeDefined();
+    expect(building).toMatch(/Blueprint contract/);
+    expect(building).toContain("grid_size");
+    expect(building).toContain("map_bounds");
+    expect(building).toMatch(/grid_size` is the snap unit/i);
+    expect(building).toMatch(/Z-fighting/i);
+    expect(building).toMatch(/Stud proportions/);
+    expect(building).toMatch(/12-16 studs tall/i);
+    expect(building).toMatch(/8-10 studs wide/i);
+    expect(building).toMatch(/R15/i);
+  });
+
+  it("uses Future lighting, post-processing, SunRays, and a props asset palette", () => {
+    const building = AGENT_SKILLS.find((skill) =>
+      skill.relativePath.endsWith("roblox-map-building/SKILL.md"),
+    )?.content;
+    expect(building).toBeDefined();
+    expect(building).toContain("Enum.Technology.Future");
+    expect(building).toContain("BloomEffect");
+    expect(building).toContain("ColorCorrectionEffect");
+    expect(building).toMatch(/SunRays/);
+    expect(building).toMatch(/PointLight/);
+    expect(building).toMatch(/asset palette/i);
+    expect(building).toMatch(/Toolbox/i);
+    expect(building).toMatch(/Clone/i);
+  });
+
   it("writes every skill to the OpenCode workspace layout", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "bloxmind-skills-"));
     tempDirectories.push(workspace);

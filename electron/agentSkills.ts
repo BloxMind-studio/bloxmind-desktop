@@ -317,24 +317,65 @@ license: MIT
 
 Build in strict phases; finish and verify each phase before the next. Never
 detail a zone that is not blocked out, and never light a map that is not
-structured.
+structured. Coordinate every placement through a JSON blueprint so the map
+stays consistent, grid-aligned, and easy to revise.
+
+## Blueprint contract (emit first, build from it)
+
+Before placing parts in a phase, emit the phase's construct map as JSON and
+build strictly from it:
+
+\`\`\`json
+{
+  "grid_size": 4,
+  "map_bounds": { "x": 200, "z": 200 },
+  "lighting": {
+    "technology": "Future",
+    "time_of_day": "00:00:00",
+    "atmosphere_density": 0.45,
+    "fog_color": "#120024"
+  },
+  "structures": [
+    { "type": "Wall_Basic", "position": [0, 0, 0], "rotation": 0 },
+    { "type": "Door_Frame", "position": [16, 0, 20], "rotation": 90 },
+    { "type": "Street_Lamp", "position": [10, 0, 15], "rotation": 0 }
+  ],
+  "props": [
+    { "type": "Tree_Pine", "position": [40, 0, 60], "rotation": 45 }
+  ]
+}
+\`\`\`
+
+- \`grid_size\` is the snap unit for all x/z positions (2 or 4 studs). Every
+  coordinate must be a multiple of it — this prevents Z-fighting overlaps and
+  gaps between adjacent modules.
+- Key by \`type\` from the modular kit (below) and place via exact CFrame
+  using \`position\`/\`rotation\`; never hand-placed drifting dimensions.
+- Keep this blueprint in the session context so later phases (lighting,
+  props, gameplay hooks) can reference exact coordinates.
 
 ## Phase 1 — Blockout
 
 - Create \`Workspace.Map.Blockout\` with one Anchored Part per zone from the
   plan, colored per zone, named exactly as planned.
-- Walk the primary route mentally part-by-part: fix scale and flow problems
-  now, while changes are cheap.
+- Snap every block to the grid (\`grid_size\` 2 or 4). Walk the primary route
+  mentally part-by-part: fix scale and flow problems now, while changes are
+  cheap.
 
 ## Phase 2 — Structure
 
 - Hierarchy: \`Workspace.Map.Zones.<ZoneName>\` with \`Structures\`, \`Props\`,
   \`Terrain\` folders per zone; move finished work out of Blockout zone by zone.
 - Every static Part: \`Anchored = true\`. Never rely on welds for static maps.
-- Snap to a 2- or 4-stud grid so modules align.
 - Build one modular kit per repeating element (wall, fence, pillar, roof):
   keep the master in \`ServerStorage.MapKit\`, clone it for repetition — never
   hand-place copies with drifting dimensions.
+- **Stud proportions (authoritative):** walls 12-16 studs tall; doors and
+  corridors 8-10 studs wide and 10-12 tall so R6/R15 avatars move freely;
+  floor slabs 1-2 studs thick. Scale every kit part to these before cloning.
+- Prefer building structurally via the Studio MCP integration when available
+  over editing mesh/union raw geometry; avoid \`Union\`/\`NegatePart\` in the
+  shipped map — they inflate physics cost.
 - Decorative thin geometry: \`CanCollide = false\` where players should pass
   through (grass, banners, small props).
 
@@ -345,22 +386,30 @@ structured.
   4 studs — keep terrain features multiples of that.
 - One dominant terrain material per biome (Grassfield, Rock, Sand, Snow);
   blend with at most one transition material.
+- End each terrain edit by setting \`Material\` then re-verify boundaries
+  against the blueprint's \`map_bounds\`.
 
-## Phase 4 — Props and detail
+## Phase 4 — Props and detail (asset palette)
 
+- Keep a curated props library folder (\`Workspace.Map.Assets\` or
+  \`ServerStorage\`) with reusable models (Tree_Pine, Rock, Crate, Lamp).
+  Clone from it instead of pulling unrelated assets from the Toolbox.
 - Detail in passes: large anchors first (rocks, carts), then scatter (crates,
   barrels), then micro (grass tufts, lamps). Stop when the budget says so.
-- MeshParts for organic shapes; plain Parts for anything box-like. Avoid
-  Unions/NegateParts in shipped maps — they inflate physics cost.
+- MeshParts for organic shapes; plain Parts for anything box-like.
 
 ## Phase 5 — Lighting and atmosphere
 
-- \`Lighting.TimeOfDay\` to set the mood from the plan (dawn 06:30, dusk 17:30).
-- Add one \`Atmosphere\` (Density 0.3-0.6, tune Glare/Haze), one \`Sky\`, and
-  at most two effects (\`BloomEffect\`, \`ColorCorrectionEffect\`).
+- Set \`Lighting.Technology = Enum.Technology.Future\` for real-time shadows
+  and physically based lighting; then \`Lighting.TimeOfDay\` for the mood from
+  the plan (dawn 06:30, dusk 17:30, night 00:00).
+- Add one \`Atmosphere\` (Density 0.3-0.6, tune Glare/Haze and the fog color
+  from the blueprint), one \`Sky\`, and 2-3 effects: \`BloomEffect\`,
+  \`ColorCorrectionEffect\`, and \`SunRays\` for exterior hero moments.
 - Accent lights: \`PointLight\`/\`SpotLight\` only at landmarks and gameplay
-  points; keep total light instances under ~30. Prefer emissive materials
-  (MaterialVariant neon + slight brightness) over extra lights.
+  points to direct the player visually; keep total light instances under ~30.
+  Prefer emissive materials (MaterialVariant neon + slight brightness) over
+  extra lights.
 
 ## Phase 6 — Gameplay hooks
 
@@ -378,11 +427,15 @@ structured.
   materials. Over budget? Merge micro-props into MeshParts or delete scatter.
 - Check StreamingEnabled-friendly layout: zones self-contained so chunks load
   cleanly.
+- Group finished work into clearly named Models/Folders (e.g.
+  \`Workspace.Map.Interactive\`, \`Workspace.Map.Architecture\`) for clean
+  streaming and scripts.
 
 ## Report format
 
 After each phase, report briefly: what was built, part/light counts, and one
-known limitation. After phase 7, report the full summary against the plan.
+known limitation. After phase 7, report the full summary against the blueprint
+and the plan.
 `;
 
 export interface AgentSkillFile {
