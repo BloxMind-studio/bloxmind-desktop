@@ -3,17 +3,17 @@ import { Schema } from "effect";
 import { useCallback } from "react";
 
 import { BUILTIN_PROJECT_INDEX_PROGRAM } from "@/lib/builtinProjectPrograms";
+import { desktop } from "@/lib/desktop";
 import {
-  ProjectIndexProgramEnvelopeSchema,
   PROJECT_INDEX_OUTPUT_SCHEMA,
   type ProjectIndexProgramEnvelope,
+  ProjectIndexProgramEnvelopeSchema,
   type ProjectSkeleton,
   ProjectSkeletonSchema,
 } from "@/lib/projectIndex";
 import { qk } from "@/lib/queryKeys";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 import { useStudioTargetOptional } from "@/providers/StudioTargetProvider";
-import { desktop } from "@/lib/desktop";
 
 // ── useProjectIndex ──────────────────────────────────────────────────────
 

@@ -1,14 +1,13 @@
-import { memo, useEffect, useMemo, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-
-import type { MessagesCache } from "@/lib/sseDispatch";
-import { qk } from "@/lib/queryKeys";
-import { useActiveSession } from "@/providers/ActiveSessionProvider";
-import { usePreferences } from "@/providers/PreferencesProvider";
+import { memo, useEffect, useMemo, useRef } from "react";
+import { EMPTY_CACHE, fetchMessages } from "@/hooks/useMessages";
 import { useAllModels } from "@/hooks/useProviders";
-import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
-import { fetchMessages, EMPTY_CACHE } from "@/hooks/useMessages";
 import { useSessionStatus } from "@/hooks/useSessionStatuses";
+import { qk } from "@/lib/queryKeys";
+import type { MessagesCache } from "@/lib/sseDispatch";
+import { useActiveSession } from "@/providers/ActiveSessionProvider";
+import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
+import { usePreferences } from "@/providers/PreferencesProvider";
 import type { ModelInfo } from "@/types";
 
 // ── Types ────────────────────────────────────────────────────────────────
@@ -154,13 +153,15 @@ const ContextUsageIndicator = memo(function ContextUsageIndicator({
       if (!msg) continue;
       if (msg.info.role !== "assistant") continue;
 
-      const tokens = msg.info.tokens as {
-        input?: number;
-        output?: number;
-        reasoning?: number;
-        cache?: { read?: number; write?: number };
-        total?: number;
-      } | undefined;
+      const tokens = msg.info.tokens as
+        | {
+            input?: number;
+            output?: number;
+            reasoning?: number;
+            cache?: { read?: number; write?: number };
+            total?: number;
+          }
+        | undefined;
 
       if (!tokens) continue;
 

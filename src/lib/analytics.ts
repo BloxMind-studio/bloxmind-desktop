@@ -1,5 +1,5 @@
-import posthog from "posthog-js/dist/module.full.no-external.js";
 import type { PostHogInterface, Properties } from "posthog-js";
+import posthog from "posthog-js/dist/module.full.no-external.js";
 
 export const POSTHOG_PROJECT_TOKEN = import.meta.env.VITE_POSTHOG_PROJECT_TOKEN?.trim() ?? "";
 export const POSTHOG_API_HOST = "https://eu.i.posthog.com";

@@ -2,6 +2,18 @@ import { Data, Effect, Schema } from "effect";
 import { ExplorerSnapshotSchema } from "@/lib/explorer";
 import { ProjectSkeletonSchema } from "@/lib/projectIndex";
 import {
+  type CaptureContext,
+  type Checkpoint,
+  type CheckpointRestoreInput,
+  type CheckpointRestoreResult,
+  CheckpointRestoreResultSchema,
+  CheckpointSchema,
+  type RestorePreview,
+  RestorePreviewSchema,
+  type ValidationResult,
+  ValidationResultSchema,
+} from "@/types/checkpoints";
+import {
   type AppConfig,
   AppConfigPatchSchema,
   AppConfigSchema,
@@ -17,18 +29,6 @@ import {
   type UpdateInfo,
   UpdateInfoSchema,
 } from "@/types/desktop";
-import {
-  type CaptureContext,
-  type Checkpoint,
-  type CheckpointRestoreInput,
-  type CheckpointRestoreResult,
-  CheckpointSchema,
-  CheckpointRestoreResultSchema,
-  type RestorePreview,
-  RestorePreviewSchema,
-  type ValidationResult,
-  ValidationResultSchema,
-} from "@/types/checkpoints";
 import { GeneratedProgramArtifactSchema } from "@/types/generatedProgram";
 import {
   type StudioTargetDiscovery,
@@ -303,8 +303,7 @@ function makeBridgeEffects(api: DesktopApi): DesktopEffects {
     rojoToggle: (workspace) => invoke("Failed to toggle Rojo", () => api.rojoToggle(workspace)),
     rojoLogs: () => invoke("Failed to get Rojo logs", () => api.rojoLogs()),
     onRojoLog: (listener) => api.onRojoLog(listener),
-    rojoSetup: (onProgress) =>
-      invoke("Failed to set up Rojo", () => api.rojoSetup(onProgress)),
+    rojoSetup: (onProgress) => invoke("Failed to set up Rojo", () => api.rojoSetup(onProgress)),
     rojoBinaryPath: () => invoke("Failed to get Rojo binary path", () => api.rojoBinaryPath()),
     rojoCheckInstalled: () =>
       invoke("Failed to check Rojo installation", () => api.rojoCheckInstalled()),

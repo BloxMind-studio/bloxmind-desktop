@@ -318,10 +318,7 @@ export function OpenCodeClientProvider({
 
     function scheduleReconnect() {
       clearTimeout(reconnectTimer);
-      const backoff = Math.min(
-        sseReconnectDelay * 2 ** Math.min(consecutiveFailures, 5),
-        30_000,
-      );
+      const backoff = Math.min(sseReconnectDelay * 2 ** Math.min(consecutiveFailures, 5), 30_000);
       const delay = consecutiveFailures === 0 ? sseReconnectDelay : backoff;
       reconnectTimer = setTimeout(() => {
         if (!abortController.signal.aborted) void subscribe();

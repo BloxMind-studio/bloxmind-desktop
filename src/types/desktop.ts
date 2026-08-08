@@ -1,4 +1,6 @@
 import { Schema } from "effect";
+import type { ExplorerProgramEnvelope, ExplorerSnapshot } from "../lib/explorer";
+import type { ProjectIndexProgramEnvelope, ProjectSkeleton } from "../lib/projectIndex";
 import type {
   CaptureContext,
   Checkpoint,
@@ -7,8 +9,6 @@ import type {
   RestorePreview,
   ValidationResult,
 } from "./checkpoints";
-import type { ExplorerProgramEnvelope, ExplorerSnapshot } from "../lib/explorer";
-import type { ProjectIndexProgramEnvelope, ProjectSkeleton } from "../lib/projectIndex";
 import type { GeneratedProgramArtifact } from "./generatedProgram";
 import {
   type StudioTargetDiscovery,

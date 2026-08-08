@@ -1,6 +1,10 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { ContextUsageIndicator } from "@/components/ContextUsageIndicator";
 import PromptEditor, { type PromptEditorHandle } from "@/components/PromptEditor";
+import { RojoConnectBanner } from "@/components/RojoConnectBanner";
+import { RojoStatusBadge } from "@/components/RojoStatusBadge";
+import { SetupRojoButton } from "@/components/SetupRojoButton";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Slider } from "@/components/ui/slider";
 import { useAbort } from "@/hooks/mutations/useAbort";
@@ -15,10 +19,6 @@ import { useExplorerReference } from "@/providers/ExplorerReferenceProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
 import { useProjectIndexContext } from "@/providers/ProjectIndexProvider";
 import { useStudioTargetOptional } from "@/providers/StudioTargetProvider";
-import { ContextUsageIndicator } from "@/components/ContextUsageIndicator";
-import { RojoStatusBadge } from "@/components/RojoStatusBadge";
-import { SetupRojoButton } from "@/components/SetupRojoButton";
-import { RojoConnectBanner } from "@/components/RojoConnectBanner";
 import type { ModelInfo } from "@/types";
 
 // ── Image attachment helpers ────────────────────────────────────────────

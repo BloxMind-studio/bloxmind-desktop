@@ -56,7 +56,7 @@ function RojoStatusBadgeImpl() {
   const handleAutoConnectTip = () => {
     toast.info("Auto-Connect Tip", {
       description:
-        "In Roblox Studio, open the Rojo Plugin panel, click Settings, and toggle \"Auto Connect\" to ON. Studio will connect automatically whenever BloxMind starts Rojo.",
+        'In Roblox Studio, open the Rojo Plugin panel, click Settings, and toggle "Auto Connect" to ON. Studio will connect automatically whenever BloxMind starts Rojo.',
       duration: 8000,
     });
   };
@@ -81,15 +81,25 @@ function RojoStatusBadgeImpl() {
         <span
           className={`inline-block h-2 w-2 rounded-full ${
             active
-              ? (clientConnected ? "bg-emerald-500" : "bg-amber-500")
+              ? clientConnected
+                ? "bg-emerald-500"
+                : "bg-amber-500"
               : hasError
                 ? "bg-red-500"
                 : "bg-muted-foreground/30"
           }`}
         />
         {active ? (
-          <span className={clientConnected ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}>
-            {clientConnected ? "Connected to Studio" : `Rojo Active${port ? ` (Port ${port})` : ""}`}
+          <span
+            className={
+              clientConnected
+                ? "text-emerald-600 dark:text-emerald-400"
+                : "text-amber-600 dark:text-amber-400"
+            }
+          >
+            {clientConnected
+              ? "Connected to Studio"
+              : `Rojo Active${port ? ` (Port ${port})` : ""}`}
           </span>
         ) : hasError ? (
           <span className="text-red-600 dark:text-red-400">Rojo Error — Click to Retry</span>
@@ -104,7 +114,16 @@ function RojoStatusBadgeImpl() {
           className="inline-flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-foreground"
           title="How to enable Auto-Connect"
         >
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <circle cx="12" cy="12" r="10" />
             <line x1="12" y1="16" x2="12" y2="12" />
             <line x1="12" y1="8" x2="12.01" y2="8" />

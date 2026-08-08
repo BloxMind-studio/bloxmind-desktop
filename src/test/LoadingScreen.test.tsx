@@ -13,12 +13,15 @@ describe("startup progress", () => {
     ["engine", "Getting things ready", "Preparing", 1],
     ["connection", "Connecting the dots", "Connecting", 2],
     ["workspace", "Setting the stage", "Opening", 3],
-  ] as const)("gives the %s phase friendly copy and a visible step", (phase: StartupPhase, message, label, step) => {
-    expect(getStartupPresentation(phase)).toMatchObject({
-      message,
-      startup: { label, step },
-    });
-  });
+  ] as const)(
+    "gives the %s phase friendly copy and a visible step",
+    (phase: StartupPhase, message, label, step) => {
+      expect(getStartupPresentation(phase)).toMatchObject({
+        message,
+        startup: { label, step },
+      });
+    },
+  );
 
   it("shows a calm three-step progress treatment", () => {
     const startup = getStartupPresentation("connection");

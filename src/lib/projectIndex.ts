@@ -274,10 +274,9 @@ export function parseRequireCalls(source: string): string[] {
   // Matches require(...) capturing the inner expression.
   // The pattern handles one level of nested parens for :GetService("...") calls.
   const requirePattern = /\brequire\s*\(\s*((?:[^()]+|\([^()]*\))+)\s*\)/g;
-  let match: RegExpExecArray | null;
 
-  while ((match = requirePattern.exec(cleanedSource)) !== null) {
-    const inner = match[1].trim();
+  for (const match of cleanedSource.matchAll(requirePattern)) {
+    const inner = (match[1] ?? "").trim();
     if (!inner) continue;
 
     // Normalise the expression into a canonical dependency key.
