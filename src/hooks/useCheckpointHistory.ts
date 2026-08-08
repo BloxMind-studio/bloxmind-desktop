@@ -165,13 +165,19 @@ export function useCheckpointHistory(sessionId: string | undefined) {
         // this point" message after restoring. The checkpoint's messageId is
         // the prompt that started the task; reverting the FIRST message after
         // it keeps that prompt active while dropping the reverted work from
-        // the agent's context — the same revert API undo() and
-        // restoreCheckpoint() use. Reverted messages are only marked, not
+        // the agent's context. Reverted messages are only marked, not
         // deleted, so the Redo flow (session.unrevert) can bring them back.
         // This replaces the old session.prompt() injection, which surfaced a
         // noisy system message in the chat and triggered an agent reply.
+        //
+        // SAFETY GATE: session.revert also rolls workspace files back to the
+        // pre-message snapshot and does NOT preserve post-checkpoint user
+        // edits. Full-snapshot restores already bypass edit preservation
+        // (explicit rollback), so the rewind adds no extra risk there. For
+        // incremental checkpoints the restore above deliberately keeps user
+        // edits, and the rewind would wipe them again — so it is skipped.
         let contextRewound = false;
-        if (client && targetCheckpoint.messageId) {
+        if (client && targetCheckpoint.messageId && targetCheckpoint.fullSnapshot) {
           try {
             const cache = queryClient.getQueryData<MessagesCache>(qk.messages(sessionId));
             const ids = cache?.messageIds ?? [];

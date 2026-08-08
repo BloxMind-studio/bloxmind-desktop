@@ -162,6 +162,31 @@ describe("useCheckpointHistory restoreLatestFileCheckpoint", () => {
     expect(fakeClient.session.prompt).not.toHaveBeenCalled();
   });
 
+  it("skips the context rewind for incremental checkpoints to protect preserved user edits", async () => {
+    // Incremental restores deliberately keep post-checkpoint user edits;
+    // session.revert would roll files back again and wipe them, so the
+    // rewind is gated to full-snapshot checkpoints only.
+    desktopMock.checkpointList.mockResolvedValue([makeCheckpoint({ fullSnapshot: false })]);
+    const fakeClient = makeFakeClient();
+    const qc = makeQC(["msg-prompt-1", "msg-asst-1"]);
+
+    const { result } = renderHook(() => useCheckpointHistory(SESSION_ID), {
+      wrapper: makeWrapper(qc, fakeClient),
+    });
+
+    let restoreResult: unknown;
+    await act(async () => {
+      restoreResult = await result.current.restoreLatestFileCheckpoint("msg-prompt-1");
+    });
+
+    // Files are still restored…
+    expect(restoreResult).not.toBeNull();
+    expect(desktopMock.checkpointRestore).toHaveBeenCalledOnce();
+    // …but the file-affecting context rewind stays off.
+    expect(fakeClient.session.revert).not.toHaveBeenCalled();
+    expect(fakeClient.session.prompt).not.toHaveBeenCalled();
+  });
+
   it("still succeeds when the context rewind call fails", async () => {
     desktopMock.checkpointList.mockResolvedValue([makeCheckpoint()]);
     const fakeClient = makeFakeClient();

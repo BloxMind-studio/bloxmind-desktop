@@ -29,6 +29,24 @@ vi.mock("sonner", () => ({
   toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() },
 }));
 
+// Spies for the system-context hooks so individual tests can opt into a
+// Studio target / project index context (both hooks degrade to null when
+// their providers are absent, which is the default in these tests).
+const providerSpies = vi.hoisted(() => ({
+  useStudioTargetOptional: vi.fn((): { promptReference: string } | null => null),
+  useProjectIndexContext: vi.fn((): { contextPrompt: string | null } => ({ contextPrompt: null })),
+}));
+
+vi.mock("@/providers/StudioTargetProvider", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/providers/StudioTargetProvider")>();
+  return { ...actual, useStudioTargetOptional: providerSpies.useStudioTargetOptional };
+});
+
+vi.mock("@/providers/ProjectIndexProvider", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/providers/ProjectIndexProvider")>();
+  return { ...actual, useProjectIndexContext: providerSpies.useProjectIndexContext };
+});
+
 function makeFakeClient() {
   return {
     session: {
@@ -127,6 +145,8 @@ function makeConversation() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  providerSpies.useStudioTargetOptional.mockReturnValue(null);
+  providerSpies.useProjectIndexContext.mockReturnValue({ contextPrompt: null });
 });
 
 // ── useRegenerateResponse ─────────────────────────────────────────────────
@@ -186,6 +206,74 @@ describe("useRegenerateResponse", () => {
 
     expect(fakeClient.session.deleteMessage).not.toHaveBeenCalled();
     expect(fakeClient.session.promptAsync).not.toHaveBeenCalled();
+  });
+
+  it("attaches the same system context a fresh send would use", async () => {
+    providerSpies.useStudioTargetOptional.mockReturnValue({ promptReference: "TARGET: place1" });
+    providerSpies.useProjectIndexContext.mockReturnValue({ contextPrompt: "PROJECT INDEX" });
+    const { user2, asst2 } = makeConversation();
+    const fakeClient = makeFakeClient();
+    const qc = makeQC([user2, asst2]);
+
+    const { result } = renderHook(() => useRegenerateResponse(), {
+      wrapper: makeWrapper(qc, fakeClient),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({ assistantMessageId: "msg-asst-2" });
+    });
+
+    expect(fakeClient.session.promptAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ system: "TARGET: place1\n\nPROJECT INDEX" }),
+      expect.anything(),
+    );
+  });
+
+  it("skips a legacy injected system-notification message when finding the anchor prompt", async () => {
+    const { user1, asst1 } = makeConversation();
+    const injected: MessageWithParts = {
+      info: makeUserMessage({ id: "msg-injected" }),
+      parts: [
+        makeTextPart({
+          id: "p-inj",
+          messageID: "msg-injected",
+          text: "[SYSTEM_NOTIFICATION_RESTORE] back to checkpoint",
+        }),
+      ],
+    };
+    // asst2 follows the injected notification; the walk must skip it and
+    // anchor on user1 instead.
+    const asst2: MessageWithParts = {
+      info: makeAssistantMessage({ id: "msg-asst-2", parentID: "msg-injected" }),
+      parts: [makeTextPart({ id: "p-5", messageID: "msg-asst-2", text: "answer" })],
+    };
+    const fakeClient = makeFakeClient();
+    const qc = makeQC([user1, asst1, injected, asst2]);
+
+    const { result } = renderHook(() => useRegenerateResponse(), {
+      wrapper: makeWrapper(qc, fakeClient),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({ assistantMessageId: "msg-asst-2" });
+    });
+
+    // The truncation starts at the anchor (user1): everything from it
+    // onward is deleted newest-first, including the skipped notification
+    // and the messages in between. user1 itself is re-admitted verbatim.
+    expect(fakeClient.session.deleteMessage.mock.calls.map((c) => c[0].messageID)).toEqual([
+      "msg-asst-2",
+      "msg-injected",
+      "msg-asst-1",
+      "msg-user-1",
+    ]);
+    // The replayed prompt is user1's text, never the notification text.
+    expect(fakeClient.session.promptAsync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        parts: [{ type: "text", text: "first task" }],
+      }),
+      expect.anything(),
+    );
   });
 
   it("surfaces the error and restores the session status when the re-send fails", async () => {

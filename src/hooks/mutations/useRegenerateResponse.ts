@@ -8,6 +8,9 @@ import type { MessagesCache } from "@/lib/sseDispatch";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
+import { useProjectIndexContext } from "@/providers/ProjectIndexProvider";
+import { useStudioTargetOptional } from "@/providers/StudioTargetProvider";
+import type { MessageWithParts } from "@/types";
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -47,6 +50,17 @@ function extractPromptParts(anchorParts: Part[]): Array<{ type: string; [k: stri
   return parts;
 }
 
+/**
+ * Legacy sessions contain visible user messages injected by the old restore
+ * flow ("[SYSTEM_NOTIFICATION_RESTORE]…"). They must never be replayed as a
+ * real prompt, so the anchor walk skips them and keeps looking backward.
+ */
+function isInjectedSystemNotification(msg: MessageWithParts | undefined): boolean {
+  return (
+    msg?.parts.some((p) => p.type === "text" && p.text.startsWith("[SYSTEM_NOTIFICATION")) ?? false
+  );
+}
+
 // ── Hook ─────────────────────────────────────────────────────────────────
 
 /**
@@ -54,13 +68,15 @@ function extractPromptParts(anchorParts: Part[]): Array<{ type: string; [k: stri
  *
  * The OpenCode API has no native "regenerate" call, so the flow rebuilds the
  * truncated context explicitly:
- * 1. Find the user prompt that directly precedes the targeted response.
- * 2. Delete the assistant response (and any messages after it), then the
- *    anchor prompt itself. `session.deleteMessage` only removes messages —
- *    file changes are NOT reverted.
+ * 1. Find the user prompt that directly precedes the targeted response
+ *    (skipping legacy injected system-notification messages).
+ * 2. Delete the anchor prompt and everything from it onward — the old
+ *    response plus any trailing messages — via `session.deleteMessage`,
+ *    which only removes messages and never reverts file changes.
  * 3. Re-admit the identical prompt via `session.promptAsync` with the
- *    current model/agent/variant preferences, so the agent generates a
- *    fresh response from the retained history.
+ *    current model/agent/variant preferences and the same system context
+ *    a fresh send attaches, so the agent generates a fresh response from
+ *    the retained history.
  *
  * Cache consistency comes for free: deletions emit `message.removed` SSE
  * events and the new run streams through the normal message pipeline, so no
@@ -71,6 +87,10 @@ export function useRegenerateResponse() {
   const { activeSessionId } = useActiveSession();
   const { selectedModel, selectedAgent, selectedVariant } = usePreferences();
   const queryClient = useQueryClient();
+  // Same system context ChatInput attaches to every fresh send, so a
+  // regenerated turn runs with the identical prompt environment.
+  const studioTargetReference = useStudioTargetOptional()?.promptReference ?? null;
+  const { contextPrompt: projectIndexContext } = useProjectIndexContext();
 
   return useMutation<void, Error, RegenerateInput, RegenerateContext | undefined>({
     mutationFn: async ({ assistantMessageId }: RegenerateInput) => {
@@ -81,13 +101,15 @@ export function useRegenerateResponse() {
       const assistantIndex = ids.indexOf(assistantMessageId);
       if (assistantIndex < 0) throw new Error("Message not found in this session");
 
-      // Walk back to the user prompt that triggered this response.
+      // Walk back to the user prompt that triggered this response, skipping
+      // legacy injected system-notification messages.
       let anchorIndex = -1;
       for (let i = assistantIndex - 1; i >= 0; i -= 1) {
-        if (cache?.messagesById[ids[i]]?.info.role === "user") {
-          anchorIndex = i;
-          break;
-        }
+        const candidate = cache?.messagesById[ids[i]];
+        if (candidate?.info.role !== "user") continue;
+        if (isInjectedSystemNotification(candidate)) continue;
+        anchorIndex = i;
+        break;
       }
       if (anchorIndex < 0) throw new Error("No user prompt found before this response");
       const anchorId = ids[anchorIndex];
@@ -98,9 +120,11 @@ export function useRegenerateResponse() {
         promptParts.unshift({ type: "text", text: " " });
       }
 
-      // Remove the old response and everything after it, then the anchor
-      // prompt, newest-first so no dangling tail survives a mid-way failure.
-      const toDelete: string[] = [anchorId, ...ids.slice(assistantIndex)].reverse();
+      // Truncate the conversation at the anchor: delete the prompt and
+      // everything after it (the old response plus any trailing messages),
+      // newest-first so no dangling tail survives a mid-way failure. The
+      // anchor itself is replayed verbatim in the next step.
+      const toDelete: string[] = ids.slice(anchorIndex).reverse();
       for (const messageID of toDelete) {
         await client.session.deleteMessage(
           { sessionID: activeSessionId, messageID },
@@ -113,6 +137,8 @@ export function useRegenerateResponse() {
         sessionID: activeSessionId,
         parts: promptParts,
       };
+      const system = [studioTargetReference, projectIndexContext].filter(Boolean).join("\n\n");
+      if (system) opts.system = system;
       if (selectedModel) {
         const [providerID, modelID] = splitModelKey(selectedModel);
         if (providerID && modelID) opts.model = { providerID, modelID };
