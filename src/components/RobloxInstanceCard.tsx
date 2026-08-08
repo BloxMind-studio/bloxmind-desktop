@@ -157,20 +157,28 @@ function safeJsonParse(input: string): Record<string, unknown> | unknown[] | nul
   }
 }
 
+/**
+ * Narrow an unknown JSON value to a plain object record.
+ */
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
 function parseInspectOutput(output: string): ParsedInstance | null {
   try {
-    const raw = safeJsonParse(output) as any;
+    const raw = safeJsonParse(output);
 
-    const data =
-      (raw as any)?.content?.[0]?.json ??
-      (raw as any)?.content?.[0]?.text ??
-      (raw as any)?.json ??
-      raw;
+    // Unwrap MCP content envelopes: { content: [{ json | text }] } or { json }.
+    const rawRecord = asRecord(raw);
+    const firstContent = Array.isArray(rawRecord?.content) ? rawRecord.content[0] : undefined;
+    const contentRecord = asRecord(firstContent);
+    const data = contentRecord?.json ?? contentRecord?.text ?? rawRecord?.json ?? raw;
 
     // If the data is still a string, try parsing it again.
-    const obj = typeof data === "string" ? JSON.parse(data) : data;
-
-    if (!obj || typeof obj !== "object") return null;
+    const obj = asRecord(typeof data === "string" ? JSON.parse(data) : data);
+    if (!obj) return null;
 
     const path =
       typeof obj.path === "string"
@@ -207,8 +215,9 @@ function parseInspectOutput(output: string): ParsedInstance | null {
     }
 
     // Also check for a nested `properties` object.
-    if (obj.properties && typeof obj.properties === "object" && !Array.isArray(obj.properties)) {
-      for (const [key, value] of Object.entries(obj.properties)) {
+    const nestedProperties = asRecord(obj.properties);
+    if (nestedProperties) {
+      for (const [key, value] of Object.entries(nestedProperties)) {
         if (value !== null && value !== undefined) {
           properties[key] = value;
         }

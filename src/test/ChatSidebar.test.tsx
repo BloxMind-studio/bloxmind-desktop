@@ -30,10 +30,13 @@ function makeSession(
   return {
     id,
     title,
+    slug: id,
+    projectID: "proj",
+    directory: "/workspace",
     time: { created: createdAt, updated: createdAt, archived },
-    version: 1,
+    version: "1",
     parentID: "",
-  } as Session;
+  };
 }
 
 function createClient(overrides: Record<string, unknown> = {}) {

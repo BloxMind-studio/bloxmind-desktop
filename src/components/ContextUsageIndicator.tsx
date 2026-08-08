@@ -127,6 +127,7 @@ const ContextUsageIndicator = memo(function ContextUsageIndicator({
   const previousTotalRef = useRef(0);
 
   // Reset retained total when switching sessions.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: activeSessionId is the intentional trigger — refs are stable but the reset must re-run on session change
   useEffect(() => {
     previousTotalRef.current = 0;
   }, [activeSessionId]);

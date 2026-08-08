@@ -393,15 +393,16 @@ export function buildDependencyGraph(modules: ProjectModuleInput[]): {
   for (const mod of modules) {
     for (const dep of mod.dependencies) {
       if (pathToModule.has(dep)) {
-        if (!dependents.has(dep)) dependents.set(dep, new Set());
-        dependents.get(dep)!.add(mod.path);
+        const set = dependents.get(dep) ?? new Set<string>();
+        set.add(mod.path);
+        dependents.set(dep, set);
       }
     }
   }
 
   // Entry points: modules with zero dependents (nothing requires them).
   const entryPoints = modules
-    .filter((mod) => !dependents.has(mod.path) || dependents.get(mod.path)!.size === 0)
+    .filter((mod) => (dependents.get(mod.path)?.size ?? 0) === 0)
     .map((mod) => mod.path);
 
   // ── Cycle detection (DFS with recursion stack) ─────────────────────────
@@ -468,7 +469,8 @@ export function buildDependencyGraph(modules: ProjectModuleInput[]): {
 
   function computeDepth(path: string): number {
     // Return cached result if available.
-    if (depthCache.has(path)) return depthCache.get(path)!;
+    const cachedDepth = depthCache.get(path);
+    if (cachedDepth !== undefined) return cachedDepth;
 
     // Cycle members get depth 0 directly to avoid infinite recursion
     // and prevent inflated depth values from circular edges.

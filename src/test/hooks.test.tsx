@@ -24,6 +24,7 @@ import { useSessions } from "@/hooks/useSessions";
 import { qk } from "@/lib/queryKeys";
 import type { MessagesCache } from "@/lib/sseDispatch";
 import { ActiveSessionContext } from "@/providers/ActiveSessionProvider";
+import { makeAssistantMessage, makeTextPart } from "@/test/fixtures";
 
 // ── Test helpers ─────────────────────────────────────────────────────
 
@@ -37,10 +38,13 @@ function makeSession(id: string, title: string): Session {
   return {
     id,
     title,
+    slug: id,
+    projectID: "proj",
+    directory: "/workspace",
     time: { created: Date.now(), updated: Date.now() },
-    version: 1,
+    version: "1",
     parentID: "",
-  } as Session;
+  };
 }
 
 /** Minimal wrapper providing QueryClient only */
@@ -88,7 +92,7 @@ describe("useSessions", () => {
     const { result } = renderHook(() => useSessions(), { wrapper: makeWrapper(qc) });
 
     expect(result.current.data).toHaveLength(2);
-    expect(result.current.data![0].id).toBe("s1");
+    expect(result.current.data?.[0].id).toBe("s1");
   });
 
   it("returns undefined when cache is empty", () => {
@@ -212,8 +216,8 @@ describe("useMessageIds", () => {
     qc.setQueryData<MessagesCache>(qk.messages("s1"), {
       messageIds: ["m1", "m2"],
       messagesById: {
-        m1: { info: { id: "m1" } as any, parts: [] },
-        m2: { info: { id: "m2" } as any, parts: [] },
+        m1: { info: makeAssistantMessage({ id: "m1" }), parts: [] },
+        m2: { info: makeAssistantMessage({ id: "m2" }), parts: [] },
       },
     });
 
@@ -240,8 +244,8 @@ describe("useMessage", () => {
       messageIds: ["m1"],
       messagesById: {
         m1: {
-          info: { id: "m1", role: "assistant" } as any,
-          parts: [{ id: "p1", type: "text", text: "hello" } as any],
+          info: makeAssistantMessage({ id: "m1" }),
+          parts: [makeTextPart({ text: "hello" })],
         },
       },
     });
@@ -258,7 +262,7 @@ describe("useMessage", () => {
     const qc = makeQC();
     qc.setQueryData<MessagesCache>(qk.messages("s1"), {
       messageIds: ["m1"],
-      messagesById: { m1: { info: { id: "m1" } as any, parts: [] } },
+      messagesById: { m1: { info: makeAssistantMessage({ id: "m1" }), parts: [] } },
     });
 
     const { result } = renderHook(() => useMessage("m999"), {

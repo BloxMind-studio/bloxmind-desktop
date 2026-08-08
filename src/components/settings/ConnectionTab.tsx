@@ -25,7 +25,7 @@ export function ConnectionTab() {
             value={sseReconnectDelay}
             onChange={(e) =>
               setSseReconnectDelay(
-                Math.min(60_000, Math.max(1_000, parseInt(e.target.value) || 1_000)),
+                Math.min(60_000, Math.max(1_000, Number.parseInt(e.target.value, 10) || 1_000)),
               )
             }
             className="h-8 w-full rounded border bg-background px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-ring"
@@ -50,7 +50,7 @@ export function ConnectionTab() {
             value={sseHeartbeatTimeout}
             onChange={(e) =>
               setSseHeartbeatTimeout(
-                Math.min(120_000, Math.max(5_000, parseInt(e.target.value) || 5_000)),
+                Math.min(120_000, Math.max(5_000, Number.parseInt(e.target.value, 10) || 5_000)),
               )
             }
             className="h-8 w-full rounded border bg-background px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-ring"

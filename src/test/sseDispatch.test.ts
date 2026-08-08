@@ -6,11 +6,13 @@
  */
 
 import type {
+  AssistantMessage,
   Event,
   PermissionRequest,
   QuestionRequest,
   Session,
   SessionStatus,
+  TextPart,
   Todo,
 } from "@opencode-ai/sdk/v2/client";
 import { QueryClient } from "@tanstack/react-query";
@@ -18,7 +20,7 @@ import { Cause, Effect } from "effect";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { qk } from "@/lib/queryKeys";
 import { type MessagesCache, sseDispatch, sseDispatchEffect } from "@/lib/sseDispatch";
-import type { MessageWithParts } from "@/types";
+import { makeAssistantMessage, makeTextPart, makeTodo } from "@/test/fixtures";
 
 function makeQC() {
   return new QueryClient({
@@ -30,14 +32,37 @@ function makeSession(id: string, title: string): Session {
   return {
     id,
     title,
+    slug: id,
+    projectID: "proj",
+    directory: "/workspace",
     time: { created: Date.now(), updated: Date.now() },
-    version: 1,
+    version: "1",
     parentID: "",
-  } as Session;
+  };
 }
 
 function dispatch(qc: QueryClient, event: Partial<Event>, activeSessionId: string | null = null) {
   sseDispatch(qc, event as Event, { current: activeSessionId });
+}
+
+// ── Typed cache accessors (fail loudly instead of non-null assertions) ──
+
+function sessionsOf(qc: QueryClient): Session[] {
+  const sessions = qc.getQueryData<Session[]>(qk.sessions);
+  if (!sessions) throw new Error("expected sessions cache");
+  return sessions;
+}
+
+function statusesOf(qc: QueryClient): Record<string, SessionStatus> {
+  const statuses = qc.getQueryData<Record<string, SessionStatus>>(qk.statuses);
+  if (!statuses) throw new Error("expected statuses cache");
+  return statuses;
+}
+
+function messagesCacheOf(qc: QueryClient, sessionId = "s1"): MessagesCache {
+  const cache = qc.getQueryData<MessagesCache>(qk.messages(sessionId));
+  if (!cache) throw new Error(`expected messages cache for ${sessionId}`);
+  return cache;
 }
 
 describe("sseDispatch", () => {
@@ -104,10 +129,10 @@ describe("sseDispatch", () => {
 
       dispatch(qc, {
         type: "session.created",
-        properties: { info: makeSession("s2", "Two") },
+        properties: { sessionID: "s2", info: makeSession("s2", "Two") },
       });
 
-      const sessions = qc.getQueryData<Session[]>(qk.sessions)!;
+      const sessions = sessionsOf(qc);
       expect(sessions).toHaveLength(2);
       expect(sessions[0].id).toBe("s2"); // prepended
     });
@@ -116,7 +141,7 @@ describe("sseDispatch", () => {
       const s1 = makeSession("s1", "One");
       qc.setQueryData(qk.sessions, [s1]);
 
-      dispatch(qc, { type: "session.created", properties: { info: s1 } });
+      dispatch(qc, { type: "session.created", properties: { sessionID: "s1", info: s1 } });
 
       expect(qc.getQueryData<Session[]>(qk.sessions)).toHaveLength(1);
     });
@@ -124,10 +149,10 @@ describe("sseDispatch", () => {
     it("creates the array when cache is empty", () => {
       dispatch(qc, {
         type: "session.created",
-        properties: { info: makeSession("s1", "One") },
+        properties: { sessionID: "s1", info: makeSession("s1", "One") },
       });
 
-      const sessions = qc.getQueryData<Session[]>(qk.sessions)!;
+      const sessions = sessionsOf(qc);
       expect(sessions).toHaveLength(1);
     });
   });
@@ -138,10 +163,10 @@ describe("sseDispatch", () => {
 
       dispatch(qc, {
         type: "session.updated",
-        properties: { info: makeSession("s1", "New Title") },
+        properties: { sessionID: "s1", info: makeSession("s1", "New Title") },
       });
 
-      const sessions = qc.getQueryData<Session[]>(qk.sessions)!;
+      const sessions = sessionsOf(qc);
       expect(sessions[0].title).toBe("New Title");
     });
 
@@ -150,10 +175,10 @@ describe("sseDispatch", () => {
 
       dispatch(qc, {
         type: "session.updated",
-        properties: { info: makeSession("s1", "Updated") },
+        properties: { sessionID: "s1", info: makeSession("s1", "Updated") },
       });
 
-      const sessions = qc.getQueryData<Session[]>(qk.sessions)!;
+      const sessions = sessionsOf(qc);
       expect(sessions[1].title).toBe("Two");
     });
   });
@@ -167,10 +192,10 @@ describe("sseDispatch", () => {
 
       dispatch(qc, {
         type: "session.deleted",
-        properties: { info: makeSession("s1", "One") },
+        properties: { sessionID: "s1", info: makeSession("s1", "One") },
       });
 
-      const sessions = qc.getQueryData<Session[]>(qk.sessions)!;
+      const sessions = sessionsOf(qc);
       expect(sessions).toHaveLength(1);
       expect(sessions[0].id).toBe("s2");
       expect(qc.getQueryData(qk.messages("s1"))).toBeUndefined();
@@ -190,7 +215,7 @@ describe("sseDispatch", () => {
         properties: { sessionID: "s1", status: { type: "busy" } },
       });
 
-      const statuses = qc.getQueryData<Record<string, SessionStatus>>(qk.statuses)!;
+      const statuses = statusesOf(qc);
       expect(statuses.s1.type).toBe("busy");
     });
 
@@ -232,7 +257,7 @@ describe("sseDispatch", () => {
 
       dispatch(qc, { type: "session.idle", properties: { sessionID: "s1" } });
 
-      const statuses = qc.getQueryData<Record<string, SessionStatus>>(qk.statuses)!;
+      const statuses = statusesOf(qc);
       expect(statuses.s1.type).toBe("idle");
     });
 
@@ -346,13 +371,14 @@ describe("sseDispatch", () => {
         {
           type: "message.updated",
           properties: {
-            info: { id: "m1", sessionID: "s1", role: "assistant" },
+            sessionID: "s1",
+            info: makeAssistantMessage({ id: "m1" }),
           },
         },
         "s1",
       );
 
-      const cache = qc.getQueryData<MessagesCache>(qk.messages("s1"))!;
+      const cache = messagesCacheOf(qc);
       expect(cache.messageIds).toEqual(["m1"]);
       expect(cache.messagesById.m1.info.id).toBe("m1");
       expect(cache.messagesById.m1.parts).toEqual([]);
@@ -363,27 +389,33 @@ describe("sseDispatch", () => {
         messageIds: ["m1"],
         messagesById: {
           m1: {
-            info: { id: "m1", sessionID: "s1", role: "assistant" } as any,
-            parts: [{ id: "p1", type: "text", text: "hello" } as any],
+            info: makeAssistantMessage({ id: "m1" }),
+            parts: [makeTextPart({ text: "hello" })],
           },
         },
       });
+
+      const updatedInfo: AssistantMessage & { metadata: string } = {
+        ...makeAssistantMessage({ id: "m1" }),
+        metadata: "updated",
+      };
 
       dispatch(
         qc,
         {
           type: "message.updated",
           properties: {
-            info: { id: "m1", sessionID: "s1", role: "assistant", metadata: "updated" },
+            sessionID: "s1",
+            info: updatedInfo,
           },
         },
         "s1",
       );
 
-      const cache = qc.getQueryData<MessagesCache>(qk.messages("s1"))!;
+      const cache = messagesCacheOf(qc);
       expect(cache.messageIds).toEqual(["m1"]); // not duplicated
       expect(cache.messagesById.m1.parts).toHaveLength(1); // parts preserved
-      expect((cache.messagesById.m1.info as any).metadata).toBe("updated");
+      expect(cache.messagesById.m1.info).toHaveProperty("metadata", "updated");
     });
 
     it("ignores messages for a different session", () => {
@@ -393,12 +425,15 @@ describe("sseDispatch", () => {
         qc,
         {
           type: "message.updated",
-          properties: { info: { id: "m1", sessionID: "s2" } },
+          properties: {
+            sessionID: "s2",
+            info: makeAssistantMessage({ id: "m1", sessionID: "s2" }),
+          },
         },
         "s1",
       );
 
-      const cache = qc.getQueryData<MessagesCache>(qk.messages("s1"))!;
+      const cache = messagesCacheOf(qc);
       expect(cache.messageIds).toEqual([]);
     });
 
@@ -407,12 +442,15 @@ describe("sseDispatch", () => {
         qc,
         {
           type: "message.updated",
-          properties: { info: { id: "m1", sessionID: "s1" } },
+          properties: {
+            sessionID: "s1",
+            info: makeAssistantMessage({ id: "m1" }),
+          },
         },
         "s1",
       );
 
-      const cache = qc.getQueryData<MessagesCache>(qk.messages("s1"))!;
+      const cache = messagesCacheOf(qc);
       expect(cache.messageIds).toEqual(["m1"]);
     });
   });
@@ -421,7 +459,7 @@ describe("sseDispatch", () => {
     it("appends a new part to an existing message", () => {
       qc.setQueryData<MessagesCache>(qk.messages("s1"), {
         messageIds: ["m1"],
-        messagesById: { m1: { info: { id: "m1" } as any, parts: [] } },
+        messagesById: { m1: { info: makeAssistantMessage({ id: "m1" }), parts: [] } },
       });
 
       dispatch(
@@ -429,15 +467,17 @@ describe("sseDispatch", () => {
         {
           type: "message.part.updated",
           properties: {
-            part: { id: "p1", messageID: "m1", sessionID: "s1", type: "text", text: "hi" },
+            sessionID: "s1",
+            part: makeTextPart({ text: "hi" }),
+            time: 0,
           },
         },
         "s1",
       );
 
-      const msg = qc.getQueryData<MessagesCache>(qk.messages("s1"))!.messagesById.m1;
+      const msg = messagesCacheOf(qc).messagesById.m1;
       expect(msg.parts).toHaveLength(1);
-      expect((msg.parts[0] as any).text).toBe("hi");
+      expect(msg.parts[0]).toMatchObject({ text: "hi" });
     });
 
     it("replaces an existing part by id", () => {
@@ -445,8 +485,8 @@ describe("sseDispatch", () => {
         messageIds: ["m1"],
         messagesById: {
           m1: {
-            info: { id: "m1" } as any,
-            parts: [{ id: "p1", type: "text", text: "old" } as any],
+            info: makeAssistantMessage({ id: "m1" }),
+            parts: [makeTextPart({ text: "old" })],
           },
         },
       });
@@ -456,15 +496,17 @@ describe("sseDispatch", () => {
         {
           type: "message.part.updated",
           properties: {
-            part: { id: "p1", messageID: "m1", sessionID: "s1", type: "text", text: "new" },
+            sessionID: "s1",
+            part: makeTextPart({ text: "new" }),
+            time: 0,
           },
         },
         "s1",
       );
 
-      const msg = qc.getQueryData<MessagesCache>(qk.messages("s1"))!.messagesById.m1;
+      const msg = messagesCacheOf(qc).messagesById.m1;
       expect(msg.parts).toHaveLength(1);
-      expect((msg.parts[0] as any).text).toBe("new");
+      expect(msg.parts[0]).toMatchObject({ text: "new" });
     });
   });
 
@@ -474,8 +516,8 @@ describe("sseDispatch", () => {
         messageIds: ["m1"],
         messagesById: {
           m1: {
-            info: { id: "m1" } as any,
-            parts: [{ id: "p1", type: "text", text: "Hello" } as any],
+            info: makeAssistantMessage({ id: "m1" }),
+            parts: [makeTextPart({ text: "Hello" })],
           },
         },
       });
@@ -484,22 +526,32 @@ describe("sseDispatch", () => {
         qc,
         {
           type: "message.part.delta",
-          properties: { messageID: "m1", partID: "p1", delta: " World" },
+          properties: {
+            sessionID: "s1",
+            messageID: "m1",
+            partID: "p1",
+            field: "",
+            delta: " World",
+          },
         },
         "s1",
       );
 
-      const part = qc.getQueryData<MessagesCache>(qk.messages("s1"))!.messagesById.m1.parts[0];
-      expect((part as any).text).toBe("Hello World");
+      const part = messagesCacheOf(qc).messagesById.m1.parts[0];
+      expect(part).toMatchObject({ text: "Hello World" });
     });
 
     it("uses field parameter when provided", () => {
+      const partWithOutput: TextPart & { output: string } = {
+        ...makeTextPart({ text: "base" }),
+        output: "out",
+      };
       qc.setQueryData<MessagesCache>(qk.messages("s1"), {
         messageIds: ["m1"],
         messagesById: {
           m1: {
-            info: { id: "m1" } as any,
-            parts: [{ id: "p1", type: "text", text: "base", output: "out" } as any],
+            info: makeAssistantMessage({ id: "m1" }),
+            parts: [partWithOutput],
           },
         },
       });
@@ -508,36 +560,44 @@ describe("sseDispatch", () => {
         qc,
         {
           type: "message.part.delta",
-          properties: { messageID: "m1", partID: "p1", field: "output", delta: "+more" },
+          properties: {
+            sessionID: "s1",
+            messageID: "m1",
+            partID: "p1",
+            field: "output",
+            delta: "+more",
+          },
         },
         "s1",
       );
 
-      const part = qc.getQueryData<MessagesCache>(qk.messages("s1"))!.messagesById.m1
-        .parts[0] as any;
-      expect(part.output).toBe("out+more");
-      expect(part.text).toBe("base"); // unchanged
+      const part = messagesCacheOf(qc).messagesById.m1.parts[0];
+      expect(part).toMatchObject({ output: "out+more", text: "base" }); // text unchanged
     });
 
     it("ignores delta when part is not found", () => {
       qc.setQueryData<MessagesCache>(qk.messages("s1"), {
         messageIds: ["m1"],
-        messagesById: { m1: { info: { id: "m1" } as any, parts: [] } },
+        messagesById: { m1: { info: makeAssistantMessage({ id: "m1" }), parts: [] } },
       });
 
       dispatch(
         qc,
         {
           type: "message.part.delta",
-          properties: { messageID: "m1", partID: "nonexistent", delta: "x" },
+          properties: {
+            sessionID: "s1",
+            messageID: "m1",
+            partID: "nonexistent",
+            field: "text",
+            delta: "x",
+          },
         },
         "s1",
       );
 
       // Should not throw, cache unchanged
-      expect(qc.getQueryData<MessagesCache>(qk.messages("s1"))!.messagesById.m1.parts).toHaveLength(
-        0,
-      );
+      expect(messagesCacheOf(qc).messagesById.m1.parts).toHaveLength(0);
     });
   });
 
@@ -546,8 +606,8 @@ describe("sseDispatch", () => {
       qc.setQueryData<MessagesCache>(qk.messages("s1"), {
         messageIds: ["m1", "m2"],
         messagesById: {
-          m1: { info: { id: "m1" } as any, parts: [] },
-          m2: { info: { id: "m2" } as any, parts: [] },
+          m1: { info: makeAssistantMessage({ id: "m1" }), parts: [] },
+          m2: { info: makeAssistantMessage({ id: "m2" }), parts: [] },
         },
       });
 
@@ -557,7 +617,7 @@ describe("sseDispatch", () => {
         "s1",
       );
 
-      const cache = qc.getQueryData<MessagesCache>(qk.messages("s1"))!;
+      const cache = messagesCacheOf(qc);
       expect(cache.messageIds).toEqual(["m2"]);
       expect(cache.messagesById.m1).toBeUndefined();
     });
@@ -569,8 +629,8 @@ describe("sseDispatch", () => {
         messageIds: ["m1"],
         messagesById: {
           m1: {
-            info: { id: "m1" } as any,
-            parts: [{ id: "p1", type: "text" } as any, { id: "p2", type: "text" } as any],
+            info: makeAssistantMessage({ id: "m1" }),
+            parts: [makeTextPart({ id: "p1" }), makeTextPart({ id: "p2" })],
           },
         },
       });
@@ -584,7 +644,7 @@ describe("sseDispatch", () => {
         "s1",
       );
 
-      const parts = qc.getQueryData<MessagesCache>(qk.messages("s1"))!.messagesById.m1.parts;
+      const parts = messagesCacheOf(qc).messagesById.m1.parts;
       expect(parts).toHaveLength(1);
       expect(parts[0].id).toBe("p2");
     });
@@ -595,7 +655,7 @@ describe("sseDispatch", () => {
   describe("todo.updated", () => {
     it("replaces the todos cache for the active session", () => {
       qc.setQueryData(qk.todos("s1"), []);
-      const newTodos = [{ id: "t1", content: "Do something" }] as unknown as Todo[];
+      const newTodos = [makeTodo()];
 
       dispatch(
         qc,
@@ -611,7 +671,7 @@ describe("sseDispatch", () => {
 
       dispatch(
         qc,
-        { type: "todo.updated", properties: { sessionID: "s2", todos: [{ id: "t1" }] } },
+        { type: "todo.updated", properties: { sessionID: "s2", todos: [makeTodo()] } },
         "s1",
       );
 
@@ -633,7 +693,7 @@ describe("sseDispatch", () => {
       );
 
       const q = qc.getQueryData<QuestionRequest | null>(qk.questions("s1"));
-      expect((q as any).id).toBe("q1");
+      expect(q?.id).toBe("q1");
     });
   });
 
@@ -641,7 +701,14 @@ describe("sseDispatch", () => {
     it("clears the question on reply", () => {
       qc.setQueryData(qk.questions("s1"), { id: "q1", sessionID: "s1" });
 
-      dispatch(qc, { type: "question.replied", properties: { sessionID: "s1" } }, "s1");
+      dispatch(
+        qc,
+        {
+          type: "question.replied",
+          properties: { sessionID: "s1", requestID: "q1", answers: [] },
+        },
+        "s1",
+      );
 
       expect(qc.getQueryData(qk.questions("s1"))).toBeNull();
     });
@@ -649,7 +716,14 @@ describe("sseDispatch", () => {
     it("clears the question on reject", () => {
       qc.setQueryData(qk.questions("s1"), { id: "q1", sessionID: "s1" });
 
-      dispatch(qc, { type: "question.rejected", properties: { sessionID: "s1" } }, "s1");
+      dispatch(
+        qc,
+        {
+          type: "question.rejected",
+          properties: { sessionID: "s1", requestID: "q1" },
+        },
+        "s1",
+      );
 
       expect(qc.getQueryData(qk.questions("s1"))).toBeNull();
     });
@@ -663,13 +737,20 @@ describe("sseDispatch", () => {
         qc,
         {
           type: "permission.asked",
-          properties: { id: "p1", sessionID: "s1", permission: "bash", patterns: [] },
+          properties: {
+            id: "p1",
+            sessionID: "s1",
+            permission: "bash",
+            patterns: [],
+            metadata: {},
+            always: [],
+          },
         },
         "s1",
       );
 
       const p = qc.getQueryData<PermissionRequest | null>(qk.permissions("s1"));
-      expect((p as any).id).toBe("p1");
+      expect(p?.id).toBe("p1");
     });
   });
 
@@ -677,7 +758,14 @@ describe("sseDispatch", () => {
     it("clears the permission request", () => {
       qc.setQueryData(qk.permissions("s1"), { id: "p1", sessionID: "s1" });
 
-      dispatch(qc, { type: "permission.replied", properties: { sessionID: "s1" } }, "s1");
+      dispatch(
+        qc,
+        {
+          type: "permission.replied",
+          properties: { sessionID: "s1", requestID: "p1", reply: "once" },
+        },
+        "s1",
+      );
 
       expect(qc.getQueryData(qk.permissions("s1"))).toBeNull();
     });

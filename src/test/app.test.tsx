@@ -45,10 +45,13 @@ function makeSession(id: string, title: string, createdAt = Date.now()): Session
   return {
     id,
     title,
+    slug: id,
+    projectID: "proj",
+    directory: "/workspace",
     time: { created: createdAt, updated: createdAt },
-    version: 1,
+    version: "1",
     parentID: "",
-  } as Session;
+  };
 }
 
 /**

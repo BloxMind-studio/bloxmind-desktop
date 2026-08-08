@@ -55,7 +55,9 @@ export function EngineTab() {
             step={256}
             value={maxTokens}
             onChange={(e) =>
-              setMaxTokens(Math.min(128_000, Math.max(256, parseInt(e.target.value) || 256)))
+              setMaxTokens(
+                Math.min(128_000, Math.max(256, Number.parseInt(e.target.value, 10) || 256)),
+              )
             }
             className="h-8 w-full rounded border bg-background px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-ring"
           />
