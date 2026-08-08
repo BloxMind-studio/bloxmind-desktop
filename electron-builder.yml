@@ -19,7 +19,7 @@ mac:
     - dmg
     - zip
 win:
-  icon: electron/icons/icon.ico
+  icon: public/bloxbot-svg.ico
   artifactName: BloxMind-Setup-${version}.${ext}
   target:
     - nsis
