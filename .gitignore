@@ -44,3 +44,7 @@ PLAN.md
 # OS metadata
 .DS_Store
 Thumbs.db
+
+# Tooling artifacts
+.qoder/
+test-results/
