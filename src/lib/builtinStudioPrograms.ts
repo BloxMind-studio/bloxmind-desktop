@@ -88,7 +88,7 @@ async function run({ callTool }: { input: unknown; callTool: (name: string, args
   // Studio currently caps max_depth at 10. Use that ceiling and an intentionally
   // generous result cap so ordinary places are collected in one pass.
   const toolResult = await callTool("search_game_tree", {
-    datamodel_type: "place",
+    datamodel_type: "Edit",
     max_depth: 10,
     head_limit: 100000,
   });

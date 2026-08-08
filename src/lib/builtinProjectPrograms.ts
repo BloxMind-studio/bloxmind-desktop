@@ -151,7 +151,7 @@ async function run({ callTool }: { input: unknown; callTool: (name: string, args
   const scriptClasses = ["Script", "ModuleScript", "LocalScript", "BaseScript"];
   const raw = normalizeMcpResult(
     await callTool("search_game_tree", {
-      datamodel_type: "place",
+      datamodel_type: "Edit",
       max_depth: 10,
       head_limit: 100000,
     })
