@@ -7,6 +7,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.9.5] - 2026-08-08
+
+### Added
+
+- Added a Regenerate button for the latest assistant response.
+
+### Fixed
+
+- Fixed the Explorer failing to load by sending the required `datamodel_type: Edit` parameter to Roblox Studio's `search_game_tree` MCP tool.
+
 ## [0.9.2] - 2026-08-08
 
 ### Fixed
@@ -182,7 +192,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - OpenCode downloads are restricted to official GitHub release assets and verified with SHA-256 digests before installation and on every cache reuse.
 - Electron runs with context isolation, renderer sandboxing, Node.js integration disabled, validated IPC payloads, and external navigation blocked.
 
-[Unreleased]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.9.2...HEAD
+[Unreleased]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.9.5...HEAD
+[0.9.5]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.9.2...v0.9.5
 [0.9.2]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.8.1...v0.9.0
