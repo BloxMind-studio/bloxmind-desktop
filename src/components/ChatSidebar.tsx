@@ -1,6 +1,6 @@
 import type { Session } from "@opencode-ai/sdk/v2/client";
 import posthog from "posthog-js/dist/module.full.no-external.js";
-import { type MouseEvent, memo, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, type MouseEvent, memo, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useArchiveSession } from "@/hooks/mutations/useArchiveSession";
 import { useCreateSession } from "@/hooks/mutations/useCreateSession";
@@ -226,6 +226,7 @@ const ChatSidebar = memo(function ChatSidebar({
         <div className="flex flex-1 flex-col items-center justify-between py-2">
           <div className="flex flex-col items-center">
             <button
+              type="button"
               onClick={onToggle}
               className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
               title="Expand sidebar"
@@ -239,11 +240,13 @@ const ChatSidebar = memo(function ChatSidebar({
                 strokeWidth="2"
                 strokeLinecap="round"
                 strokeLinejoin="round"
+                aria-hidden="true"
               >
                 <polyline points="9 18 15 12 9 6" />
               </svg>
             </button>
             <button
+              type="button"
               onClick={handleCreate}
               className="mt-2 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
               title="New session"
@@ -257,6 +260,7 @@ const ChatSidebar = memo(function ChatSidebar({
                 strokeWidth="2"
                 strokeLinecap="round"
                 strokeLinejoin="round"
+                aria-hidden="true"
               >
                 <line x1="12" y1="5" x2="12" y2="19" />
                 <line x1="5" y1="12" x2="19" y2="12" />
@@ -264,6 +268,7 @@ const ChatSidebar = memo(function ChatSidebar({
             </button>
           </div>
           <button
+            type="button"
             onClick={onOpenSettings}
             className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             title="Settings"
@@ -277,6 +282,7 @@ const ChatSidebar = memo(function ChatSidebar({
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
+              aria-hidden="true"
             >
               <circle cx="12" cy="12" r="3" />
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
@@ -291,6 +297,7 @@ const ChatSidebar = memo(function ChatSidebar({
             </span>
             <div className="flex items-center gap-0.5">
               <button
+                type="button"
                 onClick={handleCreate}
                 className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                 title="New session"
@@ -304,12 +311,14 @@ const ChatSidebar = memo(function ChatSidebar({
                   strokeWidth="2.5"
                   strokeLinecap="round"
                   strokeLinejoin="round"
+                  aria-hidden="true"
                 >
                   <line x1="12" y1="5" x2="12" y2="19" />
                   <line x1="5" y1="12" x2="19" y2="12" />
                 </svg>
               </button>
               <button
+                type="button"
                 onClick={onToggle}
                 className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                 title="Collapse sidebar"
@@ -323,6 +332,7 @@ const ChatSidebar = memo(function ChatSidebar({
                   strokeWidth="2"
                   strokeLinecap="round"
                   strokeLinejoin="round"
+                  aria-hidden="true"
                 >
                   <polyline points="15 18 9 12 15 6" />
                 </svg>
@@ -353,6 +363,7 @@ const ChatSidebar = memo(function ChatSidebar({
                   }
                   style={{ animationDelay: `${index * 30}ms` }}
                 >
+                  {/* biome-ignore lint/a11y/noStaticElementInteractions: right-click menu complements the keyboard-accessible buttons inside */}
                   <div
                     onContextMenu={(event) => openContextMenu(event, session)}
                     className={`group relative mx-1 rounded-md transition-colors duration-150 ${
@@ -430,6 +441,7 @@ const ChatSidebar = memo(function ChatSidebar({
                             strokeWidth="2"
                             strokeLinecap="round"
                             strokeLinejoin="round"
+                            aria-hidden="true"
                           >
                             <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
                           </svg>
@@ -457,6 +469,7 @@ const ChatSidebar = memo(function ChatSidebar({
                             strokeWidth="2"
                             strokeLinecap="round"
                             strokeLinejoin="round"
+                            aria-hidden="true"
                           >
                             <path d="M3 7h18" />
                             <path d="M5 7l1 13h12l1-13" />
@@ -488,6 +501,7 @@ const ChatSidebar = memo(function ChatSidebar({
                   stroke="currentColor"
                   strokeWidth="2"
                   className={`transition-transform ${snoozedExpanded ? "rotate-90" : ""}`}
+                  aria-hidden="true"
                 >
                   <polyline points="9 18 15 12 9 6" />
                 </svg>
@@ -498,47 +512,50 @@ const ChatSidebar = memo(function ChatSidebar({
               {snoozedExpanded && (
                 <div className="max-h-40 overflow-y-auto overflow-x-hidden pb-1">
                   {snoozedSessions.map((session) => (
-                    <div
-                      key={session.id}
-                      onContextMenu={(event) => openContextMenu(event, session)}
-                      className={`group relative mx-1 flex min-w-0 items-center rounded-md text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground ${
-                        transitioningSessionId === session.id
-                          ? "animate-slide-out-left"
-                          : "animate-slide-in-left"
-                      }`}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => handleSnoozedSelect(session.id)}
-                        className="min-w-0 flex-1 px-2 py-1.5 text-left"
-                        title={`Open snoozed session ${session.title || "Untitled"}`}
+                    <Fragment key={session.id}>
+                      {/* biome-ignore lint/a11y/noStaticElementInteractions: right-click menu complements the keyboard-accessible buttons inside */}
+                      <div
+                        onContextMenu={(event) => openContextMenu(event, session)}
+                        className={`group relative mx-1 flex min-w-0 items-center rounded-md text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground ${
+                          transitioningSessionId === session.id
+                            ? "animate-slide-out-left"
+                            : "animate-slide-in-left"
+                        }`}
                       >
-                        <div className="truncate text-[11px] leading-snug opacity-80">
-                          {session.title || "Untitled"}
-                        </div>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleUnsnooze(session.id)}
-                        className="mr-1 flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-focus-within:opacity-100 group-hover:opacity-100"
-                        title="Unsnooze"
-                      >
-                        <svg
-                          width="10"
-                          height="10"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
+                        <button
+                          type="button"
+                          onClick={() => handleSnoozedSelect(session.id)}
+                          className="min-w-0 flex-1 px-2 py-1.5 text-left"
+                          title={`Open snoozed session ${session.title || "Untitled"}`}
                         >
-                          <path d="M3 7h18" />
-                          <path d="M5 7l1 13h12l1-13" />
-                          <path d="M9 11h6" />
-                          <path d="M12 16v-5" />
-                          <path d="m9.5 13.5 2.5-2.5 2.5 2.5" />
-                        </svg>
-                      </button>
-                    </div>
+                          <div className="truncate text-[11px] leading-snug opacity-80">
+                            {session.title || "Untitled"}
+                          </div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleUnsnooze(session.id)}
+                          className="mr-1 flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-focus-within:opacity-100 group-hover:opacity-100"
+                          title="Unsnooze"
+                        >
+                          <svg
+                            width="10"
+                            height="10"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            aria-hidden="true"
+                          >
+                            <path d="M3 7h18" />
+                            <path d="M5 7l1 13h12l1-13" />
+                            <path d="M9 11h6" />
+                            <path d="M12 16v-5" />
+                            <path d="m9.5 13.5 2.5-2.5 2.5 2.5" />
+                          </svg>
+                        </button>
+                      </div>
+                    </Fragment>
                   ))}
                 </div>
               )}
@@ -547,6 +564,7 @@ const ChatSidebar = memo(function ChatSidebar({
 
           <div className="shrink-0 border-t px-3 py-2 space-y-1">
             <button
+              type="button"
               onClick={onOpenSettings}
               className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             >
@@ -559,6 +577,7 @@ const ChatSidebar = memo(function ChatSidebar({
                 strokeWidth="2"
                 strokeLinecap="round"
                 strokeLinejoin="round"
+                aria-hidden="true"
               >
                 <circle cx="12" cy="12" r="3" />
                 <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
@@ -591,6 +610,7 @@ const ChatSidebar = memo(function ChatSidebar({
 
           {deleteTarget &&
             createPortal(
+              // biome-ignore lint/a11y/noStaticElementInteractions: supplementary backdrop dismissal; the alertdialog itself is keyboard accessible
               <div
                 className="animate-lightbox-backdrop fixed inset-0 z-[300] flex items-center justify-center bg-black/55 p-4 backdrop-blur-[2px]"
                 onMouseDown={(event) => {

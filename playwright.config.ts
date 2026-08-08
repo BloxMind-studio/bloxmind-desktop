@@ -11,7 +11,10 @@ export default defineConfig({
     screenshot: "only-on-failure",
   },
   webServer: {
-    command: "pnpm dev",
+    // Serve the renderer without the Electron plugin (E2E=1); the tests
+    // exercise the UI in a plain browser against in-page mocks.
+    command: "pnpm exec vite",
+    env: { E2E: "1" },
     url: "http://localhost:1420",
     reuseExistingServer: !process.env.CI,
     timeout: 30_000,

@@ -36,6 +36,7 @@ export function GeneralTab() {
               key={color.value}
               type="button"
               onClick={() => setAccentColor(color.value)}
+              aria-label={color.label}
               aria-pressed={accentColor === color.value}
               className={`flex h-9 w-9 items-center justify-center rounded-full border-2 transition-all ${
                 accentColor === color.value

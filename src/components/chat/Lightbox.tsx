@@ -58,15 +58,13 @@ export const LightboxProvider = memo(function LightboxProvider({
     return () => window.removeEventListener("keydown", handleKey);
   }, [isOpen]);
 
-  function goNext(e: React.MouseEvent) {
-    e.stopPropagation();
+  function goNext() {
     setSlideDir("left");
     setAnimKey((k) => k + 1);
     setState((s) => s && { ...s, index: (s.index + 1) % s.urls.length });
   }
 
-  function goPrev(e: React.MouseEvent) {
-    e.stopPropagation();
+  function goPrev() {
     setSlideDir("right");
     setAnimKey((k) => k + 1);
     setState((s) => s && { ...s, index: (s.index - 1 + s.urls.length) % s.urls.length });
@@ -83,11 +81,19 @@ export const LightboxProvider = memo(function LightboxProvider({
     <LightboxContext.Provider value={api}>
       {children}
       {state && (
-        <div
-          className="animate-lightbox-backdrop fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm"
-          onClick={() => setState(null)}
-        >
+        <div className="animate-lightbox-backdrop fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          {/* Backdrop layer: clicking outside the image closes the lightbox.
+              Escape + arrow keys are handled by the window listener above. */}
           <button
+            type="button"
+            aria-label="Close image preview"
+            tabIndex={-1}
+            onClick={() => setState(null)}
+            className="absolute inset-0 h-full w-full cursor-default"
+          />
+          <button
+            type="button"
+            aria-label="Close"
             onClick={() => setState(null)}
             className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
           >
@@ -100,6 +106,7 @@ export const LightboxProvider = memo(function LightboxProvider({
               strokeWidth="2.5"
               strokeLinecap="round"
               strokeLinejoin="round"
+              aria-hidden="true"
             >
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
@@ -108,6 +115,8 @@ export const LightboxProvider = memo(function LightboxProvider({
 
           {state.urls.length > 1 && (
             <button
+              type="button"
+              aria-label="Previous image"
               onClick={goPrev}
               className="absolute left-4 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white transition-all hover:scale-110 hover:bg-white/20"
             >
@@ -120,6 +129,7 @@ export const LightboxProvider = memo(function LightboxProvider({
                 strokeWidth="2.5"
                 strokeLinecap="round"
                 strokeLinejoin="round"
+                aria-hidden="true"
               >
                 <polyline points="15 18 9 12 15 6" />
               </svg>
@@ -130,12 +140,13 @@ export const LightboxProvider = memo(function LightboxProvider({
             key={animKey}
             src={state.urls[state.index]}
             alt={`Attachment ${state.index + 1} of ${state.urls.length}`}
-            className={`max-h-[85vh] max-w-[90vw] rounded-lg object-contain shadow-2xl ${slideClass}`}
-            onClick={(e) => e.stopPropagation()}
+            className={`relative max-h-[85vh] max-w-[90vw] rounded-lg object-contain shadow-2xl ${slideClass}`}
           />
 
           {state.urls.length > 1 && (
             <button
+              type="button"
+              aria-label="Next image"
               onClick={goNext}
               className="absolute right-4 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white transition-all hover:scale-110 hover:bg-white/20"
             >
@@ -148,6 +159,7 @@ export const LightboxProvider = memo(function LightboxProvider({
                 strokeWidth="2.5"
                 strokeLinecap="round"
                 strokeLinejoin="round"
+                aria-hidden="true"
               >
                 <polyline points="9 18 15 12 9 6" />
               </svg>

@@ -110,6 +110,12 @@ export const UsageLimitDialog = memo(function UsageLimitDialog({
         event.preventDefault();
         close(false);
       }}
+      onKeyDown={(event) => {
+        // Native <dialog> dismisses Escape via onCancel when shown with
+        // showModal(); this handler covers the fallback `open` attribute path
+        // and satisfies keyboard parity with the backdrop click.
+        if (event.key === "Escape") close(false);
+      }}
       onClick={(event) => {
         if (event.target === event.currentTarget) close(false);
       }}

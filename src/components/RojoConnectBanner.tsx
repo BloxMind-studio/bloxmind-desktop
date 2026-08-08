@@ -58,6 +58,7 @@ function RojoConnectBannerImpl() {
           fill="none"
           stroke="currentColor"
           strokeWidth="3"
+          aria-hidden="true"
           strokeLinecap="round"
           strokeLinejoin="round"
         >

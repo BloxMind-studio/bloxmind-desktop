@@ -5,30 +5,37 @@ import tailwindcss from "@tailwindcss/vite";
 import electron from "vite-plugin-electron/simple";
 
 const host = process.env.VITE_DEV_HOST;
+// Playwright serves the renderer only; skip the Electron plugin so e2e can
+// run without launching Electron.
+const isE2E = process.env.E2E === "1";
 
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
-    electron({
-      main: {
-        entry: "electron/main.ts",
-        vite: {
-          build: {
-            outDir: "dist-electron/main",
-          },
-        },
-      },
-      preload: {
-        input: "electron/preload.ts",
-        vite: {
-          build: {
-            outDir: "dist-electron/preload",
-          },
-        },
-      },
-    }),
+    ...(isE2E
+      ? []
+      : [
+          electron({
+            main: {
+              entry: "electron/main.ts",
+              vite: {
+                build: {
+                  outDir: "dist-electron/main",
+                },
+              },
+            },
+            preload: {
+              input: "electron/preload.ts",
+              vite: {
+                build: {
+                  outDir: "dist-electron/preload",
+                },
+              },
+            },
+          }),
+        ]),
   ],
   resolve: {
     alias: {

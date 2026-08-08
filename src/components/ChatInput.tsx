@@ -83,12 +83,18 @@ const LightboxOverlay = memo(function LightboxOverlay({
         : "animate-lightbox-image";
 
   return (
-    <div
-      className="animate-lightbox-backdrop fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm"
-      onClick={onClose}
-    >
+    <div className="animate-lightbox-backdrop fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm">
+      {/* Backdrop layer: clicking outside the image closes the overlay. */}
       <button
         type="button"
+        aria-label="Close image preview"
+        tabIndex={-1}
+        onClick={onClose}
+        className="absolute inset-0 h-full w-full cursor-default"
+      />
+      <button
+        type="button"
+        aria-label="Close"
         onClick={onClose}
         className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
       >
@@ -101,6 +107,7 @@ const LightboxOverlay = memo(function LightboxOverlay({
           strokeWidth="2.5"
           strokeLinecap="round"
           strokeLinejoin="round"
+          aria-hidden="true"
         >
           <line x1="18" y1="6" x2="6" y2="18" />
           <line x1="6" y1="6" x2="18" y2="18" />
@@ -109,10 +116,8 @@ const LightboxOverlay = memo(function LightboxOverlay({
       {hasMultiple && (
         <button
           type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onPrev();
-          }}
+          aria-label="Previous image"
+          onClick={onPrev}
           className="absolute left-4 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white transition-all hover:scale-110 hover:bg-white/20"
         >
           <svg
@@ -124,6 +129,7 @@ const LightboxOverlay = memo(function LightboxOverlay({
             strokeWidth="2.5"
             strokeLinecap="round"
             strokeLinejoin="round"
+            aria-hidden="true"
           >
             <polyline points="15 18 9 12 15 6" />
           </svg>
@@ -133,16 +139,13 @@ const LightboxOverlay = memo(function LightboxOverlay({
         key={animKey}
         src={urls[index]}
         alt={`Attachment ${index + 1} of ${urls.length}`}
-        className={`max-h-[85vh] max-w-[90vw] rounded-lg object-contain shadow-2xl ${slideClass}`}
-        onClick={(e) => e.stopPropagation()}
+        className={`relative max-h-[85vh] max-w-[90vw] rounded-lg object-contain shadow-2xl ${slideClass}`}
       />
       {hasMultiple && (
         <button
           type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onNext();
-          }}
+          aria-label="Next image"
+          onClick={onNext}
           className="absolute right-4 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white transition-all hover:scale-110 hover:bg-white/20"
         >
           <svg
@@ -154,6 +157,7 @@ const LightboxOverlay = memo(function LightboxOverlay({
             strokeWidth="2.5"
             strokeLinecap="round"
             strokeLinejoin="round"
+            aria-hidden="true"
           >
             <polyline points="9 18 15 12 9 6" />
           </svg>
@@ -202,7 +206,7 @@ const SendButton = memo(function SendButton({
           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           title="Stop"
         >
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
             <rect x="4" y="4" width="16" height="16" rx="2" />
           </svg>
         </button>
@@ -223,6 +227,7 @@ const SendButton = memo(function SendButton({
             strokeWidth="2.5"
             strokeLinecap="round"
             strokeLinejoin="round"
+            aria-hidden="true"
           >
             <line x1="12" y1="19" x2="12" y2="5" />
             <polyline points="5 12 12 5 19 12" />
@@ -602,6 +607,7 @@ function ChatInput() {
           return (
             <button
               key={fullId}
+              type="button"
               onClick={() => handleModelClick(model)}
               className={`flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs transition-colors ${isSelected ? "bg-accent font-medium text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}
             >
@@ -619,6 +625,7 @@ function ChatInput() {
       <div className="relative mb-2 flex items-center gap-1">
         <div className="relative" ref={modelPickerRef}>
           <button
+            type="button"
             onClick={() => {
               setShowModelPicker(!showModelPicker);
               setShowAgentPicker(false);
@@ -637,6 +644,7 @@ function ChatInput() {
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
+              aria-hidden="true"
             >
               <circle cx="12" cy="12" r="3" />
               <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83" />
@@ -657,6 +665,7 @@ function ChatInput() {
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     className="shrink-0 text-muted-foreground/50"
+                    aria-hidden="true"
                   >
                     <circle cx="11" cy="11" r="8" />
                     <line x1="21" y1="21" x2="16.65" y2="16.65" />
@@ -668,10 +677,12 @@ function ChatInput() {
                     onChange={(e) => setModelSearch(e.target.value)}
                     placeholder="Search models..."
                     className="h-7 flex-1 bg-transparent text-xs placeholder:text-muted-foreground/40 focus:outline-none"
+                    // biome-ignore lint/a11y/noAutofocus: focus the search field when the model picker opens
                     autoFocus
                   />
                   {modelSearch && (
                     <button
+                      type="button"
                       onClick={() => {
                         setModelSearch("");
                         modelSearchRef.current?.focus();
@@ -687,6 +698,7 @@ function ChatInput() {
                         strokeWidth="3"
                         strokeLinecap="round"
                         strokeLinejoin="round"
+                        aria-hidden="true"
                       >
                         <line x1="18" y1="6" x2="6" y2="18" />
                         <line x1="6" y1="6" x2="18" y2="18" />
@@ -727,6 +739,7 @@ function ChatInput() {
                   strokeWidth="2"
                   strokeLinecap="round"
                   strokeLinejoin="round"
+                  aria-hidden="true"
                 >
                   <polyline points="6 9 12 15 18 9" />
                 </svg>
@@ -770,6 +783,7 @@ function ChatInput() {
         }}
       />
 
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: drag-and-drop target for image attachments */}
       <div
         onDragEnter={onDragEnter}
         onDragOver={onDragOver}
@@ -793,6 +807,7 @@ function ChatInput() {
                   <img src={a.dataUrl} alt={a.filename} className="h-16 w-16 object-cover" />
                 </button>
                 <button
+                  type="button"
                   onClick={() => removeAttachment(a.id)}
                   className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-foreground text-background opacity-0 transition-opacity group-hover:opacity-100"
                   title="Remove"
@@ -806,6 +821,7 @@ function ChatInput() {
                     strokeWidth="3"
                     strokeLinecap="round"
                     strokeLinejoin="round"
+                    aria-hidden="true"
                   >
                     <line x1="18" y1="6" x2="6" y2="18" />
                     <line x1="6" y1="6" x2="18" y2="18" />
@@ -847,6 +863,7 @@ function ChatInput() {
             {visibleAgents.length > 1 && (
               <div className="relative" ref={agentPickerRef}>
                 <button
+                  type="button"
                   onClick={() => {
                     setShowAgentPicker(!showAgentPicker);
                     setShowModelPicker(false);
@@ -862,6 +879,7 @@ function ChatInput() {
                     strokeWidth="2"
                     strokeLinecap="round"
                     strokeLinejoin="round"
+                    aria-hidden="true"
                   >
                     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
                     <circle cx="12" cy="7" r="4" />
@@ -875,6 +893,7 @@ function ChatInput() {
                       return (
                         <button
                           key={agent.name}
+                          type="button"
                           onClick={() => {
                             setSelectedAgent(agent.name);
                             setShowAgentPicker(false);
@@ -897,6 +916,7 @@ function ChatInput() {
             <div className="flex items-center gap-1">
               <ContextUsageIndicator />
               <button
+                type="button"
                 onClick={() => fileInputRef.current?.click()}
                 className={`flex h-7 w-7 items-center justify-center rounded-lg border border-border bg-background transition-colors hover:bg-accent hover:text-foreground ${rejectShake ? "animate-reject-shake text-red-500" : "text-muted-foreground/60"}`}
                 title="Attach images"
@@ -910,6 +930,7 @@ function ChatInput() {
                   strokeWidth="2"
                   strokeLinecap="round"
                   strokeLinejoin="round"
+                  aria-hidden="true"
                 >
                   <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
                 </svg>

@@ -83,6 +83,7 @@ export function ModelsTab() {
             strokeLinecap="round"
             strokeLinejoin="round"
             className="shrink-0 text-muted-foreground/50"
+            aria-hidden="true"
           >
             <circle cx="11" cy="11" r="8" />
             <line x1="21" y1="21" x2="16.65" y2="16.65" />
@@ -97,6 +98,7 @@ export function ModelsTab() {
           />
           {search && (
             <button
+              type="button"
               onClick={() => {
                 setSearch("");
                 searchRef.current?.focus();
@@ -112,6 +114,7 @@ export function ModelsTab() {
                 strokeWidth="3"
                 strokeLinecap="round"
                 strokeLinejoin="round"
+                aria-hidden="true"
               >
                 <line x1="18" y1="6" x2="6" y2="18" />
                 <line x1="6" y1="6" x2="18" y2="18" />
@@ -139,6 +142,7 @@ export function ModelsTab() {
                   <div key={modelKey}>
                     {idx > 0 && <div className="mx-3.5 h-px bg-border" />}
                     <button
+                      type="button"
                       onClick={() => toggleModelVisibility(modelKey)}
                       className="flex w-full items-center justify-between px-3.5 py-2.5 text-left"
                     >

@@ -85,6 +85,7 @@ export function EngineTab() {
           </div>
           {customApiEndpoint && (
             <button
+              type="button"
               onClick={() => setCustomApiEndpoint(null)}
               className="mt-1 text-[10px] text-muted-foreground underline hover:text-foreground"
             >

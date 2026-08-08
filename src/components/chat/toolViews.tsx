@@ -32,6 +32,7 @@ function TodoStatusIcon({ status }: { status: Todo["status"] }) {
         strokeLinecap="round"
         strokeLinejoin="round"
         className="text-emerald-500"
+        aria-hidden="true"
       >
         <polyline points="20 6 9 17 4 12" />
       </svg>
@@ -54,6 +55,7 @@ function TodoStatusIcon({ status }: { status: Todo["status"] }) {
         strokeLinecap="round"
         strokeLinejoin="round"
         className="text-muted-foreground"
+        aria-hidden="true"
       >
         <line x1="18" y1="6" x2="6" y2="18" />
         <line x1="6" y1="6" x2="18" y2="18" />
@@ -158,6 +160,7 @@ export const EditToolView = memo(function EditToolView({
           strokeLinecap="round"
           strokeLinejoin="round"
           className="text-muted-foreground"
+          aria-hidden="true"
         >
           <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
         </svg>
@@ -194,6 +197,7 @@ export const ReadToolView = memo(function ReadToolView({
         strokeLinecap="round"
         strokeLinejoin="round"
         className="text-muted-foreground"
+        aria-hidden="true"
       >
         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
         <polyline points="14 2 14 8 20 8" />
@@ -229,6 +233,7 @@ export const WriteToolView = memo(function WriteToolView({
         strokeLinecap="round"
         strokeLinejoin="round"
         className="text-emerald-600"
+        aria-hidden="true"
       >
         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
         <polyline points="14 2 14 8 20 8" />
@@ -265,6 +270,7 @@ export const GlobToolView = memo(function GlobToolView({
         strokeLinecap="round"
         strokeLinejoin="round"
         className="text-muted-foreground"
+        aria-hidden="true"
       >
         <circle cx="11" cy="11" r="8" />
         <line x1="21" y1="21" x2="16.65" y2="16.65" />
@@ -298,6 +304,7 @@ export const GrepToolView = memo(function GrepToolView({
         strokeLinecap="round"
         strokeLinejoin="round"
         className="text-muted-foreground"
+        aria-hidden="true"
       >
         <circle cx="11" cy="11" r="8" />
         <line x1="21" y1="21" x2="16.65" y2="16.65" />
@@ -333,6 +340,7 @@ export const TaskToolView = memo(function TaskToolView({
         strokeLinecap="round"
         strokeLinejoin="round"
         className="text-violet-500"
+        aria-hidden="true"
       >
         <rect x="3" y="3" width="7" height="7" />
         <rect x="14" y="3" width="7" height="7" />
@@ -377,6 +385,7 @@ export const WebFetchToolView = memo(function WebFetchToolView({
         strokeLinecap="round"
         strokeLinejoin="round"
         className="text-muted-foreground"
+        aria-hidden="true"
       >
         <circle cx="12" cy="12" r="10" />
         <line x1="2" y1="12" x2="22" y2="12" />

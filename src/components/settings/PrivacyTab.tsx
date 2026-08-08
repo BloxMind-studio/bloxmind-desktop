@@ -97,6 +97,7 @@ export function PrivacyTab() {
         </div>
         <div className="space-y-2">
           <button
+            type="button"
             onClick={handleExport}
             className="flex h-9 w-full items-center gap-2 rounded-lg border bg-card px-3.5 text-xs transition-colors hover:bg-accent"
           >
@@ -109,6 +110,7 @@ export function PrivacyTab() {
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
+              aria-hidden="true"
             >
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
               <polyline points="7 10 12 15 17 10" />
@@ -117,6 +119,7 @@ export function PrivacyTab() {
             Export Configuration (JSON)
           </button>
           <button
+            type="button"
             onClick={() => fileInputRef.current?.click()}
             className="flex h-9 w-full items-center gap-2 rounded-lg border bg-card px-3.5 text-xs transition-colors hover:bg-accent"
           >
@@ -129,6 +132,7 @@ export function PrivacyTab() {
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
+              aria-hidden="true"
             >
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
               <polyline points="17 8 12 3 7 8" />
@@ -144,6 +148,7 @@ export function PrivacyTab() {
             onChange={handleImport}
           />
           <button
+            type="button"
             onClick={handleClearData}
             className="flex h-9 w-full items-center gap-2 rounded-lg border border-red-200 bg-card px-3.5 text-xs text-red-600 transition-colors hover:bg-red-50 dark:border-red-900 dark:bg-red-950/40 dark:text-red-400 dark:hover:bg-red-950/60"
           >
@@ -156,6 +161,7 @@ export function PrivacyTab() {
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
+              aria-hidden="true"
             >
               <polyline points="3 6 5 6 21 6" />
               <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />

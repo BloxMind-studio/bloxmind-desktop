@@ -283,6 +283,7 @@ function Chat() {
                 Create a new session or pick one from the sidebar to continue where you left off.
               </p>
               <button
+                type="button"
                 onClick={() => createSession.mutate()}
                 className="mt-5 inline-flex h-9 items-center gap-2 rounded-lg bg-foreground px-5 text-sm font-medium text-background transition-opacity hover:opacity-90"
               >
@@ -295,6 +296,7 @@ function Chat() {
                   strokeWidth="2.5"
                   strokeLinecap="round"
                   strokeLinejoin="round"
+                  aria-hidden="true"
                 >
                   <line x1="12" y1="5" x2="12" y2="19" />
                   <line x1="5" y1="12" x2="19" y2="12" />

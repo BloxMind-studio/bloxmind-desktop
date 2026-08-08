@@ -439,6 +439,7 @@ const RobloxInstanceCard = memo(function RobloxInstanceCard({
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   className={`shrink-0 transition-transform duration-150 ${isReasoningOpen ? "rotate-90" : ""}`}
+                  aria-hidden="true"
                 >
                   <polyline points="9 18 15 12 9 6" />
                 </svg>

@@ -56,6 +56,7 @@ export const QuestionPrompt = memo(function QuestionPrompt({
               return (
                 <button
                   key={opt.label}
+                  type="button"
                   onClick={() => toggleOption(qIdx, opt.label, q.multiple)}
                   className={`rounded-md border px-2.5 py-1 text-[11px] transition-colors ${isSelected ? "border-blue-400 bg-blue-100 text-blue-800 dark:border-blue-500 dark:bg-blue-950/50 dark:text-blue-300" : "border-border bg-card text-foreground hover:border-blue-300 hover:bg-blue-50 dark:hover:border-blue-700 dark:hover:bg-blue-950/30"}`}
                   title={opt.description}

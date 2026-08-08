@@ -65,6 +65,7 @@ export function RestoreCheckpointButton({
           strokeWidth="2.5"
           strokeLinecap="round"
           strokeLinejoin="round"
+          aria-hidden="true"
         >
           <polyline points="20 6 9 17 4 12" />
         </svg>
@@ -78,6 +79,7 @@ export function RestoreCheckpointButton({
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
+          aria-hidden="true"
         >
           <polyline points="1 4 1 10 7 10" />
           <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
@@ -125,6 +127,7 @@ export function CheckpointStatusBadge({ checkpoint }: { checkpoint: CheckpointHi
           strokeWidth="2.5"
           strokeLinecap="round"
           strokeLinejoin="round"
+          aria-hidden="true"
         >
           <polyline points="20 6 9 17 4 12" />
         </svg>
@@ -143,6 +146,7 @@ export function CheckpointStatusBadge({ checkpoint }: { checkpoint: CheckpointHi
               strokeLinecap="round"
               strokeLinejoin="round"
               className="text-emerald-500"
+              aria-hidden="true"
             >
               <polyline points="20 6 9 17 4 12" />
             </svg>

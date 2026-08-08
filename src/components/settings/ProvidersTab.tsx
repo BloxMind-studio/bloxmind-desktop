@@ -278,6 +278,7 @@ export function ProvidersTab() {
                 </div>
                 {provider.id !== "opencode" && (
                   <button
+                    type="button"
                     onClick={() => handleDisconnect(provider.id)}
                     disabled={disconnecting === provider.id}
                     className="text-[11px] text-muted-foreground transition-colors hover:text-red-600 disabled:opacity-50"
@@ -305,6 +306,7 @@ export function ProvidersTab() {
               >
                 <span className="text-sm font-medium">{provider.name}</span>
                 <button
+                  type="button"
                   onClick={() => openConnect(provider)}
                   className="rounded-md border bg-background px-3 py-1 text-[11px] font-medium transition-colors hover:bg-accent"
                 >
@@ -332,6 +334,7 @@ export function ProvidersTab() {
             <div className="flex items-center justify-between">
               <h5 className="text-sm font-semibold">Connect {dialog.provider.name}</h5>
               <button
+                type="button"
                 onClick={closeDialog}
                 className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
               >
@@ -344,6 +347,7 @@ export function ProvidersTab() {
                   strokeWidth="2"
                   strokeLinecap="round"
                   strokeLinejoin="round"
+                  aria-hidden="true"
                 >
                   <line x1="18" y1="6" x2="6" y2="18" />
                   <line x1="6" y1="6" x2="18" y2="18" />
@@ -358,6 +362,7 @@ export function ProvidersTab() {
               <div className="mt-4 space-y-2">
                 {getOAuthMethodIndex(dialog.provider.id) !== null && (
                   <button
+                    type="button"
                     onClick={() => {
                       const idx = getOAuthMethodIndex(dialog.provider.id);
                       if (idx !== null) {
@@ -376,6 +381,7 @@ export function ProvidersTab() {
                       strokeWidth="2"
                       strokeLinecap="round"
                       strokeLinejoin="round"
+                      aria-hidden="true"
                     >
                       <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
                       <polyline points="10 17 15 12 10 7" />
@@ -394,6 +400,7 @@ export function ProvidersTab() {
                   )}
                 {hasApiKeyAuth(dialog.provider.id) && (
                   <button
+                    type="button"
                     onClick={() => {
                       setError(null);
                       setDialog({ step: "apikey", provider: dialog.provider });
@@ -417,6 +424,7 @@ export function ProvidersTab() {
                       fill="none"
                       stroke="currentColor"
                       strokeWidth="2"
+                      aria-hidden="true"
                     >
                       <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
                     </svg>
@@ -431,6 +439,7 @@ export function ProvidersTab() {
                         fill="none"
                         stroke="currentColor"
                         strokeWidth="2"
+                        aria-hidden="true"
                       >
                         <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
                       </svg>
@@ -442,6 +451,7 @@ export function ProvidersTab() {
                           {dialog.instructions}
                         </p>
                         <button
+                          type="button"
                           onClick={() => {
                             const code = dialog.instructions?.match(/[A-Z0-9]{4,}-[A-Z0-9]{4,}/i);
                             if (code) {
@@ -460,6 +470,7 @@ export function ProvidersTab() {
                             strokeWidth="2"
                             strokeLinecap="round"
                             strokeLinejoin="round"
+                            aria-hidden="true"
                           >
                             <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
                             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
@@ -488,9 +499,11 @@ export function ProvidersTab() {
                           }
                         }}
                         className="h-8 flex-1 rounded border bg-background px-2 font-mono text-xs placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
+                        // biome-ignore lint/a11y/noAutofocus: move focus into the freshly opened connect dialog
                         autoFocus
                       />
                       <button
+                        type="button"
                         onClick={() => handleOAuthCode(dialog.provider.id)}
                         disabled={!oauthCodeInput.trim()}
                         className="h-8 rounded bg-foreground px-3 text-xs font-medium text-background transition-opacity disabled:opacity-40"
@@ -522,9 +535,11 @@ export function ProvidersTab() {
                       }
                     }}
                     className="h-8 flex-1 rounded border bg-background px-2 font-mono text-xs placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
+                    // biome-ignore lint/a11y/noAutofocus: move focus into the freshly opened connect dialog
                     autoFocus
                   />
                   <button
+                    type="button"
                     onClick={() => handleSaveKey(dialog.provider.id)}
                     disabled={saving || !apiKeyInput.trim()}
                     className="h-8 rounded bg-foreground px-3 text-xs font-medium text-background transition-opacity disabled:opacity-40"
@@ -544,6 +559,7 @@ export function ProvidersTab() {
                 )}
                 {getOAuthMethodIndex(dialog.provider.id) !== null && (
                   <button
+                    type="button"
                     onClick={() => setDialog({ step: "methods", provider: dialog.provider })}
                     className="block text-[11px] text-muted-foreground transition-colors hover:text-foreground"
                   >

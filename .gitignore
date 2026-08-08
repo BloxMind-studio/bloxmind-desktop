@@ -48,3 +48,4 @@ Thumbs.db
 # Tooling artifacts
 .qoder/
 test-results/
+playwright-report/

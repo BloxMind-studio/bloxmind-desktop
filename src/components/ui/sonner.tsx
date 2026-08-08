@@ -6,7 +6,14 @@ import { useTheme } from "@/components/theme-provider";
 
 function ErrorIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
       <path
         d="M8.866 2.5a1 1 0 0 0-1.732 0L1.34 13a1 1 0 0 0 .866 1.5h11.588a1 1 0 0 0 .866-1.5L8.866 2.5Z"
         fill="oklch(0.577 0.245 27.325 / 0.12)"
@@ -21,7 +28,14 @@ function ErrorIcon() {
 
 function SuccessIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
       <circle
         cx="8"
         cy="8"
@@ -43,7 +57,14 @@ function SuccessIcon() {
 
 function InfoIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
       <circle
         cx="8"
         cy="8"
@@ -60,7 +81,14 @@ function InfoIcon() {
 
 function WarningIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
       <path
         d="M8.866 2.5a1 1 0 0 0-1.732 0L1.34 13a1 1 0 0 0 .866 1.5h11.588a1 1 0 0 0 .866-1.5L8.866 2.5Z"
         fill="oklch(0.75 0.18 65 / 0.15)"

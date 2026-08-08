@@ -221,6 +221,7 @@ const ContextUsageIndicator = memo(function ContextUsageIndicator({
             strokeLinecap="round"
             strokeLinejoin="round"
             className="animate-spin text-muted-foreground"
+            aria-hidden="true"
           >
             <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
             <path d="M21 3v5h-5" />
@@ -234,6 +235,7 @@ const ContextUsageIndicator = memo(function ContextUsageIndicator({
       {/* Hover view: circular progress ring */}
       <div className="hidden group-hover:block">
         <svg width="28" height="28" viewBox="0 0 48 48" className="-ml-0.5">
+          <title>{`${usage.pct}% of context window used`}</title>
           <circle
             cx="24"
             cy="24"

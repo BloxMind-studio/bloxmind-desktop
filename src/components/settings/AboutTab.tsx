@@ -76,6 +76,7 @@ export function AboutTab({ appVersion }: { appVersion: string | null }) {
             </div>
             {updateStatus === "idle" && (
               <button
+                type="button"
                 onClick={handleCheckForUpdates}
                 className="flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-accent"
               >
@@ -88,6 +89,7 @@ export function AboutTab({ appVersion }: { appVersion: string | null }) {
                   strokeWidth="2"
                   strokeLinecap="round"
                   strokeLinejoin="round"
+                  aria-hidden="true"
                 >
                   <polyline points="23 4 23 10 17 10" />
                   <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
@@ -103,6 +105,7 @@ export function AboutTab({ appVersion }: { appVersion: string | null }) {
                   fill="none"
                   stroke="currentColor"
                   strokeWidth="2"
+                  aria-hidden="true"
                 >
                   <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
                 </svg>
@@ -120,6 +123,7 @@ export function AboutTab({ appVersion }: { appVersion: string | null }) {
                   strokeWidth="2"
                   strokeLinecap="round"
                   strokeLinejoin="round"
+                  aria-hidden="true"
                 >
                   <polyline points="20 6 9 17 4 12" />
                 </svg>
@@ -134,6 +138,7 @@ export function AboutTab({ appVersion }: { appVersion: string | null }) {
                   fill="none"
                   stroke="currentColor"
                   strokeWidth="2"
+                  aria-hidden="true"
                 >
                   <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
                 </svg>
@@ -150,6 +155,7 @@ export function AboutTab({ appVersion }: { appVersion: string | null }) {
                 <span className="text-muted-foreground">is available</span>
               </span>
               <button
+                type="button"
                 onClick={handleInstall}
                 className="rounded-md bg-foreground px-3 py-1 text-[11px] font-medium text-background transition-opacity hover:opacity-90"
               >
@@ -165,6 +171,7 @@ export function AboutTab({ appVersion }: { appVersion: string | null }) {
                 {updateError}
               </p>
               <button
+                type="button"
                 onClick={handleCheckForUpdates}
                 className="mt-2 text-[11px] text-muted-foreground underline hover:text-foreground"
               >
@@ -204,6 +211,7 @@ export function AboutTab({ appVersion }: { appVersion: string | null }) {
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   className="shrink-0 text-muted-foreground"
+                  aria-hidden="true"
                 >
                   <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
                   <polyline points="15 3 21 3 21 9" />
@@ -239,6 +247,7 @@ export function AboutTab({ appVersion }: { appVersion: string | null }) {
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
+              aria-hidden="true"
             >
               <circle cx="12" cy="12" r="10" />
               <line x1="2" y1="12" x2="22" y2="12" />
@@ -252,7 +261,7 @@ export function AboutTab({ appVersion }: { appVersion: string | null }) {
             rel="noreferrer"
             className="flex h-9 w-full items-center gap-2 rounded-lg border bg-card px-3.5 text-xs transition-colors hover:bg-accent"
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z" />
             </svg>
             My GitHub

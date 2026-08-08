@@ -191,7 +191,7 @@ function StudioScreenshot({ step, image, alt }: { step: number; image: string; a
       </div>
       <span key={`cursor-${image}`} className="studio-screenshot-cursor" aria-hidden="true">
         <i />
-        <svg width="22" height="26" viewBox="0 0 22 26" fill="none">
+        <svg width="22" height="26" viewBox="0 0 22 26" fill="none" aria-hidden="true">
           <path
             d="M2.3 1.9 19.2 15c.8.6.4 1.9-.6 2l-7 .7-3.4 6.1c-.5.9-1.8.7-2-.3L.6 3.1c-.3-1.1.8-1.9 1.7-1.2Z"
             fill="white"

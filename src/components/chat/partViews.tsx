@@ -305,6 +305,7 @@ export const StepFinishPartView = memo(function StepFinishPartView({
             strokeLinecap="round"
             strokeLinejoin="round"
             className="text-emerald-500"
+            aria-hidden="true"
           >
             <line x1="12" y1="1" x2="12" y2="23" />
             <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
@@ -322,6 +323,7 @@ export const StepFinishPartView = memo(function StepFinishPartView({
           strokeWidth="2.5"
           strokeLinecap="round"
           strokeLinejoin="round"
+          aria-hidden="true"
         >
           <polyline points="9 18 15 12 9 6" />
         </svg>
@@ -337,6 +339,7 @@ export const StepFinishPartView = memo(function StepFinishPartView({
           strokeWidth="2.5"
           strokeLinecap="round"
           strokeLinejoin="round"
+          aria-hidden="true"
         >
           <polyline points="15 18 9 12 15 6" />
         </svg>
@@ -353,6 +356,7 @@ export const StepFinishPartView = memo(function StepFinishPartView({
             strokeWidth="2.5"
             strokeLinecap="round"
             strokeLinejoin="round"
+            aria-hidden="true"
           >
             <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
             <path d="M21 3v5h-5" />
@@ -380,6 +384,7 @@ export const RetryPartView = memo(function RetryPartView({
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
+        aria-hidden="true"
       >
         <polyline points="23 4 23 10 17 10" />
         <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
@@ -404,6 +409,7 @@ export const CompactionPartView = memo(function CompactionPartView() {
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
+        aria-hidden="true"
       >
         <polyline points="4 14 10 14 10 20" />
         <polyline points="20 10 14 10 14 4" />
@@ -450,6 +456,7 @@ const ThinkingBlock = memo(function ThinkingBlock({ parts }: { parts: Part[] }) 
           strokeLinecap="round"
           strokeLinejoin="round"
           className={`transition-transform ${isOpen ? "rotate-90" : ""}`}
+          aria-hidden="true"
         >
           <polyline points="9 18 15 12 9 6" />
         </svg>
@@ -463,6 +470,7 @@ const ThinkingBlock = memo(function ThinkingBlock({ parts }: { parts: Part[] }) 
           strokeLinecap="round"
           strokeLinejoin="round"
           className="shrink-0"
+          aria-hidden="true"
         >
           <circle cx="12" cy="12" r="10" />
           <path d="M12 16v-4" />
