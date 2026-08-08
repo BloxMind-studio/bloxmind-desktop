@@ -186,13 +186,11 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
   const syncingRef = useRef(false);
   const resyncRequestedRef = useRef(false);
   const syncLatestRef = useRef<() => void>(() => undefined);
-  const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const telemetryRef = useRef({ firstSyncReported: false, hadFailure: false });
-  const generationBlockedRef = useRef(false);
 
   const model = useMemo(() => {
     if (!selectedModel) return undefined;
@@ -213,11 +211,18 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
     let cancelled = false;
     let timer: number | undefined;
     let unchangedPolls = 0;
+    let failureStreak = 0;
 
     function scheduleNext() {
       if (cancelled) return;
       const baseDelay = sessionBusy ? ACTIVE_SYNC_MS : IDLE_SYNC_MS;
-      const delay = Math.min(baseDelay * 2 ** Math.min(unchangedPolls, 3), MAX_UNCHANGED_SYNC_MS);
+      // Consecutive failures stretch the retry interval (capped at
+      // MAX_UNCHANGED_SYNC_MS) so a genuinely broken Studio connection isn't
+      // hammered every few seconds while we keep trying to recover.
+      const delay = Math.min(
+        baseDelay * 2 ** Math.min(unchangedPolls + failureStreak, 3),
+        MAX_UNCHANGED_SYNC_MS,
+      );
       timer = window.setTimeout(() => void sync(), delay);
     }
 
@@ -231,7 +236,6 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
         return;
       }
       syncingRef.current = true;
-      setSyncing(true);
       setSyncError(null);
       const syncStartedAt = performance.now();
       const isFirstSync = !telemetryRef.current.firstSyncReported;
@@ -308,10 +312,11 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
             );
             next = await generate("contract_recovery");
           }
-        } else if (!generationBlockedRef.current) {
-          next = await generate("initial");
         } else {
-          throw new Error("Explorer setup needs repair before it can retry.");
+          // Initial generation failed before — retry with backoff instead of
+          // blocking forever. A transient failure (Studio still booting, MCP
+          // broker reconnecting) must never wedge the panel permanently.
+          next = await generate("initial");
         }
 
         if (cancelled) return;
@@ -323,6 +328,7 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
           roots: next.snapshot.roots,
         });
         unchangedPolls = previousComparable === nextComparable ? unchangedPolls + 1 : 0;
+        failureStreak = 0;
         collectionRef.current = next;
         setCollection(next);
         publishObjects(next.snapshot.roots);
@@ -349,7 +355,7 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
         }
       } catch (error) {
         console.error("[explorer] sync failed", error);
-        if (!collectionRef.current) generationBlockedRef.current = true;
+        failureStreak += 1;
         telemetryRef.current.hadFailure = true;
         posthog.capture(
           "sync_failed",
@@ -366,7 +372,6 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
         if (!cancelled) setSyncError(error instanceof Error ? error.message : String(error));
       } finally {
         syncingRef.current = false;
-        if (!cancelled) setSyncing(false);
         if (resyncRequestedRef.current) {
           resyncRequestedRef.current = false;
           queueMicrotask(() => syncLatestRef.current());
@@ -499,7 +504,8 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
 
       {syncError ? (
         <div className="shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-2 text-[10px] text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
-          Explorer couldn’t load this Studio place. Close and reopen Explorer to retry.
+          Explorer couldn’t load this Studio place — retrying automatically. Make sure Roblox Studio
+          is open with the BloxMind plugin running.
         </div>
       ) : null}
 
@@ -508,8 +514,13 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
         role="tree"
         aria-label="Instance hierarchy"
       >
-        {!collection && syncing ? <ExplorerLoading /> : null}
-        {!collection && !syncing && !syncError ? <ExplorerLoading /> : null}
+        {!collection && !syncError ? <ExplorerLoading /> : null}
+        {!collection && !syncError && (!client || !studioTarget?.selected) ? (
+          <div className="px-4 py-2 text-[10px] text-muted-foreground">
+            Waiting for Roblox Studio to connect — open Studio with the BloxMind plugin and the
+            Explorer will load automatically.
+          </div>
+        ) : null}
         {visibleRoots.map((node) => (
           <TreeRow
             key={node.path}
