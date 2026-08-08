@@ -141,6 +141,7 @@ describe("GeneratedProgramRuntime", () => {
       "Player Spawn",
     );
     expect(callTool).toHaveBeenCalledWith("search_game_tree", {
+      datamodel_type: "place",
       max_depth: 10,
       head_limit: 100_000,
     });

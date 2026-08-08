@@ -150,7 +150,11 @@ async function run({ callTool }: { input: unknown; callTool: (name: string, args
   // We search the full game tree at max depth to catch deeply nested modules.
   const scriptClasses = ["Script", "ModuleScript", "LocalScript", "BaseScript"];
   const raw = normalizeMcpResult(
-    await callTool("search_game_tree", { max_depth: 10, head_limit: 100000 })
+    await callTool("search_game_tree", {
+      datamodel_type: "place",
+      max_depth: 10,
+      head_limit: 100000,
+    })
   );
   const rows = Array.isArray(raw) ? raw : Array.isArray(raw?.instances) ? raw.instances : [];
   // Built-in services that typically hold user scripts.
