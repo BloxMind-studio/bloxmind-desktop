@@ -209,8 +209,8 @@ export function useCheckpointHistory(sessionId: string | undefined) {
         } else if (result) {
           toast.info(result.message ?? `Reverted to Checkpoint ${result.restoredId}`, {
             description:
-              "Roblox Studio isn't connected to Rojo — connect via the Rojo plugin to see the reverted code."
-              + (contextNote ? ` ${contextNote}` : ""),
+              "Roblox Studio isn't connected to Rojo — connect via the Rojo plugin to see the reverted code." +
+              (contextNote ? ` ${contextNote}` : ""),
           });
         }
         setLastRestoreSynced(result?.rojoSynced ?? false);

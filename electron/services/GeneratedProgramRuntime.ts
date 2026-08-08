@@ -55,7 +55,16 @@ function runtimeError(
   message: string,
   cause: unknown,
 ) {
-  return new GeneratedProgramRuntimeError({ phase, message, regenerate: true, cause });
+  // The renderer only ever sees the IPC error message, so the underlying
+  // reason must travel inside it (e.g. why Studio rejected an Explorer
+  // request) instead of being buried in the Effect cause chain.
+  const detail = cause instanceof Error && cause.message ? `: ${cause.message}` : "";
+  return new GeneratedProgramRuntimeError({
+    phase,
+    message: `${message}${detail}`,
+    regenerate: true,
+    cause,
+  });
 }
 
 function cacheKey(envelope: GeneratedProgramEnvelope): string {

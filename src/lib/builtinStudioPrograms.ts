@@ -87,7 +87,26 @@ ${NORMALIZE_MCP_RESULT}
 async function run({ callTool }: { input: unknown; callTool: (name: string, args: Record<string, unknown>) => Promise<unknown> }) {
   // Studio currently caps max_depth at 10. Use that ceiling and an intentionally
   // generous result cap so ordinary places are collected in one pass.
-  const raw = normalizeMcpResult(await callTool("search_game_tree", { max_depth: 10, head_limit: 100000 }));
+  const toolResult = await callTool("search_game_tree", { max_depth: 10, head_limit: 100000 });
+  // Surface Studio-side rejections instead of silently producing an empty
+  // tree: when the MCP tool answers with isError, the reason lives in the
+  // text content and must reach the user, not masquerade as "no tree yet".
+  const envelope = toolResult && typeof toolResult === "object" && !Array.isArray(toolResult) ? toolResult : null;
+  if (envelope && envelope.isError === true) {
+    const detail = Array.isArray(envelope.content)
+      ? envelope.content
+          .filter((part) => part && typeof part === "object" && part.type === "text" && typeof part.text === "string")
+          .map((part) => part.text)
+          .join(" ")
+          .trim()
+      : "";
+    throw new Error(
+      detail
+        ? "Roblox Studio rejected the Explorer request: " + detail
+        : "Roblox Studio rejected the Explorer request",
+    );
+  }
+  const raw = normalizeMcpResult(toolResult);
   const rows = Array.isArray(raw) ? raw : Array.isArray(raw?.instances) ? raw.instances : [];
   // Match Studio Explorer's default service set. Studio hides less commonly
   // edited engine services unless the user explicitly enables them.

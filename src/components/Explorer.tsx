@@ -82,6 +82,19 @@ function iconForClass(className: string): LucideIcon {
   return CLASS_ICONS.find(([pattern]) => pattern.test(className))?.[1] ?? Box;
 }
 
+/**
+ * Strips the plumbing wrappers (desktop bridge prefix, Electron's remote-
+ * method prefix, error class names) off a sync error so the banner shows
+ * the actual reason Studio couldn't answer.
+ */
+function describeSyncError(message: string): string {
+  return message
+    .replace(/^Failed to invoke Explorer program:\s*/u, "")
+    .replace(/Error invoking remote method '[^']+':\s*/u, "")
+    .replace(/^(DesktopMainError|GeneratedProgramRuntimeError|DesktopError):\s*/u, "")
+    .trim();
+}
+
 const TreeRow = memo(function TreeRow({
   node,
   depth,
@@ -257,7 +270,9 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
           const artifact = await desktop.compileExplorerProgram(program);
           const snapshot = sortExplorerSnapshot(await desktop.invokeExplorerProgram(artifact));
           if (snapshot.roots.length === 0) {
-            throw new Error("Studio has not returned an instance tree yet");
+            throw new Error(
+              "Roblox Studio returned an empty instance tree — make sure a place is open and the Studio MCP (Assistant) is enabled",
+            );
           }
           const generated: ExplorerCollection = { program, artifact, snapshot };
           posthog.capture(
@@ -506,6 +521,9 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
         <div className="shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-2 text-[10px] text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
           Explorer couldn’t load this Studio place — retrying automatically. Make sure Roblox Studio
           is open with the BloxMind plugin running.
+          <div className="mt-1 break-words font-mono text-[9px] opacity-80">
+            {describeSyncError(syncError)}
+          </div>
         </div>
       ) : null}
 
