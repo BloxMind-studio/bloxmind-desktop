@@ -16,7 +16,7 @@ import { splitModelKey } from "@/lib/splitModelKey";
 import { generateStudioTargetPrograms } from "@/lib/studioTargetPrograms";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
-import { usePreferences } from "@/providers/PreferencesProvider";
+import { useModelPreferences } from "@/providers/PreferencesProvider";
 import type {
   StudioTarget,
   StudioTargetPrograms,
@@ -49,7 +49,7 @@ function countBucket(count: number): "0" | "1" | "2-4" | "5+" {
 export function StudioTargetProvider({ children }: { children: ReactNode }) {
   const { client } = useOpenCodeClient();
   const { activeSessionId } = useActiveSession();
-  const { selectedModel, selectedAgent } = usePreferences();
+  const { selectedModel, selectedAgent } = useModelPreferences();
   const [targets, setTargets] = useState<readonly StudioTarget[]>([]);
   const [selected, setSelected] = useState<StudioTarget | null>(null);
   const [status, setStatus] = useState<StudioTargetStatus>("loading");

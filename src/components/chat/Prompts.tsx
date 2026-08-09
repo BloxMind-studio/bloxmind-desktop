@@ -45,9 +45,9 @@ export const QuestionPrompt = memo(function QuestionPrompt({
   }
 
   return (
-    <div className="animate-fade-in-up my-2 rounded-lg border border-blue-200 bg-blue-50/30 px-3 py-3">
+    <div className="animate-fade-in-up my-2 rounded-lg border border-cyan-200 bg-cyan-50/30 px-3 py-3 dark:border-cyan-900/50 dark:bg-cyan-950/20">
       {question.questions.map((q, qIdx) => (
-        <div key={qIdx} className={qIdx > 0 ? "mt-3 border-t border-blue-100 pt-3" : ""}>
+        <div key={qIdx} className={qIdx > 0 ? "mt-3 border-t border-cyan-100 pt-3 dark:border-cyan-900/40" : ""}>
           <div className="text-[11px] font-semibold text-foreground">{q.header}</div>
           <div className="mt-0.5 text-[12px] text-foreground">{q.question}</div>
           <div className="mt-2 flex flex-wrap gap-1.5">
@@ -58,7 +58,7 @@ export const QuestionPrompt = memo(function QuestionPrompt({
                   key={opt.label}
                   type="button"
                   onClick={() => toggleOption(qIdx, opt.label, q.multiple)}
-                  className={`rounded-md border px-2.5 py-1 text-[11px] transition-colors ${isSelected ? "border-blue-400 bg-blue-100 text-blue-800 dark:border-blue-500 dark:bg-blue-950/50 dark:text-blue-300" : "border-border bg-card text-foreground hover:border-blue-300 hover:bg-blue-50 dark:hover:border-blue-700 dark:hover:bg-blue-950/30"}`}
+                  className={`rounded-md border px-2.5 py-1 text-[11px] transition-colors ${isSelected ? "border-cyan-400 bg-cyan-100 text-cyan-800 dark:border-cyan-500 dark:bg-cyan-950/50 dark:text-cyan-300" : "border-border bg-card text-foreground hover:border-cyan-300 hover:bg-cyan-50 dark:hover:border-cyan-700 dark:hover:bg-cyan-950/30"}`}
                   title={opt.description}
                 >
                   {opt.label}
@@ -72,7 +72,7 @@ export const QuestionPrompt = memo(function QuestionPrompt({
               placeholder="Type your own answer..."
               value={customInputs[qIdx] ?? ""}
               onChange={(e) => setCustomInputs((prev) => ({ ...prev, [qIdx]: e.target.value }))}
-              className="mt-2 w-full rounded border border-border bg-background px-2 py-1 text-[11px] placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-blue-300"
+              className="mt-2 w-full rounded border border-border bg-background px-2 py-1 text-[11px] placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-accent/40"
             />
           )}
         </div>

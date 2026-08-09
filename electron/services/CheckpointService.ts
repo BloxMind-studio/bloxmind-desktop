@@ -248,6 +248,25 @@ function loadSessionIndex(storeRoot: string, sessionId: string) {
 // when the destination is briefly locked by another write).
 const storeMutex = Effect.unsafeMakeSemaphore(1);
 
+// Per-session mutexes protect the read-modify-write cycle of capture/restore
+// so concurrent operations on the same session can't lose checkpoints.
+const sessionMutexes = new Map<string, Effect.Semaphore>();
+function getSessionMutex(sessionId: string): Effect.Semaphore {
+  let mutex = sessionMutexes.get(sessionId);
+  if (!mutex) {
+    mutex = Effect.unsafeMakeSemaphore(1);
+    sessionMutexes.set(sessionId, mutex);
+  }
+  return mutex;
+}
+function withSessionLock<A, E>(
+  sessionId: string,
+  effect: Effect.Effect<A, E>,
+): Effect.Effect<A, E> {
+  const mutex = getSessionMutex(sessionId);
+  return mutex.withPermits(1)(effect);
+}
+
 async function writeJsonAtomicImpl(file: string, value: unknown): Promise<void> {
   const temporary = `${file}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
   try {
@@ -357,26 +376,34 @@ function makeCapture(
         ),
       );
 
-      // 3. Persist index (DAG: parent = activeIndex)
-      const index = yield* loadSessionIndex(options.storeRoot, sessionId);
-      const checkpoint: Checkpoint = {
-        id: `cp_${randomBytes(8).toString("hex")}`,
-        parentId: index.history[index.activeIndex]?.id ?? null,
-        timestamp: Date.now(),
+      // 3. Persist index (DAG: parent = activeIndex).
+      //    Locked per-session so concurrent captures can't read the same base
+      //    index and overwrite each other's appended checkpoint.
+      const checkpoint = yield* withSessionLock(
         sessionId,
-        messageId: decoded.messageId,
-        kind: "pre-exec",
-        tool: decoded.tool,
-        paths: changes,
-        gitRef,
-        failureLog: null,
-        fullSnapshot,
-      };
-      const next = [...index.history, checkpoint];
-      yield* persistSessionIndex(options.storeRoot, sessionId, {
-        history: next,
-        activeIndex: next.length - 1,
-      });
+        Effect.gen(function* () {
+          const index = yield* loadSessionIndex(options.storeRoot, sessionId);
+          const cp: Checkpoint = {
+            id: `cp_${randomBytes(8).toString("hex")}`,
+            parentId: index.history[index.activeIndex]?.id ?? null,
+            timestamp: Date.now(),
+            sessionId,
+            messageId: decoded.messageId,
+            kind: "pre-exec",
+            tool: decoded.tool,
+            paths: changes,
+            gitRef,
+            failureLog: null,
+            fullSnapshot,
+          };
+          const next = [...index.history, cp];
+          yield* persistSessionIndex(options.storeRoot, sessionId, {
+            history: next,
+            activeIndex: next.length - 1,
+          });
+          return cp;
+        }),
+      );
 
       yield* Effect.logInfo(
         `[checkpoint] captured ${checkpoint.id} session=${sessionId} paths=${changes.length} gitRef=${gitRef ?? "none"}`,
@@ -446,13 +473,21 @@ function makeRestore(
           (cause) => new CheckpointError({ message: "Invalid restore input", cause }),
         ),
       );
-      const index = yield* loadSessionIndex(options.storeRoot, decoded.sessionId);
-      const checkpoint = index.history.find((c) => c.id === decoded.checkpointId);
-      if (!checkpoint) {
-        return yield* Effect.fail(
-          new CheckpointError({ message: `No checkpoint ${decoded.checkpointId}` }),
-        );
-      }
+      // Read index under per-session lock so concurrent captures can't append
+      // between our read and the later cursor update.
+      const { checkpoint } = yield* withSessionLock(
+        decoded.sessionId,
+        Effect.gen(function* () {
+          const idx = yield* loadSessionIndex(options.storeRoot, decoded.sessionId);
+          const cp = idx.history.find((c) => c.id === decoded.checkpointId);
+          if (!cp) {
+            return yield* Effect.fail(
+              new CheckpointError({ message: `No checkpoint ${decoded.checkpointId}` }),
+            );
+          }
+          return { checkpoint: cp };
+        }),
+      );
       const scopedPaths = checkpoint.paths.map((c) => toPosixPath(c.path));
       yield* validateWorkspacePaths(options.workspace, scopedPaths);
       // A checkpoint captured with no explicit paths (full pre-task snapshot)
@@ -533,12 +568,19 @@ function makeRestore(
         }
       }
 
-      // Move history cursor to the restored checkpoint.
-      const nextIndex = index.history.findIndex((c) => c.id === checkpoint.id);
-      yield* persistSessionIndex(options.storeRoot, decoded.sessionId, {
-        ...index,
-        activeIndex: nextIndex,
-      });
+      // Move history cursor to the restored checkpoint under lock so a
+      // concurrent capture can't change the index between our read and write.
+      yield* withSessionLock(
+        decoded.sessionId,
+        Effect.gen(function* () {
+          const currentIndex = yield* loadSessionIndex(options.storeRoot, decoded.sessionId);
+          const nextIndex = currentIndex.history.findIndex((c) => c.id === checkpoint.id);
+          yield* persistSessionIndex(options.storeRoot, decoded.sessionId, {
+            ...currentIndex,
+            activeIndex: nextIndex,
+          });
+        }),
+      );
 
       yield* Effect.logInfo(
         `[checkpoint] restored ${checkpoint.id} session=${decoded.sessionId} files=${scopedPaths.length}`,

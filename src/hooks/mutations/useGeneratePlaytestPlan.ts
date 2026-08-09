@@ -5,12 +5,12 @@ import { splitModelKey } from "@/lib/splitModelKey";
 import type { MessagesCache } from "@/lib/sseDispatch";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
-import { usePreferences } from "@/providers/PreferencesProvider";
+import { useModelPreferences } from "@/providers/PreferencesProvider";
 
 export function useGeneratePlaytestPlan() {
   const { client } = useOpenCodeClient();
   const { activeSessionId } = useActiveSession();
-  const { selectedModel, selectedAgent, selectedVariant } = usePreferences();
+  const { selectedModel, selectedAgent, selectedVariant } = useModelPreferences();
   const queryClient = useQueryClient();
 
   return useMutation({

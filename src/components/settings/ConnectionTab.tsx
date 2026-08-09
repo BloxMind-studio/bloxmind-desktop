@@ -1,8 +1,8 @@
-import { usePreferences } from "@/providers/PreferencesProvider";
+import { useSSEPreferences } from "@/providers/PreferencesProvider";
 
 export function ConnectionTab() {
   const { sseReconnectDelay, setSseReconnectDelay, sseHeartbeatTimeout, setSseHeartbeatTimeout } =
-    usePreferences();
+    useSSEPreferences();
 
   return (
     <div className="mx-auto w-full max-w-md px-6 py-8">
@@ -28,7 +28,7 @@ export function ConnectionTab() {
                 Math.min(60_000, Math.max(1_000, Number.parseInt(e.target.value, 10) || 1_000)),
               )
             }
-            className="h-8 w-full rounded border bg-background px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-ring"
+            className="h-8 w-full rounded border bg-background px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-accent/40"
           />
           <div className="mt-1 text-[10px] text-muted-foreground">
             Base delay between reconnection attempts (1,000–60,000 ms). Uses exponential backoff.
@@ -53,7 +53,7 @@ export function ConnectionTab() {
                 Math.min(120_000, Math.max(5_000, Number.parseInt(e.target.value, 10) || 5_000)),
               )
             }
-            className="h-8 w-full rounded border bg-background px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-ring"
+            className="h-8 w-full rounded border bg-background px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-accent/40"
           />
           <div className="mt-1 text-[10px] text-muted-foreground">
             Max time without events before forcing a reconnect (5,000–120,000 ms).

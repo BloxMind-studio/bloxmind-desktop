@@ -1,5 +1,5 @@
 import type { Part } from "@opencode-ai/sdk/v2/client";
-import { lazy, memo, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, memo, Suspense, useState } from "react";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { InlineDisclosure } from "@/components/chat/InlineDisclosure";
@@ -90,7 +90,7 @@ const markdownComponents: Components = {
         href={href}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-blue-600 underline decoration-blue-300 underline-offset-2 hover:text-blue-800 hover:decoration-blue-500"
+        className="text-cyan-600 underline decoration-cyan-300 underline-offset-2 hover:text-cyan-800 hover:decoration-cyan-500"
       >
         {children}
       </a>
@@ -187,7 +187,7 @@ function MessageText({ text }: { text: string }) {
     part.type === "instance" ? (
       <span
         key={`${part.value}:${index}`}
-        className="mx-0.5 inline-flex items-center rounded-md border border-blue-500/25 bg-blue-500/10 px-1.5 py-0.5 align-baseline text-[11px] font-medium text-blue-700 dark:text-blue-300"
+        className="mx-0.5 inline-flex items-center rounded-md border border-cyan-500/25 bg-cyan-500/10 px-1.5 py-0.5 align-baseline text-[11px] font-medium text-cyan-700 dark:text-cyan-300"
         title={part.value}
       >
         {part.label}
@@ -313,7 +313,7 @@ export const StepFinishPartView = memo(function StepFinishPartView({
           {cost.toFixed(4)}
         </span>
       )}
-      <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2 py-0.5 text-[9px] font-medium tabular-nums text-blue-600 dark:text-blue-400">
+      <span className="inline-flex items-center gap-1 rounded-full bg-cyan-500/10 px-2 py-0.5 text-[9px] font-medium tabular-nums text-cyan-600 dark:text-cyan-400">
         <svg
           width="8"
           height="8"
@@ -425,16 +425,6 @@ export const CompactionPartView = memo(function CompactionPartView() {
 
 const ThinkingBlock = memo(function ThinkingBlock({ parts }: { parts: Part[] }) {
   const [isOpen, setIsOpen] = useState(false);
-  const [now, setNow] = useState(() => Date.now());
-  const startTimeRef = useRef<number | null>(null);
-
-  // Update the clock while the thought is open so elapsed time is live.
-  // Must run before any early return so hooks stay in a stable order.
-  useEffect(() => {
-    if (!isOpen) return;
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, [isOpen]);
 
   if (parts.length === 0) return null;
 
@@ -449,78 +439,62 @@ const ThinkingBlock = memo(function ThinkingBlock({ parts }: { parts: Part[] }) 
 
   if (!hasTools && !hasReasoning && !hasSteps) return null;
 
-  // Seed start time from part timestamps if available, otherwise from the
-  // first time this thought is opened.
-  if (startTimeRef.current == null) {
-    const reasoningParts = parts.filter((p) => p.type === "reasoning") as Extract<
-      Part,
-      { type: "reasoning" }
-    >[];
-    const firstReasoning = reasoningParts[0];
-    // Only reasoning parts carry time metadata; step-finish parts have none.
-    startTimeRef.current = firstReasoning?.time.start ?? now;
-  }
-
-  const elapsedMs = Math.max(0, now - (startTimeRef.current ?? now));
-
-  const formatElapsed = (ms: number) => {
-    const seconds = Math.floor(ms / 1000);
-    if (seconds >= 120) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
-    if (seconds >= 60) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
-    if (seconds > 0) return `${seconds}s`;
-    return `${Math.max(0, Math.floor(ms / 1000))}s`;
-  };
-
-  const elapsedText = formatElapsed(elapsedMs);
-
   return (
-    <div className="mb-2">
+    <div className="mb-3 animate-fade-in">
       <button
         type="button"
         onClick={() => setIsOpen((open) => !open)}
-        className="flex w-full items-center gap-1.5 rounded-md bg-muted/50 px-2.5 py-1.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted"
+        className="group flex w-full items-center gap-2.5 rounded-xl bg-gradient-to-br from-muted/80 to-muted/60 px-3.5 py-2.5 text-[12px] font-semibold text-foreground/90 transition-all duration-200 hover:from-muted hover:to-muted/80 hover:shadow-md hover:shadow-foreground/5 active:scale-[0.98]"
       >
+        <div className="relative flex h-5 w-5 items-center justify-center">
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={`transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`}
+            aria-hidden="true"
+          >
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </div>
         <svg
-          width="12"
-          height="12"
+          width="14"
+          height="14"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className={`transition-transform ${isOpen ? "rotate-90" : ""}`}
-          aria-hidden="true"
-        >
-          <polyline points="9 18 15 12 9 6" />
-        </svg>
-        <svg
-          width="12"
-          height="12"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="shrink-0"
+          className="shrink-0 text-foreground/70 dark:text-accent"
           aria-hidden="true"
         >
           <circle cx="12" cy="12" r="10" />
           <path d="M12 16v-4" />
           <path d="M12 8h.01" />
         </svg>
-        <span className="font-medium">
-          {hasTools
-            ? `Thought for ${elapsedText || "..."}`
-            : `Reasoning for ${elapsedText || "..."}`}
+        <span className="flex items-center gap-2">
+          {hasTools ? "Thought" : "Reasoning"}
           {hasTools && (
-            <span className="ml-1 text-muted-foreground/60">({toolNames.join(", ")})</span>
+            <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-accent">
+              {toolNames.join(", ")}
+            </span>
           )}
         </span>
+        {!isOpen && (
+          <div className="ml-auto flex items-center gap-1 text-muted-foreground/60">
+            <div className="h-1 w-1 rounded-full bg-current animate-pulse" />
+            <span className="text-[10px]">Click to expand</span>
+          </div>
+        )}
       </button>
       {isOpen && (
-        <div className="mt-1.5 space-y-1.5 border-l-2 border-muted pl-3">
+        <div className="mt-2 space-y-2 border-l-2 border-accent/30 pl-4 animate-fade-in-up">
           {parts.map((part) => {
             switch (part.type) {
               case "reasoning":

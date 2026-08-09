@@ -1,4 +1,4 @@
-import { usePreferences } from "@/providers/PreferencesProvider";
+import { useEnginePreferences } from "@/providers/PreferencesProvider";
 
 export function EngineTab() {
   const {
@@ -10,7 +10,7 @@ export function EngineTab() {
     setSystemPrompt,
     customApiEndpoint,
     setCustomApiEndpoint,
-  } = usePreferences();
+  } = useEnginePreferences();
 
   return (
     <div className="mx-auto w-full max-w-md px-6 py-8">
@@ -59,7 +59,7 @@ export function EngineTab() {
                 Math.min(128_000, Math.max(256, Number.parseInt(e.target.value, 10) || 256)),
               )
             }
-            className="h-8 w-full rounded border bg-background px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-ring"
+            className="h-8 w-full rounded border bg-background px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-accent/40"
           />
           <div className="mt-1 text-[10px] text-muted-foreground">
             Max tokens per response (256–128,000)
@@ -78,7 +78,7 @@ export function EngineTab() {
             value={customApiEndpoint ?? ""}
             onChange={(e) => setCustomApiEndpoint(e.target.value.trim() || null)}
             placeholder="https://api.example.com/v1"
-            className="h-8 w-full rounded border bg-background px-2 text-xs font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
+            className="h-8 w-full rounded border bg-background px-2 text-xs font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-accent/40"
           />
           <div className="mt-1 text-[10px] text-muted-foreground">
             Leave empty to use the default endpoint.
@@ -106,7 +106,7 @@ export function EngineTab() {
             onChange={(e) => setSystemPrompt(e.target.value)}
             placeholder="You are a helpful AI assistant..."
             rows={4}
-            className="h-24 w-full resize-y rounded border bg-background px-2 py-1.5 text-xs font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
+            className="h-24 w-full resize-y rounded border bg-background px-2 py-1.5 text-xs font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-accent/40"
           />
           <div className="mt-1 text-[10px] text-muted-foreground">
             Custom instructions prepended to every conversation.

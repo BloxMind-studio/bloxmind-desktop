@@ -39,7 +39,7 @@ import {
 import { splitModelKey } from "@/lib/splitModelKey";
 import { useExplorerReference } from "@/providers/ExplorerReferenceProvider";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
-import { usePreferences } from "@/providers/PreferencesProvider";
+import { useModelPreferences } from "@/providers/PreferencesProvider";
 import { useStudioTargetOptional } from "@/providers/StudioTargetProvider";
 
 const ACTIVE_SYNC_MS = 2_500;
@@ -144,7 +144,7 @@ const TreeRow = memo(function TreeRow({
           <InstanceIcon
             size={13}
             strokeWidth={1.8}
-            className="shrink-0 text-blue-600 dark:text-blue-400"
+            className="shrink-0 text-cyan-600 dark:text-cyan-400"
           />
           <span className="truncate">{node.name}</span>
         </span>
@@ -192,7 +192,7 @@ function collectPaths(nodes: readonly ExplorerNode[]): Set<string> {
 export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerProps) {
   const { client } = useOpenCodeClient();
   const studioTarget = useStudioTargetOptional();
-  const { selectedModel, selectedAgent } = usePreferences();
+  const { selectedModel, selectedAgent } = useModelPreferences();
   const { referenceObject, publishObjects } = useExplorerReference();
   const [collection, setCollection] = useState<ExplorerCollection | null>(null);
   const collectionRef = useRef<ExplorerCollection | null>(null);
@@ -512,7 +512,7 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search instances"
             aria-label="Search Explorer"
-            className="min-w-0 flex-1 bg-transparent text-[11px] text-foreground outline-none placeholder:text-muted-foreground"
+            className="min-w-0 flex-1 bg-transparent text-[11px] text-foreground outline-none placeholder:text-muted-foreground focus-visible:outline-none! focus-visible:ring-0! focus:shadow-none"
           />
         </div>
       </div>
@@ -569,7 +569,7 @@ function Inspector({ node, onReference }: { node: ExplorerNode; onReference: () 
     <div className="max-h-[42%] shrink-0 overflow-y-auto border-t bg-card/60">
       <div className="sticky top-0 border-b bg-card/95 p-3 backdrop-blur-sm">
         <div className="flex items-start gap-2">
-          <InstanceIcon size={15} className="mt-0.5 shrink-0 text-blue-600 dark:text-blue-400" />
+          <InstanceIcon size={15} className="mt-0.5 shrink-0 text-cyan-600 dark:text-cyan-400" />
           <div className="min-w-0 flex-1">
             <div className="truncate text-xs font-medium">{node.name}</div>
             <div className="truncate font-mono text-[9px] text-muted-foreground" title={node.path}>

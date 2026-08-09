@@ -26,6 +26,10 @@ import { useActiveSession } from "@/providers/ActiveSessionProvider";
 
 // ── Main component ─────────────────────────────────────────────────────
 
+/** How long the agent must stay busy before a pre-execution checkpoint is
+ * captured, so transient busy flicker doesn't spam full-workspace snapshots. */
+const CHECKPOINT_CAPTURE_DEBOUNCE_MS = 750;
+
 function ChatMessages() {
   const messageIds = useMessageIds();
   const lastMessage = useMessage(messageIds[messageIds.length - 1] ?? "");
@@ -60,41 +64,67 @@ function ChatMessages() {
   // Pre-Execution Checkpoint: when the agent transitions to "busy"
   // (it's about to modify files for the latest message), capture a full
   // pre-task snapshot so auto-rollback always has a restore point.
+  //
+  // The capture is debounced: busy state can flicker rapidly (busy → idle →
+  // busy) within a single turn as the agent moves between tool calls, and a
+  // full-workspace snapshot on every transition would spam the filesystem and
+  // IPC. We only capture once the busy state has held stable for a short
+  // window, and never more than once per message.
   const previousStatusRef = useRef<SessionStatus | undefined>(undefined);
   const capturedForMessageRef = useRef<string | null>(null);
+  const captureDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
+    const cleanupDebounce = () => {
+      if (captureDebounceTimerRef.current !== null) {
+        clearTimeout(captureDebounceTimerRef.current);
+        captureDebounceTimerRef.current = null;
+      }
+    };
     if (!activeSessionId) {
       previousStatusRef.current = undefined;
       capturedForMessageRef.current = null;
+      cleanupDebounce();
       return;
     }
     const prev = previousStatusRef.current;
     previousStatusRef.current = sessionStatus;
+    // Leaving busy cancels any in-flight debounce so a flicker never captures.
+    if (sessionStatusType !== "busy") {
+      cleanupDebounce();
+      return;
+    }
     // Capture whenever the agent transitions into "busy" (from idle, error,
     // or the very first message of a session), once per message. Empty paths
     // → full-workspace journal snapshot (works with or without git).
-    if (prev?.type !== "busy" && sessionStatusType === "busy") {
+    if (prev?.type !== "busy") {
       const lastId = messageIds[messageIds.length - 1];
       if (!lastId || capturedForMessageRef.current === lastId) return;
-      capturedForMessageRef.current = lastId;
-      void captureCheckpoint({
-        sessionId: activeSessionId,
-        messageId: lastId,
-        tool: "session.promptAsync",
-        paths: [],
-      })
-        .then(() => {
-          void checkpoint.refreshCheckpoints();
-          // Retry once after a short delay: the capture IPC may have
-          // resolved, but the file-system write can lag by ~1-2s on
-          // Windows. Without this retry the button would flicker and
-          // disappear when the stale empty list overwrites state.
-          setTimeout(() => void checkpoint.refreshCheckpoints(), 600);
+      // Wait for the busy state to hold before spending a snapshot.
+      cleanupDebounce();
+      captureDebounceTimerRef.current = setTimeout(() => {
+        captureDebounceTimerRef.current = null;
+        if (previousStatusRef.current?.type !== "busy") return;
+        capturedForMessageRef.current = lastId;
+        void captureCheckpoint({
+          sessionId: activeSessionId,
+          messageId: lastId,
+          tool: "session.promptAsync",
+          paths: [],
         })
-        .catch((err: unknown) => {
-          console.error("Pre-execution checkpoint capture failed:", err);
-        });
+          .then(() => {
+            void checkpoint.refreshCheckpoints();
+            // Retry once after a short delay: the capture IPC may have
+            // resolved, but the file-system write can lag by ~1-2s on
+            // Windows. Without this retry the button would flicker and
+            // disappear when the stale empty list overwrites state.
+            setTimeout(() => void checkpoint.refreshCheckpoints(), 600);
+          })
+          .catch((err: unknown) => {
+            console.error("Pre-execution checkpoint capture failed:", err);
+          });
+      }, CHECKPOINT_CAPTURE_DEBOUNCE_MS);
     }
+    return cleanupDebounce;
   }, [
     sessionStatusType,
     activeSessionId,

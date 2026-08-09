@@ -402,6 +402,34 @@ describe("ChatInput", () => {
     expect(client.session.promptAsync).not.toHaveBeenCalled();
   });
 
+  it("reconciles a stuck optimistic busy status with the server after a successful send", async () => {
+    // SSE never delivers an idle event for this session (simulating a dropped
+    // event), so without settle-time reconciliation the optimistic "busy"
+    // written by onMutate would diverge from the server's idle state forever.
+    const client = createClient({
+      status: vi.fn().mockResolvedValue({ data: { s1: { type: "idle" } as SessionStatus } }),
+    });
+    const qc = createQueryClient();
+
+    render(<TestChatInput client={client} queryClient={qc} />);
+
+    const textarea = (await screen.findByRole("textbox", {
+      name: "Message",
+    })) as HTMLTextAreaElement;
+    await act(async () => {
+      qc.setQueryData(qk.statuses, { s1: { type: "idle" } as SessionStatus });
+      fireEvent.input(textarea, { target: { textContent: "Hello there" } });
+      await Promise.resolve();
+      fireEvent.click(screen.getByTitle("Send"));
+    });
+
+    // Without settle-time reconciliation the optimistic "busy" written by
+    // onMutate would stay forever (no SSE idle event arrives in this test).
+    await waitFor(() => {
+      expect(qc.getQueryData<Record<string, SessionStatus>>(qk.statuses)?.s1.type).toBe("idle");
+    });
+  });
+
   it("shows model selector with current model display", async () => {
     const client = createClient();
     const qc = createQueryClient();

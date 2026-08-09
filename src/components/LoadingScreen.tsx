@@ -289,7 +289,7 @@ function LoadingScreen({
               <span className="text-muted-foreground/40">|</span>
 
               <a
-                href="https://BloxMind.ai"
+                href="https://bloxmindai.netlify.app/"
                 target="_blank"
                 rel="noreferrer"
                 className="underline transition-colors hover:text-foreground"

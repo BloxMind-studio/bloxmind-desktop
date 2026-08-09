@@ -38,11 +38,55 @@ async function connect(info: { url: string }) {
 }
 
 describe("Studio MCP broker", () => {
-  it("binds the OpenCode adapter to loopback", async () => {
+  it("binds the OpenCode adapter to loopback and embeds a bearer token in the surface URL", async () => {
     const broker = await startStudioMcpBroker(fakeUpstream());
     cleanups.push(() => broker.close());
 
-    expect(broker.info.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/mcp$/);
+    expect(broker.info.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/mcp\?token=[A-Za-z0-9_-]+$/);
+  });
+
+  it("rejects requests without a valid broker token", async () => {
+    const broker = await startStudioMcpBroker(fakeUpstream());
+    cleanups.push(() => broker.close());
+    const token = new URL(broker.info.url).searchParams.get("token");
+    expect(token).toBeTruthy();
+
+    // No token at all → 401.
+    const noToken = broker.info.url.replace(`?token=${token}`, "");
+    const first = await fetch(noToken, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", method: "initialize", id: 1, params: {} }),
+    });
+    expect(first.status).toBe(401);
+
+    // Wrong token → 401.
+    const wrongToken = broker.info.url.replace(String(token), "not-the-token");
+    const second = await fetch(wrongToken, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", method: "initialize", id: 1, params: {} }),
+    });
+    expect(second.status).toBe(401);
+  });
+
+  it("accepts the broker token via the Authorization header", async () => {
+    const broker = await startStudioMcpBroker(fakeUpstream());
+    cleanups.push(() => broker.close());
+    const token = new URL(broker.info.url).searchParams.get("token");
+    const bareUrl = broker.info.url.replace(`?token=${token}`, "");
+
+    const res = await fetch(bareUrl, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", method: "initialize", id: 1, params: {} }),
+    });
+    // Auth passed (any non-401). A raw fetch of initialize is not a complete
+    // MCP session exchange, so status may be 400 from the transport.
+    expect(res.status).not.toBe(401);
   });
 
   it("forwards tool discovery and calls over standard MCP transport", async () => {

@@ -112,7 +112,7 @@ class PromptTokenNode extends DecoratorNode<ReactNode> {
       <span
         className={`mx-0.5 inline-flex select-all items-center rounded-md border px-1.5 py-0.5 align-baseline text-[11px] font-medium ${
           this.__kind === "object"
-            ? "border-blue-500/25 bg-blue-500/10 text-blue-700 dark:text-blue-300"
+            ? "border-cyan-500/25 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300"
             : "border-violet-500/25 bg-violet-500/10 text-violet-700 dark:text-violet-300"
         }`}
         title={this.__value}
@@ -442,7 +442,7 @@ export default forwardRef<PromptEditorHandle, PromptEditorProps>(function Prompt
         <RichTextPlugin
           contentEditable={
             <ContentEditable
-              className="app-scrollbar max-h-48 min-h-10 overflow-y-auto whitespace-pre-wrap pb-2 pt-1 text-[13px] leading-relaxed outline-none"
+              className="app-scrollbar max-h-48 min-h-10 overflow-y-auto whitespace-pre-wrap pb-2 pt-1.5 text-[13.5px] leading-relaxed text-foreground/95 outline-none focus-visible:outline-none! focus-visible:ring-0!"
               aria-label="Message"
               onKeyDown={(event) => {
                 if (event.key !== "Enter") return;

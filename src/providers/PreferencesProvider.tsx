@@ -20,6 +20,7 @@ import type { AccentColor, LayoutDensity } from "@/types/desktop";
 
 const ACCENT_CSS_VALUES: Record<AccentColor, string> = {
   blue: "221 83% 58%",
+  indigo: "239 84% 67%",
   violet: "262 83% 58%",
   emerald: "160 84% 39%",
   rose: "350 89% 60%",
@@ -43,48 +44,127 @@ function applyFontSize(size: number) {
   window.document.documentElement.style.setProperty("--app-font-scale", String(size));
 }
 
-interface PreferencesContextValue {
+/** Helper to persist a config patch with user-facing error handling.
+ * On failure, shows a toast and calls the optional revert callback. */
+function persistWithFeedback(patch: Partial<AppConfig>, revert?: () => void): void {
+  patchConfig(patch).catch((err) => {
+    console.error("Failed to save preference:", err);
+    toast.error("Failed to save setting", {
+      description: "Your change was not persisted. Try again or restart the app.",
+    });
+    revert?.();
+  });
+}
+
+// ── Model / session slice ────────────────────────────────────────────────
+
+export interface ModelPreferences {
   selectedModel: string | null;
   selectedAgent: string | null;
   selectedVariant: string | null;
   hiddenModels: Set<string>;
   detailedAnalyticsEnabled: boolean;
-  // UI customization
-  accentColor: AccentColor;
-  layoutDensity: LayoutDensity;
-  fontSize: number;
-  soundEffects: boolean;
-  // AI engine
-  temperature: number;
-  maxTokens: number;
-  systemPrompt: string;
-  customApiEndpoint: string | null;
-  // Behavior
-  autoScroll: boolean;
-  enterToSend: boolean;
-  notificationsEnabled: boolean;
-  // SSE connection
-  sseReconnectDelay: number;
-  sseHeartbeatTimeout: number;
   setSelectedModel: (modelID: string) => void;
   setSelectedAgent: (name: string) => void;
   setSelectedVariant: (variant: string | null) => void;
   toggleModelVisibility: (modelKey: string) => void;
   setDetailedAnalyticsEnabled: (enabled: boolean) => void;
+}
+
+export const ModelPreferencesContext = createContext<ModelPreferences | undefined>(undefined);
+
+export function useModelPreferences() {
+  const context = useContext(ModelPreferencesContext);
+  if (!context) throw new Error("useModelPreferences must be used within a PreferencesProvider");
+  return context;
+}
+
+// ── UI customization slice ───────────────────────────────────────────────
+
+export interface UIPreferences {
+  accentColor: AccentColor;
+  layoutDensity: LayoutDensity;
+  fontSize: number;
+  soundEffects: boolean;
   setAccentColor: (color: AccentColor) => void;
   setLayoutDensity: (density: LayoutDensity) => void;
   setFontSize: (size: number) => void;
   setSoundEffects: (enabled: boolean) => void;
+}
+
+export const UIPreferencesContext = createContext<UIPreferences | undefined>(undefined);
+
+export function useUIPreferences() {
+  const context = useContext(UIPreferencesContext);
+  if (!context) throw new Error("useUIPreferences must be used within a PreferencesProvider");
+  return context;
+}
+
+// ── AI engine slice ──────────────────────────────────────────────────────
+
+export interface EnginePreferences {
+  temperature: number;
+  maxTokens: number;
+  systemPrompt: string;
+  customApiEndpoint: string | null;
   setTemperature: (temp: number) => void;
   setMaxTokens: (tokens: number) => void;
   setSystemPrompt: (prompt: string) => void;
   setCustomApiEndpoint: (endpoint: string | null) => void;
+}
+
+export const EnginePreferencesContext = createContext<EnginePreferences | undefined>(undefined);
+
+export function useEnginePreferences() {
+  const context = useContext(EnginePreferencesContext);
+  if (!context) throw new Error("useEnginePreferences must be used within a PreferencesProvider");
+  return context;
+}
+
+// ── Behavior slice ───────────────────────────────────────────────────────
+
+export interface BehaviorPreferences {
+  autoScroll: boolean;
+  enterToSend: boolean;
+  notificationsEnabled: boolean;
   setAutoScroll: (enabled: boolean) => void;
   setEnterToSend: (enabled: boolean) => void;
   setNotificationsEnabled: (enabled: boolean) => void;
+}
+
+export const BehaviorPreferencesContext = createContext<BehaviorPreferences | undefined>(undefined);
+
+export function useBehaviorPreferences() {
+  const context = useContext(BehaviorPreferencesContext);
+  if (!context) throw new Error("useBehaviorPreferences must be used within a PreferencesProvider");
+  return context;
+}
+
+// ── SSE connection slice ─────────────────────────────────────────────────
+
+export interface SSEPreferences {
+  sseReconnectDelay: number;
+  sseHeartbeatTimeout: number;
   setSseReconnectDelay: (delay: number) => void;
   setSseHeartbeatTimeout: (timeout: number) => void;
 }
+
+export const SSEPreferencesContext = createContext<SSEPreferences | undefined>(undefined);
+
+export function useSSEPreferences() {
+  const context = useContext(SSEPreferencesContext);
+  if (!context) throw new Error("useSSEPreferences must be used within a PreferencesProvider");
+  return context;
+}
+
+// ── Composite (backwards-compatible) API ─────────────────────────────────
+
+export interface PreferencesContextValue
+  extends ModelPreferences,
+    UIPreferences,
+    EnginePreferences,
+    BehaviorPreferences,
+    SSEPreferences {}
 
 export const PreferencesContext = createContext<PreferencesContextValue | undefined>(undefined);
 
@@ -107,7 +187,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [detailedAnalyticsEnabled, setDetailedAnalyticsEnabledState] = useState(false);
   const detailedAnalyticsEnabledRef = useRef(false);
   // UI customization
-  const [accentColor, setAccentColorState] = useState<AccentColor>("blue");
+  const [accentColor, setAccentColorState] = useState<AccentColor>("indigo");
   const [layoutDensity, setLayoutDensityState] = useState<LayoutDensity>("comfortable");
   const [fontSize, setFontSizeState] = useState(1);
   const [soundEffects, setSoundEffectsState] = useState(true);
@@ -131,7 +211,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     detailedAnalyticsEnabledRef.current = enabled;
     setDetailedAnalyticsEnabledState(enabled);
     setDetailedAnalyticsCollection(enabled);
-    patchConfig({ detailedAnalytics: enabled ? "enabled" : "disabled" }).catch(() => {
+    persistWithFeedback({ detailedAnalytics: enabled ? "enabled" : "disabled" }, () => {
       detailedAnalyticsEnabledRef.current = previous;
       setDetailedAnalyticsEnabledState(previous);
       setDetailedAnalyticsCollection(previous);
@@ -213,7 +293,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 
   const setSelectedModel = useCallback((modelID: string) => {
     setSelectedModelState(modelID);
-    patchConfig({ lastModel: modelID }).catch(() => {});
+    persistWithFeedback({ lastModel: modelID }, () => setSelectedModelState(null));
   }, []);
 
   const setSelectedAgent = useCallback((name: string) => {
@@ -222,7 +302,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 
   const setSelectedVariant = useCallback((variant: string | null) => {
     setSelectedVariantState(variant);
-    patchConfig({ defaultVariant: variant }).catch(() => {});
+    persistWithFeedback({ defaultVariant: variant }, () => setSelectedVariantState(null));
   }, []);
 
   const toggleModelVisibility = useCallback(
@@ -234,7 +314,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
         next.add(modelKey);
       }
       setHiddenModels(next);
-      patchConfig({ hiddenModels: [...next] }).catch(() => {});
+      persistWithFeedback({ hiddenModels: [...next] }, () => setHiddenModels(hiddenModels));
     },
     [hiddenModels],
   );
@@ -242,61 +322,65 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   // UI customization setters
   const setAccentColor = useCallback((color: AccentColor) => {
     setAccentColorState(color);
-    patchConfig({ accentColor: color }).catch(() => {});
+    persistWithFeedback({ accentColor: color }, () => setAccentColorState("indigo"));
   }, []);
   const setLayoutDensity = useCallback((density: LayoutDensity) => {
     setLayoutDensityState(density);
-    patchConfig({ layoutDensity: density }).catch(() => {});
+    persistWithFeedback({ layoutDensity: density }, () => setLayoutDensityState("comfortable"));
   }, []);
   const setFontSize = useCallback((size: number) => {
     setFontSizeState(size);
-    patchConfig({ fontSize: size }).catch(() => {});
+    persistWithFeedback({ fontSize: size }, () => setFontSizeState(1));
   }, []);
   const setSoundEffects = useCallback((enabled: boolean) => {
     setSoundEffectsState(enabled);
-    patchConfig({ soundEffects: enabled }).catch(() => {});
+    persistWithFeedback({ soundEffects: enabled }, () => setSoundEffectsState(true));
   }, []);
 
   // AI engine setters
   const setTemperature = useCallback((temp: number) => {
     setTemperatureState(temp);
-    patchConfig({ temperature: temp }).catch(() => {});
+    persistWithFeedback({ temperature: temp }, () => setTemperatureState(0.7));
   }, []);
   const setMaxTokens = useCallback((tokens: number) => {
     setMaxTokensState(tokens);
-    patchConfig({ maxTokens: tokens }).catch(() => {});
+    persistWithFeedback({ maxTokens: tokens }, () => setMaxTokensState(4_096));
   }, []);
   const setSystemPrompt = useCallback((prompt: string) => {
     setSystemPromptState(prompt);
-    patchConfig({ systemPrompt: prompt }).catch(() => {});
+    persistWithFeedback({ systemPrompt: prompt }, () => setSystemPromptState(""));
   }, []);
   const setCustomApiEndpoint = useCallback((endpoint: string | null) => {
     setCustomApiEndpointState(endpoint);
-    patchConfig({ customApiEndpoint: endpoint }).catch(() => {});
+    persistWithFeedback({ customApiEndpoint: endpoint }, () => setCustomApiEndpointState(null));
   }, []);
 
   // Behavior setters
   const setAutoScroll = useCallback((enabled: boolean) => {
     setAutoScrollState(enabled);
-    patchConfig({ autoScroll: enabled }).catch(() => {});
+    persistWithFeedback({ autoScroll: enabled }, () => setAutoScrollState(true));
   }, []);
   const setEnterToSend = useCallback((enabled: boolean) => {
     setEnterToSendState(enabled);
-    patchConfig({ enterToSend: enabled }).catch(() => {});
+    persistWithFeedback({ enterToSend: enabled }, () => setEnterToSendState(true));
   }, []);
   const setNotificationsEnabled = useCallback((enabled: boolean) => {
     setNotificationsEnabledState(enabled);
-    patchConfig({ notificationsEnabled: enabled }).catch(() => {});
+    persistWithFeedback({ notificationsEnabled: enabled }, () =>
+      setNotificationsEnabledState(true),
+    );
   }, []);
 
   // SSE connection setters
   const setSseReconnectDelay = useCallback((delay: number) => {
     setSseReconnectDelayState(delay);
-    patchConfig({ sseReconnectDelay: delay }).catch(() => {});
+    persistWithFeedback({ sseReconnectDelay: delay }, () => setSseReconnectDelayState(3_000));
   }, []);
   const setSseHeartbeatTimeout = useCallback((timeout: number) => {
     setSseHeartbeatTimeoutState(timeout);
-    patchConfig({ sseHeartbeatTimeout: timeout }).catch(() => {});
+    persistWithFeedback({ sseHeartbeatTimeout: timeout }, () =>
+      setSseHeartbeatTimeoutState(30_000),
+    );
   }, []);
 
   // Apply UI customization CSS variables
@@ -312,44 +396,18 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     applyFontSize(fontSize);
   }, [fontSize]);
 
-  const value = useMemo<PreferencesContextValue>(
+  const modelValue = useMemo<ModelPreferences>(
     () => ({
       selectedModel,
       selectedAgent,
       selectedVariant,
       hiddenModels,
       detailedAnalyticsEnabled,
-      accentColor,
-      layoutDensity,
-      fontSize,
-      soundEffects,
-      temperature,
-      maxTokens,
-      systemPrompt,
-      customApiEndpoint,
-      autoScroll,
-      enterToSend,
-      notificationsEnabled,
-      sseReconnectDelay,
-      sseHeartbeatTimeout,
       setSelectedModel,
       setSelectedAgent,
       setSelectedVariant,
       toggleModelVisibility,
       setDetailedAnalyticsEnabled,
-      setAccentColor,
-      setLayoutDensity,
-      setFontSize,
-      setSoundEffects,
-      setTemperature,
-      setMaxTokens,
-      setSystemPrompt,
-      setCustomApiEndpoint,
-      setAutoScroll,
-      setEnterToSend,
-      setNotificationsEnabled,
-      setSseReconnectDelay,
-      setSseHeartbeatTimeout,
     }),
     [
       selectedModel,
@@ -357,39 +415,107 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       selectedVariant,
       hiddenModels,
       detailedAnalyticsEnabled,
-      accentColor,
-      layoutDensity,
-      fontSize,
-      soundEffects,
-      temperature,
-      maxTokens,
-      systemPrompt,
-      customApiEndpoint,
-      autoScroll,
-      enterToSend,
-      notificationsEnabled,
-      sseReconnectDelay,
-      sseHeartbeatTimeout,
       setSelectedModel,
       setSelectedAgent,
       setSelectedVariant,
       toggleModelVisibility,
       setDetailedAnalyticsEnabled,
+    ],
+  );
+
+  const uiValue = useMemo<UIPreferences>(
+    () => ({
+      accentColor,
+      layoutDensity,
+      fontSize,
+      soundEffects,
       setAccentColor,
       setLayoutDensity,
       setFontSize,
       setSoundEffects,
+    }),
+    [
+      accentColor,
+      layoutDensity,
+      fontSize,
+      soundEffects,
+      setAccentColor,
+      setLayoutDensity,
+      setFontSize,
+      setSoundEffects,
+    ],
+  );
+
+  const engineValue = useMemo<EnginePreferences>(
+    () => ({
+      temperature,
+      maxTokens,
+      systemPrompt,
+      customApiEndpoint,
       setTemperature,
       setMaxTokens,
       setSystemPrompt,
       setCustomApiEndpoint,
-      setAutoScroll,
-      setEnterToSend,
-      setNotificationsEnabled,
-      setSseReconnectDelay,
-      setSseHeartbeatTimeout,
+    }),
+    [
+      temperature,
+      maxTokens,
+      systemPrompt,
+      customApiEndpoint,
+      setTemperature,
+      setMaxTokens,
+      setSystemPrompt,
+      setCustomApiEndpoint,
     ],
   );
 
-  return <PreferencesContext.Provider value={value}>{children}</PreferencesContext.Provider>;
+  const behaviorValue = useMemo<BehaviorPreferences>(
+    () => ({
+      autoScroll,
+      enterToSend,
+      notificationsEnabled,
+      setAutoScroll,
+      setEnterToSend,
+      setNotificationsEnabled,
+    }),
+    [
+      autoScroll,
+      enterToSend,
+      notificationsEnabled,
+      setAutoScroll,
+      setEnterToSend,
+      setNotificationsEnabled,
+    ],
+  );
+
+  const sseValue = useMemo<SSEPreferences>(
+    () => ({
+      sseReconnectDelay,
+      sseHeartbeatTimeout,
+      setSseReconnectDelay,
+      setSseHeartbeatTimeout,
+    }),
+    [sseReconnectDelay, sseHeartbeatTimeout, setSseReconnectDelay, setSseHeartbeatTimeout],
+  );
+
+  const compositeValue = useMemo<PreferencesContextValue>(
+    () => ({ ...modelValue, ...uiValue, ...engineValue, ...behaviorValue, ...sseValue }),
+    [modelValue, uiValue, engineValue, behaviorValue, sseValue],
+  );
+
+  return (
+    <ModelPreferencesContext.Provider value={modelValue}>
+      <UIPreferencesContext.Provider value={uiValue}>
+        <EnginePreferencesContext.Provider value={engineValue}>
+          <BehaviorPreferencesContext.Provider value={behaviorValue}>
+            <SSEPreferencesContext.Provider value={sseValue}>
+              <PreferencesContext.Provider value={compositeValue}>
+                {children}
+              </PreferencesContext.Provider>
+            </SSEPreferencesContext.Provider>
+          </BehaviorPreferencesContext.Provider>
+        </EnginePreferencesContext.Provider>
+      </UIPreferencesContext.Provider>
+    </ModelPreferencesContext.Provider>
+  );
 }

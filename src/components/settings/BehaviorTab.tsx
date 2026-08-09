@@ -1,4 +1,4 @@
-import { usePreferences } from "@/providers/PreferencesProvider";
+import { useBehaviorPreferences } from "@/providers/PreferencesProvider";
 
 export function BehaviorTab() {
   const {
@@ -8,7 +8,7 @@ export function BehaviorTab() {
     setEnterToSend,
     notificationsEnabled,
     setNotificationsEnabled,
-  } = usePreferences();
+  } = useBehaviorPreferences();
 
   return (
     <div className="mx-auto w-full max-w-md px-6 py-8">

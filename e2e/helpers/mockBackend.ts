@@ -24,7 +24,7 @@ export async function installAppMocks(page: Page): Promise<void> {
       defaultVariant: null,
       studioTargetPrograms: null,
       studioTargetsBySession: {},
-      accentColor: "blue",
+      accentColor: "indigo",
       layoutDensity: "comfortable",
       fontSize: 1,
       soundEffects: true,

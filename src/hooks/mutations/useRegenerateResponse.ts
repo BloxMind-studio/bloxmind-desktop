@@ -7,7 +7,7 @@ import { splitModelKey } from "@/lib/splitModelKey";
 import type { MessagesCache } from "@/lib/sseDispatch";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
-import { usePreferences } from "@/providers/PreferencesProvider";
+import { useModelPreferences } from "@/providers/PreferencesProvider";
 import { useProjectIndexContext } from "@/providers/ProjectIndexProvider";
 import { useStudioTargetOptional } from "@/providers/StudioTargetProvider";
 import type { MessageWithParts } from "@/types";
@@ -85,7 +85,7 @@ function isInjectedSystemNotification(msg: MessageWithParts | undefined): boolea
 export function useRegenerateResponse() {
   const { client } = useOpenCodeClient();
   const { activeSessionId } = useActiveSession();
-  const { selectedModel, selectedAgent, selectedVariant } = usePreferences();
+  const { selectedModel, selectedAgent, selectedVariant } = useModelPreferences();
   const queryClient = useQueryClient();
   // Same system context ChatInput attaches to every fresh send, so a
   // regenerated turn runs with the identical prompt environment.
@@ -193,6 +193,29 @@ export function useRegenerateResponse() {
     onSuccess: () => {
       if (activeSessionId) {
         void queryClient.invalidateQueries({ queryKey: qk.messages(activeSessionId) });
+      }
+    },
+
+    // Reconcile the optimistic status with the server's authoritative value.
+    // A missed/dropped SSE status event would otherwise leave the "busy"
+    // written by onMutate stuck even after the re-admitted prompt resolves;
+    // fetching status on settle converges the cache immediately.
+    onSettled: async (_data, _error, _input, context) => {
+      if (!context || !client) return;
+      try {
+        const res = await client.session.status({}, { throwOnError: true });
+        const authoritative = res.data?.[context.sessionID];
+        if (!authoritative) return;
+        queryClient.setQueryData<Record<string, SessionStatus>>(qk.statuses, (previous) => {
+          // Only reconcile when the cache still holds our optimistic "busy":
+          // if a newer SSE event already landed (non-busy), that is fresher
+          // than this fetch and must win.
+          if (previous?.[context.sessionID]?.type !== "busy") return previous;
+          return { ...previous, [context.sessionID]: authoritative };
+        });
+      } catch {
+        // Transient fetch failure: keep the rolled-back/optimistic value; the
+        // statuses watchdog poll reconciles on its next tick.
       }
     },
   });

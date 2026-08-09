@@ -8,7 +8,7 @@ import {
 import { splitModelKey } from "@/lib/splitModelKey";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
-import { usePreferences } from "@/providers/PreferencesProvider";
+import { useModelPreferences } from "@/providers/PreferencesProvider";
 
 export interface EnhanceMeshBriefInput {
   brief: string;
@@ -18,7 +18,7 @@ export interface EnhanceMeshBriefInput {
 export function useEnhanceMeshBrief() {
   const { client } = useOpenCodeClient();
   const { activeSessionId } = useActiveSession();
-  const { selectedModel, selectedAgent, selectedVariant } = usePreferences();
+  const { selectedModel, selectedAgent, selectedVariant } = useModelPreferences();
 
   return useMutation({
     mutationFn: async ({ brief, style }: EnhanceMeshBriefInput) => {

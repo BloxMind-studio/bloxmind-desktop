@@ -16,7 +16,7 @@ import { useIsBusy } from "@/hooks/useSessionStatuses";
 import { splitModelKey } from "@/lib/splitModelKey";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { useExplorerReference } from "@/providers/ExplorerReferenceProvider";
-import { usePreferences } from "@/providers/PreferencesProvider";
+import { useBehaviorPreferences, useModelPreferences } from "@/providers/PreferencesProvider";
 import { useProjectIndexContext } from "@/providers/ProjectIndexProvider";
 import { useStudioTargetOptional } from "@/providers/StudioTargetProvider";
 import type { ModelInfo } from "@/types";
@@ -215,12 +215,12 @@ const SendButton = memo(function SendButton({
           type="button"
           onClick={onSend}
           disabled={(!text.trim() && !hasAttachments) || !canSend}
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-foreground text-background transition-opacity disabled:opacity-30"
+          className="btn-primary flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-accent/90 text-background shadow-md shadow-black/20 transition-all duration-200 hover:shadow-lg hover:shadow-black/25 hover:scale-105 active:scale-95 disabled:pointer-events-none disabled:opacity-30 disabled:hover:scale-100 dark:shadow-white/10 dark:hover:shadow-white/15"
           title="Send"
         >
           <svg
-            width="12"
-            height="12"
+            width="14"
+            height="14"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -251,11 +251,11 @@ function ChatInput() {
     selectedAgent,
     selectedVariant,
     hiddenModels,
-    enterToSend,
     setSelectedModel,
     setSelectedAgent,
     setSelectedVariant,
-  } = usePreferences();
+  } = useModelPreferences();
+  const { enterToSend } = useBehaviorPreferences();
   const studioTargetReference = useStudioTargetOptional()?.promptReference ?? null;
   const { contextPrompt: projectIndexContext } = useProjectIndexContext();
 
@@ -271,6 +271,17 @@ function ChatInput() {
     const model = allModels.find((m) => m.id === modelId);
     return model?.variants ? Object.keys(model.variants) : [];
   }, [selectedModel, allModels]);
+
+  // Slider options: index 0 is "Default" (null), followed by one option per variant.
+  // Using an explicit options array keeps the index mapping in a single place
+  // instead of off-by-one shift logic split across the slider and handler.
+  const variantOptions = useMemo(
+    () => [
+      { value: null, label: "Default" },
+      ...availableVariants.map((v) => ({ value: v, label: v })),
+    ],
+    [availableVariants],
+  );
 
   // Auto-select "medium" variant on first model load only.
   // Once the user interacts with the slider, respect whatever they pick.
@@ -294,9 +305,9 @@ function ChatInput() {
   const handleVariantChange = useCallback(
     (index: number) => {
       userTouchedVariantRef.current = true;
-      setSelectedVariant(index === 0 ? null : availableVariants[index - 1]);
+      setSelectedVariant(variantOptions[index]?.value ?? null);
     },
-    [availableVariants, setSelectedVariant],
+    [variantOptions, setSelectedVariant],
   );
 
   const [text, setText] = useState("");
@@ -563,9 +574,13 @@ function ChatInput() {
     ? (selectedModel.split("/").pop() ?? selectedModel)
     : "Select model";
   const agentDisplay = selectedAgent ?? "Default agent";
-  const selectedVariantIndex = selectedVariant
-    ? Math.max(0, availableVariants.indexOf(selectedVariant) + 1)
-    : 0;
+  const selectedVariantIndex =
+    variantOptions.length > 0
+      ? Math.max(
+          0,
+          variantOptions.findIndex((o) => o.value === selectedVariant),
+        )
+      : 0;
   const variantDisplay = selectedVariant ?? "Default";
 
   function statusBadge(status?: string) {
@@ -621,7 +636,7 @@ function ChatInput() {
   }
 
   return (
-    <div className="shrink-0 border-t bg-card px-4 py-3">
+    <div className="shrink-0 border-t border-border/60 bg-gradient-to-t from-card via-card/95 to-card/90 px-4 py-3 backdrop-blur-sm">
       <div className="relative mb-2 flex items-center gap-1">
         <div className="relative" ref={modelPickerRef}>
           <button
@@ -633,7 +648,7 @@ function ChatInput() {
                 setModelSearch("");
               }
             }}
-            className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-muted-foreground transition-all duration-200 hover:bg-accent/10 hover:text-foreground"
           >
             <svg
               width="10"
@@ -676,7 +691,7 @@ function ChatInput() {
                     value={modelSearch}
                     onChange={(e) => setModelSearch(e.target.value)}
                     placeholder="Search models..."
-                    className="h-7 flex-1 bg-transparent text-xs placeholder:text-muted-foreground/40 focus:outline-none"
+                    className="h-7 flex-1 bg-transparent text-xs placeholder:text-muted-foreground/40 focus:outline-none focus-visible:outline-none! focus-visible:ring-0! focus:shadow-none"
                     // biome-ignore lint/a11y/noAutofocus: focus the search field when the model picker opens
                     autoFocus
                   />
@@ -754,16 +769,15 @@ function ChatInput() {
               </div>
               <Slider
                 min={0}
-                max={availableVariants.length}
+                max={Math.max(0, variantOptions.length - 1)}
                 step={1}
                 value={[selectedVariantIndex]}
                 onValueChange={([index]) => handleVariantChange(index)}
                 aria-label="Reasoning effort"
               />
               <div className="mt-2 flex justify-between gap-2 text-[9px] capitalize text-muted-foreground/70">
-                <span>Default</span>
-                {availableVariants.map((variant) => (
-                  <span key={variant}>{variant}</span>
+                {variantOptions.map((option) => (
+                  <span key={option.label}>{option.label}</span>
                 ))}
               </div>
             </PopoverContent>
@@ -789,7 +803,7 @@ function ChatInput() {
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
         onDrop={onDrop}
-        className={`rounded-xl border bg-background transition-shadow focus-within:ring-2 ring-ring/20 ${isDragging ? "ring-2 ring-blue-400 border-blue-300 bg-blue-50/30" : ""}`}
+        className={`rounded-xl border bg-background transition-shadow ${isDragging ? "ring-2 ring-accent border-accent/50 bg-accent/5" : ""}`}
       >
         {attachments.length > 0 && (
           <div className="flex gap-2 overflow-x-auto px-3 pt-2 pb-1">
@@ -835,7 +849,7 @@ function ChatInput() {
           </div>
         )}
 
-        <div className="flex min-h-14 items-start gap-1.5 px-2 pb-2 pt-1.5">
+        <div className="flex min-h-14 items-start gap-1.5 rounded-xl border border-border/50 bg-background/50 px-3 py-2.5 shadow-sm transition-all duration-200 focus-within:border-accent/40 focus-within:shadow-md focus-within:shadow-accent/5">
           <PromptEditor
             ref={promptEditorRef}
             commands={commands}
@@ -918,7 +932,7 @@ function ChatInput() {
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className={`flex h-7 w-7 items-center justify-center rounded-lg border border-border bg-background transition-colors hover:bg-accent hover:text-foreground ${rejectShake ? "animate-reject-shake text-red-500" : "text-muted-foreground/60"}`}
+                className={`btn-primary flex h-8 w-8 items-center justify-center rounded-xl border border-border/60 bg-background transition-all duration-200 hover:border-accent/50 hover:text-accent hover:shadow-md hover:shadow-black/15 dark:hover:shadow-white/15 ${rejectShake ? "animate-reject-shake text-red-500" : "text-muted-foreground/70"}`}
                 title="Attach images"
               >
                 <svg

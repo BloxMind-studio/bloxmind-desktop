@@ -17,7 +17,7 @@ import { qk } from "@/lib/queryKeys";
 import type { MessagesCache } from "@/lib/sseDispatch";
 import { ActiveSessionContext } from "@/providers/ActiveSessionProvider";
 import { OpenCodeClientContext } from "@/providers/OpenCodeClientProvider";
-import { PreferencesContext } from "@/providers/PreferencesProvider";
+import { ModelPreferencesContext } from "@/providers/PreferencesProvider";
 import { makeAssistantMessage, makeFilePart, makeTextPart, makeUserMessage } from "@/test/fixtures";
 import type { MessageWithParts } from "@/types";
 
@@ -108,9 +108,9 @@ function makeWrapper(
               initError: null,
             }}
           >
-            <PreferencesContext.Provider value={preferences as never}>
+            <ModelPreferencesContext.Provider value={preferences as never}>
               {children}
-            </PreferencesContext.Provider>
+            </ModelPreferencesContext.Provider>
           </OpenCodeClientContext.Provider>
         </ActiveSessionContext.Provider>
       </QueryClientProvider>

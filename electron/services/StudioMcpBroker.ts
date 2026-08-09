@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { access, mkdir } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -147,12 +147,39 @@ function reject(res: ServerResponse, statusCode: number, message: string) {
   res.end(JSON.stringify({ jsonrpc: "2.0", error: { code: -32_000, message }, id: null }));
 }
 
+// The broker is bound to loopback but must still be secret-guarded: any local
+// process (or web page running as the same user) could otherwise connect and
+// drive Roblox Studio through this MCP endpoint. A random bearer token is
+// minted when the broker starts, embedded in the surface URL, and required on
+// every request (query param or Authorization header).
+function makeBearerToken(): string {
+  return randomBytes(32).toString("base64url");
+}
+
+function tokenMatches(provided: string, expected: string): boolean {
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+
+function isAuthorized(req: IncomingMessage, expectedToken: string): boolean {
+  const header = req.headers.authorization;
+  if (typeof header === "string") {
+    const match = /^Bearer\s+(\S+)$/i.exec(header);
+    if (match && tokenMatches(match[1], expectedToken)) return true;
+  }
+  const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "127.0.0.1"}`);
+  return tokenMatches(url.searchParams.get("token") ?? "", expectedToken);
+}
+
 interface BrokerResource extends StudioMcpBrokerService {
   close(): Promise<void>;
 }
 
 export async function startStudioMcpBroker(upstream: StudioMcpUpstream): Promise<BrokerResource> {
   process.stderr.write("[studio-mcp] broker starting\n");
+  const token = makeBearerToken();
   const sessions = new Map<string, { server: Server; transport: StreamableHTTPServerTransport }>();
   function makeSession() {
     const server = new Server(
@@ -181,7 +208,23 @@ export async function startStudioMcpBroker(upstream: StudioMcpUpstream): Promise
 
   const httpServer = createServer(async (req, res) => {
     try {
-      if (req.url !== "/mcp") return reject(res, 404, "Not found");
+      if (
+        req.url === undefined ||
+        new URL(req.url, `http://${req.headers.host ?? "127.0.0.1"}`).pathname !== "/mcp"
+      ) {
+        return reject(res, 404, "Not found");
+      }
+      if (!isAuthorized(req, token)) {
+        res.writeHead(401, { "content-type": "application/json" });
+        res.end(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            error: { code: -32_001, message: "Unauthorized: missing or invalid broker token" },
+            id: null,
+          }),
+        );
+        return;
+      }
       const sessionId = req.headers["mcp-session-id"];
       let session = typeof sessionId === "string" ? sessions.get(sessionId) : undefined;
       let body: unknown;
@@ -206,8 +249,11 @@ export async function startStudioMcpBroker(upstream: StudioMcpUpstream): Promise
   if (!address || typeof address === "string") throw new Error("Broker did not bind a TCP port");
 
   process.stderr.write(`[studio-mcp] broker listening on ${LOOPBACK}:${address.port}\n`);
+  // Token travels as a query parameter on the surface URL so any MCP client
+  // that supports a plain endpoint URL can authenticate without extra headers.
+  const basePath = `http://${LOOPBACK}:${address.port}/mcp`;
   return {
-    info: { url: `http://${LOOPBACK}:${address.port}/mcp` },
+    info: { url: `${basePath}?token=${encodeURIComponent(token)}` },
     callTool: (name, args) =>
       Effect.tryPromise({
         try: () => upstream.callTool(name, args),

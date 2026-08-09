@@ -10,7 +10,7 @@ import {
 } from "@/lib/analytics";
 import { formatPlaytestPrompt, type PlaytestPlan } from "@/lib/playtestPlan";
 import { splitModelKey } from "@/lib/splitModelKey";
-import { usePreferences } from "@/providers/PreferencesProvider";
+import { useModelPreferences } from "@/providers/PreferencesProvider";
 
 function generationErrorCategory(error: unknown): string {
   if (!(error instanceof Error)) return "unknown";
@@ -75,7 +75,7 @@ function ListEditor({
 export default function PlaytestPanel({ onClose }: { onClose: () => void }) {
   const generate = useGeneratePlaytestPlan();
   const sendMessage = useSendMessage();
-  const { selectedModel } = usePreferences();
+  const { selectedModel } = useModelPreferences();
   const [plan, setPlan] = useState<PlaytestPlan | null>(null);
 
   const [provider, model] = selectedModel ? splitModelKey(selectedModel) : [undefined, undefined];

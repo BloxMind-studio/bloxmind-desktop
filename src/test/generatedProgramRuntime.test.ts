@@ -4,6 +4,7 @@ import { BUILTIN_EXPLORER_PROGRAM } from "@/lib/builtinStudioPrograms";
 import { ExplorerSnapshotSchema } from "@/lib/explorer";
 import {
   GeneratedProgramRuntimeError,
+  makeDirectExecutor,
   startGeneratedProgramRuntime,
 } from "../../electron/services/GeneratedProgramRuntime";
 
@@ -21,7 +22,7 @@ const envelope = (source: string) => ({
 describe("GeneratedProgramRuntime", () => {
   it("compiles TypeScript once and invokes it through the broker capability", async () => {
     const callTool = vi.fn().mockResolvedValue({ content: [{ type: "text", text: "ok" }] });
-    const runtime = startGeneratedProgramRuntime(callTool);
+    const runtime = startGeneratedProgramRuntime(callTool, { executor: makeDirectExecutor() });
     const source = `
       async function run({ input, callTool }: { input: { depth: number }; callTool: Function }) {
         const result = await callTool("inspect_place", { depth: input.depth });
@@ -42,11 +43,13 @@ describe("GeneratedProgramRuntime", () => {
   });
 
   it("restores a compiled function from a persisted artifact", async () => {
-    const firstRuntime = startGeneratedProgramRuntime(vi.fn());
+    const firstRuntime = startGeneratedProgramRuntime(vi.fn(), { executor: makeDirectExecutor() });
     const artifact = await Effect.runPromise(
       firstRuntime.compile(envelope("async function run({ input }) { return input; }")),
     );
-    const restoredRuntime = startGeneratedProgramRuntime(vi.fn());
+    const restoredRuntime = startGeneratedProgramRuntime(vi.fn(), {
+      executor: makeDirectExecutor(),
+    });
 
     await expect(
       Effect.runPromise(restoredRuntime.invoke({ artifact, input: { selected: "Workspace" } })),
@@ -68,7 +71,9 @@ describe("GeneratedProgramRuntime", () => {
   });
 
   it("classifies broker contract failures for regeneration", async () => {
-    const runtime = startGeneratedProgramRuntime(vi.fn().mockRejectedValue(new Error("gone")));
+    const runtime = startGeneratedProgramRuntime(vi.fn().mockRejectedValue(new Error("gone")), {
+      executor: makeDirectExecutor(),
+    });
     const artifact = await Effect.runPromise(
       runtime.compile(
         envelope('async function run({ callTool }) { return callTool("missing", {}); }'),
@@ -83,7 +88,7 @@ describe("GeneratedProgramRuntime", () => {
   });
 
   it("classifies non-serializable output failures for regeneration", async () => {
-    const runtime = startGeneratedProgramRuntime(vi.fn());
+    const runtime = startGeneratedProgramRuntime(vi.fn(), { executor: makeDirectExecutor() });
     const artifact = await Effect.runPromise(
       runtime.compile(envelope("async function run() { return undefined; }")),
     );
@@ -129,7 +134,7 @@ describe("GeneratedProgramRuntime", () => {
         },
       ],
     });
-    const runtime = startGeneratedProgramRuntime(callTool);
+    const runtime = startGeneratedProgramRuntime(callTool, { executor: makeDirectExecutor() });
     const artifact = await Effect.runPromise(runtime.compile(BUILTIN_EXPLORER_PROGRAM));
     const result = await Effect.runPromise(runtime.invoke({ artifact, input: null }));
     const snapshot = await Effect.runPromise(

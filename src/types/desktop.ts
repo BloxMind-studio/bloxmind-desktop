@@ -59,7 +59,7 @@ const MutableStrings = Schema.mutable(Schema.Array(Schema.String));
 
 export const ThemePreferenceSchema = Schema.Literal("light", "dark", "system");
 export const DetailedAnalyticsPreferenceSchema = Schema.Literal("unset", "enabled", "disabled");
-export const AccentColorSchema = Schema.Literal("blue", "violet", "emerald", "rose", "amber");
+export const AccentColorSchema = Schema.Literal("blue", "violet", "indigo", "emerald", "rose", "amber");
 export const LayoutDensitySchema = Schema.Literal("compact", "comfortable");
 
 export type ThemePreference = typeof ThemePreferenceSchema.Type;
@@ -105,7 +105,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   defaultVariant: null,
   studioTargetPrograms: null,
   studioTargetsBySession: {},
-  accentColor: "blue",
+  accentColor: "indigo",
   layoutDensity: "comfortable",
   fontSize: 1,
   soundEffects: true,

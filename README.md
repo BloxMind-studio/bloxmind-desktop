@@ -2,7 +2,7 @@
 
 AI-assisted Roblox development. BloxMind is a free, open-source desktop app that connects any AI model to Roblox Studio's official MCP server, so you can build games by describing what you want.
 
-**[Download the latest release](https://github.com/YUouriii/app-BloxMind-ai/releases/latest)** | **[Website](https://BloxMind.ai)**
+**[Download the latest release](https://github.com/YUouriii/app-BloxMind-ai/releases/latest)** | **[Website](https://bloxmindai.netlify.app/)**
 
 > **Note:** This project includes proprietary modifications and new features. See [LICENSE](LICENSE) for ownership and usage terms.
 

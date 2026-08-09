@@ -1,11 +1,11 @@
 import { useRef } from "react";
 import { toast } from "sonner";
 import { desktop } from "@/lib/desktop";
-import { usePreferences } from "@/providers/PreferencesProvider";
+import { useModelPreferences } from "@/providers/PreferencesProvider";
 import { type AppConfig, DEFAULT_APP_CONFIG } from "@/types/desktop";
 
 export function PrivacyTab() {
-  const { detailedAnalyticsEnabled, setDetailedAnalyticsEnabled } = usePreferences();
+  const { detailedAnalyticsEnabled, setDetailedAnalyticsEnabled } = useModelPreferences();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function handleExport() {

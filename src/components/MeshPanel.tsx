@@ -10,7 +10,7 @@ import {
 } from "@/lib/analytics";
 import { formatMeshPrompt, MESH_STYLES, type MeshRequest, type MeshStyle } from "@/lib/meshRequest";
 import { splitModelKey } from "@/lib/splitModelKey";
-import { usePreferences } from "@/providers/PreferencesProvider";
+import { useModelPreferences } from "@/providers/PreferencesProvider";
 
 function enhanceErrorCategory(error: unknown): string {
   if (!(error instanceof Error)) return "unknown";
@@ -25,7 +25,7 @@ function enhanceErrorCategory(error: unknown): string {
 export default function MeshPanel({ onClose }: { onClose: () => void }) {
   const sendMessage = useSendMessage();
   const enhance = useEnhanceMeshBrief();
-  const { selectedModel } = usePreferences();
+  const { selectedModel } = useModelPreferences();
   const [brief, setBrief] = useState("");
   const [style, setStyle] = useState<MeshStyle>("blocky");
   const [maxSize, setMaxSize] = useState("");

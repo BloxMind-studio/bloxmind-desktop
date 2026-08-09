@@ -644,6 +644,18 @@ describe("User journeys", () => {
       );
     });
 
+    // SSE: session busy (tool is streaming)
+    act(() => {
+      sseDispatch(
+        queryClient,
+        {
+          type: "session.status",
+          properties: { sessionID: "s1", status: { type: "busy" } },
+        },
+        activeRef,
+      );
+    });
+
     // SSE: tool part — bash command running
     act(() => {
       sseDispatch(
@@ -671,12 +683,12 @@ describe("User journeys", () => {
 
     // The bash command should be visible after expanding the thinking block
     await waitFor(() => {
-      expect(screen.getByText(/^Thought for/)).toBeInTheDocument();
+      expect(screen.getByText("Thought")).toBeInTheDocument();
     });
-    await fireEvent.click(screen.getByText(/^Thought for/));
+    await fireEvent.click(screen.getByText("Thought"));
     await waitFor(() => {
       expect(screen.getByText("List source files")).toBeInTheDocument();
-      expect(screen.getByText("ls -la src/")).toBeInTheDocument();
+      expect(screen.getByText("$ ls -la src/")).toBeInTheDocument();
       expect(screen.getByText("Running...")).toBeInTheDocument();
     });
 
@@ -709,6 +721,23 @@ describe("User journeys", () => {
     // Running indicator should be gone, output should be available
     await waitFor(() => {
       expect(screen.queryByText("Running...")).not.toBeInTheDocument();
+    });
+
+    // SSE: session idle — turn finished
+    act(() => {
+      sseDispatch(
+        queryClient,
+        {
+          type: "session.status",
+          properties: { sessionID: "s1", status: { type: "idle" } },
+        },
+        activeRef,
+      );
+    });
+
+    // The thought header stays visible after the turn ends.
+    await waitFor(() => {
+      expect(screen.getByText("Thought")).toBeInTheDocument();
     });
   });
 

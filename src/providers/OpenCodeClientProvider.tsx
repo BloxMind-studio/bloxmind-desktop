@@ -25,6 +25,8 @@ export const SSE_HEARTBEAT_TIMEOUT = 30_000; // No events for 30s → force reco
 export const SSE_HEARTBEAT_INTERVAL = 5_000; // Check every 5s
 export const SSE_POLL_INTERVAL = 1_000; // Server health-check poll interval
 export const SSE_POLL_TIMEOUT = 3_000; // Per-poll request timeout
+export const SSE_MAX_RECONNECT_ATTEMPTS = 10; // Stop retrying after this many consecutive failures
+export const SSE_STARTUP_POLL_TIMEOUT = 60_000; // Max time to wait for server during startup
 export const SIDE_PANEL_EXIT_MS = 180; // Side panel exit animation duration
 export const TOOLTIP_DURATION_MS = 2_500; // Project index tooltip display duration
 
@@ -219,9 +221,10 @@ export function OpenCodeClientProvider({
       return desktop.getOpenCodeInfo();
     }
 
-    // Step 2: Poll the HTTP server until it responds.
+    // Step 2: Poll the HTTP server until it responds (bounded timeout).
     async function waitForServer(baseUrl: string, authorization: string): Promise<void> {
-      while (!cancelled) {
+      const deadline = Date.now() + SSE_STARTUP_POLL_TIMEOUT;
+      while (!cancelled && Date.now() < deadline) {
         try {
           const res = await fetch(`${baseUrl}/session`, {
             headers: { Authorization: authorization },
@@ -236,7 +239,8 @@ export function OpenCodeClientProvider({
           retryTimer = setTimeout(r, SSE_POLL_INTERVAL);
         });
       }
-      throw new Error("cancelled");
+      if (cancelled) throw new Error("cancelled");
+      throw new Error(`Server did not respond within ${SSE_STARTUP_POLL_TIMEOUT / 1000}s`);
     }
 
     async function init() {
@@ -296,6 +300,7 @@ export function OpenCodeClientProvider({
     let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
     let lastEventTime = Date.now();
     let streamAbortController: AbortController | null = null;
+    let permanentlyDisconnected = false;
 
     function showReconnectToast() {
       if (reconnectToastId != null) return;
@@ -309,6 +314,23 @@ export function OpenCodeClientProvider({
       });
     }
 
+    function showPermanentlyDisconnectedToast() {
+      if (reconnectToastId != null) return;
+      reconnectToastId = toast.error("Connection lost", {
+        description: `Couldn't reconnect after ${SSE_MAX_RECONNECT_ATTEMPTS} attempts.`,
+        duration: Number.POSITIVE_INFINITY,
+        action: {
+          label: "Try again",
+          onClick: () => {
+            consecutiveFailures = 0;
+            permanentlyDisconnected = false;
+            dismissReconnectToast();
+            scheduleReconnect();
+          },
+        },
+      });
+    }
+
     function dismissReconnectToast() {
       if (reconnectToastId != null) {
         toast.dismiss(reconnectToastId);
@@ -318,10 +340,15 @@ export function OpenCodeClientProvider({
 
     function scheduleReconnect() {
       clearTimeout(reconnectTimer);
+      if (consecutiveFailures >= SSE_MAX_RECONNECT_ATTEMPTS) {
+        permanentlyDisconnected = true;
+        showPermanentlyDisconnectedToast();
+        return;
+      }
       const backoff = Math.min(sseReconnectDelay * 2 ** Math.min(consecutiveFailures, 5), 30_000);
       const delay = consecutiveFailures === 0 ? sseReconnectDelay : backoff;
       reconnectTimer = setTimeout(() => {
-        if (!abortController.signal.aborted) void subscribe();
+        if (!abortController.signal.aborted && !permanentlyDisconnected) void subscribe();
       }, delay);
     }
 

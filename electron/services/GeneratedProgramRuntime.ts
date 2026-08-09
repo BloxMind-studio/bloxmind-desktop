@@ -1,4 +1,8 @@
 import { createHash } from "node:crypto";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { Worker } from "node:worker_threads";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 import { Context, Data, Effect, Layer, Schema } from "effect";
@@ -45,9 +49,6 @@ export class GeneratedProgramRuntime extends Context.Tag("@BloxMind/GeneratedPro
 class ToolContractError extends Error {}
 
 function runtimeError(phase: GeneratedProgramFailurePhase, message: string, cause: unknown) {
-  // The renderer only ever sees the IPC error message, so the underlying
-  // reason must travel inside it (e.g. why Studio rejected an Explorer
-  // request) instead of being buried in the Effect cause chain.
   const detail = cause instanceof Error && cause.message ? `: ${cause.message}` : "";
   return new GeneratedProgramRuntimeError({
     phase,
@@ -65,20 +66,165 @@ function cacheKey(envelope: GeneratedProgramEnvelope): string {
     .digest("hex");
 }
 
-function makeFunction(compiledSource: string): ProgramFunction {
-  const AsyncFunction = Object.getPrototypeOf(async () => undefined).constructor as new (
-    ...args: string[]
-  ) => ProgramFunction;
-  return new AsyncFunction(
-    "input",
-    "callTool",
-    `"use strict";\n${compiledSource}\nif (typeof run !== "function") throw new Error("Generated program must define async function run({ input, callTool })");\nreturn await run({ input, callTool });`,
-  );
+const WORKER_TIMEOUT_MS = 30_000;
+
+type ProgramExecutor = (
+  compiledSource: string,
+  input: unknown,
+  callTool: CallTool,
+) => Promise<unknown>;
+
+export function makeDirectExecutor(): ProgramExecutor {
+  return async (compiledSource, input, callTool) => {
+    const AsyncFunction = Object.getPrototypeOf(async () => undefined).constructor as new (
+      ...args: string[]
+    ) => ProgramFunction;
+    const fn = new AsyncFunction(
+      "input",
+      "callTool",
+      `"use strict";\n${compiledSource}\nif (typeof run !== "function") throw new Error("Generated program must define async function run({ input, callTool })");\nreturn await run({ input, callTool });`,
+    );
+    return await fn(input, callTool);
+  };
 }
 
-export function startGeneratedProgramRuntime(callTool: CallTool): GeneratedProgramRuntimeService {
+function buildWorkerScript(compiledSource: string): string {
+  return `
+"use strict";
+
+const runs = (() => {
+  ${compiledSource}
+  if (typeof run !== "function") {
+    throw new Error("Generated program must define async function run({ input, callTool })");
+  }
+  return run;
+})();
+
+const { parentPort } = require("node:worker_threads");
+if (!parentPort) throw new Error("Worker must be started with a MessagePort");
+
+parentPort.on("message", async (message) => {
+  if (!message || message.type !== "invoke") return;
+  const { input } = message;
+  let callToolIndex = 0;
+
+  const callTool = async (name, args) => {
+    const callId = callToolIndex++;
+    parentPort.postMessage({ type: "callTool", id: callId, name, args });
+    return await new Promise((resolve, reject) => {
+      const handler = (msg) => {
+        if (msg && msg.type === "callToolResult" && msg.id === callId) {
+          parentPort.off("message", handler);
+          if (msg.error) reject(new Error(msg.error));
+          else resolve(msg.result);
+        }
+      };
+      parentPort.on("message", handler);
+    });
+  };
+
+  try {
+    const result = await runs({ input, callTool });
+    parentPort.postMessage({ type: "result", value: result });
+  } catch (err) {
+    parentPort.postMessage({
+      type: "result",
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+});
+`;
+}
+
+function makeWorkerExecutor(timeoutMs: number = WORKER_TIMEOUT_MS): ProgramExecutor {
+  return async (compiledSource, input, callTool) => {
+    const workerScript = buildWorkerScript(compiledSource);
+    const tempDir = await mkdtemp(join(tmpdir(), "bloxmind-program-"));
+    const scriptPath = join(tempDir, "program.js");
+    await writeFile(scriptPath, workerScript, "utf8");
+
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        worker.terminate();
+        reject(new Error(`Program execution timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+
+      const worker = new Worker(scriptPath, {
+        eval: false,
+        workerData: undefined,
+        execArgv: [],
+      });
+
+      worker.on("error", (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+
+      worker.on("exit", (code) => {
+        clearTimeout(timer);
+        if (code !== 0) {
+          reject(new Error(`Worker exited with code ${code}`));
+        }
+      });
+
+      worker.on(
+        "message",
+        async (message: {
+          type: string;
+          id?: number;
+          name?: string;
+          args?: Record<string, unknown>;
+          result?: unknown;
+          error?: string;
+          value?: unknown;
+        }) => {
+          if (message.type === "callTool") {
+            if (!message.name) {
+              worker.postMessage({
+                type: "callToolResult",
+                id: message.id,
+                error: "callTool message missing required 'name' field",
+              });
+              return;
+            }
+            try {
+              const result = await callTool(message.name, message.args ?? {});
+              worker.postMessage({ type: "callToolResult", id: message.id, result });
+            } catch (err) {
+              worker.postMessage({
+                type: "callToolResult",
+                id: message.id,
+                error: err instanceof Error ? err.message : String(err),
+              });
+            }
+          } else if (message.type === "result") {
+            clearTimeout(timer);
+            if (message.error) {
+              reject(new Error(message.error));
+            } else {
+              resolve(message.value);
+            }
+            worker.terminate();
+          }
+        },
+      );
+
+      worker.postMessage({ type: "invoke", input });
+    });
+  };
+}
+
+export interface GeneratedProgramRuntimeOptions {
+  executor?: ProgramExecutor;
+}
+
+export function startGeneratedProgramRuntime(
+  callTool: CallTool,
+  options: GeneratedProgramRuntimeOptions = {},
+): GeneratedProgramRuntimeService {
+  const executor = options.executor ?? makeWorkerExecutor();
   const artifacts = new Map<string, GeneratedProgramArtifact>();
-  const functions = new Map<string, ProgramFunction>();
+  const compiledSources = new Map<string, string>();
 
   const compile = async (candidate: GeneratedProgramEnvelope) => {
     const envelope = await Schema.decodeUnknownPromise(GeneratedProgramEnvelopeSchema)(candidate);
@@ -94,7 +240,7 @@ export function startGeneratedProgramRuntime(callTool: CallTool): GeneratedProgr
       contract: envelope.contract,
       compiledSource,
     });
-    functions.set(key, makeFunction(compiledSource));
+    compiledSources.set(key, compiledSource);
     artifacts.set(key, artifact);
     return artifact;
   };
@@ -114,13 +260,10 @@ export function startGeneratedProgramRuntime(callTool: CallTool): GeneratedProgr
             runtimeError("runtime", "Generated program invocation is invalid", cause),
           ),
         );
-        let program = functions.get(invocation.artifact.cacheKey);
-        if (!program) {
-          program = yield* Effect.try({
-            try: () => makeFunction(invocation.artifact.compiledSource),
-            catch: (cause) => runtimeError("compile", "Cached generated program is invalid", cause),
-          });
-          functions.set(invocation.artifact.cacheKey, program);
+        let compiledSource = compiledSources.get(invocation.artifact.cacheKey);
+        if (!compiledSource) {
+          compiledSource = invocation.artifact.compiledSource;
+          compiledSources.set(invocation.artifact.cacheKey, compiledSource);
         }
         const guardedCallTool: CallTool = async (name, args) => {
           try {
@@ -132,7 +275,7 @@ export function startGeneratedProgramRuntime(callTool: CallTool): GeneratedProgr
           }
         };
         const value = yield* Effect.tryPromise({
-          try: () => program(invocation.input, guardedCallTool),
+          try: () => executor(compiledSource, invocation.input, guardedCallTool),
           catch: (cause) =>
             cause instanceof ToolContractError
               ? runtimeError("tool-contract", "Generated program tool contract failed", cause)

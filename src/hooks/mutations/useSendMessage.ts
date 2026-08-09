@@ -11,7 +11,7 @@ import { qk } from "@/lib/queryKeys";
 import { splitModelKey } from "@/lib/splitModelKey";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
-import { usePreferences } from "@/providers/PreferencesProvider";
+import { useModelPreferences } from "@/providers/PreferencesProvider";
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -54,7 +54,7 @@ interface SendMessageContext {
 export function useSendMessage(options?: { onError?: (error: Error) => void }) {
   const { client } = useOpenCodeClient();
   const { activeSessionId } = useActiveSession();
-  const { selectedModel, selectedAgent, selectedVariant } = usePreferences();
+  const { selectedModel, selectedAgent, selectedVariant } = useModelPreferences();
   const queryClient = useQueryClient();
 
   return useMutation<void, Error, SendMessageInput, SendMessageContext | undefined>({
@@ -162,6 +162,30 @@ export function useSendMessage(options?: { onError?: (error: Error) => void }) {
         }
         return next;
       });
+    },
+
+    // Reconcile the optimistic status with the server's authoritative value.
+    // SSE normally drives the session back to idle, but a missed/dropped event
+    // after `promptAsync` resolves would otherwise leave the optimistic "busy"
+    // stuck forever (the 5s watchdog poll recovers it, but slowly). Fetching
+    // status here converges the cache immediately on both success and error.
+    onSettled: async (_data, _error, _input, context) => {
+      if (!context || !client) return;
+      try {
+        const res = await client.session.status({}, { throwOnError: true });
+        const authoritative = res.data?.[context.sessionID];
+        if (!authoritative) return;
+        queryClient.setQueryData<Record<string, SessionStatus>>(qk.statuses, (previous) => {
+          // Only reconcile when the cache still holds our optimistic "busy":
+          // if a newer SSE event already landed (non-busy), that is fresher
+          // than this fetch and must win.
+          if (previous?.[context.sessionID]?.type !== "busy") return previous;
+          return { ...previous, [context.sessionID]: authoritative };
+        });
+      } catch {
+        // Transient fetch failure: keep the rolled-back/optimistic value; the
+        // statuses watchdog poll reconciles on its next tick.
+      }
     },
   });
 }

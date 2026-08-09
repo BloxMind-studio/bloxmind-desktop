@@ -498,7 +498,7 @@ export function ProvidersTab() {
                             handleOAuthCode(dialog.provider.id);
                           }
                         }}
-                        className="h-8 flex-1 rounded border bg-background px-2 font-mono text-xs placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
+                        className="h-8 flex-1 rounded border bg-background px-2 font-mono text-xs placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-accent/40"
                         // biome-ignore lint/a11y/noAutofocus: move focus into the freshly opened connect dialog
                         autoFocus
                       />
@@ -534,7 +534,7 @@ export function ProvidersTab() {
                         handleSaveKey(dialog.provider.id);
                       }
                     }}
-                    className="h-8 flex-1 rounded border bg-background px-2 font-mono text-xs placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
+                    className="h-8 flex-1 rounded border bg-background px-2 font-mono text-xs placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-accent/40"
                     // biome-ignore lint/a11y/noAutofocus: move focus into the freshly opened connect dialog
                     autoFocus
                   />

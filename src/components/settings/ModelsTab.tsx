@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { POPULAR_PROVIDERS } from "@/components/settings/constants";
 import { useAllModels, useConnectedProviders } from "@/hooks/useProviders";
-import { usePreferences } from "@/providers/PreferencesProvider";
+import { useModelPreferences } from "@/providers/PreferencesProvider";
 import type { ModelInfo } from "@/types";
 
 export function ModelsTab() {
   const allModels = useAllModels();
   const connectedProviders = useConnectedProviders();
-  const { hiddenModels, toggleModelVisibility } = usePreferences();
+  const { hiddenModels, toggleModelVisibility } = useModelPreferences();
 
   const [search, setSearch] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
@@ -94,7 +94,7 @@ export function ModelsTab() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search models..."
-            className="h-8 flex-1 bg-transparent text-xs placeholder:text-muted-foreground/40 focus:outline-none"
+            className="h-8 flex-1 bg-transparent text-xs placeholder:text-muted-foreground/40 focus:outline-none focus-visible:outline-none! focus-visible:ring-0! focus:shadow-none"
           />
           {search && (
             <button

@@ -73,8 +73,16 @@ export const MessageBubble = memo(function MessageBubble({
   return (
     <div className={`animate-fade-in-up flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div
-        className={`max-w-[85%] ${isUser ? "rounded-2xl rounded-br-md bg-foreground px-3.5 py-2 text-background" : "w-full"}`}
+        className={`group relative max-w-[85%] ${
+          isUser
+            ? "rounded-2xl rounded-br-sm bg-gradient-to-br from-foreground to-foreground/95 px-4 py-2.5 text-background shadow-lg shadow-foreground/20"
+            : "w-full"
+        }`}
       >
+        {/* Subtle glow effect for user messages */}
+        {isUser && (
+          <div className="absolute -inset-0.5 rounded-2xl rounded-br-sm bg-gradient-to-br from-accent/30 to-accent/10 blur-sm -z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+        )}
         {isUser ? (
           <UserPartsView parts={msg.parts} />
         ) : (

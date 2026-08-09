@@ -7,7 +7,7 @@ import { qk } from "@/lib/queryKeys";
 import type { MessagesCache } from "@/lib/sseDispatch";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
-import { usePreferences } from "@/providers/PreferencesProvider";
+import { useModelPreferences } from "@/providers/PreferencesProvider";
 import type { ModelInfo } from "@/types";
 
 // ── Types ────────────────────────────────────────────────────────────────
@@ -103,7 +103,7 @@ function resolveContextWindow(modelId: string | undefined, allModels: ModelInfo[
 const ContextUsageIndicator = memo(function ContextUsageIndicator({
   className = "",
 }: ContextUsageIndicatorProps) {
-  const { selectedModel } = usePreferences();
+  const { selectedModel } = useModelPreferences();
   const { activeSessionId } = useActiveSession();
   const allModels = useAllModels();
   const queryClient = useQueryClient();

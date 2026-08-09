@@ -1,12 +1,13 @@
-import { exec } from "node:child_process";
+import { execFile } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import { access, chmod, copyFile, mkdir, readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-
 import { Data, Effect, Layer } from "effect";
+import extractZip from "extract-zip";
+import { x as extractTar } from "tar";
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -165,42 +166,17 @@ function findPluginAsset(release: LatestRelease): ReleaseAsset {
   return asset;
 }
 
-async function extractZip(archivePath: string, destinationDir: string): Promise<void> {
+async function extractArchive(archivePath: string, destinationDir: string): Promise<void> {
   await mkdir(destinationDir, { recursive: true });
-  try {
-    await new Promise<void>((resolve, reject) => {
-      exec(`tar -xf "${archivePath}" -C "${destinationDir}"`, { windowsHide: true }, (err) => {
-        if (err) reject(err);
-        else resolve();
-      });
-    });
-    return;
-  } catch {
-    // fallback
-  }
-  if (process.platform === "win32") {
-    await new Promise<void>((resolve, reject) => {
-      exec(
-        `powershell -NoProfile -Command "Expand-Archive -Path '${archivePath}' -DestinationPath '${destinationDir}' -Force"`,
-        { windowsHide: true },
-        (err) => {
-          if (err) reject(err);
-          else resolve();
-        },
-      );
-    });
+  if (archivePath.endsWith(".zip")) {
+    await extractZip(archivePath, { dir: destinationDir });
     return;
   }
   if (archivePath.endsWith(".tar.gz")) {
-    await new Promise<void>((resolve, reject) => {
-      exec(`tar -xzf "${archivePath}" -C "${destinationDir}"`, { windowsHide: true }, (err) => {
-        if (err) reject(err);
-        else resolve();
-      });
-    });
+    await extractTar({ file: archivePath, cwd: destinationDir, strict: true });
     return;
   }
-  throw new Error(`Cannot extract ${archivePath}`);
+  throw new Error(`Cannot extract ${archivePath}: unsupported archive format`);
 }
 
 async function findBinaryInDir(dir: string): Promise<string | null> {
@@ -232,7 +208,7 @@ async function isRobloxStudioRunning(): Promise<boolean> {
   try {
     // Use tasklist to check for RobloxStudioBeta.exe
     const stdout = await new Promise<string>((resolve, reject) => {
-      exec("tasklist", { encoding: "utf8", windowsHide: true }, (err, stdout) => {
+      execFile("tasklist", { encoding: "utf8", windowsHide: true }, (err, stdout) => {
         if (err) reject(err);
         else resolve(stdout as string);
       });
@@ -292,7 +268,10 @@ function buildInstaller(options: RojoInstallerOptions): RojoInstaller {
 
         report(onProgress, "binary-extract", "Extracting Rojo binary…", 100);
         const extractDir = join(options.binDirectory, `extract-${version}`);
-        yield* toEffectTry(() => extractZip(zipTemp, extractDir), "Failed to extract Rojo binary");
+        yield* toEffectTry(
+          () => extractArchive(zipTemp, extractDir),
+          "Failed to extract Rojo binary",
+        );
         const found = yield* toEffectTry(
           () => findBinaryInDir(extractDir),
           "Failed to locate extracted Rojo binary",

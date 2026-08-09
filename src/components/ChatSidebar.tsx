@@ -387,7 +387,7 @@ const ChatSidebar = memo(function ChatSidebar({
                               if (e.key === "Enter") commitRename();
                               if (e.key === "Escape") setEditingId(null);
                             }}
-                            className="w-full rounded bg-background px-1 text-xs outline-none ring-1 ring-ring"
+                            className="w-full rounded bg-background px-1 text-xs outline-none ring-1 ring-accent/40"
                           />
                           <div className="mt-0.5 text-[10px] text-muted-foreground">
                             {formatTime(session.time.updated)}

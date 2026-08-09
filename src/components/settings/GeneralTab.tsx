@@ -1,6 +1,7 @@
-import { usePreferences } from "@/providers/PreferencesProvider";
+import { useUIPreferences } from "@/providers/PreferencesProvider";
 
 const ACCENT_COLORS = [
+  { value: "indigo" as const, label: "Indigo", class: "bg-indigo-500" },
   { value: "blue" as const, label: "Blue", class: "bg-blue-500" },
   { value: "violet" as const, label: "Violet", class: "bg-violet-500" },
   { value: "emerald" as const, label: "Emerald", class: "bg-emerald-500" },
@@ -18,7 +19,7 @@ export function GeneralTab() {
     setFontSize,
     soundEffects,
     setSoundEffects,
-  } = usePreferences();
+  } = useUIPreferences();
 
   return (
     <div className="mx-auto w-full max-w-md px-6 py-8">
