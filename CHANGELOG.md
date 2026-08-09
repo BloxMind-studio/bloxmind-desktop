@@ -5,6 +5,12 @@ All notable changes to BloxMind are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.12] - 2026-08-09
+
+### Fixed
+
+- Resolved biome lint formatting errors in `src/components/chat/Prompts.tsx` and `src/types/desktop.ts` to ensure clean CI builds.
+
 ## [0.9.11] - 2026-08-09
 
 ### Fixed
