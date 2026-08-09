@@ -223,6 +223,51 @@ local track = animator:LoadAnimation(makeAnimation(ids["punch1"]))
 Respawn can change rig type (avatar updates), so resolve rig type on every
 character spawn, never cache it across respawns.
 
+## Debugging rigs and animations (do this before retrying anything)
+
+- NEVER guess engine methods. There is no \`Humanoid:GetRigInfo()\` or similar
+  reflection helper — calling invented methods throws at runtime and burns
+  turns in retry loops. Inspect what actually exists instead:
+  \`GetDescendants\`, \`FindFirstChild\`, \`IsA\`, then print the result via
+  \`game:GetService("HttpService"):JSONEncode(...)\`.
+- Enumerate the real joint structure before authoring or debugging a rig:
+
+\`\`\`lua
+local joints = {}
+for _, descendant in ipairs(character:GetDescendants()) do
+    if descendant:IsA("Motor6D") then
+        table.insert(joints, {
+            Name = descendant.Name,
+            Part0 = descendant.Part0 and descendant.Part0.Name,
+            Part1 = descendant.Part1 and descendant.Part1.Name,
+        })
+    end
+end
+print(game:GetService("HttpService"):JSONEncode(joints))
+\`\`\`
+
+- \`Pose.Name\` must match the **Motor6D name** (\`RightShoulder\`), never the
+  child part name (\`RightUpperArm\`). A pose bound to the wrong name applies
+  to no joint and the whole track plays as if empty.
+- Load and play tracks through \`humanoid:WaitForChild("Animator")\`; playing
+  directly on Humanoid — or mutating Pose instances while a track is active —
+  silently fails to update joint transforms.
+- Verify joint state statically, never through live input. Do not brute-force
+  simulated keyboard input (\`user_keyboard_input\`) to catch sub-second states
+  such as hit-stop — pause the track (\`AdjustSpeed(0)\`), then read or set the
+  joint's \`Motor6D.Transform\` directly:
+
+\`\`\`lua
+local rightShoulder = character:FindFirstChild("RightShoulder", true)
+if rightShoulder and rightShoulder:IsA("Motor6D") then
+    print("Current Transform CFrame:", rightShoulder.Transform)
+    rightShoulder.Transform = CFrame.Angles(math.rad(90), 0, 0) -- static pose check
+end
+\`\`\`
+
+- If two identical attempts give different results, re-enumerate the rig
+  first — respawn and avatar updates can change joint names and rig type.
+
 ## Gotchas
 
 - Animation IDs from \`KeyframeSequenceProvider:RegisterKeyframeSequence\` are
@@ -374,8 +419,21 @@ build strictly from it:
   corridors 8-10 studs wide and 10-12 tall so R6/R15 avatars move freely;
   floor slabs 1-2 studs thick. Scale every kit part to these before cloning.
 - Prefer building structurally via the Studio MCP integration when available
-  over editing mesh/union raw geometry; avoid \`Union\`/\`NegatePart\` in the
-  shipped map — they inflate physics cost.
+  over editing raw geometry. For committed static CSG, pre-bake unions in
+  Studio so they ship as ready-made \`PartOperation\`/\`MeshPart\` parts.
+- **Runtime CSG / solid modeling:** scripted boolean operations use
+  \`game:GetService("GeometryService")\` — there is **no \`SolidModeling\`
+  service**. Its methods return an array of parts (not a single part, unlike
+  the deprecated \`BasePart:UnionAsync\`):
+  - \`GeometryService:UnionAsync(targetPart, partsToUnion)\` — combine shapes
+  - \`GeometryService:SubtractAsync(targetPart, partsToSubtract)\` — carve out
+  - \`GeometryService:IntersectAsync(targetPart, partsToIntersect)\` — overlap
+  - \`GeometryService:SweepPartAsync(...)\` /
+    \`GeometryService:FragmentAsync(...)\` — advanced carving
+  Keep runtime CSG small and deliberate — it is expensive at runtime; prefer
+  pre-baked geometry for large or repeated unions.
+- When unsure an engine API exists, verify it live in the Studio Command Bar
+  or Output instead of guessing and hitting a 404.
 - Decorative thin geometry: \`CanCollide = false\` where players should pass
   through (grass, banners, small props).
 
@@ -481,6 +539,10 @@ const AGENTS_MD_BLOCK = `${AGENTS_MD_MARKER_BEGIN}
 - Prefer one focused Studio MCP verification over repeated polling.
 - Reuse an earlier game-tree snapshot from this session instead of re-listing.
 - Report briefly: what changed, how it was verified, one known limitation.
+- Stay time-aware: note the elapsed time in your reasoning, and don't
+  overthink. Hard cap: 2 minutes per subtask — if you're still deciding after
+  that, commit to the most reasonable option and move immediately. Never loop
+  on "verify again" or re-planning the same step.
 
 ### Luau quality
 - Type-annotate exported functions, use descriptive camelCase names, and guard
@@ -494,6 +556,12 @@ const AGENTS_MD_BLOCK = `${AGENTS_MD_MARKER_BEGIN}
 - Anchor static map parts; keep gameplay surfaces collidable.
 - After editing Rojo-synced files, wait briefly before asserting they are
   live in Studio.
+- Never guess that a Roblox method exists (e.g. Humanoid:GetRigInfo() does
+  not exist); inspect with FindFirstChild/GetDescendants or verify in the
+  Studio Command Bar before calling it.
+- Never verify transient states (hit-stop, single-frame impacts) via simulated
+  keyboard input — freeze playback and inspect Motor6D.Transform or the
+  KeyframeSequence data statically instead.
 
 ### Skills
 - Domain playbooks live in .opencode/skills/ (animation, map planning and

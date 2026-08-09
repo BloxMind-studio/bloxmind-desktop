@@ -1,5 +1,5 @@
 import type { Part } from "@opencode-ai/sdk/v2/client";
-import { lazy, memo, Suspense, useState } from "react";
+import { lazy, memo, Suspense, useEffect, useRef, useState } from "react";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { InlineDisclosure } from "@/components/chat/InlineDisclosure";
@@ -425,6 +425,16 @@ export const CompactionPartView = memo(function CompactionPartView() {
 
 const ThinkingBlock = memo(function ThinkingBlock({ parts }: { parts: Part[] }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+  const startTimeRef = useRef<number | null>(null);
+
+  // Update the clock while the thought is open so elapsed time is live.
+  // Must run before any early return so hooks stay in a stable order.
+  useEffect(() => {
+    if (!isOpen) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [isOpen]);
 
   if (parts.length === 0) return null;
 
@@ -438,6 +448,30 @@ const ThinkingBlock = memo(function ThinkingBlock({ parts }: { parts: Part[] }) 
   const hasSteps = parts.some((p) => p.type === "step-start" || p.type === "step-finish");
 
   if (!hasTools && !hasReasoning && !hasSteps) return null;
+
+  // Seed start time from part timestamps if available, otherwise from the
+  // first time this thought is opened.
+  if (startTimeRef.current == null) {
+    const reasoningParts = parts.filter((p) => p.type === "reasoning") as Extract<
+      Part,
+      { type: "reasoning" }
+    >[];
+    const firstReasoning = reasoningParts[0];
+    // Only reasoning parts carry time metadata; step-finish parts have none.
+    startTimeRef.current = firstReasoning?.time.start ?? now;
+  }
+
+  const elapsedMs = Math.max(0, now - (startTimeRef.current ?? now));
+
+  const formatElapsed = (ms: number) => {
+    const seconds = Math.floor(ms / 1000);
+    if (seconds >= 120) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+    if (seconds >= 60) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+    if (seconds > 0) return `${seconds}s`;
+    return `${Math.max(0, Math.floor(ms / 1000))}s`;
+  };
+
+  const elapsedText = formatElapsed(elapsedMs);
 
   return (
     <div className="mb-2">
@@ -477,7 +511,9 @@ const ThinkingBlock = memo(function ThinkingBlock({ parts }: { parts: Part[] }) 
           <path d="M12 8h.01" />
         </svg>
         <span className="font-medium">
-          {hasTools ? `Thought process` : "Reasoning"}
+          {hasTools
+            ? `Thought for ${elapsedText || "..."}`
+            : `Reasoning for ${elapsedText || "..."}`}
           {hasTools && (
             <span className="ml-1 text-muted-foreground/60">({toolNames.join(", ")})</span>
           )}

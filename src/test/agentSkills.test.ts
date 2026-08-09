@@ -101,6 +101,33 @@ describe("agent skill pack", () => {
     expect(runtime).toMatch(/Rig-aware playback/);
   });
 
+  it("guards the agent against hallucinated APIs and live-input brute force", () => {
+    const runtime = AGENT_SKILLS.find((skill) =>
+      skill.relativePath.endsWith("roblox-animation-runtime/SKILL.md"),
+    )?.content;
+    expect(runtime).toBeDefined();
+    expect(runtime).toMatch(/NEVER guess engine methods/);
+    expect(runtime).toContain("GetRigInfo");
+    expect(runtime).toContain("GetDescendants");
+    expect(runtime).toContain("Motor6D.Transform");
+    expect(runtime).toMatch(/Pose\.Name/);
+    expect(runtime).toContain("user_keyboard_input");
+    expect(runtime).toMatch(/statically/);
+  });
+
+  it("bakes API-verification and static-verification rules into AGENTS.md", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "bloxmind-skills-"));
+    tempDirectories.push(workspace);
+
+    await writeAgentsMarkdown(workspace);
+
+    const agentsMd = await readFile(join(workspace, "AGENTS.md"), "utf8");
+    expect(agentsMd).toMatch(/Never guess/i);
+    expect(agentsMd).toContain("GetRigInfo");
+    expect(agentsMd).toMatch(/simulated\s+keyboard input/i);
+    expect(agentsMd).toContain("Motor6D.Transform");
+  });
+
   it("enforces plan-before-build with zoning, scale numbers, and flow", () => {
     const planning = AGENT_SKILLS.find((skill) =>
       skill.relativePath.endsWith("roblox-map-planning/SKILL.md"),
@@ -162,6 +189,24 @@ describe("agent skill pack", () => {
     expect(building).toMatch(/Clone/i);
   });
 
+  it("uses GeometryService for runtime CSG and forbids the phantom SolidModeling service", () => {
+    const building = AGENT_SKILLS.find((skill) =>
+      skill.relativePath.endsWith("roblox-map-building/SKILL.md"),
+    )?.content;
+    expect(building).toBeDefined();
+    expect(building).toContain('game:GetService("GeometryService")');
+    expect(building).toContain("UnionAsync");
+    expect(building).toContain("SubtractAsync");
+    expect(building).toContain("IntersectAsync");
+    expect(building).toContain("SweepPartAsync");
+    expect(building).toContain("FragmentAsync");
+    expect(building).toContain("SolidModeling");
+    expect(building).toContain("there is **no");
+    expect(building).toContain("service**");
+    expect(building).toMatch(/pre-bake/i);
+    expect(building).toMatch(/verify it .* Command Bar/);
+  });
+
   it("writes every skill to the OpenCode workspace layout", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "bloxmind-skills-"));
     tempDirectories.push(workspace);
@@ -196,6 +241,19 @@ describe("agent skill pack", () => {
     expect(agentsMd).toMatch(/batch all edits to a file into one pass/i);
     expect(agentsMd).toMatch(/Luau quality/);
     expect(agentsMd).toContain("bloxmind-managed:begin");
+  });
+
+  it("tells the agent to stay time-aware and cap deliberation at about 2 minutes", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "bloxmind-skills-"));
+    tempDirectories.push(workspace);
+
+    await writeAgentsMarkdown(workspace);
+
+    const agentsMd = await readFile(join(workspace, "AGENTS.md"), "utf8");
+    expect(agentsMd).toMatch(/time-aware/i);
+    expect(agentsMd).toMatch(/2 minutes/i);
+    expect(agentsMd).toMatch(/overthink/i);
+    expect(agentsMd).toMatch(/never loop/i);
   });
 
   it("appends the managed block without touching user-authored AGENTS.md content", async () => {

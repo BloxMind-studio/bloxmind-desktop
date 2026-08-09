@@ -29,6 +29,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
+- Fixed the agent getting stuck in retry loops while debugging rigs: the animation skill now forbids guessing engine APIs (e.g. the non-existent Humanoid:GetRigInfo()), requires enumerating Motor6D joints via GetDescendants, enforces Pose-to-Motor6D name matching and Animator-based playback, and mandates static Motor6D.Transform verification instead of brute-forcing simulated keyboard input to catch sub-second states.
 - Fixed the session list silently going stale if the live event stream dropped and reconnected by adding a slow watchdog poll that reconciles it with the server, matching the existing session-status watchdog.
 - Fixed the packaged app reporting "v0.9.5 is available" while already on v0.9.5 — the update check now compares versions numerically and respects electron-updater's update-not-available signal, so it correctly shows "Up to date".
 - Fixed AI mesh generation timing out after ~60 seconds by raising the Studio MCP request timeout to 10 minutes and teaching the agent to verify the workspace before retrying a timed-out generation.
