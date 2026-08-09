@@ -34,14 +34,21 @@ function AppInner() {
 
   return (
     <main className="flex h-full flex-col overflow-hidden">
-      <div className="app-titlebar flex h-9 shrink-0 items-center justify-between gap-3 border-b bg-card px-3">
-        <div className="flex items-center gap-1.5" title="BloxMind">
-          <BloxMindLogo size={18} />
-          <span className="font-serif text-[12px] italic text-foreground">BloxMind</span>
+      <div className="app-titlebar flex h-9 shrink-0 items-center justify-between gap-3 border-b border-border/50 bg-gradient-to-r from-card via-card to-accent/5 px-3">
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <BloxMindLogo size={18} />
+            <div className="absolute -inset-1 rounded-full bg-accent/20 blur-sm" />
+          </div>
+          <span className="font-serif text-sm font-semibold italic text-foreground tracking-tight">
+            BloxMind
+          </span>
         </div>
-        {/* Non-interactive so the titlebar stays draggable. */}
-        <div className="pointer-events-none select-none text-[10px] tabular-nums text-muted-foreground/70">
-          {appVersion ? `v${appVersion}` : ""}
+        <div className="flex items-center gap-2">
+          <div className="h-1 w-1 rounded-full bg-accent/60 animate-pulse" />
+          <span className="text-[10px] font-medium tabular-nums text-muted-foreground/80">
+            {appVersion ? `v${appVersion}` : ""}
+          </span>
         </div>
       </div>
       <ErrorBoundary>

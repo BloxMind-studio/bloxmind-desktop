@@ -47,7 +47,10 @@ export const QuestionPrompt = memo(function QuestionPrompt({
   return (
     <div className="animate-fade-in-up my-2 rounded-lg border border-cyan-200 bg-cyan-50/30 px-3 py-3 dark:border-cyan-900/50 dark:bg-cyan-950/20">
       {question.questions.map((q, qIdx) => (
-        <div key={qIdx} className={qIdx > 0 ? "mt-3 border-t border-cyan-100 pt-3 dark:border-cyan-900/40" : ""}>
+        <div
+          key={qIdx}
+          className={qIdx > 0 ? "mt-3 border-t border-cyan-100 pt-3 dark:border-cyan-900/40" : ""}
+        >
           <div className="text-[11px] font-semibold text-foreground">{q.header}</div>
           <div className="mt-0.5 text-[12px] text-foreground">{q.question}</div>
           <div className="mt-2 flex flex-wrap gap-1.5">

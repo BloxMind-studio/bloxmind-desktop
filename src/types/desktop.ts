@@ -59,7 +59,14 @@ const MutableStrings = Schema.mutable(Schema.Array(Schema.String));
 
 export const ThemePreferenceSchema = Schema.Literal("light", "dark", "system");
 export const DetailedAnalyticsPreferenceSchema = Schema.Literal("unset", "enabled", "disabled");
-export const AccentColorSchema = Schema.Literal("blue", "violet", "indigo", "emerald", "rose", "amber");
+export const AccentColorSchema = Schema.Literal(
+  "blue",
+  "violet",
+  "indigo",
+  "emerald",
+  "rose",
+  "amber",
+);
 export const LayoutDensitySchema = Schema.Literal("compact", "comfortable");
 
 export type ThemePreference = typeof ThemePreferenceSchema.Type;
