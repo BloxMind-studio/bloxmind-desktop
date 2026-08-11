@@ -5,7 +5,7 @@ All notable changes to BloxMind are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.9.92] - 2026-08-11
+## [0.9.93] - 2026-08-11
 
 ### Fixed
 
@@ -13,7 +13,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Fixed Send button color to properly sync with accent color presets by using inline CSS variable instead of gradient with opacity modifier
 - Ensured theme mode (light/dark) is preserved when changing accent colors or color presets in Appearance settings
 
-## [0.9.91] - 2026-08-11
+## [0.9.92] - 2026-08-11
 
 ### Fixed
 
