@@ -301,6 +301,27 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     }
   }, [queryClient]);
 
+  // Defined before the config-sync effect below because the consent toast's
+  // buttons call it; hoisting it above prevents a temporal-dead-zone crash.
+  const setDetailedAnalyticsEnabled = useCallback(
+    (enabled: boolean) => {
+      const previous = detailedAnalyticsEnabledRef.current;
+      detailedAnalyticsEnabledRef.current = enabled;
+      setDetailedAnalyticsEnabledState(enabled);
+      setDetailedAnalyticsCollection(enabled);
+      persistWithFeedback(
+        queryClient,
+        { detailedAnalytics: enabled ? "enabled" : "disabled" },
+        () => {
+          detailedAnalyticsEnabledRef.current = previous;
+          setDetailedAnalyticsEnabledState(previous);
+          setDetailedAnalyticsCollection(previous);
+        },
+      );
+    },
+    [queryClient],
+  );
+
   // Sync local state when config data arrives (from async load or external
   // update). Merge with DEFAULT_APP_CONFIG so partial configs (common in tests)
   // still fill every local-state field.
@@ -379,25 +400,6 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     if (primary) setSelectedAgentState(primary.name);
   }, [agents, selectedAgent]);
 
-  const setDetailedAnalyticsEnabled = useCallback(
-    (enabled: boolean) => {
-      const previous = detailedAnalyticsEnabledRef.current;
-      detailedAnalyticsEnabledRef.current = enabled;
-      setDetailedAnalyticsEnabledState(enabled);
-      setDetailedAnalyticsCollection(enabled);
-      persistWithFeedback(
-        queryClient,
-        { detailedAnalytics: enabled ? "enabled" : "disabled" },
-        () => {
-          detailedAnalyticsEnabledRef.current = previous;
-          setDetailedAnalyticsEnabledState(previous);
-          setDetailedAnalyticsCollection(previous);
-        },
-      );
-    },
-    [queryClient],
-  );
-
   const setSelectedModel = useCallback(
     (modelID: string) => {
       setSelectedModelState(modelID);
@@ -411,10 +413,8 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const setSelectedVariant = useCallback(
     (variant: string | null) => {
       setSelectedVariantState(variant);
-      persistWithFeedback(
-        queryClient,
-        { defaultVariant: variant },
-        () => setSelectedVariantState(null),
+      persistWithFeedback(queryClient, { defaultVariant: variant }, () =>
+        setSelectedVariantState(null),
       );
     },
     [queryClient],
@@ -429,10 +429,8 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
         next.add(modelKey);
       }
       setHiddenModels(next);
-      persistWithFeedback(
-        queryClient,
-        { hiddenModels: [...next] },
-        () => setHiddenModels(hiddenModels),
+      persistWithFeedback(queryClient, { hiddenModels: [...next] }, () =>
+        setHiddenModels(hiddenModels),
       );
     },
     [queryClient, hiddenModels],
@@ -477,16 +475,12 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       if (preset !== "custom") {
         const colors = THEME_PRESETS[preset];
         setThemeColorsState(colors);
-        persistWithFeedback(
-          queryClient,
-          { themePreset: preset, themeColors: colors },
-          () => setThemePresetState("dark-neon"),
+        persistWithFeedback(queryClient, { themePreset: preset, themeColors: colors }, () =>
+          setThemePresetState("dark-neon"),
         );
       } else {
-        persistWithFeedback(
-          queryClient,
-          { themePreset: preset },
-          () => setThemePresetState("dark-neon"),
+        persistWithFeedback(queryClient, { themePreset: preset }, () =>
+          setThemePresetState("dark-neon"),
         );
       }
     },
@@ -496,16 +490,13 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     (colors: ThemeColors) => {
       setThemeColorsState(colors);
       setThemePresetState("custom");
-      persistWithFeedback(
-        queryClient,
-        { themePreset: "custom", themeColors: colors },
-        () =>
-          setThemeColorsState({
-            selectedBg: "#39FF14",
-            selectedFg: "#000000",
-            hoverBg: "#22C55E",
-            hoverFg: "#000000",
-          }),
+      persistWithFeedback(queryClient, { themePreset: "custom", themeColors: colors }, () =>
+        setThemeColorsState({
+          selectedBg: "#39FF14",
+          selectedFg: "#000000",
+          hoverBg: "#22C55E",
+          hoverFg: "#000000",
+        }),
       );
     },
     [queryClient],
@@ -536,10 +527,8 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const setCustomApiEndpoint = useCallback(
     (endpoint: string | null) => {
       setCustomApiEndpointState(endpoint);
-      persistWithFeedback(
-        queryClient,
-        { customApiEndpoint: endpoint },
-        () => setCustomApiEndpointState(null),
+      persistWithFeedback(queryClient, { customApiEndpoint: endpoint }, () =>
+        setCustomApiEndpointState(null),
       );
     },
     [queryClient],
@@ -563,10 +552,8 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const setNotificationsEnabled = useCallback(
     (enabled: boolean) => {
       setNotificationsEnabledState(enabled);
-      persistWithFeedback(
-        queryClient,
-        { notificationsEnabled: enabled },
-        () => setNotificationsEnabledState(true),
+      persistWithFeedback(queryClient, { notificationsEnabled: enabled }, () =>
+        setNotificationsEnabledState(true),
       );
     },
     [queryClient],
