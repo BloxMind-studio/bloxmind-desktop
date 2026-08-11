@@ -5,6 +5,12 @@ All notable changes to BloxMind are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.94] - 2026-08-11
+
+### Fixed
+
+- Fixed a runtime crash (`Cannot access 'setDetailedAnalyticsEnabled' before initialization`) that occurred when config data first loaded — the analytics consent handler is now declared before the effect that references it, avoiding a temporal-dead-zone failure
+
 ## [0.9.93] - 2026-08-11
 
 ### Fixed
