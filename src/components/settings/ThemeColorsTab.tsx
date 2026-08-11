@@ -227,11 +227,7 @@ function ColorField({
           placeholder="#39FF14 or rgba(57, 255, 20, 0.2)"
         />
         {!valid && (
-          <p
-            className="mt-1 text-[10px] text-red-500"
-            role="alert"
-            aria-live="polite"
-          >
+          <p className="mt-1 text-[10px] text-red-500" role="alert" aria-live="polite">
             Invalid color — use #rgb, #rrggbb, #rrggbbaa, rgb(), or rgba().
           </p>
         )}

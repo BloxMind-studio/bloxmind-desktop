@@ -14,10 +14,10 @@ import { useAgents } from "@/hooks/useAgents";
 import { useConnectedProviders } from "@/hooks/useProviders";
 import { setDetailedAnalyticsEnabled as setDetailedAnalyticsCollection } from "@/lib/analytics";
 import { type AppConfig, loadConfig, patchConfig } from "@/lib/config";
-import { DEFAULT_APP_CONFIG } from "@/types/desktop";
 import { qk } from "@/lib/queryKeys";
 import { splitModelKey } from "@/lib/splitModelKey";
 import type { AccentColor, LayoutDensity, ThemeColors, ThemePreset } from "@/types/desktop";
+import { DEFAULT_APP_CONFIG } from "@/types/desktop";
 
 const ACCENT_CSS_VALUES: Record<AccentColor, string> = {
   blue: "221 83% 58%",
@@ -349,7 +349,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
         },
       });
     }
-  }, [configData]);
+  }, [configData, setDetailedAnalyticsEnabled]);
 
   // Restore a valid last-used model and clear selections whose provider disconnected.
   useEffect(() => {
@@ -678,7 +678,16 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       setSystemPrompt,
       setCustomApiEndpoint,
     }),
-    [temperature, maxTokens, systemPrompt, customApiEndpoint, setTemperature, setMaxTokens, setSystemPrompt, setCustomApiEndpoint],
+    [
+      temperature,
+      maxTokens,
+      systemPrompt,
+      customApiEndpoint,
+      setTemperature,
+      setMaxTokens,
+      setSystemPrompt,
+      setCustomApiEndpoint,
+    ],
   );
 
   const behaviorValue = useMemo<BehaviorPreferences>(
@@ -690,7 +699,14 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       setEnterToSend,
       setNotificationsEnabled,
     }),
-    [autoScroll, enterToSend, notificationsEnabled, setAutoScroll, setEnterToSend, setNotificationsEnabled],
+    [
+      autoScroll,
+      enterToSend,
+      notificationsEnabled,
+      setAutoScroll,
+      setEnterToSend,
+      setNotificationsEnabled,
+    ],
   );
 
   const sseValue = useMemo<SSEPreferences>(

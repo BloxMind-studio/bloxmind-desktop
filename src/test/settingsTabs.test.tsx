@@ -143,9 +143,7 @@ describe("ThemeColorsTab", () => {
   it("applies a typed hex color and switches the preset to custom", () => {
     renderTab(<ThemeColorsTab />);
 
-    const input = screen.getAllByPlaceholderText(
-      /rgba\(57, 255, 20/,
-    )[0] as HTMLInputElement;
+    const input = screen.getAllByPlaceholderText(/rgba\(57, 255, 20/)[0] as HTMLInputElement;
     fireEvent.change(input, { target: { value: "#FF5500" } });
 
     const custom = screen.getByText("Custom").closest("button") as HTMLButtonElement;
@@ -156,9 +154,7 @@ describe("ThemeColorsTab", () => {
   it("rejects invalid color input without applying it", () => {
     renderTab(<ThemeColorsTab />);
 
-    const input = screen.getAllByPlaceholderText(
-      /rgba\(57, 255, 20/,
-    )[0] as HTMLInputElement;
+    const input = screen.getAllByPlaceholderText(/rgba\(57, 255, 20/)[0] as HTMLInputElement;
     fireEvent.change(input, { target: { value: "not-a-color" } });
 
     expect(screen.getByText(/Invalid color/)).toBeInTheDocument();
