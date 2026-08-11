@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
   type ReactNode,
@@ -11,7 +11,7 @@ import {
 
 import { loadConfig, patchConfig } from "@/lib/config";
 import { qk } from "@/lib/queryKeys";
-import type { ThemePreference } from "@/types/desktop";
+import type { AppConfig, ThemePreference } from "@/types/desktop";
 
 export type Theme = ThemePreference;
 export type ResolvedTheme = "light" | "dark";
@@ -71,6 +71,7 @@ function subscribePrefersColorScheme(onChange: () => void): () => void {
 }
 
 export function ThemeProvider({ children, defaultTheme = "system" }: ThemeProviderProps) {
+  const queryClient = useQueryClient();
   const { data: configData } = useQuery({
     queryKey: qk.config,
     queryFn: loadConfig,
@@ -94,11 +95,23 @@ export function ThemeProvider({ children, defaultTheme = "system" }: ThemeProvid
     return subscribePrefersColorScheme(sync);
   }, [theme]);
 
-  const setTheme = useCallback((next: Theme) => {
-    setThemeState(next);
-    setResolvedTheme(applyTheme(next));
-    patchConfig({ theme: next }).catch(() => {});
-  }, []);
+  const setTheme = useCallback(
+    (next: Theme) => {
+      setThemeState(next);
+      setResolvedTheme(applyTheme(next));
+      // Mirror the change into the shared React Query cache as well as
+      // persisting it. Other consumers (e.g. PreferencesProvider's
+      // persistWithFeedback) read this cache as the merge base when patching
+      // other fields — if the cache still held the stale theme value, a
+      // subsequent preference write would propagate the old theme back,
+      // reverting the user's choice.
+      queryClient.setQueryData<AppConfig>(qk.config, (old) =>
+        old ? { ...old, theme: next } : old,
+      );
+      patchConfig({ theme: next }).catch(() => {});
+    },
+    [queryClient],
+  );
 
   const value = useMemo(
     () => ({ theme, resolvedTheme, setTheme }),
