@@ -60,7 +60,7 @@ function ProjectIndexButton() {
         onClick={handleClick}
         disabled={isLoading}
         aria-label={indexed ? summary : "Index project structure"}
-        className="inline-flex h-7 items-center rounded-md border bg-background px-2 text-[11px] font-medium text-muted-foreground transition-[background-color,color] hover:bg-accent hover:text-foreground disabled:opacity-50"
+        className="inline-flex h-7 items-center rounded-md border bg-background px-2 text-[11px] font-medium text-muted-foreground transition-[background-color,color] hover:bg-hover/12 disabled:opacity-50"
         title={indexed ? summary : "Index project structure"}
       >
         <div className="relative">
@@ -389,7 +389,7 @@ function Chat() {
                     <button
                       type="button"
                       onClick={handleToggleExplorer}
-                      className="inline-flex h-7 items-center rounded-md border bg-background px-2 text-[11px] font-medium text-muted-foreground transition-[background-color,color] hover:bg-accent hover:text-foreground"
+                      className="inline-flex h-7 items-center rounded-md border bg-background px-2 text-[11px] font-medium text-muted-foreground transition-[background-color,color] hover:bg-hover/12"
                       aria-pressed={!explorerCollapsed}
                       title={explorerCollapsed ? "Open Explorer" : "Close Explorer"}
                     >
@@ -404,7 +404,7 @@ function Chat() {
                       type="button"
                       onClick={handleOpenMesh}
                       disabled={isBusy}
-                      className="inline-flex h-7 items-center rounded-md border bg-background px-2 text-[11px] font-medium text-muted-foreground transition-[background-color,color] hover:bg-accent hover:text-foreground disabled:opacity-40"
+                      className="inline-flex h-7 items-center rounded-md border bg-background px-2 text-[11px] font-medium text-muted-foreground transition-[background-color,color] hover:bg-hover/12 disabled:opacity-40"
                       title={isBusy ? "Wait for the agent to finish" : "Generate a mesh"}
                     >
                       <Box aria-hidden="true" size={13} />

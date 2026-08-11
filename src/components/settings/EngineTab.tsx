@@ -50,6 +50,7 @@ export function EngineTab() {
         <div className="rounded-lg border bg-card p-3.5">
           <input
             type="number"
+            inputMode="numeric"
             min={256}
             max={128_000}
             step={256}
@@ -59,7 +60,7 @@ export function EngineTab() {
                 Math.min(128_000, Math.max(256, Number.parseInt(e.target.value, 10) || 256)),
               )
             }
-            className="h-8 w-full rounded border bg-background px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-accent/40"
+            className="h-8 w-full rounded border bg-background px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-hover/40"
           />
           <div className="mt-1 text-[10px] text-muted-foreground">
             Max tokens per response (256–128,000)
@@ -69,16 +70,20 @@ export function EngineTab() {
 
       {/* Custom API Endpoint */}
       <div className="mt-6">
-        <div className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <label
+          htmlFor="custom-api-endpoint"
+          className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+        >
           Custom API Endpoint
-        </div>
+        </label>
         <div className="rounded-lg border bg-card p-3.5">
           <input
-            type="text"
+            id="custom-api-endpoint"
+            type="url"
             value={customApiEndpoint ?? ""}
             onChange={(e) => setCustomApiEndpoint(e.target.value.trim() || null)}
             placeholder="https://api.example.com/v1"
-            className="h-8 w-full rounded border bg-background px-2 text-xs font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-accent/40"
+            className="h-8 w-full rounded border bg-background px-2 text-xs font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-hover/40"
           />
           <div className="mt-1 text-[10px] text-muted-foreground">
             Leave empty to use the default endpoint.
@@ -87,7 +92,7 @@ export function EngineTab() {
             <button
               type="button"
               onClick={() => setCustomApiEndpoint(null)}
-              className="mt-1 text-[10px] text-muted-foreground underline hover:text-foreground"
+              className="mt-1 text-[10px] text-muted-foreground underline"
             >
               Reset to default
             </button>
@@ -97,16 +102,20 @@ export function EngineTab() {
 
       {/* System Prompt */}
       <div className="mt-6">
-        <div className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <label
+          htmlFor="system-prompt"
+          className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+        >
           System Prompt
-        </div>
+        </label>
         <div className="rounded-lg border bg-card p-3.5">
           <textarea
+            id="system-prompt"
             value={systemPrompt}
             onChange={(e) => setSystemPrompt(e.target.value)}
             placeholder="You are a helpful AI assistant..."
             rows={4}
-            className="h-24 w-full resize-y rounded border bg-background px-2 py-1.5 text-xs font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-accent/40"
+            className="h-24 w-full resize-y rounded border bg-background px-2 py-1.5 text-xs font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-hover/40"
           />
           <div className="mt-1 text-[10px] text-muted-foreground">
             Custom instructions prepended to every conversation.

@@ -61,7 +61,7 @@ export default function StudioTargetPicker() {
             return !value;
           })
         }
-        className="flex h-7 w-full min-w-0 items-center gap-1.5 rounded-md border bg-background px-2 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        className="flex h-7 w-full min-w-0 items-center gap-1.5 rounded-md border bg-background px-2 text-[11px] text-muted-foreground transition-colors hover:bg-hover/12"
       >
         <span className="shrink-0">
           <StudioIcon />
@@ -95,7 +95,7 @@ export default function StudioTargetPicker() {
               type="button"
               onClick={() => void discover()}
               disabled={status === "loading" || refreshing || selectingKey !== null}
-              className="inline-flex min-w-14 items-center justify-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+              className="inline-flex min-w-14 items-center justify-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground hover:bg-hover/12 disabled:opacity-50"
             >
               {refreshing ? (
                 <span className="h-2.5 w-2.5 animate-spin rounded-full border border-current border-t-transparent" />
@@ -138,7 +138,7 @@ export default function StudioTargetPicker() {
                       type="button"
                       disabled={selectingKey !== null}
                       onClick={() => void select(target)}
-                      className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors disabled:opacity-60 ${active ? "bg-accent" : "hover:bg-accent/70"}`}
+                      className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors disabled:opacity-60 ${active ? "bg-selected/12" : "hover:bg-hover/12"}`}
                     >
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-xs font-medium">{target.label}</span>

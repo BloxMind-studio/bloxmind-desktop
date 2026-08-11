@@ -203,7 +203,7 @@ const SendButton = memo(function SendButton({
             })
           }
           disabled={abort.isPending}
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground transition-colors hover:bg-hover/12"
           title="Stop"
         >
           <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -215,7 +215,8 @@ const SendButton = memo(function SendButton({
           type="button"
           onClick={onSend}
           disabled={(!text.trim() && !hasAttachments) || !canSend}
-          className="btn-primary flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-accent/90 text-background shadow-md shadow-black/20 transition-all duration-200 hover:shadow-lg hover:shadow-black/25 hover:scale-105 active:scale-95 disabled:pointer-events-none disabled:opacity-30 disabled:hover:scale-100 dark:shadow-white/10 dark:hover:shadow-white/15"
+          style={{ backgroundColor: "var(--accent)" }}
+          className="btn-primary flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-background shadow-md shadow-black/20 transition-all duration-200 hover:brightness-110 hover:scale-105 active:scale-95 disabled:pointer-events-none disabled:opacity-30 disabled:hover:scale-100 dark:shadow-white/10 dark:hover:shadow-white/15"
           title="Send"
         >
           <svg
@@ -624,7 +625,7 @@ function ChatInput() {
               key={fullId}
               type="button"
               onClick={() => handleModelClick(model)}
-              className={`flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs transition-colors ${isSelected ? "bg-accent font-medium text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}
+              className={`flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs transition-colors ${isSelected ? "bg-selected/12 font-medium text-selected-foreground" : "text-muted-foreground hover:bg-hover/12"}`}
             >
               <span className="truncate">{model.name}</span>
               {statusBadge(model.status)}
@@ -648,7 +649,7 @@ function ChatInput() {
                 setModelSearch("");
               }
             }}
-            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-muted-foreground transition-all duration-200 hover:bg-accent/10 hover:text-foreground"
+            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-muted-foreground transition-all duration-200 hover:bg-hover/12"
           >
             <svg
               width="10"
@@ -702,7 +703,7 @@ function ChatInput() {
                         setModelSearch("");
                         modelSearchRef.current?.focus();
                       }}
-                      className="flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
+                      className="flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground"
                     >
                       <svg
                         width="8"
@@ -741,7 +742,7 @@ function ChatInput() {
             <PopoverTrigger asChild>
               <button
                 type="button"
-                className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] capitalize text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] capitalize text-muted-foreground transition-colors hover:bg-hover/12"
                 title={`Effort: ${variantDisplay}`}
               >
                 {variantDisplay}
@@ -803,7 +804,7 @@ function ChatInput() {
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
         onDrop={onDrop}
-        className={`rounded-xl border bg-background transition-shadow ${isDragging ? "ring-2 ring-accent border-accent/50 bg-accent/5" : ""}`}
+        className={`rounded-xl border bg-background transition-shadow ${isDragging ? "ring-2 ring-hover/40 border-hover/40 bg-hover/5" : ""}`}
       >
         {attachments.length > 0 && (
           <div className="flex gap-2 overflow-x-auto px-3 pt-2 pb-1">
@@ -849,7 +850,7 @@ function ChatInput() {
           </div>
         )}
 
-        <div className="flex min-h-14 items-start gap-1.5 rounded-xl border border-border/50 bg-background/50 px-3 py-2.5 shadow-sm transition-all duration-200 focus-within:border-accent/40 focus-within:shadow-md focus-within:shadow-accent/5">
+        <div className="flex min-h-14 items-start gap-1.5 rounded-xl border border-border/50 bg-background/50 px-3 py-2.5 shadow-sm transition-all duration-200 focus-within:border-hover/40 focus-within:shadow-md focus-within:shadow-hover/5">
           <PromptEditor
             ref={promptEditorRef}
             commands={commands}
@@ -882,7 +883,7 @@ function ChatInput() {
                     setShowAgentPicker(!showAgentPicker);
                     setShowModelPicker(false);
                   }}
-                  className="flex max-w-28 items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  className="flex max-w-28 items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-hover/12"
                 >
                   <svg
                     width="9"
@@ -912,7 +913,7 @@ function ChatInput() {
                             setSelectedAgent(agent.name);
                             setShowAgentPicker(false);
                           }}
-                          className={`flex w-full flex-col rounded-md px-2 py-1.5 text-left transition-colors ${isSelected ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}
+                          className={`flex w-full flex-col rounded-md px-2 py-1.5 text-left transition-colors ${isSelected ? "bg-selected/12 font-medium text-selected-foreground" : "text-muted-foreground hover:bg-hover/12"}`}
                         >
                           <span className="text-xs font-medium">{agent.name}</span>
                           {agent.description && (
@@ -932,7 +933,7 @@ function ChatInput() {
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className={`btn-primary flex h-8 w-8 items-center justify-center rounded-xl border border-border/60 bg-background transition-all duration-200 hover:border-accent/50 hover:text-accent hover:shadow-md hover:shadow-black/15 dark:hover:shadow-white/15 ${rejectShake ? "animate-reject-shake text-red-500" : "text-muted-foreground/70"}`}
+                className={`btn-primary flex h-8 w-8 items-center justify-center rounded-xl border border-border/60 bg-background transition-all duration-200 hover:border-hover/50 hover:shadow-md hover:shadow-black/15 dark:hover:shadow-white/15 ${rejectShake ? "animate-reject-shake text-red-500" : "text-muted-foreground/70"}`}
                 title="Attach images"
               >
                 <svg

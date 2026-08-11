@@ -289,7 +289,7 @@ const RobloxInstanceCard = memo(function RobloxInstanceCard({
         <button
           type="button"
           onClick={() => setIsOpen(!isOpen)}
-          className="flex w-full items-center gap-1.5 rounded-md border bg-card px-2.5 py-1.5 text-left text-[11px] font-medium text-muted-foreground transition-colors hover:bg-accent"
+          className="flex w-full items-center gap-1.5 rounded-md border bg-card px-2.5 py-1.5 text-left text-[11px] font-medium text-muted-foreground transition-colors hover:bg-hover/12"
         >
           <span className="shrink-0">🔍</span>
           <span className="min-w-0 flex-1 truncate">Inspect Instance</span>
@@ -310,7 +310,7 @@ const RobloxInstanceCard = memo(function RobloxInstanceCard({
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left text-[11px] font-medium text-foreground transition-colors hover:bg-accent"
+        className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left text-[11px] font-medium text-foreground transition-colors hover:bg-hover/12"
       >
         <span className="shrink-0">🔍</span>
         <span className="min-w-0 flex-1 truncate">
@@ -387,7 +387,7 @@ const RobloxInstanceCard = memo(function RobloxInstanceCard({
           {/* ── Other Properties (collapsible) ────────────────────────── */}
           {otherProps.length > 0 && (
             <details className="px-2.5 pt-1.5 pb-1">
-              <summary className="cursor-pointer text-[10px] font-medium text-muted-foreground/60 transition-colors hover:text-muted-foreground">
+              <summary className="cursor-pointer text-[10px] font-medium text-muted-foreground/60 transition-colors">
                 {otherProps.length} more propert{otherProps.length === 1 ? "y" : "ies"}
               </summary>
               <div className="mt-1 max-h-40 overflow-y-auto">
@@ -427,7 +427,7 @@ const RobloxInstanceCard = memo(function RobloxInstanceCard({
               <button
                 type="button"
                 onClick={() => setIsReasoningOpen(!isReasoningOpen)}
-                className="flex w-full items-center gap-1 text-[10px] text-muted-foreground/50 transition-colors hover:text-muted-foreground/80"
+                className="flex w-full items-center gap-1 text-[10px] text-muted-foreground/50 transition-colors"
               >
                 <svg
                   width="8"

@@ -81,7 +81,7 @@ export const MessageBubble = memo(function MessageBubble({
       >
         {/* Subtle glow effect for user messages */}
         {isUser && (
-          <div className="absolute -inset-0.5 rounded-2xl rounded-br-sm bg-gradient-to-br from-accent/30 to-accent/10 blur-sm -z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+          <div className="absolute -inset-0.5 rounded-2xl rounded-br-sm bg-gradient-to-br from-selected/20 to-selected/10 blur-sm -z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
         )}
         {isUser ? (
           <UserPartsView parts={msg.parts} />
@@ -100,7 +100,7 @@ export const MessageBubble = memo(function MessageBubble({
                   <button
                     type="button"
                     onClick={checkpoint.undo}
-                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground/40 transition-all duration-200 hover:scale-105 hover:text-muted-foreground hover:bg-accent/50 active:scale-95"
+                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground/40 transition-all duration-200 hover:scale-105 hover:bg-hover/50 active:scale-95"
                     title="Undo last change"
                   >
                     <svg
@@ -124,7 +124,7 @@ export const MessageBubble = memo(function MessageBubble({
                   <button
                     type="button"
                     onClick={checkpoint.redo}
-                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground/40 transition-all duration-200 hover:scale-105 hover:text-muted-foreground hover:bg-accent/50 active:scale-95"
+                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground/40 transition-all duration-200 hover:scale-105 hover:bg-hover/50 active:scale-95"
                     title="Redo last change"
                   >
                     <svg
@@ -164,7 +164,7 @@ export const MessageBubble = memo(function MessageBubble({
                     type="button"
                     onClick={handleRegenerate}
                     disabled={regenerate.isPending}
-                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground/40 transition-all duration-200 hover:scale-105 hover:text-muted-foreground hover:bg-accent/50 active:scale-95 disabled:pointer-events-none disabled:opacity-50"
+                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground/40 transition-all duration-200 hover:scale-105 hover:bg-hover/50 active:scale-95 disabled:pointer-events-none disabled:opacity-50"
                     title="Regenerate this response"
                   >
                     <svg
@@ -190,7 +190,7 @@ export const MessageBubble = memo(function MessageBubble({
                   <button
                     type="button"
                     onClick={handleCopy}
-                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground/40 transition-all duration-200 hover:scale-105 hover:text-muted-foreground hover:bg-accent/50 active:scale-95"
+                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground/40 transition-all duration-200 hover:scale-105 hover:bg-hover/50 active:scale-95"
                     title="Copy message"
                   >
                     {copied ? (

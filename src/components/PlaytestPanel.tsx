@@ -52,7 +52,7 @@ function ListEditor({
               <button
                 type="button"
                 onClick={() => onChange(items.filter((_, i) => i !== index))}
-                className="h-8 px-1 text-muted-foreground hover:text-foreground"
+                className="h-8 px-1 text-muted-foreground"
                 aria-label={`Remove ${label} ${index + 1}`}
               >
                 ×
@@ -63,7 +63,7 @@ function ListEditor({
         <button
           type="button"
           onClick={() => onChange([...items, ""])}
-          className="text-[11px] font-medium text-muted-foreground hover:text-foreground"
+          className="text-[11px] font-medium text-muted-foreground"
         >
           + Add item
         </button>
@@ -175,7 +175,7 @@ export default function PlaytestPanel({ onClose }: { onClose: () => void }) {
         <button
           type="button"
           onClick={onClose}
-          className="flex h-6 w-6 items-center justify-center rounded text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+          className="flex h-6 w-6 items-center justify-center rounded text-sm text-muted-foreground hover:bg-hover/12"
           aria-label="Close playtest"
         >
           ×
@@ -204,7 +204,7 @@ export default function PlaytestPanel({ onClose }: { onClose: () => void }) {
                 type="button"
                 onClick={writeOwnPlan}
                 disabled={generate.isPending}
-                className="rounded-lg border bg-background px-4 py-2 text-xs font-semibold text-foreground transition-colors hover:bg-accent disabled:opacity-50"
+                className="rounded-lg border bg-background px-4 py-2 text-xs font-semibold text-foreground transition-colors hover:bg-hover/12 disabled:opacity-50"
               >
                 Write my own
               </button>
@@ -247,7 +247,7 @@ export default function PlaytestPanel({ onClose }: { onClose: () => void }) {
             type="button"
             onClick={generatePlan}
             disabled={generate.isPending || sendMessage.isPending}
-            className="text-xs font-medium text-muted-foreground hover:text-foreground disabled:opacity-50"
+            className="text-xs font-medium text-muted-foreground disabled:opacity-50"
           >
             Regenerate
           </button>

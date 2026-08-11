@@ -121,7 +121,7 @@ const TreeRow = memo(function TreeRow({
             onSelect(node);
           }
         }}
-        className={`group flex h-6 cursor-default items-center pr-2 text-[11px] ${selectedPath === node.path ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"}`}
+        className={`group flex h-6 cursor-default items-center pr-2 text-[11px] ${selectedPath === node.path ? "bg-selected/12 font-medium text-selected-foreground" : "text-muted-foreground hover:bg-hover/12"}`}
         style={{ paddingLeft: `${8 + depth * 14}px` }}
         title={`${node.path} · ${node.className}`}
       >
@@ -478,7 +478,7 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
         <button
           type="button"
           onClick={onToggle}
-          className="rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-foreground"
+          className="rounded-md p-2 text-muted-foreground hover:bg-hover/12"
           title="Open Explorer"
         >
           <Boxes size={15} />
@@ -496,7 +496,7 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
         <button
           type="button"
           onClick={onToggle}
-          className="flex h-6 w-6 items-center justify-center rounded text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+          className="flex h-6 w-6 items-center justify-center rounded text-sm text-muted-foreground hover:bg-hover/12"
           aria-label="Close explorer"
         >
           ×
@@ -519,7 +519,7 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
 
       {syncError ? (
         <div className="shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-2 text-[10px] text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
-          Explorer couldn’t load this Studio place — retrying automatically. Make sure Roblox Studio
+          Explorer couldn't load this Studio place — retrying automatically. Make sure Roblox Studio
           is open with the BloxMind plugin running.
           <div className="mt-1 break-words font-mono text-[9px] opacity-80">
             {describeSyncError(syncError)}

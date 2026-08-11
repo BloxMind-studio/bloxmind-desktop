@@ -349,7 +349,7 @@ function TypeaheadPlugin({
                 type="button"
                 ref={option.setRefElement}
                 className={`flex w-full flex-col rounded-md px-2.5 py-2 text-left ${
-                  selectedIndex === index ? "bg-accent" : "hover:bg-accent/70"
+                  selectedIndex === index ? "bg-selected/12" : "hover:bg-hover/12"
                 }`}
                 onMouseDown={(event) => event.preventDefault()}
                 onMouseEnter={() => setHighlightedIndex(index)}

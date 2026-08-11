@@ -51,7 +51,7 @@ export function RestoreCheckpointButton({
       className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] transition-all duration-200 disabled:opacity-60 ${
         restored
           ? "text-emerald-600/70 cursor-default"
-          : "text-muted-foreground/40 hover:scale-105 hover:text-muted-foreground hover:bg-accent/50 active:scale-95"
+          : "text-muted-foreground/40 hover:scale-105 hover:bg-hover/50 active:scale-95"
       }`}
       title={syncTitle}
     >
@@ -115,7 +115,7 @@ export function CheckpointStatusBadge({ checkpoint }: { checkpoint: CheckpointHi
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
-        className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-emerald-600/70 transition-all duration-200 hover:scale-105 hover:text-emerald-600 hover:bg-emerald-500/5 active:scale-95 dark:text-emerald-400/70 dark:hover:text-emerald-400"
+        className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-emerald-600/70 transition-all duration-200 hover:scale-105 hover:bg-emerald-500/5 active:scale-95 dark:text-emerald-400/70"
         title="Automatic checkpoint captured for this turn — click for details"
       >
         <svg

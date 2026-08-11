@@ -99,7 +99,7 @@ export function PrivacyTab() {
           <button
             type="button"
             onClick={handleExport}
-            className="flex h-9 w-full items-center gap-2 rounded-lg border bg-card px-3.5 text-xs transition-colors hover:bg-accent"
+            className="flex h-9 w-full items-center gap-2 rounded-lg border bg-card px-3.5 text-xs transition-colors hover:bg-hover/12"
           >
             <svg
               width="12"
@@ -121,7 +121,7 @@ export function PrivacyTab() {
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="flex h-9 w-full items-center gap-2 rounded-lg border bg-card px-3.5 text-xs transition-colors hover:bg-accent"
+            className="flex h-9 w-full items-center gap-2 rounded-lg border bg-card px-3.5 text-xs transition-colors hover:bg-hover/12"
           >
             <svg
               width="12"

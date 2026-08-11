@@ -68,10 +68,25 @@ export const AccentColorSchema = Schema.Literal(
   "amber",
 );
 export const LayoutDensitySchema = Schema.Literal("compact", "comfortable");
+export const ThemePresetSchema = Schema.Literal("soft-blue", "dark-neon", "emerald", "custom");
+export const ThemeColorsSchema = Schema.mutable(
+  Schema.Struct({
+    // Soft background highlight for active/selected items.
+    selectedBg: Schema.String,
+    // Text color inside selected items.
+    selectedFg: Schema.String,
+    // Background overlay when hovering interactive elements.
+    hoverBg: Schema.String,
+    // Text color when hovering interactive elements.
+    hoverFg: Schema.String,
+  }),
+);
 
 export type ThemePreference = typeof ThemePreferenceSchema.Type;
 export type AccentColor = typeof AccentColorSchema.Type;
 export type LayoutDensity = typeof LayoutDensitySchema.Type;
+export type ThemePreset = typeof ThemePresetSchema.Type;
+export type ThemeColors = typeof ThemeColorsSchema.Type;
 
 export const AppConfigSchema = Schema.mutable(
   Schema.Struct({
@@ -87,6 +102,8 @@ export const AppConfigSchema = Schema.mutable(
     layoutDensity: LayoutDensitySchema,
     fontSize: Schema.Number.pipe(Schema.between(0.8, 1.2)),
     soundEffects: Schema.Boolean,
+    themePreset: ThemePresetSchema,
+    themeColors: ThemeColorsSchema,
     // AI engine
     temperature: Schema.Number.pipe(Schema.between(0, 1)),
     maxTokens: Schema.Number.pipe(Schema.int(), Schema.between(256, 128_000)),
@@ -112,10 +129,17 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   defaultVariant: null,
   studioTargetPrograms: null,
   studioTargetsBySession: {},
-  accentColor: "indigo",
+  accentColor: "emerald",
   layoutDensity: "comfortable",
   fontSize: 1,
   soundEffects: true,
+  themePreset: "dark-neon",
+  themeColors: {
+    selectedBg: "#39FF14",
+    selectedFg: "#000000",
+    hoverBg: "#22C55E",
+    hoverFg: "#000000",
+  },
   temperature: 0.7,
   maxTokens: 4_096,
   systemPrompt: "",

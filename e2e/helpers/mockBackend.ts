@@ -28,6 +28,13 @@ export async function installAppMocks(page: Page): Promise<void> {
       layoutDensity: "comfortable",
       fontSize: 1,
       soundEffects: true,
+      themePreset: "soft-blue",
+      themeColors: {
+        selectedBg: "#3B82F6",
+        selectedFg: "#1D4ED8",
+        hoverBg: "#3B82F6",
+        hoverFg: "#1D4ED8",
+      },
       temperature: 0.7,
       maxTokens: 4096,
       systemPrompt: "",

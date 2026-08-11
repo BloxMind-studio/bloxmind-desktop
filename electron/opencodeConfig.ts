@@ -14,7 +14,7 @@ export function studioMcpCommand(platform: NodeJS.Platform, localAppData?: strin
   return ["studio-mcp"];
 }
 
-export function createOpenCodeConfig(broker: { url: string }) {
+export function createOpenCodeConfig(broker: { url: string; token: string }) {
   return {
     // Keep OpenCode's standard automatic context compaction enabled for long sessions.
     compaction: {
@@ -24,6 +24,10 @@ export function createOpenCodeConfig(broker: { url: string }) {
       "roblox-studio": {
         type: "remote",
         url: broker.url,
+        // Authenticate the loopback broker via the Authorization header so the
+        // bearer token never appears in the surface URL (which could be logged
+        // by OpenCode or HTTP tracing libraries).
+        headers: { Authorization: `Bearer ${broker.token}` },
         enabled: true,
         // generate_mesh runs server-side for minutes; keep OpenCode's MCP
         // request timeout far above the SDK's 60s default. Honored by recent

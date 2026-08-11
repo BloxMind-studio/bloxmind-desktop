@@ -131,7 +131,7 @@ export const UsageLimitDialog = memo(function UsageLimitDialog({
           <button
             type="button"
             onClick={() => close(true)}
-            className="rounded-md px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className="rounded-md px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-hover/12"
           >
             Don't show again
           </button>

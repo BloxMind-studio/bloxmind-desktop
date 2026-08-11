@@ -29,31 +29,32 @@ afterEach(async () => {
   await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
 });
 
-async function connect(info: { url: string }) {
+async function connect(info: { url: string; token: string }) {
   const client = new Client({ name: "test-client", version: "1.0.0" });
-  const transport = new StreamableHTTPClientTransport(new URL(info.url));
+  const transport = new StreamableHTTPClientTransport(new URL(info.url), {
+    requestInit: { headers: { Authorization: `Bearer ${info.token}` } },
+  });
   await client.connect(transport);
   cleanups.push(() => client.close());
   return client;
 }
 
 describe("Studio MCP broker", () => {
-  it("binds the OpenCode adapter to loopback and embeds a bearer token in the surface URL", async () => {
+  it("binds the OpenCode adapter to loopback and returns a separate bearer token", async () => {
     const broker = await startStudioMcpBroker(fakeUpstream());
     cleanups.push(() => broker.close());
 
-    expect(broker.info.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/mcp\?token=[A-Za-z0-9_-]+$/);
+    expect(broker.info.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/mcp$/);
+    expect(broker.info.token).toMatch(/^[A-Za-z0-9_-]{32,}$/);
+    expect(broker.info.url).not.toContain("token=");
   });
 
   it("rejects requests without a valid broker token", async () => {
     const broker = await startStudioMcpBroker(fakeUpstream());
     cleanups.push(() => broker.close());
-    const token = new URL(broker.info.url).searchParams.get("token");
-    expect(token).toBeTruthy();
 
     // No token at all → 401.
-    const noToken = broker.info.url.replace(`?token=${token}`, "");
-    const first = await fetch(noToken, {
+    const first = await fetch(broker.info.url, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ jsonrpc: "2.0", method: "initialize", id: 1, params: {} }),
@@ -61,10 +62,12 @@ describe("Studio MCP broker", () => {
     expect(first.status).toBe(401);
 
     // Wrong token → 401.
-    const wrongToken = broker.info.url.replace(String(token), "not-the-token");
-    const second = await fetch(wrongToken, {
+    const second = await fetch(broker.info.url, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer not-the-token",
+      },
       body: JSON.stringify({ jsonrpc: "2.0", method: "initialize", id: 1, params: {} }),
     });
     expect(second.status).toBe(401);
@@ -73,14 +76,12 @@ describe("Studio MCP broker", () => {
   it("accepts the broker token via the Authorization header", async () => {
     const broker = await startStudioMcpBroker(fakeUpstream());
     cleanups.push(() => broker.close());
-    const token = new URL(broker.info.url).searchParams.get("token");
-    const bareUrl = broker.info.url.replace(`?token=${token}`, "");
 
-    const res = await fetch(bareUrl, {
+    const res = await fetch(broker.info.url, {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        authorization: `Bearer ${token}`,
+        authorization: `Bearer ${broker.info.token}`,
       },
       body: JSON.stringify({ jsonrpc: "2.0", method: "initialize", id: 1, params: {} }),
     });

@@ -90,7 +90,7 @@ const markdownComponents: Components = {
         href={href}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-cyan-600 underline decoration-cyan-300 underline-offset-2 hover:text-cyan-800 hover:decoration-cyan-500"
+        className="text-cyan-600 underline decoration-cyan-300 underline-offset-2 hover:decoration-cyan-500"
       >
         {children}
       </a>
@@ -471,7 +471,7 @@ const ThinkingBlock = memo(function ThinkingBlock({ parts }: { parts: Part[] }) 
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className="shrink-0 text-foreground/70 dark:text-accent"
+          className="shrink-0 text-foreground/70 dark:text-white"
           aria-hidden="true"
         >
           <circle cx="12" cy="12" r="10" />
@@ -481,20 +481,14 @@ const ThinkingBlock = memo(function ThinkingBlock({ parts }: { parts: Part[] }) 
         <span className="flex items-center gap-2">
           {hasTools ? "Thought" : "Reasoning"}
           {hasTools && (
-            <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-accent">
+            <span className="rounded-full bg-selected/12 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-selected-foreground dark:text-white">
               {toolNames.join(", ")}
             </span>
           )}
         </span>
-        {!isOpen && (
-          <div className="ml-auto flex items-center gap-1 text-muted-foreground/60">
-            <div className="h-1 w-1 rounded-full bg-current animate-pulse" />
-            <span className="text-[10px]">Click to expand</span>
-          </div>
-        )}
       </button>
       {isOpen && (
-        <div className="mt-2 space-y-2 border-l-2 border-accent/30 pl-4 animate-fade-in-up">
+        <div className="mt-2 space-y-2 border-l-2 border-selected/30 pl-4 animate-fade-in-up">
           {parts.map((part) => {
             switch (part.type) {
               case "reasoning":

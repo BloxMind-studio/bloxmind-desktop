@@ -35,18 +35,6 @@ function formatTime(timestamp: number): string {
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-function statusDot(status?: { type: string }): string {
-  if (!status) return "bg-muted-foreground/35";
-  switch (status.type) {
-    case "busy":
-      return "bg-amber-400 animate-pulse";
-    case "idle":
-      return "bg-muted-foreground/35";
-    default:
-      return "bg-muted-foreground/35";
-  }
-}
-
 const ChatSidebar = memo(function ChatSidebar({
   collapsed,
   onToggle,
@@ -228,7 +216,7 @@ const ChatSidebar = memo(function ChatSidebar({
             <button
               type="button"
               onClick={onToggle}
-              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-hover/12"
               title="Expand sidebar"
             >
               <svg
@@ -248,7 +236,7 @@ const ChatSidebar = memo(function ChatSidebar({
             <button
               type="button"
               onClick={handleCreate}
-              className="mt-2 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              className="mt-2 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-hover/12"
               title="New session"
             >
               <svg
@@ -270,7 +258,7 @@ const ChatSidebar = memo(function ChatSidebar({
           <button
             type="button"
             onClick={onOpenSettings}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-hover/12"
             title="Settings"
           >
             <svg
@@ -299,7 +287,7 @@ const ChatSidebar = memo(function ChatSidebar({
               <button
                 type="button"
                 onClick={handleCreate}
-                className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-hover/12"
                 title="New session"
               >
                 <svg
@@ -320,7 +308,7 @@ const ChatSidebar = memo(function ChatSidebar({
               <button
                 type="button"
                 onClick={onToggle}
-                className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-hover/12"
                 title="Collapse sidebar"
               >
                 <svg
@@ -366,17 +354,14 @@ const ChatSidebar = memo(function ChatSidebar({
                   {/* biome-ignore lint/a11y/noStaticElementInteractions: right-click menu complements the keyboard-accessible buttons inside */}
                   <div
                     onContextMenu={(event) => openContextMenu(event, session)}
-                    className={`group relative mx-1 rounded-md transition-colors duration-150 ${
+                    className={`group relative mx-1 rounded-lg border-l-[3px] transition-colors duration-150 ${
                       isActive
-                        ? "bg-accent text-foreground"
-                        : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                        ? "border-l-transparent bg-selected/12 font-medium text-selected-foreground dark:border-l-selected dark:bg-selected/25 dark:text-white"
+                        : "border-l-transparent text-muted-foreground hover:bg-hover/12 dark:hover:bg-muted dark:hover:text-white"
                     }`}
                   >
                     {isEditing ? (
-                      <div className="flex items-start gap-2 px-2 py-1.5">
-                        <div
-                          className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full transition-colors duration-300 ${statusDot(status)}`}
-                        />
+                      <div className="flex items-start gap-2 px-2.5 py-2">
                         <div className="min-w-0 flex-1">
                           <input
                             ref={editRef}
@@ -387,7 +372,7 @@ const ChatSidebar = memo(function ChatSidebar({
                               if (e.key === "Enter") commitRename();
                               if (e.key === "Escape") setEditingId(null);
                             }}
-                            className="w-full rounded bg-background px-1 text-xs outline-none ring-1 ring-accent/40"
+                            className="w-full rounded bg-background px-1 text-xs text-foreground outline-none ring-1 ring-hover/40"
                           />
                           <div className="mt-0.5 text-[10px] text-muted-foreground">
                             {formatTime(session.time.updated)}
@@ -398,12 +383,9 @@ const ChatSidebar = memo(function ChatSidebar({
                       <button
                         type="button"
                         aria-current={isActive ? "page" : undefined}
-                        className="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left"
+                        className="flex w-full items-start gap-2 rounded-lg px-2.5 py-2 text-left"
                         onClick={() => handleSelect(session.id)}
                       >
-                        <div
-                          className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full transition-colors duration-300 ${statusDot(status)}`}
-                        />
                         <div className="min-w-0 flex-1">
                           <div className="text-xs font-medium leading-snug break-words">
                             {session.title || "Untitled"}
@@ -417,10 +399,10 @@ const ChatSidebar = memo(function ChatSidebar({
 
                     {!isEditing && (
                       <div
-                        className={`absolute inset-y-0 right-0 flex items-center gap-0.5 rounded-r-md pl-4 pr-1.5 opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100 ${
+                        className={`absolute inset-y-0 right-0 flex items-center gap-0.5 rounded-r-lg pl-4 pr-1.5 opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100 ${
                           isActive
-                            ? "bg-gradient-to-l from-accent from-60% to-transparent"
-                            : "bg-gradient-to-l from-card from-60% to-transparent group-hover:from-accent/50"
+                            ? "bg-gradient-to-l from-selected/12 from-60% to-transparent dark:from-selected/25"
+                            : "bg-gradient-to-l from-card from-60% to-transparent group-hover:from-hover/15"
                         }`}
                       >
                         <button
@@ -429,7 +411,7 @@ const ChatSidebar = memo(function ChatSidebar({
                             e.stopPropagation();
                             startRename(session);
                           }}
-                          className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground"
+                          className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground"
                           title="Rename"
                         >
                           <svg
@@ -453,7 +435,7 @@ const ChatSidebar = memo(function ChatSidebar({
                             handleSnooze(session.id);
                           }}
                           disabled={status !== undefined && status.type !== "idle"}
-                          className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35"
+                          className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground disabled:cursor-not-allowed disabled:opacity-35"
                           title={
                             status && status.type !== "idle"
                               ? "Wait for session to finish"
@@ -491,7 +473,7 @@ const ChatSidebar = memo(function ChatSidebar({
                 type="button"
                 aria-expanded={snoozedExpanded}
                 onClick={handleSnoozedToggle}
-                className="flex w-full items-center gap-1.5 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
+                className="flex w-full items-center gap-1.5 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:bg-hover/12"
               >
                 <svg
                   width="10"
@@ -516,7 +498,7 @@ const ChatSidebar = memo(function ChatSidebar({
                       {/* biome-ignore lint/a11y/noStaticElementInteractions: right-click menu complements the keyboard-accessible buttons inside */}
                       <div
                         onContextMenu={(event) => openContextMenu(event, session)}
-                        className={`group relative mx-1 flex min-w-0 items-center rounded-md text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground ${
+                        className={`group relative mx-1 flex min-w-0 items-center rounded-lg text-muted-foreground transition-colors hover:bg-hover/12 dark:hover:bg-muted dark:hover:text-white ${
                           transitioningSessionId === session.id
                             ? "animate-slide-out-left"
                             : "animate-slide-in-left"
@@ -535,7 +517,7 @@ const ChatSidebar = memo(function ChatSidebar({
                         <button
                           type="button"
                           onClick={() => handleUnsnooze(session.id)}
-                          className="mr-1 flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-focus-within:opacity-100 group-hover:opacity-100"
+                          className="mr-1 flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100"
                           title="Unsnooze"
                         >
                           <svg
@@ -566,7 +548,7 @@ const ChatSidebar = memo(function ChatSidebar({
             <button
               type="button"
               onClick={onOpenSettings}
-              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[11px] text-muted-foreground transition-colors hover:bg-hover/12"
             >
               <svg
                 width="13"
@@ -596,7 +578,7 @@ const ChatSidebar = memo(function ChatSidebar({
               <button
                 type="button"
                 role="menuitem"
-                className="flex w-full items-center rounded px-2 py-1.5 text-left text-xs text-destructive transition-colors hover:bg-accent"
+                className="flex w-full items-center rounded px-2 py-1.5 text-left text-xs text-destructive transition-colors hover:bg-hover/12"
                 onClick={() => {
                   const session = contextMenu.session;
                   setContextMenu(null);
@@ -656,7 +638,7 @@ const ChatSidebar = memo(function ChatSidebar({
                       ref={cancelDeleteRef}
                       type="button"
                       onClick={cancelDelete}
-                      className="rounded-md border bg-background px-3 py-1.5 text-xs font-medium transition-colors hover:bg-accent"
+                      className="rounded-md border bg-background px-3 py-1.5 text-xs font-medium transition-colors hover:bg-hover/12"
                     >
                       Cancel
                     </button>

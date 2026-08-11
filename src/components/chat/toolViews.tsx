@@ -433,10 +433,14 @@ export const DefaultToolView = memo(function DefaultToolView({
   return (
     <div className="min-w-0">
       <div className="flex min-w-0 items-center gap-1.5 text-[13px] leading-relaxed">
-        <span className="min-w-0 break-all font-medium text-muted-foreground/75 transition-colors hover:text-muted-foreground">
+        <span className="min-w-0 break-all font-medium text-muted-foreground/75 transition-colors dark:text-white">
           {tool}
         </span>
-        {title && <span className="min-w-0 break-words text-muted-foreground">- {title}</span>}
+        {title && (
+          <span className="min-w-0 break-words text-muted-foreground dark:text-white/80">
+            - {title}
+          </span>
+        )}
         {status === "running" && (
           <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-amber-400" />
         )}

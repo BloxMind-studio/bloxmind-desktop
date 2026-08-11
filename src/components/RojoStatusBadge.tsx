@@ -111,7 +111,7 @@ function RojoStatusBadgeImpl() {
         <button
           type="button"
           onClick={handleAutoConnectTip}
-          className="inline-flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-foreground"
+          className="inline-flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground transition-colors"
           title="How to enable Auto-Connect"
         >
           <svg

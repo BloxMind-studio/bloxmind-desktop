@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { createOpenCodeConfig } from "../../electron/opencodeConfig";
 
-const broker = { url: "http://127.0.0.1:43210/mcp" };
+const broker = { url: "http://127.0.0.1:43210/mcp", token: "test-token-123" };
 
 describe("OpenCode configuration", () => {
   it("does not install third-party authentication plugins by default", () => {
@@ -45,6 +45,7 @@ describe("OpenCode configuration", () => {
     expect(createOpenCodeConfig(broker).mcp["roblox-studio"]).toEqual({
       type: "remote",
       url: broker.url,
+      headers: { Authorization: `Bearer ${broker.token}` },
       enabled: true,
       timeout: 600_000,
     });

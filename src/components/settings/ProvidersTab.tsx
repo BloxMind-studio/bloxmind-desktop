@@ -281,7 +281,7 @@ export function ProvidersTab() {
                     type="button"
                     onClick={() => handleDisconnect(provider.id)}
                     disabled={disconnecting === provider.id}
-                    className="text-[11px] text-muted-foreground transition-colors hover:text-red-600 disabled:opacity-50"
+                    className="text-[11px] text-muted-foreground transition-colors disabled:opacity-50"
                   >
                     {disconnecting === provider.id ? "..." : "Disconnect"}
                   </button>
@@ -308,7 +308,7 @@ export function ProvidersTab() {
                 <button
                   type="button"
                   onClick={() => openConnect(provider)}
-                  className="rounded-md border bg-background px-3 py-1 text-[11px] font-medium transition-colors hover:bg-accent"
+                  className="rounded-md border bg-background px-3 py-1 text-[11px] font-medium transition-colors hover:bg-hover/12"
                 >
                   Connect
                 </button>
@@ -336,7 +336,7 @@ export function ProvidersTab() {
               <button
                 type="button"
                 onClick={closeDialog}
-                className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-hover/12"
               >
                 <svg
                   width="12"
@@ -370,7 +370,7 @@ export function ProvidersTab() {
                         startOAuthFlow(dialog.provider, idx);
                       }
                     }}
-                    className="flex h-9 w-full items-center justify-center gap-2 rounded-md border bg-background text-xs font-medium transition-colors hover:bg-accent"
+                    className="flex h-9 w-full items-center justify-center gap-2 rounded-md border bg-background text-xs font-medium transition-colors hover:bg-hover/12"
                   >
                     <svg
                       width="12"
@@ -405,7 +405,7 @@ export function ProvidersTab() {
                       setError(null);
                       setDialog({ step: "apikey", provider: dialog.provider });
                     }}
-                    className="flex h-9 w-full items-center justify-center gap-2 rounded-md border bg-background text-xs font-medium transition-colors hover:bg-accent"
+                    className="flex h-9 w-full items-center justify-center gap-2 rounded-md border bg-background text-xs font-medium transition-colors hover:bg-hover/12"
                   >
                     Use an API key
                   </button>
@@ -459,7 +459,7 @@ export function ProvidersTab() {
                               toast("Code copied to clipboard");
                             }
                           }}
-                          className="mt-1.5 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-foreground transition-colors hover:bg-accent"
+                          className="mt-1.5 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-foreground transition-colors hover:bg-hover/12"
                         >
                           <svg
                             width="10"
@@ -498,7 +498,7 @@ export function ProvidersTab() {
                             handleOAuthCode(dialog.provider.id);
                           }
                         }}
-                        className="h-8 flex-1 rounded border bg-background px-2 font-mono text-xs placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-accent/40"
+                        className="h-8 flex-1 rounded border bg-background px-2 font-mono text-xs placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-hover/40"
                         // biome-ignore lint/a11y/noAutofocus: move focus into the freshly opened connect dialog
                         autoFocus
                       />
@@ -534,7 +534,7 @@ export function ProvidersTab() {
                         handleSaveKey(dialog.provider.id);
                       }
                     }}
-                    className="h-8 flex-1 rounded border bg-background px-2 font-mono text-xs placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-accent/40"
+                    className="h-8 flex-1 rounded border bg-background px-2 font-mono text-xs placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-hover/40"
                     // biome-ignore lint/a11y/noAutofocus: move focus into the freshly opened connect dialog
                     autoFocus
                   />
@@ -552,7 +552,7 @@ export function ProvidersTab() {
                     href={PROVIDER_META[dialog.provider.id]?.helpUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-block text-[10px] text-muted-foreground underline hover:text-foreground"
+                    className="inline-block text-[10px] text-muted-foreground underline"
                   >
                     Get an API key
                   </a>
@@ -561,7 +561,7 @@ export function ProvidersTab() {
                   <button
                     type="button"
                     onClick={() => setDialog({ step: "methods", provider: dialog.provider })}
-                    className="block text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                    className="block text-[11px] text-muted-foreground transition-colors"
                   >
                     Back to sign-in options
                   </button>

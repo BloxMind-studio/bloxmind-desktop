@@ -1,6 +1,5 @@
 import type { SessionStatus } from "@opencode-ai/sdk/v2/client";
 import { useQuery } from "@tanstack/react-query";
-import { useCallback } from "react";
 
 import { qk } from "@/lib/queryKeys";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
@@ -30,24 +29,14 @@ export function useIsBusy(sessionId: string | null): boolean {
   return status !== undefined && status.type !== "idle";
 }
 
+/**
+ * Resolves the status for a single session from the shared `useSessionStatuses`
+ * cache. Deriving from the bulk query (rather than mounting a second query
+ * with the same key) avoids duplicate network requests and the `select`
+ * callback churn that triggered unnecessary re-subscriptions.
+ */
 export function useSessionStatus(sessionId: string | null): SessionStatus | undefined {
-  const { client, ready } = useOpenCodeClient();
-
-  return useQuery<Record<string, SessionStatus>, Error, SessionStatus | undefined>({
-    queryKey: qk.statuses,
-    queryFn: async () => {
-      if (!client) return {};
-      const res = await client.session.status({}, { throwOnError: true });
-      return res.data ?? {};
-    },
-    enabled: ready && !!client,
-    // Watchdog poll (see useSessionStatuses for rationale — both queries share
-    // the same cache key, so a single active interval keeps the cache fresh).
-    refetchInterval: 5_000,
-    staleTime: 2_500,
-    select: useCallback(
-      (statuses: Record<string, SessionStatus>) => (sessionId ? statuses[sessionId] : undefined),
-      [sessionId],
-    ),
-  }).data;
+  const { data: statuses } = useSessionStatuses();
+  if (!sessionId) return undefined;
+  return statuses?.[sessionId];
 }

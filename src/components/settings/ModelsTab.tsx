@@ -103,7 +103,7 @@ export function ModelsTab() {
                 setSearch("");
                 searchRef.current?.focus();
               }}
-              className="flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
+              className="flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground"
             >
               <svg
                 width="8"
@@ -129,7 +129,7 @@ export function ModelsTab() {
         {modelsByProvider.map(([providerId, group]) => (
           <div key={providerId}>
             <div className="flex items-center gap-2 pb-2">
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-accent text-[10px] font-semibold text-muted-foreground">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-selected/12 text-[10px] font-semibold text-selected-foreground">
                 {group.providerName.charAt(0).toUpperCase()}
               </span>
               <span className="text-sm font-medium">{group.providerName}</span>

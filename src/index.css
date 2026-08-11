@@ -1,10 +1,11 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Orbitron:wght@700;900&display=swap');
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "shadcn/tailwind.css";
 
 .app-titlebar {
   -webkit-app-region: drag;
 }
-@import "shadcn/tailwind.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -15,9 +16,10 @@
 
 /* â”€â”€ Typography System â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
+
 @theme inline {
-  --font-sans: "Space Grotesk", system-ui, -apple-system, sans-serif;
-  --font-serif: "Crimson Pro", Georgia, serif;
+  --font-sans: "JetBrains Mono", system-ui, -apple-system, sans-serif;
+  --font-display: "Orbitron", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
 
   --color-background: var(--background);
@@ -53,6 +55,13 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
+  /* Interactive state tokens — mapped to runtime CSS vars so theme colors
+     update the whole UI in real time. */
+  --color-selected: var(--selected);
+  --color-selected-foreground: var(--selected-foreground);
+  --color-hover: var(--hover);
+  --color-hover-foreground: var(--hover-foreground);
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -66,12 +75,18 @@
 /* â”€â”€ Workshop Color Palette â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 :root {
-  /* Warm amber/copper accent instead of generic blue */
-  --accent-hsl: 239 84% 67%;
-  --accent-hsl-soft: 239 84% 67%;
-  --accent-hsl-glow: 239 84% 67%;
+  /* Cyberpunk neon accent — matrix green for terminal/dev-tool feel */
+  --accent-hsl: 134 50% 50%;
+  --accent-hsl-soft: 134 50% 55%;
+  --accent-hsl-glow: 134 50% 60%;
   --app-font-scale: 1;
-  
+
+  /* Interactive state colors — neon green for cyberpunk theme */
+  --selected: #22C55E;
+  --selected-foreground: #000000;
+  --hover: #22C55E;
+  --hover-foreground: #000000;
+
   /* Texture variables */
   --grain-opacity: 0.025;
   --blueprint-opacity: 0.015;
@@ -364,75 +379,77 @@ body::after {
 
 :root {
   --radius: 0.625rem;
+  /* Light mode — soft canvas with green accent */
   --background: #F8FAFC;
   --foreground: #0F172A;
   --card: #FFFFFF;
   --card-foreground: #0F172A;
   --popover: #FFFFFF;
   --popover-foreground: #0F172A;
-  --primary: #6366F1;
-  --primary-foreground: #FFFFFF;
+  --primary: #22C55E;
+  --primary-foreground: #000000;
   --secondary: #E2E8F0;
   --secondary-foreground: #0F172A;
   --muted: #F1F5F9;
   --muted-foreground: #000000;
-  --accent: #6366F1;
-  --accent-foreground: #FFFFFF;
+  --accent: #22C55E;
+  --accent-foreground: #000000;
   --destructive: #EF4444;
   --destructive-foreground: #FFFFFF;
   --border: #CBD5E1;
   --input: #CBD5E1;
-  --ring: #6366F1;
-  --chart-1: #6366F1;
+  --ring: #22C55E;
+  --chart-1: #22C55E;
   --chart-2: #22D3EE;
   --chart-3: #10B981;
   --chart-4: #F59E0B;
   --chart-5: #EF4444;
   --sidebar: #F1F5F9;
   --sidebar-foreground: #0F172A;
-  --sidebar-primary: #6366F1;
-  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-primary: #22C55E;
+  --sidebar-primary-foreground: #000000;
   --sidebar-accent: #E2E8F0;
   --sidebar-accent-foreground: #0F172A;
   --sidebar-border: #CBD5E1;
-  --sidebar-ring: #6366F1;
+  --sidebar-ring: #22C55E;
 }
 
 /* â”€â”€ Stone palette (dark) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .dark {
-  --background: #0F172A;
-  --foreground: #F8FAFC;
-  --card: #1E293B;
-  --card-foreground: #F8FAFC;
-  --popover: #1E293B;
-  --popover-foreground: #F8FAFC;
-  --primary: #6366F1;
-  --primary-foreground: #FFFFFF;
-  --secondary: #1E293B;
-  --secondary-foreground: #F8FAFC;
-  --muted: #1E293B;
-  --muted-foreground: #94A3B8;
-  --accent: #6366F1;
-  --accent-foreground: #FFFFFF;
+  /* OLED dark — pure black background with neon green accents */
+  --background: #000000;
+  --foreground: #E5E7EB;
+  --card: #0A0A0A;
+  --card-foreground: #E5E7EB;
+  --popover: #0A0A0A;
+  --popover-foreground: #E5E7EB;
+  --primary: #22C55E;
+  --primary-foreground: #000000;
+  --secondary: #1c1c1c;
+  --secondary-foreground: #ffffff;
+  --muted: #1c1c1c;
+  --muted-foreground: #a3a3a3;
+  --accent: #22C55E;
+  --accent-foreground: #000000;
   --destructive: #EF4444;
   --destructive-foreground: #FFFFFF;
-  --border: #334155;
-  --input: #334155;
-  --ring: #6366F1;
-  --chart-1: #6366F1;
+  --border: #262626;
+  --input: #262626;
+  --ring: #22C55E;
+  --chart-1: #22C55E;
   --chart-2: #22D3EE;
   --chart-3: #10B981;
   --chart-4: #F59E0B;
   --chart-5: #EF4444;
-  --sidebar: #0F172A;
-  --sidebar-foreground: #F8FAFC;
-  --sidebar-primary: #6366F1;
-  --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent: #1E293B;
-  --sidebar-accent-foreground: #F8FAFC;
-  --sidebar-border: #334155;
-  --sidebar-ring: #6366F1;
+  --sidebar: #000000;
+  --sidebar-foreground: #E5E7EB;
+  --sidebar-primary: #22C55E;
+  --sidebar-primary-foreground: #000000;
+  --sidebar-accent: #1c1c1c;
+  --sidebar-accent-foreground: #E5E7EB;
+  --sidebar-border: #262626;
+  --sidebar-ring: #22C55E;
 }
 
 @layer base {
@@ -453,12 +470,12 @@ body::after {
 /* â”€â”€ Base Layer Enhancements â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 @layer base {
-  /* Improved heading hierarchy */
+  /* Improved heading hierarchy — Orbitron for display headings */
   h1, h2, h3, h4, h5, h6 {
-    @apply font-sans font-semibold tracking-tight;
+    @apply font-display font-semibold tracking-tight;
     line-height: 1.2;
   }
-  
+
   h1 { @apply text-3xl; }
   h2 { @apply text-2xl; }
   h3 { @apply text-xl; }
@@ -471,13 +488,17 @@ body::after {
   }
   
   /* Refined link styling */
+  /* Refined link styling */
   a {
-    @apply text-accent-foreground underline-offset-4 decoration-accent/30;
+    color: hsl(var(--accent-hsl));
+    text-decoration: underline;
+    text-decoration-color: color-mix(in oklch, hsl(var(--accent-hsl)) 40%, transparent);
+    text-underline-offset: 4px;
     transition: all 150ms ease;
   }
   
   a:hover {
-    @apply decoration-accent;
+    text-decoration-color: hsl(var(--accent-hsl));
   }
 }
 
@@ -511,23 +532,30 @@ body::after {
     box-shadow: 0 4px 12px -2px oklch(1 0 0 / 0.16), 0 2px 4px -2px oklch(1 0 0 / 0.12);
   }
 
-  /* Card enhancements */
+  /* Card enhancements — OLED cards with neon border in dark mode */
   .card {
     @apply backdrop-blur-sm;
     box-shadow: 0 1px 3px 0 oklch(0 0 0 / 0.04), 0 1px 2px -1px oklch(0 0 0 / 0.04);
   }
 
   .dark .card {
-    box-shadow: 0 1px 3px 0 oklch(0 0 0 / 0.2), 0 1px 2px -1px oklch(0 0 0 / 0.2);
+    box-shadow: 0 0 12px -2px oklch(0 0 0 / 0.3);
+    border-color: oklch(0.7 0.15 134 / 0.15);
   }
 
-  /* Input focus: neutral ring glow (never a colored accent) */
+  /* Input focus: neutral ring glow in light, neon green in dark */
   input:focus, textarea:focus, select:focus {
     box-shadow: 0 0 0 3px color-mix(in oklch, var(--foreground) 12%, transparent);
   }
 
   .dark input:focus, .dark textarea:focus, .dark select:focus {
-    box-shadow: 0 0 0 3px color-mix(in oklch, var(--foreground) 18%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 40%, transparent);
+  }
+
+  /* Neon glow on interactive elements in dark mode */
+  .dark .sidebar-primary,
+  .dark [aria-selected="true"] {
+    text-shadow: 0 0 10px oklch(var(--primary) / 0.5);
   }
 }
 
@@ -708,5 +736,6 @@ body::after {
 [data-sonner-toaster] [data-sonner-toast].analytics-consent-toast [data-close-button] {
   display: none;
 }
+
 
 

@@ -181,17 +181,22 @@ function listWorkspaceFiles(root: string): Promise<string[]> {
 // ── Git helpers ─────────────────────────────────────────────────────────
 
 function git(args: string[], cwd: string): Effect.Effect<string, CheckpointError> {
-  return Effect.tryPromise({
-    try: async () => {
-      const result = await exec("git", args, {
-        cwd,
-        windowsHide: true,
-        maxBuffer: 64 * 1024 * 1024,
-      });
-      return result.stdout;
-    },
-    catch: (cause) => new CheckpointError({ message: `git ${args[0]} failed`, cause }),
-  });
+  // All git operations are routed through the global `gitMutex` to prevent
+  // concurrent stash/checkout calls from different sessions corrupting the
+  // shared repository's state.
+  return withGitLock(
+    Effect.tryPromise({
+      try: async () => {
+        const result = await exec("git", args, {
+          cwd,
+          windowsHide: true,
+          maxBuffer: 64 * 1024 * 1024,
+        });
+        return result.stdout;
+      },
+      catch: (cause) => new CheckpointError({ message: `git ${args[0]} failed`, cause }),
+    }),
+  );
 }
 
 function isGitRepo(workspace: string): Effect.Effect<boolean, CheckpointError> {
@@ -243,10 +248,20 @@ function loadSessionIndex(storeRoot: string, sessionId: string) {
   );
 }
 
-// Serializes index writes per session so concurrent capture/restore requests
+// Serializes index writes to disk so concurrent capture/restore requests
 // never race on the same checkpoints.json (Windows `rename` fails with EPERM
 // when the destination is briefly locked by another write).
 const storeMutex = Effect.unsafeMakeSemaphore(1);
+
+// Global mutex for git operations. All sessions share the same workspace and
+// therefore the same `.git` directory, so concurrent `git stash create` or
+// `git checkout` calls from different sessions can interleave and corrupt
+// stash refs or produce partial checkouts. This lock wraps every git command
+// that touches the repository.
+const gitMutex = Effect.unsafeMakeSemaphore(1);
+function withGitLock<A, E>(effect: Effect.Effect<A, E>): Effect.Effect<A, E> {
+  return gitMutex.withPermits(1)(effect);
+}
 
 // Per-session mutexes protect the read-modify-write cycle of capture/restore
 // so concurrent operations on the same session can't lose checkpoints.

@@ -75,7 +75,7 @@ export const QuestionPrompt = memo(function QuestionPrompt({
               placeholder="Type your own answer..."
               value={customInputs[qIdx] ?? ""}
               onChange={(e) => setCustomInputs((prev) => ({ ...prev, [qIdx]: e.target.value }))}
-              className="mt-2 w-full rounded border border-border bg-background px-2 py-1 text-[11px] placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-accent/40"
+              className="mt-2 w-full rounded border border-border bg-background px-2 py-1 text-[11px] placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-hover/40"
             />
           )}
         </div>
@@ -91,7 +91,7 @@ export const QuestionPrompt = memo(function QuestionPrompt({
         <button
           type="button"
           onClick={() => onReject(question.id)}
-          className="rounded-md px-3 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+          className="rounded-md px-3 py-1 text-[11px] text-muted-foreground transition-colors"
         >
           Dismiss
         </button>
@@ -137,14 +137,14 @@ export const PermissionPrompt = memo(function PermissionPrompt({
         <button
           type="button"
           onClick={() => onReply(permission.id, "always")}
-          className="rounded-md border px-3 py-1 text-[11px] text-foreground transition-colors hover:bg-accent"
+          className="rounded-md border px-3 py-1 text-[11px] text-foreground transition-colors hover:bg-hover/12"
         >
           Always Allow
         </button>
         <button
           type="button"
           onClick={() => onReply(permission.id, "reject")}
-          className="rounded-md px-3 py-1 text-[11px] text-muted-foreground transition-colors hover:text-destructive"
+          className="rounded-md px-3 py-1 text-[11px] text-muted-foreground transition-colors"
         >
           Deny
         </button>

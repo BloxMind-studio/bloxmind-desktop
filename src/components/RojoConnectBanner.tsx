@@ -48,7 +48,7 @@ function RojoConnectBannerImpl() {
       <button
         type="button"
         onClick={handleDismiss}
-        className="shrink-0 text-amber-600 transition-colors hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-200"
+        className="shrink-0 text-amber-600 transition-colors dark:text-amber-400"
         title="Dismiss"
       >
         <svg

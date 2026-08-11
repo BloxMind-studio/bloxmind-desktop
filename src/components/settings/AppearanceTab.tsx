@@ -25,8 +25,8 @@ export function AppearanceTab() {
                 aria-pressed={selected}
                 className={`rounded-lg border px-3 py-3 text-center transition-colors ${
                   selected
-                    ? "border-foreground bg-accent font-medium text-foreground"
-                    : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground"
+                    ? "border-foreground bg-selected/12 font-medium text-selected-foreground"
+                    : "border-border bg-card text-muted-foreground hover:bg-hover/12"
                 }`}
               >
                 <ThemePreview swatch={option.value} />

@@ -8,6 +8,7 @@ import { GeneralTab } from "@/components/settings/GeneralTab";
 import { ModelsTab } from "@/components/settings/ModelsTab";
 import { PrivacyTab } from "@/components/settings/PrivacyTab";
 import { ProvidersTab } from "@/components/settings/ProvidersTab";
+import { ThemeColorsTab } from "@/components/settings/ThemeColorsTab";
 import { desktop } from "@/lib/desktop";
 
 type SettingsTab =
@@ -18,6 +19,7 @@ type SettingsTab =
   | "behavior"
   | "connection"
   | "appearance"
+  | "theme-colors"
   | "privacy"
   | "about";
 
@@ -43,7 +45,7 @@ function Settings({ onClose }: SettingsProps) {
         <button
           type="button"
           onClick={onClose}
-          className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-hover/12"
           title="Back to chat"
         >
           <svg
@@ -75,8 +77,8 @@ function Settings({ onClose }: SettingsProps) {
             onClick={() => setTab("providers")}
             className={`mx-1.5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${
               tab === "providers"
-                ? "bg-accent font-medium text-foreground"
-                : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                ? "bg-selected/12 font-medium text-selected-foreground"
+                : "text-muted-foreground hover:bg-hover/12"
             }`}
           >
             <svg
@@ -100,8 +102,8 @@ function Settings({ onClose }: SettingsProps) {
             onClick={() => setTab("models")}
             className={`mx-1.5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${
               tab === "models"
-                ? "bg-accent font-medium text-foreground"
-                : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                ? "bg-selected/12 font-medium text-selected-foreground"
+                : "text-muted-foreground hover:bg-hover/12"
             }`}
           >
             <svg
@@ -128,8 +130,8 @@ function Settings({ onClose }: SettingsProps) {
             onClick={() => setTab("general")}
             className={`mx-1.5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${
               tab === "general"
-                ? "bg-accent font-medium text-foreground"
-                : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                ? "bg-selected/12 font-medium text-selected-foreground"
+                : "text-muted-foreground hover:bg-hover/12"
             }`}
           >
             <svg
@@ -155,8 +157,8 @@ function Settings({ onClose }: SettingsProps) {
             onClick={() => setTab("engine")}
             className={`mx-1.5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${
               tab === "engine"
-                ? "bg-accent font-medium text-foreground"
-                : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                ? "bg-selected/12 font-medium text-selected-foreground"
+                : "text-muted-foreground hover:bg-hover/12"
             }`}
           >
             <svg
@@ -179,8 +181,8 @@ function Settings({ onClose }: SettingsProps) {
             onClick={() => setTab("behavior")}
             className={`mx-1.5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${
               tab === "behavior"
-                ? "bg-accent font-medium text-foreground"
-                : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                ? "bg-selected/12 font-medium text-selected-foreground"
+                : "text-muted-foreground hover:bg-hover/12"
             }`}
           >
             <svg
@@ -205,8 +207,8 @@ function Settings({ onClose }: SettingsProps) {
             onClick={() => setTab("connection")}
             className={`mx-1.5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${
               tab === "connection"
-                ? "bg-accent font-medium text-foreground"
-                : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                ? "bg-selected/12 font-medium text-selected-foreground"
+                : "text-muted-foreground hover:bg-hover/12"
             }`}
           >
             <svg
@@ -230,8 +232,8 @@ function Settings({ onClose }: SettingsProps) {
             onClick={() => setTab("appearance")}
             className={`mx-1.5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${
               tab === "appearance"
-                ? "bg-accent font-medium text-foreground"
-                : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                ? "bg-selected/12 font-medium text-selected-foreground"
+                : "text-muted-foreground hover:bg-hover/12"
             }`}
           >
             <svg
@@ -252,11 +254,38 @@ function Settings({ onClose }: SettingsProps) {
           </button>
           <button
             type="button"
+            onClick={() => setTab("theme-colors")}
+            className={`mx-1.5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${
+              tab === "theme-colors"
+                ? "bg-selected/12 font-medium text-selected-foreground"
+                : "text-muted-foreground hover:bg-hover/12"
+            }`}
+          >
+            <svg
+              width="13"
+              height="13"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M12 19a7 7 0 1 0 0-14 7 7 0 0 0 0 14z" />
+              <circle cx="8.5" cy="11.5" r="0.5" fill="currentColor" />
+              <circle cx="12" cy="7.5" r="0.5" fill="currentColor" />
+              <circle cx="15.5" cy="11.5" r="0.5" fill="currentColor" />
+            </svg>
+            Theme Colors
+          </button>
+          <button
+            type="button"
             onClick={() => setTab("about")}
             className={`mx-1.5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${
               tab === "about"
-                ? "bg-accent font-medium text-foreground"
-                : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                ? "bg-selected/12 font-medium text-selected-foreground"
+                : "text-muted-foreground hover:bg-hover/12"
             }`}
           >
             <svg
@@ -281,8 +310,8 @@ function Settings({ onClose }: SettingsProps) {
             onClick={() => setTab("privacy")}
             className={`mx-1.5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${
               tab === "privacy"
-                ? "bg-accent font-medium text-foreground"
-                : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                ? "bg-selected/12 font-medium text-selected-foreground"
+                : "text-muted-foreground hover:bg-hover/12"
             }`}
           >
             <svg
@@ -311,6 +340,7 @@ function Settings({ onClose }: SettingsProps) {
           {tab === "behavior" && <BehaviorTab />}
           {tab === "connection" && <ConnectionTab />}
           {tab === "appearance" && <AppearanceTab />}
+          {tab === "theme-colors" && <ThemeColorsTab />}
           {tab === "privacy" && <PrivacyTab />}
           {tab === "about" && <AboutTab appVersion={appVersion} />}
         </div>

@@ -65,8 +65,8 @@ export function GeneralTab() {
               aria-pressed={layoutDensity === density}
               className={`rounded-lg border px-3 py-2.5 text-center text-xs transition-colors ${
                 layoutDensity === density
-                  ? "border-foreground bg-accent font-medium text-foreground"
-                  : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground"
+                  ? "border-foreground bg-selected/12 font-medium text-selected-foreground"
+                  : "border-border bg-card text-muted-foreground hover:bg-hover/12"
               }`}
             >
               {density === "compact" ? "Compact" : "Comfortable"}

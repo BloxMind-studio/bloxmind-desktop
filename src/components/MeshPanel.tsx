@@ -115,7 +115,7 @@ export default function MeshPanel({ onClose }: { onClose: () => void }) {
         <button
           type="button"
           onClick={onClose}
-          className="flex h-6 w-6 items-center justify-center rounded text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+          className="flex h-6 w-6 items-center justify-center rounded text-sm text-muted-foreground hover:bg-hover/12"
           aria-label="Close mesh generator"
         >
           ×
@@ -137,7 +137,7 @@ export default function MeshPanel({ onClose }: { onClose: () => void }) {
             type="button"
             onClick={enhanceBrief}
             disabled={enhance.isPending || !brief.trim()}
-            className="mt-2 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+            className="mt-2 text-[11px] font-medium text-muted-foreground transition-colors disabled:opacity-50"
           >
             {enhance.isPending ? "Enhancing…" : "Enhance with AI"}
           </button>
@@ -157,7 +157,7 @@ export default function MeshPanel({ onClose }: { onClose: () => void }) {
                 className={`rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors ${
                   style === option.id
                     ? "border-foreground bg-foreground text-background"
-                    : "bg-background text-foreground hover:bg-accent"
+                    : "bg-background text-foreground hover:bg-hover/12"
                 }`}
               >
                 {option.label}

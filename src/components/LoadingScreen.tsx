@@ -224,7 +224,7 @@ function LoadingScreen({
                 <button
                   type="button"
                   onClick={handleCheckForUpdates}
-                  className="underline transition-colors hover:text-foreground"
+                  className="underline transition-colors"
                 >
                   Check for updates
                 </button>
@@ -254,7 +254,7 @@ function LoadingScreen({
                 <button
                   type="button"
                   onClick={handleInstall}
-                  className="underline transition-colors hover:text-foreground"
+                  className="underline transition-colors"
                 >
                   Install v{updateVersion} &amp; restart
                 </button>
@@ -280,7 +280,7 @@ function LoadingScreen({
                 <button
                   type="button"
                   onClick={handleCheckForUpdates}
-                  className="underline transition-colors hover:text-foreground"
+                  className="underline transition-colors"
                 >
                   Retry update check
                 </button>
@@ -292,7 +292,7 @@ function LoadingScreen({
                 href="https://bloxmindai.netlify.app/"
                 target="_blank"
                 rel="noreferrer"
-                className="underline transition-colors hover:text-foreground"
+                className="underline transition-colors"
               >
                 Get help
               </a>
@@ -300,7 +300,7 @@ function LoadingScreen({
 
             {technicalDetail && (
               <details className="mt-1 w-full max-w-sm rounded-lg border bg-card text-left text-xs text-muted-foreground">
-                <summary className="cursor-pointer select-none px-3 py-2.5 font-medium text-foreground/75 transition-colors hover:text-foreground">
+                <summary className="cursor-pointer select-none px-3 py-2.5 font-medium text-foreground/75 transition-colors">
                   Technical details
                 </summary>
                 <div className="border-t px-3 py-3">
@@ -313,7 +313,7 @@ function LoadingScreen({
                   <button
                     type="button"
                     onClick={handleCopyDetails}
-                    className="mt-2 font-medium text-foreground/70 underline transition-colors hover:text-foreground"
+                    className="mt-2 font-medium text-foreground/70 underline transition-colors"
                   >
                     {copyStatus === "copied"
                       ? "Copied"

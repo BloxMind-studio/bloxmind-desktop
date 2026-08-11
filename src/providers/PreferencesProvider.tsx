@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
   type ReactNode,
@@ -14,9 +14,10 @@ import { useAgents } from "@/hooks/useAgents";
 import { useConnectedProviders } from "@/hooks/useProviders";
 import { setDetailedAnalyticsEnabled as setDetailedAnalyticsCollection } from "@/lib/analytics";
 import { type AppConfig, loadConfig, patchConfig } from "@/lib/config";
+import { DEFAULT_APP_CONFIG } from "@/types/desktop";
 import { qk } from "@/lib/queryKeys";
 import { splitModelKey } from "@/lib/splitModelKey";
-import type { AccentColor, LayoutDensity } from "@/types/desktop";
+import type { AccentColor, LayoutDensity, ThemeColors, ThemePreset } from "@/types/desktop";
 
 const ACCENT_CSS_VALUES: Record<AccentColor, string> = {
   blue: "221 83% 58%",
@@ -27,9 +28,55 @@ const ACCENT_CSS_VALUES: Record<AccentColor, string> = {
   amber: "38 92% 50%",
 };
 
+const ACCENT_HEX_VALUES: Record<AccentColor, string> = {
+  blue: "#3B82F6",
+  indigo: "#6366F1",
+  violet: "#8B5CF6",
+  emerald: "#22C55E",
+  rose: "#F43F63",
+  amber: "#F59E0B",
+};
+
+// Theme-color presets. Selecting one applies its four tokens.
+export const THEME_PRESETS: Record<Exclude<ThemePreset, "custom">, ThemeColors> = {
+  "soft-blue": {
+    selectedBg: "#3B82F6",
+    selectedFg: "#1D4ED8",
+    hoverBg: "#3B82F6",
+    hoverFg: "#1D4ED8",
+  },
+  "dark-neon": {
+    selectedBg: "#39FF14",
+    selectedFg: "#000000",
+    hoverBg: "#22C55E",
+    hoverFg: "#000000",
+  },
+  emerald: {
+    selectedBg: "#10B981",
+    selectedFg: "#065F46",
+    hoverBg: "#34D399",
+    hoverFg: "#047857",
+  },
+};
+
 function applyAccentColor(color: AccentColor) {
   if (typeof window === "undefined") return;
-  window.document.documentElement.style.setProperty("--accent-hsl", ACCENT_CSS_VALUES[color]);
+  const root = window.document.documentElement;
+  root.style.setProperty("--accent-hsl", ACCENT_CSS_VALUES[color]);
+  root.style.setProperty("--accent-hsl-soft", ACCENT_CSS_VALUES[color].replace(/84%/, "84%"));
+  root.style.setProperty("--accent-hsl-glow", ACCENT_CSS_VALUES[color].replace(/84%/, "60%"));
+  // Also set the hex-based --accent used by components like btn-primary
+  const hex = ACCENT_HEX_VALUES[color];
+  root.style.setProperty("--accent", hex);
+}
+
+function applyThemeColors(colors: ThemeColors) {
+  if (typeof window === "undefined") return;
+  const root = window.document.documentElement;
+  root.style.setProperty("--selected", colors.selectedBg);
+  root.style.setProperty("--selected-foreground", colors.selectedFg);
+  root.style.setProperty("--hover", colors.hoverBg);
+  root.style.setProperty("--hover-foreground", colors.hoverFg);
 }
 
 function applyLayoutDensity(density: LayoutDensity) {
@@ -44,15 +91,30 @@ function applyFontSize(size: number) {
   window.document.documentElement.style.setProperty("--app-font-scale", String(size));
 }
 
-/** Helper to persist a config patch with user-facing error handling.
- * On failure, shows a toast and calls the optional revert callback. */
-function persistWithFeedback(patch: Partial<AppConfig>, revert?: () => void): void {
-  patchConfig(patch).catch((err) => {
+/**
+ * Persist a config patch with optimistic cache update and user-facing error
+ * handling. The React Query cache (`qk.config`) is updated immediately so all
+ * consumers (OpenCodeClientProvider, theme-provider) see the change without
+ * waiting for the IPC round-trip to complete. On failure, the cache is
+ * reverted and the user is notified.
+ */
+function persistWithFeedback(
+  queryClient: ReturnType<typeof useQueryClient>,
+  patch: Partial<AppConfig>,
+  revert: (() => void) | undefined,
+): void {
+  // Capture the previous cache value for rollback. Seed from defaults if the
+  // query hasn't resolved yet so the update is immediately visible to observers.
+  const previous = queryClient.getQueryData<AppConfig>(qk.config) ?? DEFAULT_APP_CONFIG;
+  queryClient.setQueryData<AppConfig>(qk.config, { ...previous, ...patch });
+  patchConfig(patch).catch((err: unknown) => {
     console.error("Failed to save preference:", err);
+    // Roll back the optimistic cache update.
+    queryClient.setQueryData<AppConfig>(qk.config, previous);
+    revert?.();
     toast.error("Failed to save setting", {
       description: "Your change was not persisted. Try again or restart the app.",
     });
-    revert?.();
   });
 }
 
@@ -86,10 +148,14 @@ export interface UIPreferences {
   layoutDensity: LayoutDensity;
   fontSize: number;
   soundEffects: boolean;
+  themePreset: ThemePreset;
+  themeColors: ThemeColors;
   setAccentColor: (color: AccentColor) => void;
   setLayoutDensity: (density: LayoutDensity) => void;
   setFontSize: (size: number) => void;
   setSoundEffects: (enabled: boolean) => void;
+  setThemePreset: (preset: ThemePreset) => void;
+  setThemeColors: (colors: ThemeColors) => void;
 }
 
 export const UIPreferencesContext = createContext<UIPreferences | undefined>(undefined);
@@ -175,76 +241,98 @@ export function usePreferences() {
 }
 
 export function PreferencesProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
   const { data: configData } = useQuery<AppConfig>({
     queryKey: qk.config,
     queryFn: loadConfig,
   });
 
-  const [selectedModel, setSelectedModelState] = useState<string | null>(null);
+  // `selectedAgent` is ephemeral (auto-selected from the live agent list, not
+  // persisted to config), so it stays as local state.
   const [selectedAgent, setSelectedAgentState] = useState<string | null>(null);
+  const detailedAnalyticsEnabledRef = useRef(false);
+
+  // Local state for config fields — initialized from the query cache and kept
+  // in sync when configData changes externally (e.g. another window writes
+  // preferences). Local state provides immediate UI feedback on user edits
+  // without waiting for the async IPC round-trip; `persistWithFeedback` also
+  // pushes the same change into the shared React Query cache so other consumers
+  // (OpenCodeClientProvider, theme-provider) see it instantly.
+  const [selectedModel, setSelectedModelState] = useState<string | null>(null);
   const [selectedVariant, setSelectedVariantState] = useState<string | null>(null);
   const [hiddenModels, setHiddenModels] = useState<Set<string>>(new Set());
   const [detailedAnalyticsEnabled, setDetailedAnalyticsEnabledState] = useState(false);
-  const detailedAnalyticsEnabledRef = useRef(false);
   // UI customization
-  const [accentColor, setAccentColorState] = useState<AccentColor>("indigo");
+  const [accentColor, setAccentColorState] = useState<AccentColor>("emerald");
   const [layoutDensity, setLayoutDensityState] = useState<LayoutDensity>("comfortable");
   const [fontSize, setFontSizeState] = useState(1);
   const [soundEffects, setSoundEffectsState] = useState(true);
+  const [themePreset, setThemePresetState] = useState<ThemePreset>("dark-neon");
+  const [themeColors, setThemeColorsState] = useState<ThemeColors>(DEFAULT_APP_CONFIG.themeColors);
   // AI engine
-  const [temperature, setTemperatureState] = useState(0.7);
-  const [maxTokens, setMaxTokensState] = useState(4_096);
-  const [systemPrompt, setSystemPromptState] = useState("");
+  const [temperature, setTemperatureState] = useState(DEFAULT_APP_CONFIG.temperature);
+  const [maxTokens, setMaxTokensState] = useState(DEFAULT_APP_CONFIG.maxTokens);
+  const [systemPrompt, setSystemPromptState] = useState(DEFAULT_APP_CONFIG.systemPrompt);
   const [customApiEndpoint, setCustomApiEndpointState] = useState<string | null>(null);
   // Behavior
-  const [autoScroll, setAutoScrollState] = useState(true);
-  const [enterToSend, setEnterToSendState] = useState(true);
-  const [notificationsEnabled, setNotificationsEnabledState] = useState(true);
+  const [autoScroll, setAutoScrollState] = useState(DEFAULT_APP_CONFIG.autoScroll);
+  const [enterToSend, setEnterToSendState] = useState(DEFAULT_APP_CONFIG.enterToSend);
+  const [notificationsEnabled, setNotificationsEnabledState] = useState(
+    DEFAULT_APP_CONFIG.notificationsEnabled,
+  );
   // SSE connection
-  const [sseReconnectDelay, setSseReconnectDelayState] = useState(3_000);
-  const [sseHeartbeatTimeout, setSseHeartbeatTimeoutState] = useState(30_000);
+  const [sseReconnectDelay, setSseReconnectDelayState] = useState(
+    DEFAULT_APP_CONFIG.sseReconnectDelay,
+  );
+  const [sseHeartbeatTimeout, setSseHeartbeatTimeoutState] = useState(
+    DEFAULT_APP_CONFIG.sseHeartbeatTimeout,
+  );
 
   const connectedProviders = useConnectedProviders();
 
-  const setDetailedAnalyticsEnabled = useCallback((enabled: boolean) => {
-    const previous = detailedAnalyticsEnabledRef.current;
-    detailedAnalyticsEnabledRef.current = enabled;
-    setDetailedAnalyticsEnabledState(enabled);
-    setDetailedAnalyticsCollection(enabled);
-    persistWithFeedback({ detailedAnalytics: enabled ? "enabled" : "disabled" }, () => {
-      detailedAnalyticsEnabledRef.current = previous;
-      setDetailedAnalyticsEnabledState(previous);
-      setDetailedAnalyticsCollection(previous);
-    });
-  }, []);
+  // Seed the cache with defaults on first mount so that `persistWithFeedback`
+  // always has a value to read/patch (and so tests that don't await the async
+  // config query still see defaults immediately). Subsequent real config data
+  // from `loadConfig` overrides this.
+  useEffect(() => {
+    const existing = queryClient.getQueryData<AppConfig>(qk.config);
+    if (!existing) {
+      queryClient.setQueryData<AppConfig>(qk.config, DEFAULT_APP_CONFIG);
+    }
+  }, [queryClient]);
 
-  // Initialize from config data when it arrives and prompt once when no choice exists.
+  // Sync local state when config data arrives (from async load or external
+  // update). Merge with DEFAULT_APP_CONFIG so partial configs (common in tests)
+  // still fill every local-state field.
   useEffect(() => {
     if (!configData) return;
-    setHiddenModels(new Set(configData.hiddenModels));
-    const detailedEnabled = configData.detailedAnalytics === "enabled";
+    const cfg = { ...DEFAULT_APP_CONFIG, ...configData };
+    setHiddenModels(new Set(cfg.hiddenModels));
+    const detailedEnabled = cfg.detailedAnalytics === "enabled";
     detailedAnalyticsEnabledRef.current = detailedEnabled;
     setDetailedAnalyticsEnabledState(detailedEnabled);
-    setDetailedAnalyticsCollection(detailedEnabled);
+    setDetailedAnalyticsCollection(detailedAnalyticsEnabledRef.current);
     // UI customization
-    setAccentColorState(configData.accentColor);
-    setLayoutDensityState(configData.layoutDensity);
-    setFontSizeState(configData.fontSize);
-    setSoundEffectsState(configData.soundEffects);
+    setAccentColorState(cfg.accentColor);
+    setLayoutDensityState(cfg.layoutDensity);
+    setFontSizeState(cfg.fontSize);
+    setSoundEffectsState(cfg.soundEffects);
+    setThemePresetState(cfg.themePreset);
+    setThemeColorsState(cfg.themeColors);
     // AI engine
-    setTemperatureState(configData.temperature);
-    setMaxTokensState(configData.maxTokens);
-    setSystemPromptState(configData.systemPrompt);
-    setCustomApiEndpointState(configData.customApiEndpoint);
+    setTemperatureState(cfg.temperature);
+    setMaxTokensState(cfg.maxTokens);
+    setSystemPromptState(cfg.systemPrompt);
+    setCustomApiEndpointState(cfg.customApiEndpoint);
     // Behavior
-    setAutoScrollState(configData.autoScroll);
-    setEnterToSendState(configData.enterToSend);
-    setNotificationsEnabledState(configData.notificationsEnabled);
+    setAutoScrollState(cfg.autoScroll);
+    setEnterToSendState(cfg.enterToSend);
+    setNotificationsEnabledState(cfg.notificationsEnabled);
     // SSE connection
-    setSseReconnectDelayState(configData.sseReconnectDelay);
-    setSseHeartbeatTimeoutState(configData.sseHeartbeatTimeout);
+    setSseReconnectDelayState(cfg.sseReconnectDelay);
+    setSseHeartbeatTimeoutState(cfg.sseHeartbeatTimeout);
 
-    if (configData.detailedAnalytics === "unset") {
+    if (cfg.detailedAnalytics === "unset") {
       toast("Help improve BloxMind", {
         id: "detailed-analytics-consent",
         className: "analytics-consent-toast",
@@ -261,7 +349,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
         },
       });
     }
-  }, [configData, setDetailedAnalyticsEnabled]);
+  }, [configData]);
 
   // Restore a valid last-used model and clear selections whose provider disconnected.
   useEffect(() => {
@@ -291,19 +379,46 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     if (primary) setSelectedAgentState(primary.name);
   }, [agents, selectedAgent]);
 
-  const setSelectedModel = useCallback((modelID: string) => {
-    setSelectedModelState(modelID);
-    persistWithFeedback({ lastModel: modelID }, () => setSelectedModelState(null));
-  }, []);
+  const setDetailedAnalyticsEnabled = useCallback(
+    (enabled: boolean) => {
+      const previous = detailedAnalyticsEnabledRef.current;
+      detailedAnalyticsEnabledRef.current = enabled;
+      setDetailedAnalyticsEnabledState(enabled);
+      setDetailedAnalyticsCollection(enabled);
+      persistWithFeedback(
+        queryClient,
+        { detailedAnalytics: enabled ? "enabled" : "disabled" },
+        () => {
+          detailedAnalyticsEnabledRef.current = previous;
+          setDetailedAnalyticsEnabledState(previous);
+          setDetailedAnalyticsCollection(previous);
+        },
+      );
+    },
+    [queryClient],
+  );
 
-  const setSelectedAgent = useCallback((name: string) => {
-    setSelectedAgentState(name);
-  }, []);
+  const setSelectedModel = useCallback(
+    (modelID: string) => {
+      setSelectedModelState(modelID);
+      persistWithFeedback(queryClient, { lastModel: modelID }, () => setSelectedModelState(null));
+    },
+    [queryClient],
+  );
 
-  const setSelectedVariant = useCallback((variant: string | null) => {
-    setSelectedVariantState(variant);
-    persistWithFeedback({ defaultVariant: variant }, () => setSelectedVariantState(null));
-  }, []);
+  const setSelectedAgent = useCallback((name: string) => setSelectedAgentState(name), []);
+
+  const setSelectedVariant = useCallback(
+    (variant: string | null) => {
+      setSelectedVariantState(variant);
+      persistWithFeedback(
+        queryClient,
+        { defaultVariant: variant },
+        () => setSelectedVariantState(null),
+      );
+    },
+    [queryClient],
+  );
 
   const toggleModelVisibility = useCallback(
     (modelKey: string) => {
@@ -314,79 +429,177 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
         next.add(modelKey);
       }
       setHiddenModels(next);
-      persistWithFeedback({ hiddenModels: [...next] }, () => setHiddenModels(hiddenModels));
+      persistWithFeedback(
+        queryClient,
+        { hiddenModels: [...next] },
+        () => setHiddenModels(hiddenModels),
+      );
     },
-    [hiddenModels],
+    [queryClient, hiddenModels],
   );
 
   // UI customization setters
-  const setAccentColor = useCallback((color: AccentColor) => {
-    setAccentColorState(color);
-    persistWithFeedback({ accentColor: color }, () => setAccentColorState("indigo"));
-  }, []);
-  const setLayoutDensity = useCallback((density: LayoutDensity) => {
-    setLayoutDensityState(density);
-    persistWithFeedback({ layoutDensity: density }, () => setLayoutDensityState("comfortable"));
-  }, []);
-  const setFontSize = useCallback((size: number) => {
-    setFontSizeState(size);
-    persistWithFeedback({ fontSize: size }, () => setFontSizeState(1));
-  }, []);
-  const setSoundEffects = useCallback((enabled: boolean) => {
-    setSoundEffectsState(enabled);
-    persistWithFeedback({ soundEffects: enabled }, () => setSoundEffectsState(true));
-  }, []);
+  const setAccentColor = useCallback(
+    (color: AccentColor) => {
+      setAccentColorState(color);
+      persistWithFeedback(queryClient, { accentColor: color }, () =>
+        setAccentColorState("emerald"),
+      );
+    },
+    [queryClient],
+  );
+  const setLayoutDensity = useCallback(
+    (density: LayoutDensity) => {
+      setLayoutDensityState(density);
+      persistWithFeedback(queryClient, { layoutDensity: density }, () =>
+        setLayoutDensityState("comfortable"),
+      );
+    },
+    [queryClient],
+  );
+  const setFontSize = useCallback(
+    (size: number) => {
+      setFontSizeState(size);
+      persistWithFeedback(queryClient, { fontSize: size }, () => setFontSizeState(1));
+    },
+    [queryClient],
+  );
+  const setSoundEffects = useCallback(
+    (enabled: boolean) => {
+      setSoundEffectsState(enabled);
+      persistWithFeedback(queryClient, { soundEffects: enabled }, () => setSoundEffectsState(true));
+    },
+    [queryClient],
+  );
+  const setThemePreset = useCallback(
+    (preset: ThemePreset) => {
+      setThemePresetState(preset);
+      if (preset !== "custom") {
+        const colors = THEME_PRESETS[preset];
+        setThemeColorsState(colors);
+        persistWithFeedback(
+          queryClient,
+          { themePreset: preset, themeColors: colors },
+          () => setThemePresetState("dark-neon"),
+        );
+      } else {
+        persistWithFeedback(
+          queryClient,
+          { themePreset: preset },
+          () => setThemePresetState("dark-neon"),
+        );
+      }
+    },
+    [queryClient],
+  );
+  const setThemeColors = useCallback(
+    (colors: ThemeColors) => {
+      setThemeColorsState(colors);
+      setThemePresetState("custom");
+      persistWithFeedback(
+        queryClient,
+        { themePreset: "custom", themeColors: colors },
+        () =>
+          setThemeColorsState({
+            selectedBg: "#39FF14",
+            selectedFg: "#000000",
+            hoverBg: "#22C55E",
+            hoverFg: "#000000",
+          }),
+      );
+    },
+    [queryClient],
+  );
 
   // AI engine setters
-  const setTemperature = useCallback((temp: number) => {
-    setTemperatureState(temp);
-    persistWithFeedback({ temperature: temp }, () => setTemperatureState(0.7));
-  }, []);
-  const setMaxTokens = useCallback((tokens: number) => {
-    setMaxTokensState(tokens);
-    persistWithFeedback({ maxTokens: tokens }, () => setMaxTokensState(4_096));
-  }, []);
-  const setSystemPrompt = useCallback((prompt: string) => {
-    setSystemPromptState(prompt);
-    persistWithFeedback({ systemPrompt: prompt }, () => setSystemPromptState(""));
-  }, []);
-  const setCustomApiEndpoint = useCallback((endpoint: string | null) => {
-    setCustomApiEndpointState(endpoint);
-    persistWithFeedback({ customApiEndpoint: endpoint }, () => setCustomApiEndpointState(null));
-  }, []);
+  const setTemperature = useCallback(
+    (temp: number) => {
+      setTemperatureState(temp);
+      persistWithFeedback(queryClient, { temperature: temp }, () => setTemperatureState(0.7));
+    },
+    [queryClient],
+  );
+  const setMaxTokens = useCallback(
+    (tokens: number) => {
+      setMaxTokensState(tokens);
+      persistWithFeedback(queryClient, { maxTokens: tokens }, () => setMaxTokensState(4_096));
+    },
+    [queryClient],
+  );
+  const setSystemPrompt = useCallback(
+    (prompt: string) => {
+      setSystemPromptState(prompt);
+      persistWithFeedback(queryClient, { systemPrompt: prompt }, () => setSystemPromptState(""));
+    },
+    [queryClient],
+  );
+  const setCustomApiEndpoint = useCallback(
+    (endpoint: string | null) => {
+      setCustomApiEndpointState(endpoint);
+      persistWithFeedback(
+        queryClient,
+        { customApiEndpoint: endpoint },
+        () => setCustomApiEndpointState(null),
+      );
+    },
+    [queryClient],
+  );
 
   // Behavior setters
-  const setAutoScroll = useCallback((enabled: boolean) => {
-    setAutoScrollState(enabled);
-    persistWithFeedback({ autoScroll: enabled }, () => setAutoScrollState(true));
-  }, []);
-  const setEnterToSend = useCallback((enabled: boolean) => {
-    setEnterToSendState(enabled);
-    persistWithFeedback({ enterToSend: enabled }, () => setEnterToSendState(true));
-  }, []);
-  const setNotificationsEnabled = useCallback((enabled: boolean) => {
-    setNotificationsEnabledState(enabled);
-    persistWithFeedback({ notificationsEnabled: enabled }, () =>
-      setNotificationsEnabledState(true),
-    );
-  }, []);
+  const setAutoScroll = useCallback(
+    (enabled: boolean) => {
+      setAutoScrollState(enabled);
+      persistWithFeedback(queryClient, { autoScroll: enabled }, () => setAutoScrollState(true));
+    },
+    [queryClient],
+  );
+  const setEnterToSend = useCallback(
+    (enabled: boolean) => {
+      setEnterToSendState(enabled);
+      persistWithFeedback(queryClient, { enterToSend: enabled }, () => setEnterToSendState(true));
+    },
+    [queryClient],
+  );
+  const setNotificationsEnabled = useCallback(
+    (enabled: boolean) => {
+      setNotificationsEnabledState(enabled);
+      persistWithFeedback(
+        queryClient,
+        { notificationsEnabled: enabled },
+        () => setNotificationsEnabledState(true),
+      );
+    },
+    [queryClient],
+  );
 
   // SSE connection setters
-  const setSseReconnectDelay = useCallback((delay: number) => {
-    setSseReconnectDelayState(delay);
-    persistWithFeedback({ sseReconnectDelay: delay }, () => setSseReconnectDelayState(3_000));
-  }, []);
-  const setSseHeartbeatTimeout = useCallback((timeout: number) => {
-    setSseHeartbeatTimeoutState(timeout);
-    persistWithFeedback({ sseHeartbeatTimeout: timeout }, () =>
-      setSseHeartbeatTimeoutState(30_000),
-    );
-  }, []);
+  const setSseReconnectDelay = useCallback(
+    (delay: number) => {
+      setSseReconnectDelayState(delay);
+      persistWithFeedback(queryClient, { sseReconnectDelay: delay }, () =>
+        setSseReconnectDelayState(3_000),
+      );
+    },
+    [queryClient],
+  );
+  const setSseHeartbeatTimeout = useCallback(
+    (timeout: number) => {
+      setSseHeartbeatTimeoutState(timeout);
+      persistWithFeedback(queryClient, { sseHeartbeatTimeout: timeout }, () =>
+        setSseHeartbeatTimeoutState(30_000),
+      );
+    },
+    [queryClient],
+  );
 
   // Apply UI customization CSS variables
   useEffect(() => {
     applyAccentColor(accentColor);
   }, [accentColor]);
+
+  useEffect(() => {
+    applyThemeColors(themeColors);
+  }, [themeColors]);
 
   useEffect(() => {
     applyLayoutDensity(layoutDensity);
@@ -429,20 +642,28 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       layoutDensity,
       fontSize,
       soundEffects,
+      themePreset,
+      themeColors,
       setAccentColor,
       setLayoutDensity,
       setFontSize,
       setSoundEffects,
+      setThemePreset,
+      setThemeColors,
     }),
     [
       accentColor,
       layoutDensity,
       fontSize,
       soundEffects,
+      themePreset,
+      themeColors,
       setAccentColor,
       setLayoutDensity,
       setFontSize,
       setSoundEffects,
+      setThemePreset,
+      setThemeColors,
     ],
   );
 
@@ -457,16 +678,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       setSystemPrompt,
       setCustomApiEndpoint,
     }),
-    [
-      temperature,
-      maxTokens,
-      systemPrompt,
-      customApiEndpoint,
-      setTemperature,
-      setMaxTokens,
-      setSystemPrompt,
-      setCustomApiEndpoint,
-    ],
+    [temperature, maxTokens, systemPrompt, customApiEndpoint, setTemperature, setMaxTokens, setSystemPrompt, setCustomApiEndpoint],
   );
 
   const behaviorValue = useMemo<BehaviorPreferences>(
@@ -478,14 +690,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       setEnterToSend,
       setNotificationsEnabled,
     }),
-    [
-      autoScroll,
-      enterToSend,
-      notificationsEnabled,
-      setAutoScroll,
-      setEnterToSend,
-      setNotificationsEnabled,
-    ],
+    [autoScroll, enterToSend, notificationsEnabled, setAutoScroll, setEnterToSend, setNotificationsEnabled],
   );
 
   const sseValue = useMemo<SSEPreferences>(
