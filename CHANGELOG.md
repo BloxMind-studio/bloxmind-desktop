@@ -5,6 +5,12 @@ All notable changes to BloxMind are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.14] - 2026-08-11
+
+### Fixed
+
+- Fixed a bug where changing the Accent Color or Color Preset in the Appearance settings would reset the active theme mode (e.g. reverting from Dark back to System). The `ThemeProvider.setTheme` now mirrors theme changes into the shared React Query cache so preference writes no longer propagate a stale theme value back to the UI.
+
 ## [0.9.13] - 2026-08-09
 
 ### Fixed
