@@ -5,6 +5,18 @@ All notable changes to BloxMind are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.96] - 2026-08-13
+
+### Added
+
+- Added **Agent Studio**: design reusable agents as visual node workflows on a 3D isometric canvas (with a 2D fallback), edit nodes, generate a full agent from a short prompt, and run it — the engine compiles each workflow into a runnable Python script and streams live execution logs with per-node status.
+- Added an **app-mode switcher** (Roblox / Apps / Agent) that persists in `AppConfig` and `localStorage` across restarts.
+- Added an **Apps Builder** for assembling apps from a component palette.
+- Added broad unit coverage for the agent engine, isometric math, both workflow canvases, and the mode switcher.
+
+### Changed
+
+- The desktop config schema now carries `activeMode`, and the mode choice is kept in sync between `AppConfig` and `localStorage`.
 ## [0.9.95] - 2026-08-13
 
 ### Added
