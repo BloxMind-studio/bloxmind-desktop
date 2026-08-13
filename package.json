@@ -1,0 +1,60 @@
+{
+  "name": "@bloxmind-studio/desktop",
+  "version": "0.9.96",
+  "description": "BloxMind Desktop — Electron/Next.js frontend, 3D Canvas, and App Builder UI",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "author": "BloxMind Studio",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/BloxMind-studio/bloxmind-desktop.git"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "tsc && vite build",
+    "package": "pnpm build && electron-builder",
+    "preview": "vite preview",
+    "lint": "biome check src/ electron/ scripts/",
+    "lint:fix": "biome check --write src/ electron/ scripts/",
+    "test": "vitest run && pnpm test:release",
+    "test:release": "node --test scripts/*.test.ts",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "typecheck": "tsc --noEmit && tsc -p electron/tsconfig.json --noEmit && tsc -p scripts/tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@bloxmind-studio/types": "workspace:*",
+    "@bloxmind-studio/ui": "workspace:*",
+    "@opencode-ai/sdk": "^1.18.4",
+    "@tanstack/react-query": "^5.91.2",
+    "@tanstack/react-virtual": "^3.13.23",
+    "effect": "^3.22.0",
+    "electron-updater": "^6.8.9",
+    "lucide-react": "^1.27.0",
+    "posthog-js": "^1.363.1",
+    "radix-ui": "^1.6.7",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0",
+    "sonner": "^2.0.7"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.3.14",
+    "@playwright/test": "^1.62.1",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^25.2.2",
+    "@types/react": "^18.3.1",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^6.0.3",
+    "@vitest/coverage-v8": "^4.1.10",
+    "electron": "^43.1.1",
+    "electron-builder": "^26.15.3",
+    "tailwindcss": "^4.3.3",
+    "typescript": "~5.6.2",
+    "vite": "^8.1.5",
+    "vite-plugin-electron": "^1.1.0",
+    "vitest": "^4.1.10"
+  }
+}

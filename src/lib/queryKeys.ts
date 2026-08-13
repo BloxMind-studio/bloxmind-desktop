@@ -1,0 +1,17 @@
+export const qk = {
+  sessions: ["sessions"] as const,
+  session: (id: string) => ["sessions", id] as const,
+  messages: (id: string) => ["sessions", id, "messages"] as const,
+  sessionError: (id: string) => ["sessions", id, "error"] as const,
+  todos: (id: string) => ["sessions", id, "todos"] as const,
+  statuses: ["session-statuses"] as const,
+  providers: ["providers"] as const,
+  agents: ["agents"] as const,
+  commands: ["commands"] as const,
+  questions: (id: string) => ["sessions", id, "questions"] as const,
+  permissions: (id: string) => ["sessions", id, "permissions"] as const,
+  config: ["config"] as const,
+  studioConnection: ["studio-connection"] as const,
+  projectIndex: ["project-index"] as const,
+  projectIndexProgram: ["project-index", "program"] as const,
+};

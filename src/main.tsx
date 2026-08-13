@@ -1,0 +1,47 @@
+import posthog from "posthog-js/dist/module.full.no-external.js";
+import React from "react";
+import ReactDOM from "react-dom/client";
+import App from "./App";
+import "./index.css";
+import {
+  ANALYTICS_SCHEMA_VERSION,
+  analyticsProperties,
+  POSTHOG_API_HOST,
+  POSTHOG_PROJECT_TOKEN,
+} from "./lib/analytics";
+import { desktop } from "./lib/desktop";
+
+if (import.meta.env.PROD && POSTHOG_PROJECT_TOKEN) {
+  posthog.init(POSTHOG_PROJECT_TOKEN, {
+    api_host: POSTHOG_API_HOST,
+    person_profiles: "always",
+    capture_pageview: false,
+    // BloxMind intentionally contains "bot", which matches PostHog's bot heuristic.
+    opt_out_useragent_filter: true,
+  });
+  posthog.register({
+    $current_url: "BloxMind://app/loading",
+    $host: "app",
+    $pathname: "/loading",
+    app: "BloxMind",
+    analytics_schema_version: ANALYTICS_SCHEMA_VERSION,
+    analytics_detail_enabled: false,
+    app_platform: navigator.platform,
+    app_runtime: window.BloxMind ? "electron" : "browser",
+    app_screen: "loading",
+    app_user_agent: navigator.userAgent,
+  });
+  void desktop.getVersion().then(
+    (version) => {
+      posthog.register({ app_version: version });
+      posthog.capture("app_opened", analyticsProperties("app", { app_version: version }));
+    },
+    () => posthog.capture("app_opened", analyticsProperties("app", { app_version: "unknown" })),
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+);

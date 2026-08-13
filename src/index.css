@@ -1,0 +1,746 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Nunito+Sans:wght@400;500;600;700&family=Orbitron:wght@700;900&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap');
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+.app-titlebar {
+  -webkit-app-region: drag;
+}
+
+@custom-variant dark (&:is(.dark *));
+
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   BLOXMIND â€” DIGITAL WORKSHOP THEME
+   A warm, tactile, precision-crafted aesthetic inspired by master craftspersons.
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+
+/* â”€â”€ Typography System â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+
+@theme inline {
+  --font-sans: var(--app-font-sans);
+  --font-display: var(--app-font-sans);
+  --font-serif: var(--app-font-sans);
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Interactive state tokens — mapped to runtime CSS vars so theme colors
+     update the whole UI in real time. */
+  --color-selected: var(--selected);
+  --color-selected-foreground: var(--selected-foreground);
+  --color-hover: var(--hover);
+  --color-hover-foreground: var(--hover-foreground);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+  --radius-full: 9999px;
+}
+
+/* â”€â”€ Workshop Color Palette â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+:root {
+  /* Cyberpunk neon accent — matrix green for terminal/dev-tool feel */
+  --accent-hsl: 134 50% 50%;
+  --accent-hsl-soft: 134 50% 55%;
+  --accent-hsl-glow: 134 50% 60%;
+  --app-font-scale: 1;
+
+  /* Interactive state colors — selected is themeable, hover is locked neutral grey */
+  --selected: #22C55E;
+  --selected-foreground: #000000;
+  --hover: #E0E0E0;
+  --hover-foreground: #000000;
+
+  /* Base text font — overridden by the data-font-style preset at runtime */
+  --app-font-sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+
+  /* Texture variables */
+  --grain-opacity: 0.025;
+  --blueprint-opacity: 0.015;
+}
+
+html {
+  font-size: calc(16px * var(--app-font-scale));
+}
+
+a, button, input, textarea, select, [role="switch"] {
+  accent-color: hsl(var(--accent-hsl));
+  transition: color 0.12s ease;
+}
+
+::selection {
+  background: hsl(var(--accent-hsl) / 0.35);
+}
+
+/* â”€â”€ Layout Density Controls â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+html.layout-compact {
+  --spacing-scale: 0.85;
+}
+
+html.layout-comfortable {
+  --spacing-scale: 1;
+}
+
+html.layout-compact .p-4 {
+  padding: calc(1rem * var(--spacing-scale, 1));
+}
+
+html.layout-compact .px-4 {
+  padding-left: calc(1rem * var(--spacing-scale, 1));
+  padding-right: calc(1rem * var(--spacing-scale, 1));
+}
+
+html.layout-compact .py-3 {
+  padding-top: calc(0.75rem * var(--spacing-scale, 1));
+  padding-bottom: calc(0.75rem * var(--spacing-scale, 1));
+}
+
+html.layout-compact .gap-2 {
+  gap: calc(0.5rem * var(--spacing-scale, 1));
+}
+
+html.layout-compact .gap-3 {
+  gap: calc(0.75rem * var(--spacing-scale, 1));
+}
+
+html.layout-compact .m-0 {
+  margin: 0;
+}
+
+/* â”€â”€ Refined Scrollbars â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+.app-scrollbar {
+  scrollbar-color: color-mix(in oklch, var(--foreground) 20%, transparent) transparent;
+  scrollbar-width: thin;
+}
+.app-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.app-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.app-scrollbar::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--foreground) 18%, transparent);
+  background-clip: padding-box;
+}
+
+.app-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklch, var(--foreground) 30%, transparent);
+  background-clip: padding-box;
+}
+
+/* â”€â”€ Global Scrollbars â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklch, var(--foreground) 18%, transparent) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--foreground) 20%, transparent);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklch, var(--foreground) 32%, transparent);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* â”€â”€ Keyboard Focus â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* â”€â”€ Keyboard Shortcut Chips â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--muted);
+  padding: 1px 5px;
+  font-family: var(--app-font-sans);
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--muted-foreground);
+}
+
+.syntax-token {
+  color: var(--syntax-light);
+  font: inherit;
+}
+
+.dark .syntax-token {
+  color: var(--syntax-dark);
+}
+
+/* â”€â”€ Workshop Textures â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+/* Subtle blueprint grid pattern */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background-image: 
+    linear-gradient(to right, var(--blueprint-opacity) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--blueprint-opacity) 1px, transparent 1px);
+  background-size: 24px 24px;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.5;
+}
+
+/* Paper grain texture overlay */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.4'/%3E%3C/svg%3E");
+  opacity: var(--grain-opacity);
+  pointer-events: none;
+  z-index: 1;
+  mix-blend-mode: multiply;
+}
+
+.dark body::after {
+  mix-blend-mode: overlay;
+}
+
+/* Ensure content sits above textures */
+#root, .app-titlebar {
+  position: relative;
+  z-index: 2;
+}
+
+/* â”€â”€ Workshop Animations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out;
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.animate-scale-in {
+  animation: scale-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── BloxMind logo animations ───────────────────────────────────────────── */
+
+@keyframes BloxMind-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-4px); }
+}
+
+@keyframes BloxMind-blink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  95%           { transform: scaleY(0.08); }
+}
+
+@keyframes BloxMind-dot-pulse {
+  0%, 100% { opacity: 0.25; }
+  50%      { opacity: 0.8; }
+}
+
+/* Gentle side-to-side sway for inline thinking indicator */
+@keyframes BloxMind-think {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25%      { transform: translateY(-1px) rotate(-3deg); }
+  75%      { transform: translateY(-1px) rotate(3deg); }
+}
+
+.BloxMind-face {
+  animation: BloxMind-float 2.5s ease-in-out infinite;
+}
+
+.BloxMind-face-think {
+  animation: BloxMind-think 1.8s ease-in-out infinite;
+}
+
+.BloxMind-eye {
+  transform-origin: center;
+  animation: BloxMind-blink 4s ease-in-out infinite;
+}
+
+.BloxMind-dot {
+  animation: BloxMind-dot-pulse 1.2s ease-in-out infinite;
+}
+
+/* â”€â”€ Stone palette (light) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+:root {
+  --radius: 0.625rem;
+  /* Light mode — soft canvas with green accent */
+  --background: #F8FAFC;
+  --foreground: #0F172A;
+  --card: #FFFFFF;
+  --card-foreground: #0F172A;
+  --popover: #FFFFFF;
+  --popover-foreground: #0F172A;
+  --primary: #22C55E;
+  --primary-foreground: #000000;
+  --secondary: #E2E8F0;
+  --secondary-foreground: #0F172A;
+  --muted: #F1F5F9;
+  --muted-foreground: #000000;
+  --accent: #22C55E;
+  --accent-foreground: #000000;
+  --destructive: #EF4444;
+  --destructive-foreground: #FFFFFF;
+  --border: #CBD5E1;
+  --input: #CBD5E1;
+  --ring: #22C55E;
+  --chart-1: #22C55E;
+  --chart-2: #22D3EE;
+  --chart-3: #10B981;
+  --chart-4: #F59E0B;
+  --chart-5: #EF4444;
+  --sidebar: #F1F5F9;
+  --sidebar-foreground: #0F172A;
+  --sidebar-primary: #22C55E;
+  --sidebar-primary-foreground: #000000;
+  --sidebar-accent: #E2E8F0;
+  --sidebar-accent-foreground: #0F172A;
+  --sidebar-border: #CBD5E1;
+  --sidebar-ring: #22C55E;
+}
+
+/* â”€â”€ Stone palette (dark) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+.dark {
+  /* OLED dark — pure black background with neon green accents */
+  --background: #000000;
+  --foreground: #E5E7EB;
+  --card: #0A0A0A;
+  --card-foreground: #E5E7EB;
+  --popover: #0A0A0A;
+  --popover-foreground: #E5E7EB;
+  --primary: #22C55E;
+  --primary-foreground: #000000;
+  --secondary: #1c1c1c;
+  --secondary-foreground: #ffffff;
+  --muted: #1c1c1c;
+  --muted-foreground: #a3a3a3;
+  --accent: #22C55E;
+  --accent-foreground: #000000;
+  --destructive: #EF4444;
+  --destructive-foreground: #FFFFFF;
+  --border: #262626;
+  --input: #262626;
+  --ring: #22C55E;
+  --chart-1: #22C55E;
+  --chart-2: #22D3EE;
+  --chart-3: #10B981;
+  --chart-4: #F59E0B;
+  --chart-5: #EF4444;
+  --sidebar: #000000;
+  --sidebar-foreground: #E5E7EB;
+  --sidebar-primary: #22C55E;
+  --sidebar-primary-foreground: #000000;
+  --sidebar-accent: #1c1c1c;
+  --sidebar-accent-foreground: #E5E7EB;
+  --sidebar-border: #262626;
+  --sidebar-ring: #22C55E;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--app-font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  html, body, #root {
+    height: 100%;
+    overflow: hidden;
+  }
+}
+
+/* Text style presets — applied by the Appearance tab via data-font-style */
+:root[data-font-style="quiet"] { --app-font-sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif; }
+:root[data-font-style="rounded"] { --app-font-sans: "Nunito Sans", "Verdana", system-ui, sans-serif; }
+:root[data-font-style="classic"] { --app-font-sans: "Georgia", "Times New Roman", serif; }
+:root[data-font-style="mono"] { --app-font-sans: "JetBrains Mono", ui-monospace, "SF Mono", monospace; }
+:root[data-font-style="serif"] { --app-font-sans: "Source Serif 4", "Iowan Old Style", "Palatino Linotype", serif; }
+:root[data-font-style="humanist"] { --app-font-sans: "Gill Sans", "Trebuchet MS", system-ui, sans-serif; }
+
+/* â”€â”€ Base Layer Enhancements â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+@layer base {
+  /* Improved heading hierarchy — Orbitron for display headings */
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display font-semibold tracking-tight;
+    line-height: 1.2;
+  }
+
+  h1 { @apply text-3xl; }
+  h2 { @apply text-2xl; }
+  h3 { @apply text-xl; }
+  h4 { @apply text-lg; }
+  
+  /* Better paragraph rhythm */
+  p {
+    @apply leading-relaxed;
+    line-height: 1.65;
+  }
+  
+  /* Refined link styling */
+  /* Refined link styling */
+  a {
+    color: hsl(var(--accent-hsl));
+    text-decoration: underline;
+    text-decoration-color: color-mix(in oklch, hsl(var(--accent-hsl)) 40%, transparent);
+    text-underline-offset: 4px;
+    transition: all 150ms ease;
+  }
+  
+  a:hover {
+    text-decoration-color: hsl(var(--accent-hsl));
+  }
+}
+
+/* â”€â”€ Workshop Component Styles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+/* Enhanced buttons with workshop feel */
+@layer components {
+  button:not(:disabled) {
+    @apply transition-all duration-200 ease-out;
+  }
+  
+  button:active:not(:disabled) {
+    @apply scale-95;
+  }
+  
+  /* Primary button: subtle shadows per light/dark theme */
+  .btn-primary {
+    @apply relative overflow-hidden;
+    box-shadow: 0 1px 2px 0 oklch(0 0 0 / 0.1), 0 1px 1px -1px oklch(0 0 0 / 0.1);
+  }
+
+  .btn-primary:hover {
+    @apply relative overflow-hidden;
+    box-shadow: 0 1px 3px 0 oklh(0 0 0 / 0.15), 0 1px 2px -1px oklh(0 0 0 / 0.15);
+  }
+
+  .dark .btn-primary {
+    @apply relative overflow-hidden;
+    box-shadow: 0 1px 2px 0 oklch(1 0 0 / 0.1), 0 1px 1px -1px oklch(1 0 0 / 0.1);
+  }
+
+  .dark .btn-primary:hover {
+    @apply relative overflow-hidden;
+    box-shadow: 0 1px 4px 0 oklch(1 0 0 / 0.12), 0 1px 2px -1px oklch(1 0 0 / 0.12);
+  }
+
+  /* Card enhancements — subtle ambient shadows */
+  .card {
+    @apply backdrop-blur-sm;
+    box-shadow: 0 1px 2px 0 oklch(0 0 0 / 0.02), 0 1px 1px -1px oklch(0 0 0 / 0.02);
+  }
+
+  .dark .card {
+    @apply relative;
+    box-shadow: 0 1px 3px 0 oklch(0 0 0 / 0.1);
+    border-color: oklch(0 0 0 / 0.08);
+  }
+
+  /* Input focus: neutral ring glow in light, neon green in dark */
+  input:focus, textarea:focus, select:focus {
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--foreground) 12%, transparent);
+  }
+
+  .dark input:focus, .dark textarea:focus, .dark select:focus {
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 40%, transparent);
+  }
+
+  
+}
+
+/* â”€â”€ Toast Styling â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+[data-sonner-toaster] {
+  --normal-bg: var(--popover);
+  --normal-border: var(--border);
+  --normal-text: var(--popover-foreground);
+  font-family: var(--app-font-sans);
+}
+
+[data-sonner-toaster] [data-sonner-toast] {
+  @apply rounded-lg border backdrop-blur-md;
+  box-shadow: 0 2px 6px -2px oklch(0 0 0 / 0.05), 0 1px 2px -1px oklch(0 0 0 / 0.03);
+  animation: slide-in-right 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.dark [data-sonner-toaster] [data-sonner-toast] {
+  box-shadow: 0 2px 6px -2px oklch(0 0 0 / 0.15), 0 1px 2px -1px oklch(0 0 0 / 0.1);
+}
+
+[data-sonner-toaster] [data-sonner-toast][data-type="success"] {
+  --toast-accent: oklch(0.556 0.16 142);
+}
+
+[data-sonner-toaster] [data-sonner-toast][data-type="error"] {
+  --toast-accent: oklch(0.577 0.245 27.325);
+}
+
+[data-sonner-toaster] [data-sonner-toast][data-type="warning"] {
+  --toast-accent: oklch(0.75 0.18 65);
+}
+
+/* Toast title */
+[data-sonner-toaster] [data-sonner-toast] [data-title] {
+  font-weight: 600;
+  font-size: 13.5px;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  color: var(--foreground);
+}
+
+/* Toast description */
+[data-sonner-toaster] [data-sonner-toast] [data-description] {
+  font-weight: 400;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--muted-foreground);
+  margin-top: 2px;
+}
+
+/* Toast action button */
+[data-sonner-toaster] [data-sonner-toast] [data-button] {
+  font-family: var(--app-font-sans);
+  font-weight: 600;
+  font-size: 12.5px;
+  padding: 6px 14px;
+  border-radius: 7px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border: none;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+[data-sonner-toaster] [data-sonner-toast] [data-button]:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px -2px oklch(0 0 0 / 0.2);
+}
+
+[data-sonner-toaster] [data-sonner-toast] [data-button]:active {
+  transform: scale(0.97);
+}
+
+/* Toast close button */
+[data-sonner-toaster] [data-sonner-toast] [data-close-button] {
+  border-radius: 7px !important;
+  border: 1px solid var(--border) !important;
+  background: var(--muted) !important;
+  color: var(--muted-foreground) !important;
+  transition: all 150ms ease;
+}
+
+[data-sonner-toaster] [data-sonner-toast] [data-close-button]:hover {
+  background: var(--accent) !important;
+  color: var(--foreground) !important;
+  transform: rotate(90deg);
+}
+
+/* Toast icon container */
+[data-sonner-toaster] [data-sonner-toast] [data-icon] {
+  width: 20px;
+  height: 20px;
+}
+
+[data-sonner-toaster] [data-sonner-toast] [data-icon] svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Persistent updater prompt */
+[data-sonner-toaster] [data-sonner-toast].update-available-toast {
+  width: min(420px, calc(100vw - 32px));
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 12px 8px;
+  padding: 16px;
+}
+
+[data-sonner-toaster] [data-sonner-toast].update-available-toast [data-content] {
+  flex: 0 0 100%;
+  gap: 8px;
+}
+
+[data-sonner-toaster] [data-sonner-toast].update-available-toast [data-description] {
+  margin-top: 0;
+  color: var(--foreground);
+}
+
+.update-release-notes {
+  display: grid;
+  gap: 8px;
+}
+
+.update-release-notes-title {
+  margin-bottom: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.update-release-notes ul {
+  display: grid;
+  gap: 4px;
+  padding-left: 16px;
+  list-style: disc;
+}
+
+[data-sonner-toaster] [data-sonner-toast].update-available-toast [data-button] {
+  margin-left: 0;
+}
+
+/* Analytics consent */
+[data-sonner-toaster] [data-sonner-toast].analytics-consent-toast {
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 12px 8px;
+  padding: 16px;
+  box-shadow: 0 2px 6px -2px oklch(0 0 0 / 0.1), 0 1px 2px -1px oklch(0 0 0 / 0.05);
+}
+
+.dark [data-sonner-toaster] [data-sonner-toast].analytics-consent-toast {
+  box-shadow: 0 2px 6px -2px oklch(0 0 0 / 0.2), 0 1px 2px -1px oklch(0 0 0 / 0.1);
+}
+
+[data-sonner-toaster] [data-sonner-toast].analytics-consent-toast [data-content] {
+  flex: 0 0 100%;
+  gap: 4px;
+}
+
+[data-sonner-toaster] [data-sonner-toast].analytics-consent-toast [data-description] {
+  margin-top: 0;
+  max-width: 34ch;
+}
+
+[data-sonner-toaster] [data-sonner-toast].analytics-consent-toast [data-button] {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+[data-sonner-toaster] [data-sonner-toast].analytics-consent-toast [data-cancel] {
+  margin-left: auto;
+}
+
+[data-sonner-toaster] [data-sonner-toast].analytics-consent-toast [data-close-button] {
+  display: none;
+}
+
+
+
