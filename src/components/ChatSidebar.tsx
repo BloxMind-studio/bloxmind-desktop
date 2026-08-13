@@ -279,7 +279,7 @@ const ChatSidebar = memo(function ChatSidebar({
         </div>
       ) : (
         <>
-          <div className="flex h-10 items-center justify-between border-b px-3">
+          <div className="flex h-9 items-center justify-between border-b px-3">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               Sessions
             </span>
@@ -336,7 +336,7 @@ const ChatSidebar = memo(function ChatSidebar({
                 Start a new one to begin.
               </div>
             )}
-            {activeSessions.map((session, index) => {
+            {activeSessions.map((session) => {
               const isActive = session.id === activeSessionId;
               const isEditing = session.id === editingId;
               const status = sessionStatuses[session.id];
@@ -344,12 +344,7 @@ const ChatSidebar = memo(function ChatSidebar({
               return (
                 <div
                   key={session.id}
-                  className={
-                    transitioningSessionId === session.id
-                      ? "animate-slide-out-left"
-                      : "animate-slide-in-left"
-                  }
-                  style={{ animationDelay: `${index * 30}ms` }}
+                  className={transitioningSessionId === session.id ? "animate-fade-in" : ""}
                 >
                   {/* biome-ignore lint/a11y/noStaticElementInteractions: right-click menu complements the keyboard-accessible buttons inside */}
                   <div
@@ -499,9 +494,7 @@ const ChatSidebar = memo(function ChatSidebar({
                       <div
                         onContextMenu={(event) => openContextMenu(event, session)}
                         className={`group relative mx-1 flex min-w-0 items-center rounded-lg text-muted-foreground transition-colors hover:bg-hover/12 dark:hover:bg-muted dark:hover:text-white ${
-                          transitioningSessionId === session.id
-                            ? "animate-slide-out-left"
-                            : "animate-slide-in-left"
+                          transitioningSessionId === session.id ? "animate-fade-in" : ""
                         }`}
                       >
                         <button
@@ -570,7 +563,7 @@ const ChatSidebar = memo(function ChatSidebar({
 
           {contextMenu && (
             <div
-              className="fixed z-[200] w-44 rounded-md border bg-popover p-1 text-popover-foreground shadow-xl"
+              className="fixed z-[200] w-44 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
               style={{ left: contextMenu.x, top: contextMenu.y }}
               onPointerDown={(event) => event.stopPropagation()}
               role="menu"
@@ -604,7 +597,7 @@ const ChatSidebar = memo(function ChatSidebar({
                   aria-modal="true"
                   aria-labelledby="delete-session-title"
                   aria-describedby="delete-session-description"
-                  className="animate-scale-in w-full max-w-sm rounded-xl border bg-card p-5 text-card-foreground shadow-2xl"
+                  className="animate-scale-in w-full max-w-sm rounded-xl border bg-card p-5 text-card-foreground shadow-lg"
                 >
                   <div className="flex h-9 w-9 items-center justify-center rounded-full bg-destructive/10 text-destructive">
                     <svg

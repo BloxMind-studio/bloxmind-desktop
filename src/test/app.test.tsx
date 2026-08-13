@@ -426,6 +426,107 @@ describe("User journeys", () => {
     });
   });
 
+  it("shows a jump-to-latest button when scrolled up and scrolls back down on click", async () => {
+    const session = makeSession("s1", "My Session");
+    const client = createClient({
+      create: vi.fn().mockResolvedValue({ data: session }),
+      get: vi.fn().mockResolvedValue({ data: session }),
+      messages: vi.fn().mockResolvedValue({ data: [] }),
+      promptAsync: vi.fn().mockResolvedValue({}),
+    });
+    const queryClient = createQueryClient();
+    seedReadyState(queryClient, { sessions: [session] });
+
+    queryClient.setQueryData<MessagesCache>(qk.messages("s1"), {
+      messageIds: [],
+      messagesById: {},
+    });
+    queryClient.setQueryData(qk.todos("s1"), []);
+    queryClient.setQueryData(qk.questions("s1"), null);
+    queryClient.setQueryData(qk.permissions("s1"), null);
+
+    const { container } = render(<TestApp client={client} queryClient={queryClient} />);
+
+    // Select the session so the chat area renders
+    await act(async () => {
+      fireEvent.click(await screen.findByText("My Session"));
+    });
+    await screen.findByRole("textbox", { name: "Message" });
+
+    // Simulate an assistant message arriving so the scroll container renders
+    const activeRef = { current: "s1" };
+    act(() => {
+      sseDispatch(
+        queryClient,
+        {
+          type: "message.updated",
+          properties: {
+            info: {
+              id: "msg_1",
+              sessionID: "s1",
+              role: "assistant",
+              time: { created: Date.now(), updated: Date.now() },
+            },
+          },
+        } as never,
+        activeRef,
+      );
+    });
+
+    // The chat needs at least one part before the message renders as a bubble,
+    // which drives the message list (and the scroll container) length.
+    act(() => {
+      sseDispatch(
+        queryClient,
+        {
+          type: "message.part.updated",
+          properties: {
+            part: {
+              id: "part_1",
+              messageID: "msg_1",
+              sessionID: "s1",
+              type: "text",
+              text: "Here's your game.",
+              time: { created: Date.now(), updated: Date.now() },
+            },
+          },
+        } as never,
+        activeRef,
+      );
+    });
+
+    const scrollEl = await waitFor(() => {
+      const el = container.querySelector("[data-chat-scroll]");
+      expect(el).not.toBeNull();
+      return el;
+    });
+    if (!scrollEl) return;
+
+    // The button is hidden while parked at the bottom
+    expect(screen.queryByTitle("Jump to latest")).not.toBeInTheDocument();
+
+    // Simulate the user scrolling up: distance from bottom > threshold
+    Object.defineProperty(scrollEl, "scrollTop", { configurable: true, value: 600 });
+    Object.defineProperty(scrollEl, "scrollHeight", { configurable: true, value: 2400 });
+    Object.defineProperty(scrollEl, "clientHeight", { configurable: true, value: 800 });
+
+    await act(async () => {
+      fireEvent.scroll(scrollEl);
+    });
+
+    expect(screen.getByTitle("Jump to latest")).toBeInTheDocument();
+
+    // Clicking the button re-attaches to the bottom via scrollIntoView
+    const scrollIntoViewSpy = vi
+      .spyOn(HTMLElement.prototype, "scrollIntoView")
+      .mockImplementation(() => {});
+    await act(async () => {
+      fireEvent.click(screen.getByTitle("Jump to latest"));
+    });
+    expect(scrollIntoViewSpy).toHaveBeenCalled();
+    scrollIntoViewSpy.mockRestore();
+  });
+
   it("shows permission prompt and user can approve it", async () => {
     const session = makeSession("s1", "My Session");
     const permRequest = {

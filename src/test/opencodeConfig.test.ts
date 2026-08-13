@@ -38,7 +38,13 @@ describe("OpenCode configuration", () => {
   });
 
   it("allows the agent to load the managed skill pack without prompting", () => {
-    expect(createOpenCodeConfig(broker).permission).toEqual({ skill: { "*": "allow" } });
+    expect(createOpenCodeConfig(broker).permission.skill).toEqual({ "*": "allow" });
+  });
+
+  it("keeps bash on ask so git or shell commands require in-app approval", () => {
+    expect(createOpenCodeConfig(broker).permission.bash).toBe("ask");
+    expect(createOpenCodeConfig(broker).agent.studio.tools.bash).toBe(true);
+    expect(createOpenCodeConfig(broker).agent.studio.prompt).toMatch(/explicit approval/i);
   });
 
   it("connects OpenCode to the loopback broker with a long tool timeout", () => {

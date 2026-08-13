@@ -25,7 +25,8 @@ const FIELD_DESCRIPTIONS: Record<keyof ThemeColors, string> = {
   hoverFg: "Text color when hovering interactive elements.",
 };
 
-const COLOR_INPUTS: Array<keyof ThemeColors> = ["selectedBg", "selectedFg", "hoverBg", "hoverFg"];
+// Only the selected-state colors are user-editable; hover is locked.
+const COLOR_INPUTS: Array<keyof ThemeColors> = ["selectedBg", "selectedFg"];
 
 /** Normalizes #rgb/#rrggbb/#rrggbbaa and rgb()/rgba() strings to #rrggbb when
  *  possible, so a native <input type="color"> can display the swatch. */
@@ -110,8 +111,7 @@ export function ThemeColorsTab() {
                     aria-hidden="true"
                   />
                   <span
-                    className="h-4 w-4 rounded-full border border-border/60"
-                    style={{ backgroundColor: colors.hoverBg }}
+                    className="h-4 w-4 rounded-full border border-border/60 bg-[#E0E0E0]"
                     aria-hidden="true"
                   />
                 </div>
@@ -137,6 +137,10 @@ export function ThemeColorsTab() {
               onChange={(value) => handleField(field, value)}
             />
           ))}
+        </div>
+        <div className="mt-3 rounded-md border border-border bg-card px-3 py-2 text-[11px] text-muted-foreground">
+          Hover background is locked to a neutral light grey so hover feedback stays consistent
+          across every preset.
         </div>
       </div>
     </div>
@@ -170,7 +174,7 @@ function ColorField({
         <button
           type="button"
           onClick={() => pickerRef.current?.click()}
-          className="relative h-9 w-9 shrink-0 overflow-hidden rounded-md border border-border transition-transform hover:scale-105"
+          className="relative h-9 w-9 shrink-0 overflow-hidden rounded-md border border-border transition-colors hover:border-accent"
           aria-label={`Pick color for ${label}`}
           title="Open color picker"
         >

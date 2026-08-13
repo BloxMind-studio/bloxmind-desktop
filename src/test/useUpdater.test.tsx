@@ -5,8 +5,17 @@ vi.mock("@/components/UpdateReleaseNotes", () => ({
   UpdateReleaseNotes: () => null,
 }));
 
-// sonner's toast is a bare callable, so replace the whole module.
-vi.mock("sonner", () => ({ toast: vi.fn() }));
+// sonner's toast is a bare callable, so replace the whole module. Its named
+// methods (warning/error/success/loading/dismiss) mirror the real API shape.
+vi.mock("sonner", () => ({
+  toast: Object.assign(vi.fn(), {
+    warning: vi.fn(),
+    error: vi.fn(),
+    success: vi.fn(),
+    loading: vi.fn(),
+    dismiss: vi.fn(),
+  }),
+}));
 
 vi.mock("@/lib/desktop", () => ({
   desktop: {
@@ -18,7 +27,16 @@ vi.mock("@/lib/desktop", () => ({
 
 import { toast } from "sonner";
 
-const toastCalls = () => toast as unknown as ReturnType<typeof vi.fn>;
+interface ToastMock {
+  (...args: unknown[]): void;
+  warning: ReturnType<typeof vi.fn>;
+  error: ReturnType<typeof vi.fn>;
+  success: ReturnType<typeof vi.fn>;
+  loading: ReturnType<typeof vi.fn>;
+  dismiss: ReturnType<typeof vi.fn>;
+}
+
+const toastCalls = () => toast as unknown as ToastMock;
 
 interface DesktopMock {
   checkForUpdate: ReturnType<typeof vi.fn>;
@@ -29,12 +47,17 @@ interface DesktopMock {
 async function runUpdater(options: {
   current: string;
   update: { version: string; body: string | null } | null;
+  failCheck?: boolean;
 }) {
   // Fresh module per test so the module-level "updaterStarted" guard resets.
   vi.resetModules();
   const { desktop } = (await import("@/lib/desktop")) as unknown as { desktop: DesktopMock };
   desktop.getVersion.mockResolvedValue(options.current);
-  desktop.checkForUpdate.mockResolvedValue(options.update);
+  if (options.failCheck) {
+    desktop.checkForUpdate.mockRejectedValue(new Error("network down"));
+  } else {
+    desktop.checkForUpdate.mockResolvedValue(options.update);
+  }
   desktop.installUpdate.mockResolvedValue(undefined);
 
   const { useUpdater } = await import("@/hooks/useUpdater");
@@ -108,6 +131,15 @@ describe("useUpdater", () => {
     const desktop = await runUpdater({ current: "0.9.5", update: null });
 
     expect(toastSpy).not.toHaveBeenCalled();
+    expect(desktop.installUpdate).not.toHaveBeenCalled();
+  });
+
+  it("shows one low-key warning toast when the update check fails", async () => {
+    const toastSpy = toastCalls();
+    const desktop = await runUpdater({ current: "0.9.5", update: null, failCheck: true });
+
+    expect(toastSpy).not.toHaveBeenCalled();
+    expect(toastSpy.warning).toHaveBeenCalledTimes(1);
     expect(desktop.installUpdate).not.toHaveBeenCalled();
   });
 });

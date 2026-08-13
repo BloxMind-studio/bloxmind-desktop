@@ -34,14 +34,19 @@ const highlighterPromise = createHighlighterCore({
 });
 
 export type HighlightLanguage =
+  | "css"
+  | "html"
   | "json"
   | "bash"
   | "diff"
   | "javascript"
   | "lua"
+  | "python"
   | "shellsession"
+  | "sql"
   | "tsx"
-  | "typescript";
+  | "typescript"
+  | "yaml";
 
 const languageLoads = new Map<HighlightLanguage, Promise<void>>();
 
@@ -53,8 +58,14 @@ function ensureLanguage(language: HighlightLanguage) {
       case "bash":
         await highlighter.loadLanguage((await import("@shikijs/langs/bash")).default);
         break;
+      case "css":
+        await highlighter.loadLanguage((await import("@shikijs/langs/css")).default);
+        break;
       case "diff":
         await highlighter.loadLanguage((await import("@shikijs/langs/diff")).default);
+        break;
+      case "html":
+        await highlighter.loadLanguage((await import("@shikijs/langs/html")).default);
         break;
       case "javascript":
         await highlighter.loadLanguage((await import("@shikijs/langs/javascript")).default);
@@ -65,14 +76,23 @@ function ensureLanguage(language: HighlightLanguage) {
       case "lua":
         await highlighter.loadLanguage((await import("@shikijs/langs/lua")).default);
         break;
+      case "python":
+        await highlighter.loadLanguage((await import("@shikijs/langs/python")).default);
+        break;
       case "shellsession":
         await highlighter.loadLanguage((await import("@shikijs/langs/shellsession")).default);
+        break;
+      case "sql":
+        await highlighter.loadLanguage((await import("@shikijs/langs/sql")).default);
         break;
       case "tsx":
         await highlighter.loadLanguage((await import("@shikijs/langs/tsx")).default);
         break;
       case "typescript":
         await highlighter.loadLanguage((await import("@shikijs/langs/typescript")).default);
+        break;
+      case "yaml":
+        await highlighter.loadLanguage((await import("@shikijs/langs/yaml")).default);
         break;
     }
   });

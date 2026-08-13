@@ -118,7 +118,7 @@ export const LightboxProvider = memo(function LightboxProvider({
               type="button"
               aria-label="Previous image"
               onClick={goPrev}
-              className="absolute left-4 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white transition-all hover:scale-110 hover:bg-white/20"
+              className="absolute left-4 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
             >
               <svg
                 width="18"
@@ -148,7 +148,7 @@ export const LightboxProvider = memo(function LightboxProvider({
               type="button"
               aria-label="Next image"
               onClick={goNext}
-              className="absolute right-4 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white transition-all hover:scale-110 hover:bg-white/20"
+              className="absolute right-4 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
             >
               <svg
                 width="18"

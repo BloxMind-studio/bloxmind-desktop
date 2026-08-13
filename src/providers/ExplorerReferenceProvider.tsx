@@ -9,7 +9,7 @@ interface ExplorerReferenceContextValue {
   publishObjects: (objects: readonly ExplorerNode[]) => void;
 }
 
-const ExplorerReferenceContext = createContext<ExplorerReferenceContextValue | null>(null);
+export const ExplorerReferenceContext = createContext<ExplorerReferenceContextValue | null>(null);
 
 export function ExplorerReferenceProvider({ children }: { children: ReactNode }) {
   const [pendingReference, setPendingReference] = useState<string | null>(null);

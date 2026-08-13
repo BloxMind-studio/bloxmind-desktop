@@ -137,7 +137,8 @@ describe("ThemeColorsTab", () => {
 
     const root = document.documentElement;
     expect(root.style.getPropertyValue("--selected")).toBe("#10B981");
-    expect(root.style.getPropertyValue("--hover")).toBe("#34D399");
+    // Hover overlay stays locked to neutral light grey regardless of preset.
+    expect(root.style.getPropertyValue("--hover")).toBe("#E0E0E0");
   });
 
   it("applies a typed hex color and switches the preset to custom", () => {

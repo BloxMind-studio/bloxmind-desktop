@@ -68,6 +68,14 @@ export const AccentColorSchema = Schema.Literal(
   "amber",
 );
 export const LayoutDensitySchema = Schema.Literal("compact", "comfortable");
+export const FontStyleSchema = Schema.Literal(
+  "quiet",
+  "rounded",
+  "classic",
+  "mono",
+  "serif",
+  "humanist",
+);
 export const ThemePresetSchema = Schema.Literal("soft-blue", "dark-neon", "emerald", "custom");
 export const ThemeColorsSchema = Schema.mutable(
   Schema.Struct({
@@ -85,6 +93,7 @@ export const ThemeColorsSchema = Schema.mutable(
 export type ThemePreference = typeof ThemePreferenceSchema.Type;
 export type AccentColor = typeof AccentColorSchema.Type;
 export type LayoutDensity = typeof LayoutDensitySchema.Type;
+export type FontStyle = typeof FontStyleSchema.Type;
 export type ThemePreset = typeof ThemePresetSchema.Type;
 export type ThemeColors = typeof ThemeColorsSchema.Type;
 
@@ -101,9 +110,13 @@ export const AppConfigSchema = Schema.mutable(
     accentColor: AccentColorSchema,
     layoutDensity: LayoutDensitySchema,
     fontSize: Schema.Number.pipe(Schema.between(0.8, 1.2)),
+    fontStyle: FontStyleSchema,
     soundEffects: Schema.Boolean,
     themePreset: ThemePresetSchema,
     themeColors: ThemeColorsSchema,
+    // Sidepanel layout persistence
+    sidebarCollapsed: Schema.Boolean,
+    explorerCollapsed: Schema.Boolean,
     // AI engine
     temperature: Schema.Number.pipe(Schema.between(0, 1)),
     maxTokens: Schema.Number.pipe(Schema.int(), Schema.between(256, 128_000)),
@@ -132,14 +145,17 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   accentColor: "emerald",
   layoutDensity: "comfortable",
   fontSize: 1,
+  fontStyle: "quiet",
   soundEffects: true,
   themePreset: "dark-neon",
   themeColors: {
     selectedBg: "#39FF14",
     selectedFg: "#000000",
-    hoverBg: "#22C55E",
+    hoverBg: "#E0E0E0",
     hoverFg: "#000000",
   },
+  sidebarCollapsed: false,
+  explorerCollapsed: false,
   temperature: 0.7,
   maxTokens: 4_096,
   systemPrompt: "",

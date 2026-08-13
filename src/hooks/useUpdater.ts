@@ -13,6 +13,7 @@ interface SemVer {
 }
 
 let updaterStarted = false;
+let failureToastShown = false;
 
 function parseSemver(version: string): SemVer | null {
   const match = version.replace(/^v/, "").match(/^(\d+)\.(\d+)\.(\d+)/);
@@ -96,6 +97,15 @@ export function useUpdater(): void {
         }
       } catch (err) {
         console.error("[updater] Failed to check for updates:", err);
+        // Low-key warning: only surface the first failure per launch so we
+        // never nag on transient network issues. A failed check is non-fatal —
+        // the next launch retries automatically.
+        if (!failureToastShown) {
+          failureToastShown = true;
+          toast.warning("Couldn't check for updates", {
+            description: "You're still on the latest installed build. We'll retry next launch.",
+          });
+        }
       }
     }
 

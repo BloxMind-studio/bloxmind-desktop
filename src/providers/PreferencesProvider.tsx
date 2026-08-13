@@ -16,7 +16,13 @@ import { setDetailedAnalyticsEnabled as setDetailedAnalyticsCollection } from "@
 import { type AppConfig, loadConfig, patchConfig } from "@/lib/config";
 import { qk } from "@/lib/queryKeys";
 import { splitModelKey } from "@/lib/splitModelKey";
-import type { AccentColor, LayoutDensity, ThemeColors, ThemePreset } from "@/types/desktop";
+import type {
+  AccentColor,
+  FontStyle,
+  LayoutDensity,
+  ThemeColors,
+  ThemePreset,
+} from "@/types/desktop";
 import { DEFAULT_APP_CONFIG } from "@/types/desktop";
 
 const ACCENT_CSS_VALUES: Record<AccentColor, string> = {
@@ -37,25 +43,29 @@ const ACCENT_HEX_VALUES: Record<AccentColor, string> = {
   amber: "#F59E0B",
 };
 
-// Theme-color presets. Selecting one applies its four tokens.
+// Theme-color presets. Selecting one applies its tokens. The hover overlay is
+// intentionally fixed to a neutral light grey and cannot be themed per-preset.
+export const LOCKED_HOVER_BG = "#E0E0E0";
+export const LOCKED_HOVER_FG = "#000000";
+
 export const THEME_PRESETS: Record<Exclude<ThemePreset, "custom">, ThemeColors> = {
   "soft-blue": {
     selectedBg: "#3B82F6",
     selectedFg: "#1D4ED8",
-    hoverBg: "#3B82F6",
-    hoverFg: "#1D4ED8",
+    hoverBg: LOCKED_HOVER_BG,
+    hoverFg: LOCKED_HOVER_FG,
   },
   "dark-neon": {
     selectedBg: "#39FF14",
     selectedFg: "#000000",
-    hoverBg: "#22C55E",
-    hoverFg: "#000000",
+    hoverBg: LOCKED_HOVER_BG,
+    hoverFg: LOCKED_HOVER_FG,
   },
   emerald: {
     selectedBg: "#10B981",
     selectedFg: "#065F46",
-    hoverBg: "#34D399",
-    hoverFg: "#047857",
+    hoverBg: LOCKED_HOVER_BG,
+    hoverFg: LOCKED_HOVER_FG,
   },
 };
 
@@ -75,8 +85,10 @@ function applyThemeColors(colors: ThemeColors) {
   const root = window.document.documentElement;
   root.style.setProperty("--selected", colors.selectedBg);
   root.style.setProperty("--selected-foreground", colors.selectedFg);
-  root.style.setProperty("--hover", colors.hoverBg);
-  root.style.setProperty("--hover-foreground", colors.hoverFg);
+  // Hover overlay is locked to a neutral light grey in every preset and can't
+  // be overridden by custom theme colors.
+  root.style.setProperty("--hover", LOCKED_HOVER_BG);
+  root.style.setProperty("--hover-foreground", LOCKED_HOVER_FG);
 }
 
 function applyLayoutDensity(density: LayoutDensity) {
@@ -89,6 +101,14 @@ function applyLayoutDensity(density: LayoutDensity) {
 function applyFontSize(size: number) {
   if (typeof window === "undefined") return;
   window.document.documentElement.style.setProperty("--app-font-scale", String(size));
+}
+
+// Font-style presets. The selected style is applied as a `data-font-style`
+// attribute on <html>; matching CSS rules in index.css drive `--app-font-sans`,
+// which the body and interactive text inherit. Kept in sync with index.css.
+function applyFontStyle(style: FontStyle) {
+  if (typeof window === "undefined") return;
+  window.document.documentElement.setAttribute("data-font-style", style);
 }
 
 /**
@@ -147,15 +167,21 @@ export interface UIPreferences {
   accentColor: AccentColor;
   layoutDensity: LayoutDensity;
   fontSize: number;
+  fontStyle: FontStyle;
   soundEffects: boolean;
   themePreset: ThemePreset;
   themeColors: ThemeColors;
+  sidebarCollapsed: boolean;
+  explorerCollapsed: boolean;
   setAccentColor: (color: AccentColor) => void;
   setLayoutDensity: (density: LayoutDensity) => void;
   setFontSize: (size: number) => void;
+  setFontStyle: (style: FontStyle) => void;
   setSoundEffects: (enabled: boolean) => void;
   setThemePreset: (preset: ThemePreset) => void;
   setThemeColors: (colors: ThemeColors) => void;
+  setSidebarCollapsed: (collapsed: boolean) => void;
+  setExplorerCollapsed: (collapsed: boolean) => void;
 }
 
 export const UIPreferencesContext = createContext<UIPreferences | undefined>(undefined);
@@ -266,9 +292,17 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [accentColor, setAccentColorState] = useState<AccentColor>("emerald");
   const [layoutDensity, setLayoutDensityState] = useState<LayoutDensity>("comfortable");
   const [fontSize, setFontSizeState] = useState(1);
+  const [fontStyle, setFontStyleState] = useState<FontStyle>(DEFAULT_APP_CONFIG.fontStyle);
   const [soundEffects, setSoundEffectsState] = useState(true);
   const [themePreset, setThemePresetState] = useState<ThemePreset>("dark-neon");
   const [themeColors, setThemeColorsState] = useState<ThemeColors>(DEFAULT_APP_CONFIG.themeColors);
+  // Sidepanel layout (persisted so toggles survive restarts)
+  const [sidebarCollapsed, setSidebarCollapsedState] = useState(
+    DEFAULT_APP_CONFIG.sidebarCollapsed,
+  );
+  const [explorerCollapsed, setExplorerCollapsedState] = useState(
+    DEFAULT_APP_CONFIG.explorerCollapsed,
+  );
   // AI engine
   const [temperature, setTemperatureState] = useState(DEFAULT_APP_CONFIG.temperature);
   const [maxTokens, setMaxTokensState] = useState(DEFAULT_APP_CONFIG.maxTokens);
@@ -337,9 +371,12 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setAccentColorState(cfg.accentColor);
     setLayoutDensityState(cfg.layoutDensity);
     setFontSizeState(cfg.fontSize);
+    setFontStyleState(cfg.fontStyle);
     setSoundEffectsState(cfg.soundEffects);
     setThemePresetState(cfg.themePreset);
     setThemeColorsState(cfg.themeColors);
+    setSidebarCollapsedState(cfg.sidebarCollapsed);
+    setExplorerCollapsedState(cfg.explorerCollapsed);
     // AI engine
     setTemperatureState(cfg.temperature);
     setMaxTokensState(cfg.maxTokens);
@@ -462,6 +499,15 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     },
     [queryClient],
   );
+  const setFontStyle = useCallback(
+    (style: FontStyle) => {
+      setFontStyleState(style);
+      persistWithFeedback(queryClient, { fontStyle: style }, () =>
+        setFontStyleState(DEFAULT_APP_CONFIG.fontStyle),
+      );
+    },
+    [queryClient],
+  );
   const setSoundEffects = useCallback(
     (enabled: boolean) => {
       setSoundEffectsState(enabled);
@@ -494,9 +540,27 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
         setThemeColorsState({
           selectedBg: "#39FF14",
           selectedFg: "#000000",
-          hoverBg: "#22C55E",
-          hoverFg: "#000000",
+          hoverBg: LOCKED_HOVER_BG,
+          hoverFg: LOCKED_HOVER_FG,
         }),
+      );
+    },
+    [queryClient],
+  );
+  const setSidebarCollapsed = useCallback(
+    (collapsed: boolean) => {
+      setSidebarCollapsedState(collapsed);
+      persistWithFeedback(queryClient, { sidebarCollapsed: collapsed }, () =>
+        setSidebarCollapsedState(DEFAULT_APP_CONFIG.sidebarCollapsed),
+      );
+    },
+    [queryClient],
+  );
+  const setExplorerCollapsed = useCallback(
+    (collapsed: boolean) => {
+      setExplorerCollapsedState(collapsed);
+      persistWithFeedback(queryClient, { explorerCollapsed: collapsed }, () =>
+        setExplorerCollapsedState(DEFAULT_APP_CONFIG.explorerCollapsed),
       );
     },
     [queryClient],
@@ -596,6 +660,10 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     applyFontSize(fontSize);
   }, [fontSize]);
 
+  useEffect(() => {
+    applyFontStyle(fontStyle);
+  }, [fontStyle]);
+
   const modelValue = useMemo<ModelPreferences>(
     () => ({
       selectedModel,
@@ -628,29 +696,41 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       accentColor,
       layoutDensity,
       fontSize,
+      fontStyle,
       soundEffects,
       themePreset,
       themeColors,
+      sidebarCollapsed,
+      explorerCollapsed,
       setAccentColor,
       setLayoutDensity,
       setFontSize,
+      setFontStyle,
       setSoundEffects,
       setThemePreset,
       setThemeColors,
+      setSidebarCollapsed,
+      setExplorerCollapsed,
     }),
     [
       accentColor,
       layoutDensity,
       fontSize,
+      fontStyle,
       soundEffects,
       themePreset,
       themeColors,
+      sidebarCollapsed,
+      explorerCollapsed,
       setAccentColor,
       setLayoutDensity,
       setFontSize,
+      setFontStyle,
       setSoundEffects,
       setThemePreset,
       setThemeColors,
+      setSidebarCollapsed,
+      setExplorerCollapsed,
     ],
   );
 

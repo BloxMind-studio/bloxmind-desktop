@@ -37,13 +37,19 @@ export function createOpenCodeConfig(broker: { url: string; token: string }) {
     },
     default_agent: "studio",
     // Skills are app-managed and safe; let the agent load them without asking.
+    // Bash is kept on "ask" so destructive/networked git or shell commands
+    // (commit, push, rm -rf, etc.) always show the in-app approval prompt.
     permission: {
       skill: { "*": "allow" },
+      bash: "ask",
     },
     agent: {
       studio: {
         mode: "primary",
         description: "Roblox Studio development assistant",
+        tools: {
+          bash: true,
+        },
         // Slight sampling focus on top of the model's default temperature for
         // more consistent Luau output without losing creativity.
         top_p: 0.95,
@@ -53,7 +59,8 @@ export function createOpenCodeConfig(broker: { url: string; token: string }) {
           "ANIMATION: for combat, eating, dance, emote, or reaction requests load the roblox-animation and roblox-animation-runtime skills before authoring.\n\n" +
           "MAPS: for map, world, level, arena, or obby requests load the roblox-map-planning and roblox-map-building skills, and present the structured plan before building.\n\n" +
           "SLOW TOOLS: generate_mesh runs for minutes; on timeout inspect the workspace and console before retrying, never insert duplicates.\n\n" +
-          "ROJO LIVE-SYNC: All files you write under src/, server/, or client/ auto-sync live to Roblox Studio via the running `rojo serve` (default port 34872). Preserve default.project.json's structural layout and standard Roblox pathing (ServerScriptService, ReplicatedStorage, StarterPlayerScripts). After a restore_checkpoint, wait briefly for Rojo to pick up the reverted filesystem content before reporting the code as live-synced.",
+          "ROJO LIVE-SYNC: Files under src/, server/, or client/ auto-sync live to Roblox Studio via `rojo serve` (default port 34872). Preserve default.project.json's structural layout and Roblox pathing (ServerScriptService, ReplicatedStorage, StarterPlayerScripts). After a restore_checkpoint, wait for Rojo to pick up the reverted files before reporting live-sync.\n\n" +
+          "GIT: check `git status`/`git diff` before editing. Commit, push, pull, and other filesystem-changing commands require explicit approval — never run them without it.",
       },
     },
   };

@@ -120,7 +120,7 @@ export const UsageLimitDialog = memo(function UsageLimitDialog({
         if (event.target === event.currentTarget) close(false);
       }}
     >
-      <div className="absolute left-1/2 top-1/2 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-xl border bg-card p-5 text-foreground shadow-2xl">
+      <div className="absolute left-1/2 top-1/2 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-xl border bg-card p-5 text-foreground shadow-lg">
         <h2 id={titleId} className="text-sm font-semibold">
           {action.title}
         </h2>

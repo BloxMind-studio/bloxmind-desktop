@@ -118,7 +118,7 @@ const LightboxOverlay = memo(function LightboxOverlay({
           type="button"
           aria-label="Previous image"
           onClick={onPrev}
-          className="absolute left-4 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white transition-all hover:scale-110 hover:bg-white/20"
+          className="absolute left-4 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
         >
           <svg
             width="18"
@@ -139,14 +139,15 @@ const LightboxOverlay = memo(function LightboxOverlay({
         key={animKey}
         src={urls[index]}
         alt={`Attachment ${index + 1} of ${urls.length}`}
-        className={`relative max-h-[85vh] max-w-[90vw] rounded-lg object-contain shadow-2xl ${slideClass}`}
+        className={`relative max-h-[85vh] max-w-[90vw] rounded-lg object-contain 
+shadow-sm ${slideClass}`}
       />
       {hasMultiple && (
         <button
           type="button"
           aria-label="Next image"
           onClick={onNext}
-          className="absolute right-4 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white transition-all hover:scale-110 hover:bg-white/20"
+          className="absolute right-4 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
         >
           <svg
             width="18"
@@ -216,7 +217,8 @@ const SendButton = memo(function SendButton({
           onClick={onSend}
           disabled={(!text.trim() && !hasAttachments) || !canSend}
           style={{ backgroundColor: "var(--accent)" }}
-          className="btn-primary flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-background shadow-md shadow-black/20 transition-all duration-200 hover:brightness-110 hover:scale-105 active:scale-95 disabled:pointer-events-none disabled:opacity-30 disabled:hover:scale-100 dark:shadow-white/10 dark:hover:shadow-white/15"
+          className="btn-primary flex h-8 w-8 shrink-0 items-center justify-center 
+rounded-xl text-background transition-colors hover:bg-hover/12 disabled:opacity-50"
           title="Send"
         >
           <svg
@@ -649,7 +651,7 @@ function ChatInput() {
                 setModelSearch("");
               }
             }}
-            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-muted-foreground transition-all duration-200 hover:bg-hover/12"
+            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-muted-foreground transition-colors hover:bg-hover/12"
           >
             <svg
               width="10"
@@ -668,7 +670,7 @@ function ChatInput() {
             {modelDisplay}
           </button>
           {showModelPicker && (
-            <div className="absolute bottom-full left-0 z-50 mb-1 flex max-h-80 w-80 flex-col rounded-lg border bg-popover shadow-lg">
+            <div className="absolute bottom-full left-0 z-50 mb-1 flex max-h-80 w-80 flex-col rounded-lg border bg-popover">
               <div className="shrink-0 border-b px-2 py-1.5">
                 <div className="flex items-center gap-1.5 rounded-md border bg-background px-2">
                   <svg
@@ -804,7 +806,7 @@ function ChatInput() {
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
         onDrop={onDrop}
-        className={`rounded-xl border bg-background transition-shadow ${isDragging ? "ring-2 ring-hover/40 border-hover/40 bg-hover/5" : ""}`}
+        className={`rounded-xl border bg-background transition-colors duration-200 hover:border-hover/50`}
       >
         {attachments.length > 0 && (
           <div className="flex gap-2 overflow-x-auto px-3 pt-2 pb-1">
@@ -902,7 +904,10 @@ function ChatInput() {
                   <span className="truncate">{agentDisplay}</span>
                 </button>
                 {showAgentPicker && (
-                  <div className="absolute bottom-full right-0 z-50 mb-1 max-h-48 w-56 overflow-y-auto rounded-lg border bg-popover p-1 shadow-lg">
+                  <div
+                    className="absolute bottom-full right-0 z-50 mb-1 max-h-48 
+w-56 overflow-y-auto rounded-lg border bg-popover"
+                  >
                     {visibleAgents.map((agent) => {
                       const isSelected = selectedAgent === agent.name;
                       return (
@@ -933,7 +938,7 @@ function ChatInput() {
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className={`btn-primary flex h-8 w-8 items-center justify-center rounded-xl border border-border/60 bg-background transition-all duration-200 hover:border-hover/50 hover:shadow-md hover:shadow-black/15 dark:hover:shadow-white/15 ${rejectShake ? "animate-reject-shake text-red-500" : "text-muted-foreground/70"}`}
+                className={`btn-primary flex h-8 w-8 items-center justify-center rounded-xl border border-border/60 bg-background transition-colors hover:border-hover/50 ${rejectShake ? "animate-reject-shake text-red-500" : "text-muted-foreground/70"}`}
                 title="Attach images"
               >
                 <svg

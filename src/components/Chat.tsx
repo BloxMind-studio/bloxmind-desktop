@@ -22,6 +22,7 @@ import {
   TOOLTIP_DURATION_MS,
   useOpenCodeClient,
 } from "@/providers/OpenCodeClientProvider";
+import { useUIPreferences } from "@/providers/PreferencesProvider";
 import { useProjectIndexContext } from "@/providers/ProjectIndexProvider";
 import { useStudioTargetOptional } from "@/providers/StudioTargetProvider";
 
@@ -111,8 +112,8 @@ function Chat() {
   // Get active session title from the sessions list
   const activeSessionTitle = allSessions?.find((s) => s.id === activeSessionId)?.title ?? null;
 
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [explorerCollapsed, setExplorerCollapsed] = useState(false);
+  const { sidebarCollapsed, setSidebarCollapsed, explorerCollapsed, setExplorerCollapsed } =
+    useUIPreferences();
   const [showSettings, setShowSettings] = useState(false);
   const [showStudioSetup, setShowStudioSetup] = useState(false);
   const [showPlaytest, setShowPlaytest] = useState(false);
@@ -167,12 +168,20 @@ function Chat() {
       // Cmd/Ctrl+E → Toggle explorer
       if (e.key === "e" && hasStudioTarget && !showPlaytest && !showMesh) {
         e.preventDefault();
-        setExplorerCollapsed((c) => !c);
+        setExplorerCollapsed(!explorerCollapsed);
       }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [ready, hasStudioTarget, showPlaytest, showMesh, createSession]);
+  }, [
+    ready,
+    hasStudioTarget,
+    showPlaytest,
+    showMesh,
+    createSession,
+    setExplorerCollapsed,
+    explorerCollapsed,
+  ]);
 
   useEffect(() => {
     if (!import.meta.env.PROD || !POSTHOG_PROJECT_TOKEN) return;
@@ -230,7 +239,10 @@ function Chat() {
     [],
   );
 
-  const handleToggleSidebar = useCallback(() => setSidebarCollapsed((c) => !c), []);
+  const handleToggleSidebar = useCallback(
+    () => setSidebarCollapsed(!sidebarCollapsed),
+    [sidebarCollapsed, setSidebarCollapsed],
+  );
   const handleSessionSelect = useCallback(() => setShowSettings(false), []);
   const handleOpenSettings = useCallback(() => setShowSettings(true), []);
   const handleToggleExplorer = useCallback(() => {
@@ -248,15 +260,15 @@ function Chat() {
       return;
     }
 
-    setExplorerCollapsed((collapsed) => !collapsed);
-  }, [showPlaytest, showMesh]);
+    setExplorerCollapsed(!explorerCollapsed);
+  }, [showPlaytest, showMesh, explorerCollapsed, setExplorerCollapsed]);
   const handleOpenPlaytest = useCallback(() => {
     if (!hasStudioTarget) return;
     posthog.capture("playtest_opened", analyticsProperties("playtest"));
     setExplorerCollapsed(true);
     setShowMesh(false);
     setShowPlaytest(true);
-  }, [hasStudioTarget]);
+  }, [hasStudioTarget, setExplorerCollapsed]);
   const handleClosePlaytest = useCallback(() => {
     posthog.capture("playtest_closed", analyticsProperties("playtest"));
     setShowPlaytest(false);
@@ -267,7 +279,7 @@ function Chat() {
     setExplorerCollapsed(true);
     setShowPlaytest(false);
     setShowMesh(true);
-  }, [hasStudioTarget]);
+  }, [hasStudioTarget, setExplorerCollapsed]);
   const handleCloseMesh = useCallback(() => {
     posthog.capture("mesh_closed", analyticsProperties("mesh"));
     setShowMesh(false);

@@ -23,22 +23,30 @@ import type { HighlightLanguage } from "@/components/SyntaxHighlightedOutput";
 const REMARK_PLUGINS = [remarkGfm];
 const INSTANCE_REFERENCE_PATTERN = /<Instance reference="([^"]+)">([^<]+)<\/Instance>/g;
 const SyntaxHighlightedOutput = lazy(() => import("@/components/SyntaxHighlightedOutput"));
-const HIGHLIGHT_LANGUAGE_ALIASES: Record<string, HighlightLanguage> = {
+export const HIGHLIGHT_LANGUAGE_ALIASES: Record<string, HighlightLanguage> = {
   bash: "bash",
   sh: "bash",
   shell: "bash",
+  css: "css",
   diff: "diff",
+  html: "html",
+  htm: "html",
   javascript: "javascript",
   js: "javascript",
   json: "json",
   lua: "lua",
   luau: "lua",
+  python: "python",
+  py: "python",
   shellsession: "shellsession",
   console: "shellsession",
+  sql: "sql",
   typescript: "typescript",
   ts: "typescript",
   tsx: "tsx",
   jsx: "tsx",
+  yaml: "yaml",
+  yml: "yaml",
 };
 
 // Tools that render their own compact header (icon + path/command) and
@@ -444,7 +452,7 @@ const ThinkingBlock = memo(function ThinkingBlock({ parts }: { parts: Part[] }) 
       <button
         type="button"
         onClick={() => setIsOpen((open) => !open)}
-        className="group flex w-full items-center gap-2.5 rounded-xl bg-gradient-to-br from-muted/80 to-muted/60 px-3.5 py-2.5 text-[12px] font-semibold text-foreground/90 transition-all duration-200 hover:from-muted hover:to-muted/80 hover:shadow-md hover:shadow-foreground/5 active:scale-[0.98]"
+        className="group flex w-full items-center gap-2.5 rounded-xl bg-muted/60 px-3.5 py-2.5 text-[12px] font-semibold text-foreground/90 transition-colors hover:bg-muted"
       >
         <div className="relative flex h-5 w-5 items-center justify-center">
           <svg

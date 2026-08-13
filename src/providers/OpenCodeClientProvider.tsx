@@ -1,15 +1,7 @@
 import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk/v2/client";
 import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
 import posthog from "posthog-js/dist/module.full.no-external.js";
-import {
-  createContext,
-  type ReactNode,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import LoadingScreen, { type StartupProgress } from "@/components/LoadingScreen";
 import { captureDetailedAnalytics } from "@/lib/analytics";
@@ -204,8 +196,6 @@ export function OpenCodeClientProvider({
   const [ready, setReady] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
 
-  const sseAbortRef = useRef<AbortController | null>(null);
-
   // Get port from Electron, wait for the server, then create the client.
   useEffect(() => {
     if (ready) return;
@@ -293,7 +283,6 @@ export function OpenCodeClientProvider({
     if (!client || !ready) return;
 
     const abortController = new AbortController();
-    sseAbortRef.current = abortController;
     let consecutiveFailures = 0;
     let reconnectToastId: string | number | undefined;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
@@ -361,7 +350,7 @@ export function OpenCodeClientProvider({
         if (abortController.signal.aborted) return;
         const elapsed = Date.now() - lastEventTime;
         if (elapsed >= sseHeartbeatTimeout) {
-          console.warn(`SSE heartbeat timeout: no events for ${elapsed}ms, forcing reconnect`);
+          console.debug(`SSE heartbeat timeout: no events for ${elapsed}ms, forcing reconnect`);
           consecutiveFailures++;
           if (consecutiveFailures >= SSE_FAILURE_THRESHOLD) showReconnectToast();
           // Abort the current stream so the for-await loop breaks.
@@ -415,7 +404,7 @@ export function OpenCodeClientProvider({
         stopHeartbeat();
         streamAbortController = null;
         if (!abortController.signal.aborted) {
-          console.error("SSE stream error:", err);
+          console.debug("SSE stream error, reconnecting automatically:", err);
           consecutiveFailures++;
           if (consecutiveFailures >= SSE_FAILURE_THRESHOLD) showReconnectToast();
           scheduleReconnect();
@@ -430,7 +419,6 @@ export function OpenCodeClientProvider({
       streamAbortController?.abort();
       clearTimeout(reconnectTimer);
       stopHeartbeat();
-      sseAbortRef.current = null;
       dismissReconnectToast();
     };
   }, [client, ready, queryClient, activeSessionIdRef, sseReconnectDelay, sseHeartbeatTimeout]);

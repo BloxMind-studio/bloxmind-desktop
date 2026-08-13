@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useCheckpoints } from "@/hooks/useCheckpoints";
 import { qk } from "@/lib/queryKeys";
@@ -34,6 +34,28 @@ function getCheckpointsFromStorage(sessionId: string): string[] {
     // ignore malformed storage
   }
   return [];
+}
+
+/** Parses a cached MessagesCache JSON string, validating its shape so corrupt
+ *  or truncated localStorage data can never crash rendering. Returns null when
+ *  the value isn't a valid cache. */
+function parseCache(serialized: string): MessagesCache | null {
+  try {
+    const value: unknown = JSON.parse(serialized);
+    if (
+      value !== null &&
+      typeof value === "object" &&
+      Array.isArray((value as { messageIds?: unknown }).messageIds) &&
+      (value as { messageIds: unknown[] }).messageIds.every((id) => typeof id === "string") &&
+      typeof (value as { messagesById?: unknown }).messagesById === "object" &&
+      (value as { messagesById: unknown }).messagesById !== null
+    ) {
+      return value as MessagesCache;
+    }
+  } catch {
+    // malformed JSON
+  }
+  return null;
 }
 
 /**
@@ -277,7 +299,8 @@ export function useCheckpointHistory(sessionId: string | undefined) {
       if (targetIndex < 0 || targetIndex >= list.length) return;
 
       try {
-        const cache = JSON.parse(list[targetIndex]) as MessagesCache;
+        const cache = parseCache(list[targetIndex]);
+        if (!cache) return;
 
         // Capture the current message IDs BEFORE applying the checkpoint,
         // so we can pass the correct messageID to the revert API.
@@ -342,7 +365,8 @@ export function useCheckpointHistory(sessionId: string | undefined) {
       const currentMessageIds = currentCache?.messageIds ?? [];
 
       // Parse previous state to find which messages are new
-      const cache = JSON.parse(previousState) as MessagesCache;
+      const cache = parseCache(previousState);
+      if (!cache) return prev;
       const previousMessageIds = new Set(cache.messageIds);
       // Find the first message that exists now but won't exist after undo.
       const messageToRevert = currentMessageIds.find((id) => !previousMessageIds.has(id));
@@ -388,7 +412,8 @@ export function useCheckpointHistory(sessionId: string | undefined) {
       if (nextState === undefined) return prev;
 
       // Apply next UI state
-      const cache = JSON.parse(nextState) as MessagesCache;
+      const cache = parseCache(nextState);
+      if (!cache) return prev;
       applyCacheToQueryClient(sessionId, cache, queryClient);
 
       // Call OpenCode's unrevert API to redo the code/file changes
@@ -417,22 +442,42 @@ export function useCheckpointHistory(sessionId: string | undefined) {
     });
   }, [sessionId, queryClient, client]);
 
-  return {
-    canUndo: history.undoStack.length > 0,
-    canRedo: history.redoStack.length > 0,
-    undo,
-    redo,
-    saveToHistory,
-    saveCheckpoint,
-    restoreCheckpoint,
-    restoreLatestFileCheckpoint,
-    refreshCheckpoints,
-    checkpointCount,
-    fsCheckpointCount,
-    cachedFsCheckpointCount,
-    latestFsCheckpoint,
-    lastRestoreSynced,
-    restoredCheckpointId,
-    restoredMessageId,
-  };
+  return useMemo(
+    () => ({
+      canUndo: history.undoStack.length > 0,
+      canRedo: history.redoStack.length > 0,
+      undo,
+      redo,
+      saveToHistory,
+      saveCheckpoint,
+      restoreCheckpoint,
+      restoreLatestFileCheckpoint,
+      refreshCheckpoints,
+      checkpointCount,
+      fsCheckpointCount,
+      cachedFsCheckpointCount,
+      latestFsCheckpoint,
+      lastRestoreSynced,
+      restoredCheckpointId,
+      restoredMessageId,
+    }),
+    [
+      history.undoStack.length,
+      history.redoStack.length,
+      undo,
+      redo,
+      saveToHistory,
+      saveCheckpoint,
+      restoreCheckpoint,
+      restoreLatestFileCheckpoint,
+      refreshCheckpoints,
+      checkpointCount,
+      fsCheckpointCount,
+      cachedFsCheckpointCount,
+      latestFsCheckpoint,
+      lastRestoreSynced,
+      restoredCheckpointId,
+      restoredMessageId,
+    ],
+  );
 }

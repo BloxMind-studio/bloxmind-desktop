@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Orbitron:wght@700;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Nunito+Sans:wght@400;500;600;700&family=Orbitron:wght@700;900&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap');
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
@@ -18,8 +18,9 @@
 
 
 @theme inline {
-  --font-sans: "JetBrains Mono", system-ui, -apple-system, sans-serif;
-  --font-display: "Orbitron", system-ui, sans-serif;
+  --font-sans: var(--app-font-sans);
+  --font-display: var(--app-font-sans);
+  --font-serif: var(--app-font-sans);
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
 
   --color-background: var(--background);
@@ -81,11 +82,14 @@
   --accent-hsl-glow: 134 50% 60%;
   --app-font-scale: 1;
 
-  /* Interactive state colors — neon green for cyberpunk theme */
+  /* Interactive state colors — selected is themeable, hover is locked neutral grey */
   --selected: #22C55E;
   --selected-foreground: #000000;
-  --hover: #22C55E;
+  --hover: #E0E0E0;
   --hover-foreground: #000000;
+
+  /* Base text font — overridden by the data-font-style preset at runtime */
+  --app-font-sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
 
   /* Texture variables */
   --grain-opacity: 0.025;
@@ -98,14 +102,11 @@ html {
 
 a, button, input, textarea, select, [role="switch"] {
   accent-color: hsl(var(--accent-hsl));
+  transition: color 0.12s ease;
 }
 
 ::selection {
   background: hsl(var(--accent-hsl) / 0.35);
-}
-
-a:hover, button:hover, [role="button"]:hover {
-  transition-color: hsl(var(--accent-hsl) / 0.15);
 }
 
 /* â”€â”€ Layout Density Controls â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -220,7 +221,7 @@ html.layout-compact .m-0 {
   border-radius: 5px;
   background: var(--muted);
   padding: 1px 5px;
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-family: var(--app-font-sans);
   font-size: 10px;
   line-height: 1.4;
   color: var(--muted-foreground);
@@ -313,33 +314,6 @@ body::after {
   }
 }
 
-@keyframes shimmer {
-  0% {
-    background-position: -200% 0;
-  }
-  100% {
-    background-position: 200% 0;
-  }
-}
-
-@keyframes pulse-glow {
-  0%, 100% {
-    box-shadow: 0 0 0 0 hsl(var(--accent-hsl) / 0.4);
-  }
-  50% {
-    box-shadow: 0 0 12px 2px hsl(var(--accent-hsl) / 0.2);
-  }
-}
-
-@keyframes float {
-  0%, 100% {
-    transform: translateY(0px);
-  }
-  50% {
-    transform: translateY(-4px);
-  }
-}
-
 .animate-fade-in {
   animation: fade-in 0.3s ease-out;
 }
@@ -356,23 +330,45 @@ body::after {
   animation: scale-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.animate-shimmer {
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    hsl(var(--accent-hsl) / 0.08) 50%,
-    transparent 100%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 2s infinite;
+/* ── BloxMind logo animations ───────────────────────────────────────────── */
+
+@keyframes BloxMind-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-4px); }
 }
 
-.animate-pulse-glow {
-  animation: pulse-glow 2s ease-in-out infinite;
+@keyframes BloxMind-blink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  95%           { transform: scaleY(0.08); }
 }
 
-.animate-float {
-  animation: float 3s ease-in-out infinite;
+@keyframes BloxMind-dot-pulse {
+  0%, 100% { opacity: 0.25; }
+  50%      { opacity: 0.8; }
+}
+
+/* Gentle side-to-side sway for inline thinking indicator */
+@keyframes BloxMind-think {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25%      { transform: translateY(-1px) rotate(-3deg); }
+  75%      { transform: translateY(-1px) rotate(3deg); }
+}
+
+.BloxMind-face {
+  animation: BloxMind-float 2.5s ease-in-out infinite;
+}
+
+.BloxMind-face-think {
+  animation: BloxMind-think 1.8s ease-in-out infinite;
+}
+
+.BloxMind-eye {
+  transform-origin: center;
+  animation: BloxMind-blink 4s ease-in-out infinite;
+}
+
+.BloxMind-dot {
+  animation: BloxMind-dot-pulse 1.2s ease-in-out infinite;
 }
 
 /* â”€â”€ Stone palette (light) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -458,6 +454,7 @@ body::after {
   }
   body {
     @apply bg-background text-foreground;
+    font-family: var(--app-font-sans);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
@@ -466,6 +463,14 @@ body::after {
     overflow: hidden;
   }
 }
+
+/* Text style presets — applied by the Appearance tab via data-font-style */
+:root[data-font-style="quiet"] { --app-font-sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif; }
+:root[data-font-style="rounded"] { --app-font-sans: "Nunito Sans", "Verdana", system-ui, sans-serif; }
+:root[data-font-style="classic"] { --app-font-sans: "Georgia", "Times New Roman", serif; }
+:root[data-font-style="mono"] { --app-font-sans: "JetBrains Mono", ui-monospace, "SF Mono", monospace; }
+:root[data-font-style="serif"] { --app-font-sans: "Source Serif 4", "Iowan Old Style", "Palatino Linotype", serif; }
+:root[data-font-style="humanist"] { --app-font-sans: "Gill Sans", "Trebuchet MS", system-ui, sans-serif; }
 
 /* â”€â”€ Base Layer Enhancements â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
@@ -514,33 +519,37 @@ body::after {
     @apply scale-95;
   }
   
-  /* Primary button: opposite-color shadows per light/dark theme */
+  /* Primary button: subtle shadows per light/dark theme */
   .btn-primary {
     @apply relative overflow-hidden;
-    box-shadow: 0 1px 3px 0 oklch(0 0 0 / 0.2), 0 1px 2px -1px oklch(0 0 0 / 0.2);
+    box-shadow: 0 1px 2px 0 oklch(0 0 0 / 0.1), 0 1px 1px -1px oklch(0 0 0 / 0.1);
   }
 
   .btn-primary:hover {
-    box-shadow: 0 4px 12px -2px oklch(0 0 0 / 0.25), 0 2px 4px -2px oklch(0 0 0 / 0.2);
+    @apply relative overflow-hidden;
+    box-shadow: 0 1px 3px 0 oklh(0 0 0 / 0.15), 0 1px 2px -1px oklh(0 0 0 / 0.15);
   }
 
   .dark .btn-primary {
-    box-shadow: 0 1px 3px 0 oklch(1 0 0 / 0.12), 0 1px 2px -1px oklch(1 0 0 / 0.1);
+    @apply relative overflow-hidden;
+    box-shadow: 0 1px 2px 0 oklch(1 0 0 / 0.1), 0 1px 1px -1px oklch(1 0 0 / 0.1);
   }
 
   .dark .btn-primary:hover {
-    box-shadow: 0 4px 12px -2px oklch(1 0 0 / 0.16), 0 2px 4px -2px oklch(1 0 0 / 0.12);
+    @apply relative overflow-hidden;
+    box-shadow: 0 1px 4px 0 oklch(1 0 0 / 0.12), 0 1px 2px -1px oklch(1 0 0 / 0.12);
   }
 
-  /* Card enhancements — OLED cards with neon border in dark mode */
+  /* Card enhancements — subtle ambient shadows */
   .card {
     @apply backdrop-blur-sm;
-    box-shadow: 0 1px 3px 0 oklch(0 0 0 / 0.04), 0 1px 2px -1px oklch(0 0 0 / 0.04);
+    box-shadow: 0 1px 2px 0 oklch(0 0 0 / 0.02), 0 1px 1px -1px oklch(0 0 0 / 0.02);
   }
 
   .dark .card {
-    box-shadow: 0 0 12px -2px oklch(0 0 0 / 0.3);
-    border-color: oklch(0.7 0.15 134 / 0.15);
+    @apply relative;
+    box-shadow: 0 1px 3px 0 oklch(0 0 0 / 0.1);
+    border-color: oklch(0 0 0 / 0.08);
   }
 
   /* Input focus: neutral ring glow in light, neon green in dark */
@@ -552,11 +561,7 @@ body::after {
     box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 40%, transparent);
   }
 
-  /* Neon glow on interactive elements in dark mode */
-  .dark .sidebar-primary,
-  .dark [aria-selected="true"] {
-    text-shadow: 0 0 10px oklch(var(--primary) / 0.5);
-  }
+  
 }
 
 /* â”€â”€ Toast Styling â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -565,17 +570,17 @@ body::after {
   --normal-bg: var(--popover);
   --normal-border: var(--border);
   --normal-text: var(--popover-foreground);
-  font-family: var(--font-sans);
+  font-family: var(--app-font-sans);
 }
 
 [data-sonner-toaster] [data-sonner-toast] {
   @apply rounded-lg border backdrop-blur-md;
-  box-shadow: 0 4px 12px -2px oklch(0 0 0 / 0.08), 0 2px 4px -2px oklch(0 0 0 / 0.04);
+  box-shadow: 0 2px 6px -2px oklch(0 0 0 / 0.05), 0 1px 2px -1px oklch(0 0 0 / 0.03);
   animation: slide-in-right 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .dark [data-sonner-toaster] [data-sonner-toast] {
-  box-shadow: 0 4px 12px -2px oklch(0 0 0 / 0.4), 0 2px 4px -2px oklch(0 0 0 / 0.3);
+  box-shadow: 0 2px 6px -2px oklch(0 0 0 / 0.15), 0 1px 2px -1px oklch(0 0 0 / 0.1);
 }
 
 [data-sonner-toaster] [data-sonner-toast][data-type="success"] {
@@ -610,7 +615,7 @@ body::after {
 
 /* Toast action button */
 [data-sonner-toaster] [data-sonner-toast] [data-button] {
-  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-family: var(--app-font-sans);
   font-weight: 600;
   font-size: 12.5px;
   padding: 6px 14px;
@@ -707,11 +712,11 @@ body::after {
   flex-wrap: wrap;
   gap: 12px 8px;
   padding: 16px;
-  box-shadow: 0 4px 16px -4px oklch(0 0 0 / 0.15);
+  box-shadow: 0 2px 6px -2px oklch(0 0 0 / 0.1), 0 1px 2px -1px oklch(0 0 0 / 0.05);
 }
 
 .dark [data-sonner-toaster] [data-sonner-toast].analytics-consent-toast {
-  box-shadow: 0 4px 16px -4px oklch(0 0 0 / 0.5);
+  box-shadow: 0 2px 6px -2px oklch(0 0 0 / 0.2), 0 1px 2px -1px oklch(0 0 0 / 0.1);
 }
 
 [data-sonner-toaster] [data-sonner-toast].analytics-consent-toast [data-content] {
