@@ -1,6 +1,8 @@
 import { Box, Boxes, FolderTree, Map as MapIcon, Play, Swords } from "lucide-react";
 import posthog from "posthog-js/dist/module.full.no-external.js";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { AppsBuilder } from "@/components/AppsBuilder";
+import { AgentWorkbench } from "@/components/agent/AgentWorkbench";
 import { BloxMindLogo } from "@/components/BloxMindLogo";
 import ChatInput from "@/components/ChatInput";
 import ChatMessages from "@/components/ChatMessages";
@@ -17,6 +19,7 @@ import { useSessions } from "@/hooks/useSessions";
 import { useStudioConnection } from "@/hooks/useStudioConnection";
 import { analyticsProperties, POSTHOG_PROJECT_TOKEN } from "@/lib/analytics";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
+import { useAppMode } from "@/providers/ModeProvider";
 import {
   SIDE_PANEL_EXIT_MS,
   TOOLTIP_DURATION_MS,
@@ -100,6 +103,7 @@ function ProjectIndexButton() {
 
 function Chat() {
   const { ready, initError } = useOpenCodeClient();
+  const { mode } = useAppMode();
   const { activeSessionId, clearSession } = useActiveSession();
   const sessionStatus = useSessionStatus(activeSessionId);
   const isBusy = sessionStatus !== undefined && sessionStatus.type !== "idle";
@@ -286,6 +290,14 @@ function Chat() {
   }, []);
 
   // Main chat UI
+  if (mode !== "roblox") {
+    return (
+      <div className="flex min-h-0 flex-1">
+        {mode === "apps" ? <AppsBuilder /> : <AgentWorkbench />}
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-0 flex-1">
       <ChatSidebar

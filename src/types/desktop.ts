@@ -97,6 +97,9 @@ export type FontStyle = typeof FontStyleSchema.Type;
 export type ThemePreset = typeof ThemePresetSchema.Type;
 export type ThemeColors = typeof ThemeColorsSchema.Type;
 
+export const AppModeSchema = Schema.Literal("roblox", "agent", "apps");
+export type AppMode = typeof AppModeSchema.Type;
+
 export const AppConfigSchema = Schema.mutable(
   Schema.Struct({
     lastModel: Schema.NullOr(Schema.String),
@@ -126,6 +129,8 @@ export const AppConfigSchema = Schema.mutable(
     autoScroll: Schema.Boolean,
     enterToSend: Schema.Boolean,
     notificationsEnabled: Schema.Boolean,
+    // Workspace mode
+    activeMode: AppModeSchema,
     // SSE connection
     sseReconnectDelay: Schema.Number.pipe(Schema.int(), Schema.between(1_000, 60_000)),
     sseHeartbeatTimeout: Schema.Number.pipe(Schema.int(), Schema.between(5_000, 120_000)),
@@ -163,6 +168,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   autoScroll: true,
   enterToSend: true,
   notificationsEnabled: true,
+  activeMode: "roblox",
   sseReconnectDelay: 3_000,
   sseHeartbeatTimeout: 30_000,
 };

@@ -49,6 +49,7 @@ describe("browser desktop fallback", () => {
       autoScroll: true,
       enterToSend: true,
       notificationsEnabled: true,
+      activeMode: "roblox",
       sseReconnectDelay: 3000,
       sseHeartbeatTimeout: 30000,
     });
@@ -90,6 +91,7 @@ describe("browser desktop fallback", () => {
       autoScroll: true,
       enterToSend: true,
       notificationsEnabled: true,
+      activeMode: "roblox",
       sseReconnectDelay: 3000,
       sseHeartbeatTimeout: 30000,
     });
@@ -129,6 +131,7 @@ describe("browser desktop fallback", () => {
       autoScroll: true,
       enterToSend: true,
       notificationsEnabled: true,
+      activeMode: "roblox",
       sseReconnectDelay: 3000,
       sseHeartbeatTimeout: 30000,
     });
