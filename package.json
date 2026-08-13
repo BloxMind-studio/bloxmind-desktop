@@ -1,7 +1,7 @@
 {
   "name": "bloxmind",
   "private": true,
-  "version": "0.9.94",
+  "version": "0.9.95",
   "description": "AI-assisted Roblox development from a secure desktop app",
   "type": "module",
   "main": "dist-electron/main/main.js",

@@ -5,6 +5,25 @@ All notable changes to BloxMind are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.95] - 2026-08-13
+
+### Added
+
+- Added Text Style presets (Quiet, Rounded, Classic, Mono, Serif, Humanist) to the Appearance settings, each with a live font preview.
+- Added a "jump to bottom" button that appears in the chat when you scroll up, and new messages now re-sync cleanly while scrolled up instead of forcing the viewport down.
+- Sidebar and Explorer panel collapsed state is now persisted across restarts.
+- Extended syntax highlighting to CSS, HTML, Python, SQL, and YAML.
+- Enabled the agent's Bash tool with `ask` permission, so destructive or network-issue shell commands (commit, push, `rm -rf`, etc.) always require explicit in-app approval.
+
+### Changed
+
+- Refined chat polish: session-switch fade animation, softer context-menu and dialog shadows, and a cleaner thinking-block header.
+- Consolidated checkpoint state management by removing the standalone `useRevert` hook in favor of the shared checkpoint-history hook.
+
+### Fixed
+
+- Checkpoint history is hardened against corrupt or truncated `localStorage` — malformed cache JSON can no longer crash rendering, and hook outputs are memoized.
+- A failed update check now surfaces a single low-key toast per launch instead of failing silently.
 ## [0.9.94] - 2026-08-11
 
 ### Fixed
