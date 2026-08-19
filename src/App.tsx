@@ -6,6 +6,7 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import { ModeSwitcher } from "@/components/ModeSwitcher";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
+import { WindowControls } from "@/components/WindowControls";
 import { useUpdater } from "@/hooks/useUpdater";
 import { desktop } from "@/lib/desktop";
 import { ActiveSessionProvider } from "@/providers/ActiveSessionProvider";
@@ -36,9 +37,15 @@ function AppInner() {
   }, []);
 
   return (
-    <main className="flex h-full flex-col overflow-hidden">
-      <div className="app-titlebar flex h-9 shrink-0 items-center justify-between gap-3 border-b border-border/50 bg-gradient-to-r from-card via-card to-accent/5 px-3">
-        <div className="flex items-center gap-2">
+    <main className="flex h-dvh w-screen flex-col overflow-hidden">
+      <div
+        className="app-titlebar flex h-9 shrink-0 items-center justify-between gap-3 border-b border-border/50 bg-gradient-to-r from-card via-card to-accent/5 px-3 pt-[env(titlebar-area-height,0px)] [-webkit-app-region:drag]"
+        style={{
+          paddingTop: "max(0.5rem, env(titlebar-area-height))",
+          paddingLeft: "max(0.75rem, env(titlebar-area-height))",
+        }}
+      >
+        <div className="flex items-center gap-2 [-webkit-app-region:no-drag]">
           <div className="relative">
             <BloxMindLogo size={18} />
             <div className="absolute -inset-1 rounded-full bg-accent/20 blur-sm" />
@@ -47,8 +54,8 @@ function AppInner() {
             BloxMind
           </span>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="rounded-full border border-border/60 bg-background/30 px-2 py-0.5 [-webkit-app-region:no-drag]">
+        <div className="flex items-center gap-2 [-webkit-app-region:no-drag]">
+          <div className="rounded-full border border-border/60 bg-background/30 px-2 py-0.5">
             <ModeSwitcher />
           </div>
           <div className="h-1 w-1 rounded-full bg-accent/60 animate-pulse" />
@@ -56,6 +63,7 @@ function AppInner() {
             {appVersion ? `v${appVersion}` : ""}
           </span>
         </div>
+        <WindowControls />
       </div>
       <ErrorBoundary>
         <Chat />

@@ -673,6 +673,24 @@ const registerIpcHandlers = Effect.sync(() => {
       ),
     );
   }
+  // ── Window controls ─────────────────────────────────────────────────
+  // The window is frameless (frame:false), so the renderer hosts its own
+  // min/maximize/close buttons in the titlebar. These handlers drive the
+  // real BrowserWindow.
+  ipcMain.handle(channels.windowMinimize, () => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.minimize();
+  });
+  ipcMain.handle(channels.windowMaximizeToggle, () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (mainWindow.isMaximized()) mainWindow.unmaximize();
+    else mainWindow.maximize();
+  });
+  ipcMain.handle(channels.windowClose, () => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
+  });
+  ipcMain.handle(channels.windowIsMaximized, () =>
+    Boolean(mainWindow && !mainWindow.isDestroyed() && mainWindow.isMaximized()),
+  );
 });
 
 function createWindow(): Effect.Effect<void, DesktopMainError> {
@@ -686,7 +704,9 @@ function createWindow(): Effect.Effect<void, DesktopMainError> {
           minWidth: 520,
           minHeight: 400,
           backgroundColor: "#ffffff",
-          titleBarStyle: "hiddenInset",
+          frame: false,
+          titleBarStyle: "hidden",
+          useContentSize: true,
           show: false,
           webPreferences: {
             contextIsolation: true,
@@ -735,6 +755,15 @@ function createWindow(): Effect.Effect<void, DesktopMainError> {
           }),
         ),
       );
+      // Notify the renderer whenever the maximized state changes so the
+      // titlebar toggle icon stays in sync.
+      const notifyMaximized = () => {
+        if (mainWindow === window && !window.isDestroyed()) {
+          window.webContents.send(channels.onWindowMaximizedChange, window.isMaximized());
+        }
+      };
+      window.on("maximize", notifyMaximized);
+      window.on("unmaximize", notifyMaximized);
     });
 
     yield* Effect.tryPromise({

@@ -136,9 +136,9 @@ export interface BlockGeometry {
   leftDown: IsoPoint;
   exit: IsoPoint;
   entry: IsoPoint;
-  /** Input handle socket on the visible left vertical face. */
+  /** Input handle socket, dead-center on the visible left vertical face. */
   portIn: IsoPoint;
-  /** Output handle socket on the visible right vertical face. */
+  /** Output handle socket, dead-center on the visible right vertical face. */
   portOut: IsoPoint;
   shadow: IsoPoint;
   sortKey: number;
@@ -170,8 +170,11 @@ export function blockGeometry(entry: IsoLayoutEntry): BlockGeometry {
     leftDown: down(left),
     exit: isoProject(x + BLOCK_FOOT / 2, z + BLOCK_FOOT, lift),
     entry: isoProject(x + BLOCK_FOOT / 2, z, lift),
-    portIn: isoProject(x + BLOCK_FOOT * 0.2, z + BLOCK_FOOT * 0.8, lift * 0.5),
-    portOut: isoProject(x + BLOCK_FOOT * 0.8, z + BLOCK_FOOT * 0.2, lift * 0.15),
+    // Face-center sockets: same height (lift - 18) so both spheres sit
+    // symmetrically in the vertical middle of their side face, and any pipe
+    // inherits those exact coordinates for a perfect anchor lock.
+    portIn: isoProject(x + BLOCK_FOOT * 0.28, z + BLOCK_FOOT * 0.72, lift - 18),
+    portOut: isoProject(x + BLOCK_FOOT * 0.72, z + BLOCK_FOOT * 0.28, lift - 18),
     shadow: isoProject(x + BLOCK_FOOT / 2, z + BLOCK_FOOT / 2, 0),
     sortKey: x + z,
   };

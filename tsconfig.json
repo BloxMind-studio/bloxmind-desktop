@@ -18,7 +18,9 @@
     "baseUrl": ".",
     "ignoreDeprecations": "5.0",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@bloxmind-studio/types": ["./packages/types/src"],
+      "@bloxmind-studio/ui": ["./packages/ui/src"]
     },
 
     /* Linting */

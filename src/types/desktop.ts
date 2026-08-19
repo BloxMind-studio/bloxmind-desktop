@@ -19,6 +19,72 @@ import {
   type StudioTargetSelection,
 } from "./studioTarget";
 
+// ── Apps Mode settings ────────────────────────────────────────────────────
+
+export const AppsSettingsSchema = Schema.mutable(
+  Schema.Struct({
+    autoPreview: Schema.Boolean,
+    autoRun: Schema.Boolean,
+    defaultViewport: Schema.Literal("mobile", "desktop"),
+    showFileTree: Schema.Boolean,
+    showLineNumbers: Schema.Boolean,
+  }),
+);
+
+export type AppsSettings = typeof AppsSettingsSchema.Type;
+
+export const DEFAULT_APPS_SETTINGS: AppsSettings = {
+  autoPreview: true,
+  autoRun: false,
+  defaultViewport: "desktop",
+  showFileTree: true,
+  showLineNumbers: true,
+};
+
+// ── Games Mode settings ───────────────────────────────────────────────────
+
+export const GamesSettingsSchema = Schema.mutable(
+  Schema.Struct({
+    autoPreview: Schema.Boolean,
+    autoRun: Schema.Boolean,
+    showControlsHint: Schema.Boolean,
+    showFileTree: Schema.Boolean,
+    showLineNumbers: Schema.Boolean,
+  }),
+);
+
+export type GamesSettings = typeof GamesSettingsSchema.Type;
+
+export const DEFAULT_GAMES_SETTINGS: GamesSettings = {
+  autoPreview: true,
+  autoRun: false,
+  showControlsHint: true,
+  showFileTree: true,
+  showLineNumbers: true,
+};
+
+// ── Agent Mode settings ────────────────────────────────────────────────────
+
+export const AgentSettingsSchema = Schema.mutable(
+  Schema.Struct({
+    autoRunOnCreate: Schema.Boolean,
+    showWorkflowCanvas: Schema.Boolean,
+    showAgentSidebar: Schema.Boolean,
+    enableLogging: Schema.Boolean,
+    autoSaveDrafts: Schema.Boolean,
+  }),
+);
+
+export type AgentSettings = typeof AgentSettingsSchema.Type;
+
+export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
+  autoRunOnCreate: false,
+  showWorkflowCanvas: true,
+  showAgentSidebar: true,
+  enableLogging: true,
+  autoSaveDrafts: true,
+};
+
 // ── Rojo live-sync types ────────────────────────────────────────────────
 
 export interface RojoStatus {
@@ -97,7 +163,7 @@ export type FontStyle = typeof FontStyleSchema.Type;
 export type ThemePreset = typeof ThemePresetSchema.Type;
 export type ThemeColors = typeof ThemeColorsSchema.Type;
 
-export const AppModeSchema = Schema.Literal("roblox", "agent", "apps");
+export const AppModeSchema = Schema.Literal("roblox", "agent", "apps", "games");
 export type AppMode = typeof AppModeSchema.Type;
 
 export const AppConfigSchema = Schema.mutable(
@@ -134,6 +200,10 @@ export const AppConfigSchema = Schema.mutable(
     // SSE connection
     sseReconnectDelay: Schema.Number.pipe(Schema.int(), Schema.between(1_000, 60_000)),
     sseHeartbeatTimeout: Schema.Number.pipe(Schema.int(), Schema.between(5_000, 120_000)),
+    // Mode-specific settings
+    appsSettings: AppsSettingsSchema,
+    agentSettings: AgentSettingsSchema,
+    gamesSettings: GamesSettingsSchema,
   }),
 );
 
@@ -171,6 +241,27 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   activeMode: "roblox",
   sseReconnectDelay: 3_000,
   sseHeartbeatTimeout: 30_000,
+  appsSettings: {
+    autoPreview: true,
+    autoRun: false,
+    defaultViewport: "desktop",
+    showFileTree: true,
+    showLineNumbers: true,
+  },
+  agentSettings: {
+    autoRunOnCreate: false,
+    showWorkflowCanvas: true,
+    showAgentSidebar: true,
+    enableLogging: true,
+    autoSaveDrafts: true,
+  },
+  gamesSettings: {
+    autoPreview: true,
+    autoRun: false,
+    showControlsHint: true,
+    showFileTree: true,
+    showLineNumbers: true,
+  },
 };
 
 export const AppConfigPatchSchema = Schema.partial(AppConfigSchema);
@@ -244,4 +335,9 @@ export interface DesktopApi {
   rojoSetup(onProgress: (progress: RojoInstallProgress) => void): Promise<RojoInstallResult>;
   rojoBinaryPath(): Promise<string | null>;
   rojoCheckInstalled(): Promise<boolean>;
+  windowMinimize(): Promise<void>;
+  windowMaximizeToggle(): Promise<void>;
+  windowClose(): Promise<void>;
+  windowIsMaximized(): Promise<boolean>;
+  onWindowMaximizedChange(listener: (maximized: boolean) => void): () => void;
 }

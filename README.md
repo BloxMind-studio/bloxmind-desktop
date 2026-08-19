@@ -24,6 +24,18 @@ BloxMind connects two things:
 
 The AI connects to Roblox Studio through its official built-in MCP server. When you type a message, the AI uses MCP tools to directly inspect and modify your open Studio project.
 
+### Cloud mode
+
+When `NEXT_PUBLIC_CORE_API_URL` is set at build time, the desktop app skips
+the local OpenCode subprocess and talks to the [BloxMind Core Engine](
+https://github.com/BloxMind-studio/bloxmind-core-engine) instead. The engine
+authenticates the desktop via bearer token and reverse-proxies AI requests to
+a private OpenCode instance — so the model never touches the public internet
+directly.
+
+For self-hosted / development setups, omit the env var to run OpenCode locally
+inside the Electron app (the default).
+
 ## Installation
 
 Download the installer for your platform from the [releases page](https://github.com/YUouriii/app-BloxMind-ai/releases/latest):

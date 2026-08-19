@@ -88,6 +88,8 @@ function makeWrapper(qc: QueryClient, fakeClient: ReturnType<typeof makeFakeClie
             port: 34999,
             ready: true,
             initError: null,
+            sseConnected: true,
+            sseFailureCount: 0,
           }}
         >
           {children}

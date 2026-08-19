@@ -18,7 +18,10 @@ import { qk } from "@/lib/queryKeys";
 import { splitModelKey } from "@/lib/splitModelKey";
 import type {
   AccentColor,
+  AgentSettings,
+  AppsSettings,
   FontStyle,
+  GamesSettings,
   LayoutDensity,
   ThemeColors,
   ThemePreset,
@@ -232,6 +235,78 @@ export function useBehaviorPreferences() {
   return context;
 }
 
+// ── Apps Mode slice ──────────────────────────────────────────────────────
+
+export interface AppsPreferences {
+  appsSettings: AppsSettings;
+  autoPreview: boolean;
+  autoRun: boolean;
+  defaultViewport: "mobile" | "desktop";
+  showFileTree: boolean;
+  showLineNumbers: boolean;
+  setAutoPreview: (enabled: boolean) => void;
+  setAutoRun: (enabled: boolean) => void;
+  setDefaultViewport: (viewport: "mobile" | "desktop") => void;
+  setShowFileTree: (show: boolean) => void;
+  setShowLineNumbers: (show: boolean) => void;
+}
+
+export const AppsPreferencesContext = createContext<AppsPreferences | undefined>(undefined);
+
+export function useAppsPreferences() {
+  const context = useContext(AppsPreferencesContext);
+  if (!context) throw new Error("useAppsPreferences must be used within a PreferencesProvider");
+  return context;
+}
+
+// ── Games Mode slice ──────────────────────────────────────────────────────
+
+export interface GamesPreferences {
+  gamesSettings: GamesSettings;
+  autoPreview: boolean;
+  autoRun: boolean;
+  showControlsHint: boolean;
+  showFileTree: boolean;
+  showLineNumbers: boolean;
+  setAutoPreview: (enabled: boolean) => void;
+  setAutoRun: (enabled: boolean) => void;
+  setShowControlsHint: (show: boolean) => void;
+  setShowFileTree: (show: boolean) => void;
+  setShowLineNumbers: (show: boolean) => void;
+}
+
+export const GamesPreferencesContext = createContext<GamesPreferences | undefined>(undefined);
+
+export function useGamesPreferences() {
+  const context = useContext(GamesPreferencesContext);
+  if (!context) throw new Error("useGamesPreferences must be used within a PreferencesProvider");
+  return context;
+}
+
+// ── Agent Mode slice ──────────────────────────────────────────────────────
+
+export interface AgentPreferences {
+  agentSettings: AgentSettings;
+  autoRunOnCreate: boolean;
+  showWorkflowCanvas: boolean;
+  showAgentSidebar: boolean;
+  enableLogging: boolean;
+  autoSaveDrafts: boolean;
+  setAutoRunOnCreate: (enabled: boolean) => void;
+  setShowWorkflowCanvas: (show: boolean) => void;
+  setShowAgentSidebar: (show: boolean) => void;
+  setEnableLogging: (enabled: boolean) => void;
+  setAutoSaveDrafts: (enabled: boolean) => void;
+}
+
+export const AgentPreferencesContext = createContext<AgentPreferences | undefined>(undefined);
+
+export function useAgentPreferences() {
+  const context = useContext(AgentPreferencesContext);
+  if (!context) throw new Error("useAgentPreferences must be used within a PreferencesProvider");
+  return context;
+}
+
 // ── SSE connection slice ─────────────────────────────────────────────────
 
 export interface SSEPreferences {
@@ -321,6 +396,10 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [sseHeartbeatTimeout, setSseHeartbeatTimeoutState] = useState(
     DEFAULT_APP_CONFIG.sseHeartbeatTimeout,
   );
+  // Apps mode settings
+  const [appsSettings, setAppsSettingsState] = useState(DEFAULT_APP_CONFIG.appsSettings);
+  const [agentSettings, setAgentSettingsState] = useState(DEFAULT_APP_CONFIG.agentSettings);
+  const [gamesSettings, setGamesSettingsState] = useState(DEFAULT_APP_CONFIG.gamesSettings);
 
   const connectedProviders = useConnectedProviders();
 
@@ -389,6 +468,10 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     // SSE connection
     setSseReconnectDelayState(cfg.sseReconnectDelay);
     setSseHeartbeatTimeoutState(cfg.sseHeartbeatTimeout);
+    // Mode-specific settings
+    setAppsSettingsState(cfg.appsSettings);
+    setAgentSettingsState(cfg.agentSettings);
+    setGamesSettingsState(cfg.gamesSettings);
 
     if (cfg.detailedAnalytics === "unset") {
       toast("Help improve BloxMind", {
@@ -643,6 +726,181 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     [queryClient],
   );
 
+  // Apps mode setters
+  const setAppsAutoPreview = useCallback(
+    (enabled: boolean) => {
+      setAppsSettingsState((prev) => ({ ...prev, autoPreview: enabled }));
+      persistWithFeedback(
+        queryClient,
+        { appsSettings: { ...appsSettings, autoPreview: enabled } },
+        () => setAppsSettingsState((prev) => ({ ...prev, autoPreview: !enabled })),
+      );
+    },
+    [queryClient, appsSettings],
+  );
+  const setAppsAutoRun = useCallback(
+    (enabled: boolean) => {
+      setAppsSettingsState((prev) => ({ ...prev, autoRun: enabled }));
+      persistWithFeedback(
+        queryClient,
+        { appsSettings: { ...appsSettings, autoRun: enabled } },
+        () => setAppsSettingsState((prev) => ({ ...prev, autoRun: !enabled })),
+      );
+    },
+    [queryClient, appsSettings],
+  );
+  const setAppsDefaultViewport = useCallback(
+    (viewport: "mobile" | "desktop") => {
+      setAppsSettingsState((prev) => ({ ...prev, defaultViewport: viewport }));
+      persistWithFeedback(
+        queryClient,
+        { appsSettings: { ...appsSettings, defaultViewport: viewport } },
+        () =>
+          setAppsSettingsState((prev) => ({
+            ...prev,
+            defaultViewport: prev.defaultViewport === "mobile" ? "desktop" : "mobile",
+          })),
+      );
+    },
+    [queryClient, appsSettings],
+  );
+  const setAppsShowFileTree = useCallback(
+    (show: boolean) => {
+      setAppsSettingsState((prev) => ({ ...prev, showFileTree: show }));
+      persistWithFeedback(
+        queryClient,
+        { appsSettings: { ...appsSettings, showFileTree: show } },
+        () => setAppsSettingsState((prev) => ({ ...prev, showFileTree: !show })),
+      );
+    },
+    [queryClient, appsSettings],
+  );
+  const setAppsShowLineNumbers = useCallback(
+    (show: boolean) => {
+      setAppsSettingsState((prev) => ({ ...prev, showLineNumbers: show }));
+      persistWithFeedback(
+        queryClient,
+        { appsSettings: { ...appsSettings, showLineNumbers: show } },
+        () => setAppsSettingsState((prev) => ({ ...prev, showLineNumbers: !show })),
+      );
+    },
+    [queryClient, appsSettings],
+  );
+
+  // Games mode setters
+  const setGamesAutoPreview = useCallback(
+    (enabled: boolean) => {
+      setGamesSettingsState((prev) => ({ ...prev, autoPreview: enabled }));
+      persistWithFeedback(
+        queryClient,
+        { gamesSettings: { ...gamesSettings, autoPreview: enabled } },
+        () => setGamesSettingsState((prev) => ({ ...prev, autoPreview: !enabled })),
+      );
+    },
+    [queryClient, gamesSettings],
+  );
+  const setGamesAutoRun = useCallback(
+    (enabled: boolean) => {
+      setGamesSettingsState((prev) => ({ ...prev, autoRun: enabled }));
+      persistWithFeedback(
+        queryClient,
+        { gamesSettings: { ...gamesSettings, autoRun: enabled } },
+        () => setGamesSettingsState((prev) => ({ ...prev, autoRun: !enabled })),
+      );
+    },
+    [queryClient, gamesSettings],
+  );
+  const setGamesShowControlsHint = useCallback(
+    (show: boolean) => {
+      setGamesSettingsState((prev) => ({ ...prev, showControlsHint: show }));
+      persistWithFeedback(
+        queryClient,
+        { gamesSettings: { ...gamesSettings, showControlsHint: show } },
+        () => setGamesSettingsState((prev) => ({ ...prev, showControlsHint: !show })),
+      );
+    },
+    [queryClient, gamesSettings],
+  );
+  const setGamesShowFileTree = useCallback(
+    (show: boolean) => {
+      setGamesSettingsState((prev) => ({ ...prev, showFileTree: show }));
+      persistWithFeedback(
+        queryClient,
+        { gamesSettings: { ...gamesSettings, showFileTree: show } },
+        () => setGamesSettingsState((prev) => ({ ...prev, showFileTree: !show })),
+      );
+    },
+    [queryClient, gamesSettings],
+  );
+  const setGamesShowLineNumbers = useCallback(
+    (show: boolean) => {
+      setGamesSettingsState((prev) => ({ ...prev, showLineNumbers: show }));
+      persistWithFeedback(
+        queryClient,
+        { gamesSettings: { ...gamesSettings, showLineNumbers: show } },
+        () => setGamesSettingsState((prev) => ({ ...prev, showLineNumbers: !show })),
+      );
+    },
+    [queryClient, gamesSettings],
+  );
+
+  // Agent mode setters
+  const setAgentAutoRunOnCreate = useCallback(
+    (enabled: boolean) => {
+      setAgentSettingsState((prev) => ({ ...prev, autoRunOnCreate: enabled }));
+      persistWithFeedback(
+        queryClient,
+        { agentSettings: { ...agentSettings, autoRunOnCreate: enabled } },
+        () => setAgentSettingsState((prev) => ({ ...prev, autoRunOnCreate: !enabled })),
+      );
+    },
+    [queryClient, agentSettings],
+  );
+  const setAgentShowWorkflowCanvas = useCallback(
+    (show: boolean) => {
+      setAgentSettingsState((prev) => ({ ...prev, showWorkflowCanvas: show }));
+      persistWithFeedback(
+        queryClient,
+        { agentSettings: { ...agentSettings, showWorkflowCanvas: show } },
+        () => setAgentSettingsState((prev) => ({ ...prev, showWorkflowCanvas: !show })),
+      );
+    },
+    [queryClient, agentSettings],
+  );
+  const setAgentShowAgentSidebar = useCallback(
+    (show: boolean) => {
+      setAgentSettingsState((prev) => ({ ...prev, showAgentSidebar: show }));
+      persistWithFeedback(
+        queryClient,
+        { agentSettings: { ...agentSettings, showAgentSidebar: show } },
+        () => setAgentSettingsState((prev) => ({ ...prev, showAgentSidebar: !show })),
+      );
+    },
+    [queryClient, agentSettings],
+  );
+  const setAgentEnableLogging = useCallback(
+    (enabled: boolean) => {
+      setAgentSettingsState((prev) => ({ ...prev, enableLogging: enabled }));
+      persistWithFeedback(
+        queryClient,
+        { agentSettings: { ...agentSettings, enableLogging: enabled } },
+        () => setAgentSettingsState((prev) => ({ ...prev, enableLogging: !enabled })),
+      );
+    },
+    [queryClient, agentSettings],
+  );
+  const setAgentAutoSaveDrafts = useCallback(
+    (enabled: boolean) => {
+      setAgentSettingsState((prev) => ({ ...prev, autoSaveDrafts: enabled }));
+      persistWithFeedback(
+        queryClient,
+        { agentSettings: { ...agentSettings, autoSaveDrafts: enabled } },
+        () => setAgentSettingsState((prev) => ({ ...prev, autoSaveDrafts: !enabled })),
+      );
+    },
+    [queryClient, agentSettings],
+  );
+
   // Apply UI customization CSS variables
   useEffect(() => {
     applyAccentColor(accentColor);
@@ -786,6 +1044,78 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     [sseReconnectDelay, sseHeartbeatTimeout, setSseReconnectDelay, setSseHeartbeatTimeout],
   );
 
+  const appsValue = useMemo<AppsPreferences>(
+    () => ({
+      appsSettings,
+      autoPreview: appsSettings.autoPreview,
+      autoRun: appsSettings.autoRun,
+      defaultViewport: appsSettings.defaultViewport,
+      showFileTree: appsSettings.showFileTree,
+      showLineNumbers: appsSettings.showLineNumbers,
+      setAutoPreview: setAppsAutoPreview,
+      setAutoRun: setAppsAutoRun,
+      setDefaultViewport: setAppsDefaultViewport,
+      setShowFileTree: setAppsShowFileTree,
+      setShowLineNumbers: setAppsShowLineNumbers,
+    }),
+    [
+      appsSettings,
+      setAppsAutoPreview,
+      setAppsAutoRun,
+      setAppsDefaultViewport,
+      setAppsShowFileTree,
+      setAppsShowLineNumbers,
+    ],
+  );
+
+  const agentValue = useMemo<AgentPreferences>(
+    () => ({
+      agentSettings,
+      autoRunOnCreate: agentSettings.autoRunOnCreate,
+      showWorkflowCanvas: agentSettings.showWorkflowCanvas,
+      showAgentSidebar: agentSettings.showAgentSidebar,
+      enableLogging: agentSettings.enableLogging,
+      autoSaveDrafts: agentSettings.autoSaveDrafts,
+      setAutoRunOnCreate: setAgentAutoRunOnCreate,
+      setShowWorkflowCanvas: setAgentShowWorkflowCanvas,
+      setShowAgentSidebar: setAgentShowAgentSidebar,
+      setEnableLogging: setAgentEnableLogging,
+      setAutoSaveDrafts: setAgentAutoSaveDrafts,
+    }),
+    [
+      agentSettings,
+      setAgentAutoRunOnCreate,
+      setAgentShowWorkflowCanvas,
+      setAgentShowAgentSidebar,
+      setAgentEnableLogging,
+      setAgentAutoSaveDrafts,
+    ],
+  );
+
+  const gamesValue = useMemo<GamesPreferences>(
+    () => ({
+      gamesSettings,
+      autoPreview: gamesSettings.autoPreview,
+      autoRun: gamesSettings.autoRun,
+      showControlsHint: gamesSettings.showControlsHint,
+      showFileTree: gamesSettings.showFileTree,
+      showLineNumbers: gamesSettings.showLineNumbers,
+      setAutoPreview: setGamesAutoPreview,
+      setAutoRun: setGamesAutoRun,
+      setShowControlsHint: setGamesShowControlsHint,
+      setShowFileTree: setGamesShowFileTree,
+      setShowLineNumbers: setGamesShowLineNumbers,
+    }),
+    [
+      gamesSettings,
+      setGamesAutoPreview,
+      setGamesAutoRun,
+      setGamesShowControlsHint,
+      setGamesShowFileTree,
+      setGamesShowLineNumbers,
+    ],
+  );
+
   const compositeValue = useMemo<PreferencesContextValue>(
     () => ({ ...modelValue, ...uiValue, ...engineValue, ...behaviorValue, ...sseValue }),
     [modelValue, uiValue, engineValue, behaviorValue, sseValue],
@@ -797,9 +1127,15 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
         <EnginePreferencesContext.Provider value={engineValue}>
           <BehaviorPreferencesContext.Provider value={behaviorValue}>
             <SSEPreferencesContext.Provider value={sseValue}>
-              <PreferencesContext.Provider value={compositeValue}>
-                {children}
-              </PreferencesContext.Provider>
+              <AppsPreferencesContext.Provider value={appsValue}>
+                <GamesPreferencesContext.Provider value={gamesValue}>
+                  <AgentPreferencesContext.Provider value={agentValue}>
+                    <PreferencesContext.Provider value={compositeValue}>
+                      {children}
+                    </PreferencesContext.Provider>
+                  </AgentPreferencesContext.Provider>
+                </GamesPreferencesContext.Provider>
+              </AppsPreferencesContext.Provider>
             </SSEPreferencesContext.Provider>
           </BehaviorPreferencesContext.Provider>
         </EnginePreferencesContext.Provider>

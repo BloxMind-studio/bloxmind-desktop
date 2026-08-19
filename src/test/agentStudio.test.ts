@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createRun,
   generateScript,
@@ -105,5 +105,86 @@ describe("createRun", () => {
     expect(run.script).toContain("def run():");
     expect(run.logs[0].level).toBe("info");
     expect(run.nodeStates).toEqual({});
+  });
+});
+
+describe("runWorkflow real execution", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const node = (
+    id: string,
+    kind: "trigger" | "fetch" | "process" | "action",
+    toolId: string,
+    config: Record<string, string> = {},
+  ) => ({ id, kind, toolId, label: toolId, config, enabled: true });
+
+  it("performs a real HTTP fetch and threads the payload", async () => {
+    const fetchMock = vi.fn(
+      async () => new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const agent = createBlankAgent();
+    agent.workflow = [
+      node("t", "trigger", "trigger.schedule", { schedule: "every hour" }),
+      node("f", "fetch", "fetch.httpRequest", { url: "https://example.com/api", method: "GET" }),
+      node("a", "action", "action.log"),
+    ];
+
+    const { hooks, logs } = collectHooks();
+    const status = await runWorkflow(agent, hooks);
+
+    expect(status).toBe("succeeded");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(logs.some((log) => log.message.includes("HTTP 200"))).toBe(true);
+  });
+
+  it("fails honestly when an AI process step has no engine", async () => {
+    const agent = createBlankAgent();
+    agent.workflow = [
+      node("t", "trigger", "trigger.schedule"),
+      node("p", "process", "process.aiSummarize"),
+    ];
+
+    const { hooks, getFinished } = collectHooks();
+    const status = await runWorkflow(agent, hooks);
+
+    expect(status).toBe("failed");
+    expect(getFinished()).toBe("failed");
+  });
+
+  it("a filter that drops the payload short-circuits the remaining steps", async () => {
+    const agent = createBlankAgent();
+    agent.workflow = [
+      node("f", "process", "process.filter", { field: "sentiment", equals: "negative" }),
+      node("a", "action", "action.log"),
+    ];
+
+    const { hooks, logs, getFinished } = collectHooks();
+    const status = await runWorkflow(agent, hooks, { target: { sentiment: "positive" } });
+
+    expect(status).toBe("succeeded");
+    expect(logs.some((log) => log.message.includes("Filtered out"))).toBe(true);
+    expect(logs.some((log) => log.message.includes("remaining steps skipped"))).toBe(true);
+    expect(getFinished()).toBe("succeeded");
+  });
+
+  it("an aborted signal stops the run and reports stopped (not succeeded)", async () => {
+    const agent = createBlankAgent();
+    agent.workflow = Array.from({ length: 4 }, (_, i) => node(`n${i}`, "action", "action.log"));
+
+    const controller = new AbortController();
+    controller.abort();
+
+    const { hooks, getFinished, statuses } = collectHooks();
+    const status = await runWorkflow(agent, hooks, { signal: controller.signal });
+
+    expect(status).toBe("stopped");
+    expect(getFinished()).toBe("stopped");
+    expect(statuses.includes("stopped")).toBe(true);
+    // The run must never flip back to "succeeded".
+    expect(statuses.includes("succeeded")).toBe(false);
   });
 });

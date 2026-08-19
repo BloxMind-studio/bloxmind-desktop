@@ -77,6 +77,17 @@ const api: DesktopApi = {
   },
   rojoBinaryPath: () => ipcRenderer.invoke(channels.rojoBinaryPath),
   rojoCheckInstalled: () => ipcRenderer.invoke(channels.rojoCheckInstalled),
+  // ── Window controls ─────────────────────────────────────────────────
+  windowMinimize: () => ipcRenderer.invoke(channels.windowMinimize),
+  windowMaximizeToggle: () => ipcRenderer.invoke(channels.windowMaximizeToggle),
+  windowClose: () => ipcRenderer.invoke(channels.windowClose),
+  windowIsMaximized: () => ipcRenderer.invoke(channels.windowIsMaximized),
+  onWindowMaximizedChange: (listener) => {
+    const handleMaximized = (_event: Electron.IpcRendererEvent, maximized: boolean) =>
+      listener(maximized);
+    ipcRenderer.on(channels.onWindowMaximizedChange, handleMaximized);
+    return () => ipcRenderer.removeListener(channels.onWindowMaximizedChange, handleMaximized);
+  },
 };
 
 contextBridge.exposeInMainWorld("BloxMind", api);

@@ -29,7 +29,7 @@ const STORAGE_KEY = "BloxMind-active-mode";
 function readStoredMode(): AppMode {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (raw === "roblox" || raw === "apps" || raw === "agent") return raw;
+    if (raw === "roblox" || raw === "apps" || raw === "agent" || raw === "games") return raw;
   } catch {
     // ignore storage failures
   }
@@ -44,6 +44,10 @@ function readStoredMode(): AppMode {
 export function ModeProvider({ children }: { children: ReactNode }) {
   const [mode, setModeState] = useState<AppMode>(readStoredMode);
   const interactedRef = useRef(false);
+  // Mirror of the current mode so the persistence side effects below only fire
+  // on an actual change, never on a no-op switch to the already-active mode.
+  const modeRef = useRef<AppMode>(mode);
+  modeRef.current = mode;
 
   useEffect(() => {
     let cancelled = false;
@@ -62,7 +66,10 @@ export function ModeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setMode = useCallback((next: AppMode) => {
+    const current = modeRef.current;
+    if (current === next) return;
     interactedRef.current = true;
+    modeRef.current = next;
     setModeState(next);
     try {
       window.localStorage.setItem(STORAGE_KEY, next);

@@ -2,12 +2,50 @@ name: Build BloxMind
 
 on:
   workflow_call:
+  pull_request:
 
 permissions:
   contents: read
 
 jobs:
+  # Fast PR gate: verify TypeScript compilation and linter rules before the
+  # expensive cross-platform build. This job runs when the workflow is
+  # triggered directly by a pull_request; the full build below runs only when
+  # this workflow is called as a reusable workflow (from ci.yml / release.yml).
+  pr-checks:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          version: 10
+
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type-check
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Run core engine tests
+        run: |
+          cd repos/bloxmind-core-engine
+          VITE_CONFIG_NATIVE_IGNORE_WARNING=true node_modules/.bin/vitest run
+
   build:
+    if: github.event_name == 'workflow_call'
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -25,6 +63,10 @@ jobs:
     runs-on: ${{ matrix.platform }}
     env:
       VITE_POSTHOG_PROJECT_TOKEN: ${{ vars.POSTHOG_PROJECT_TOKEN }}
+      # Private core-engine base URL. When set, the packaged desktop app builds
+      # in cloud mode and talks to the hosted backend at runtime.
+      NEXT_PUBLIC_CORE_API_URL: ${{ vars.CORE_API_URL }}
+      NEXT_PUBLIC_BLOXMIND_API_TOKEN: ${{ secrets.BLOXMIND_API_TOKEN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

@@ -147,6 +147,8 @@ function TestChatInput({
             port: 4096,
             ready: clientStatus === "ready",
             initError: null,
+            sseConnected: true,
+            sseFailureCount: 0,
           }}
         >
           <ActiveSessionContext.Provider

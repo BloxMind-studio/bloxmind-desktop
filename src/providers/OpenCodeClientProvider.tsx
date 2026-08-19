@@ -5,6 +5,7 @@ import { createContext, type ReactNode, useContext, useEffect, useMemo, useState
 import { toast } from "sonner";
 import LoadingScreen, { type StartupProgress } from "@/components/LoadingScreen";
 import { captureDetailedAnalytics } from "@/lib/analytics";
+import { resolveDesktopEndpoint } from "@/lib/apiConfig";
 import { loadConfig } from "@/lib/config";
 import { desktop } from "@/lib/desktop";
 import { qk } from "@/lib/queryKeys";
@@ -152,12 +153,14 @@ export function getStartupErrorPresentation(error: unknown): StartupErrorPresent
   };
 }
 
-interface OpenCodeClientContextValue {
+export interface OpenCodeClientContextValue {
   client: OpencodeClient | null;
   status: AppStatus;
   port: number;
   ready: boolean;
   initError: string | null;
+  sseConnected: boolean;
+  sseFailureCount: number;
 }
 
 export const OpenCodeClientContext = createContext<OpenCodeClientContextValue>({
@@ -166,6 +169,8 @@ export const OpenCodeClientContext = createContext<OpenCodeClientContextValue>({
   port: 0,
   ready: false,
   initError: null,
+  sseConnected: false,
+  sseFailureCount: 0,
 });
 
 export function useOpenCodeClient() {
@@ -195,6 +200,8 @@ export function OpenCodeClientProvider({
   const [client, setClient] = useState<OpencodeClient | null>(null);
   const [ready, setReady] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
+  const [sseConnected, setSseConnected] = useState(false);
+  const [sseFailureCount, setSseFailureCount] = useState(0);
 
   // Get port from Electron, wait for the server, then create the client.
   useEffect(() => {
@@ -239,24 +246,36 @@ export function OpenCodeClientProvider({
         setInitError(null);
         setStartupPhase("engine");
         setEngineProgress(DEFAULT_ENGINE_PROGRESS);
-        const { port: ocPort, workspace, authorization } = await getServerInfo();
+        const info = await getServerInfo();
         if (cancelled) return;
+
+        // Resolve the active engine endpoint: a hosted Core Engine
+        // (NEXT_PUBLIC_CORE_API_URL) when configured, otherwise the local
+        // OpenCode engine spawned by the Electron main process.
+        const endpoint = resolveDesktopEndpoint(info);
 
         setStartupPhase("connection");
-        const baseUrl = `http://127.0.0.1:${ocPort}`;
-        await waitForServer(baseUrl, authorization);
-        if (cancelled) return;
+        // Only poll a local engine for readiness. A hosted Cloud Backend is
+        // assumed reachable and connection errors surface through the client
+        // during prefetch below.
+        if (!endpoint.isCloud) {
+          await waitForServer(endpoint.baseUrl, info.authorization);
+          if (cancelled) return;
+        }
 
+        const headers = endpoint.authorization
+          ? { Authorization: endpoint.authorization }
+          : undefined;
         const newClient = createOpencodeClient({
-          baseUrl,
-          directory: workspace,
-          headers: { Authorization: authorization },
+          baseUrl: endpoint.baseUrl,
+          directory: info.workspace,
+          headers,
         });
         setStartupPhase("workspace");
         await prefetchServerState(newClient, queryClient);
         if (cancelled) return;
 
-        setPort(ocPort);
+        setPort(info.port);
         setClient(newClient);
         setReady(true);
         setStatus("ready");
@@ -283,13 +302,23 @@ export function OpenCodeClientProvider({
     if (!client || !ready) return;
 
     const abortController = new AbortController();
-    let consecutiveFailures = 0;
+    const consecutiveFailures = 0;
     let reconnectToastId: string | number | undefined;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
     let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
     let lastEventTime = Date.now();
     let streamAbortController: AbortController | null = null;
     let permanentlyDisconnected = false;
+
+    const bumpFailures = () => {
+      bumpFailures();
+      setSseFailureCount(consecutiveFailures);
+    };
+    const resetFailures = () => {
+      resetFailures();
+      permanentlyDisconnected = false;
+      setSseFailureCount(0);
+    };
 
     function showReconnectToast() {
       if (reconnectToastId != null) return;
@@ -311,7 +340,7 @@ export function OpenCodeClientProvider({
         action: {
           label: "Try again",
           onClick: () => {
-            consecutiveFailures = 0;
+            resetFailures();
             permanentlyDisconnected = false;
             dismissReconnectToast();
             scheduleReconnect();
@@ -351,7 +380,7 @@ export function OpenCodeClientProvider({
         const elapsed = Date.now() - lastEventTime;
         if (elapsed >= sseHeartbeatTimeout) {
           console.debug(`SSE heartbeat timeout: no events for ${elapsed}ms, forcing reconnect`);
-          consecutiveFailures++;
+          bumpFailures();
           if (consecutiveFailures >= SSE_FAILURE_THRESHOLD) showReconnectToast();
           // Abort the current stream so the for-await loop breaks.
           // The outer abortController stays alive so scheduleReconnect can still fire.
@@ -374,13 +403,14 @@ export function OpenCodeClientProvider({
         streamAbortController = new AbortController();
         const sseResult = await client.event.subscribe({}, { throwOnError: true });
         if (!sseResult?.stream) {
-          consecutiveFailures++;
+          bumpFailures();
           if (consecutiveFailures >= SSE_FAILURE_THRESHOLD) showReconnectToast();
           if (!abortController.signal.aborted) scheduleReconnect();
           return;
         }
         await reconcileServerState(queryClient, activeSessionIdRef.current);
-        consecutiveFailures = 0;
+        resetFailures();
+        setSseConnected(true);
         dismissReconnectToast();
         startHeartbeat();
 
@@ -394,18 +424,20 @@ export function OpenCodeClientProvider({
 
         stopHeartbeat();
         streamAbortController = null;
+        setSseConnected(false);
 
         if (!abortController.signal.aborted) {
-          consecutiveFailures++;
+          bumpFailures();
           if (consecutiveFailures >= SSE_FAILURE_THRESHOLD) showReconnectToast();
           scheduleReconnect();
         }
       } catch (err) {
         stopHeartbeat();
         streamAbortController = null;
+        setSseConnected(false);
         if (!abortController.signal.aborted) {
           console.debug("SSE stream error, reconnecting automatically:", err);
-          consecutiveFailures++;
+          bumpFailures();
           if (consecutiveFailures >= SSE_FAILURE_THRESHOLD) showReconnectToast();
           scheduleReconnect();
         }
@@ -415,6 +447,7 @@ export function OpenCodeClientProvider({
     subscribe();
 
     return () => {
+      setSseConnected(false);
       abortController.abort();
       streamAbortController?.abort();
       clearTimeout(reconnectTimer);
@@ -424,8 +457,8 @@ export function OpenCodeClientProvider({
   }, [client, ready, queryClient, activeSessionIdRef, sseReconnectDelay, sseHeartbeatTimeout]);
 
   const value = useMemo<OpenCodeClientContextValue>(
-    () => ({ client, status, port, ready, initError }),
-    [client, status, port, ready, initError],
+    () => ({ client, status, port, ready, initError, sseConnected, sseFailureCount }),
+    [client, status, port, ready, initError, sseConnected, sseFailureCount],
   );
 
   if (!ready) {
@@ -454,26 +487,31 @@ export function OpenCodeClientProvider({
 
 export async function prefetchServerState(client: OpencodeClient, queryClient: QueryClient) {
   const results = await Promise.allSettled([
-    client.experimental.session.list({ archived: true }, { throwOnError: true }),
     client.provider.list({}, { throwOnError: true }),
     client.session.status({}, { throwOnError: true }),
     client.app.agents({}, { throwOnError: true }),
     client.provider.auth({}, { throwOnError: true }),
   ]);
+
+  const failures = results
+    .filter((r): r is PromiseRejectedResult => r.status === "rejected")
+    .map((r) => {
+      const cause = r.reason as { cause?: { status?: number }; message?: string } | undefined;
+      const status = cause?.cause?.status;
+      return status ? `HTTP ${status}` : String(cause?.message ?? r.reason);
+    });
+
   if (results.every((result) => result.status === "rejected")) {
-    throw new Error("OpenCode server state is unavailable");
+    throw new Error(
+      `OpenCode server state is unavailable. ${failures.length}/${results.length} requests failed: ${failures.join(", ")}`,
+    );
   }
-  const [sessionResult, providerResult, statusResult, agentsResult, authResult] = results;
-  const sessionRes = sessionResult.status === "fulfilled" ? sessionResult.value : undefined;
+
+  const [providerResult, statusResult, agentsResult, authResult] = results;
   const providerRes = providerResult.status === "fulfilled" ? providerResult.value : undefined;
   const statusRes = statusResult.status === "fulfilled" ? statusResult.value : undefined;
   const agentsRes = agentsResult.status === "fulfilled" ? agentsResult.value : undefined;
   const authRes = authResult.status === "fulfilled" ? authResult.value : undefined;
-
-  if (sessionRes?.data) {
-    const sorted = [...sessionRes.data].sort((a, b) => b.time.created - a.time.created);
-    queryClient.setQueryData(qk.sessions, sorted);
-  }
 
   if (statusRes?.data) {
     queryClient.setQueryData(qk.statuses, statusRes.data);

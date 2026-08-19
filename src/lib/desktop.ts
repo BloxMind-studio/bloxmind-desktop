@@ -110,6 +110,11 @@ interface DesktopEffects {
   ) => Effect.Effect<RojoInstallResult, DesktopError>;
   readonly rojoBinaryPath: () => Effect.Effect<string | null, DesktopError>;
   readonly rojoCheckInstalled: () => Effect.Effect<boolean, DesktopError>;
+  readonly windowMinimize: () => Effect.Effect<void, DesktopError>;
+  readonly windowMaximizeToggle: () => Effect.Effect<void, DesktopError>;
+  readonly windowClose: () => Effect.Effect<void, DesktopError>;
+  readonly windowIsMaximized: () => Effect.Effect<boolean, DesktopError>;
+  readonly onWindowMaximizedChange: (listener: (maximized: boolean) => void) => () => void;
 }
 
 type StartupProgressListener = (progress: OpenCodeStartupProgress) => void;
@@ -204,6 +209,15 @@ const browserEffects: DesktopEffects = {
     Effect.fail(new DesktopError({ message: "Rojo requires the desktop app." })),
   rojoCheckInstalled: () =>
     Effect.fail(new DesktopError({ message: "Rojo requires the desktop app." })),
+  windowMinimize: () =>
+    Effect.fail(new DesktopError({ message: "Window control requires the desktop app." })),
+  windowMaximizeToggle: () =>
+    Effect.fail(new DesktopError({ message: "Window control requires the desktop app." })),
+  windowClose: () =>
+    Effect.fail(new DesktopError({ message: "Window control requires the desktop app." })),
+  windowIsMaximized: () =>
+    Effect.fail(new DesktopError({ message: "Window control requires the desktop app." })),
+  onWindowMaximizedChange: () => () => {},
 };
 
 const invoke = <A>(message: string, operation: () => Promise<A>) =>
@@ -307,6 +321,13 @@ function makeBridgeEffects(api: DesktopApi): DesktopEffects {
     rojoBinaryPath: () => invoke("Failed to get Rojo binary path", () => api.rojoBinaryPath()),
     rojoCheckInstalled: () =>
       invoke("Failed to check Rojo installation", () => api.rojoCheckInstalled()),
+    windowMinimize: () => invoke("Failed to minimize the window", () => api.windowMinimize()),
+    windowMaximizeToggle: () =>
+      invoke("Failed to toggle the window maximized state", () => api.windowMaximizeToggle()),
+    windowClose: () => invoke("Failed to close the window", () => api.windowClose()),
+    windowIsMaximized: () =>
+      invoke("Failed to read the window maximized state", () => api.windowIsMaximized()),
+    onWindowMaximizedChange: (listener) => api.onWindowMaximizedChange(listener),
   };
 }
 
@@ -357,4 +378,9 @@ export const desktop: DesktopApi = {
   rojoSetup: (onProgress) => runPromise(desktopEffects.rojoSetup(onProgress)),
   rojoBinaryPath: () => runPromise(desktopEffects.rojoBinaryPath()),
   rojoCheckInstalled: () => runPromise(desktopEffects.rojoCheckInstalled()),
+  windowMinimize: () => runPromise(desktopEffects.windowMinimize()),
+  windowMaximizeToggle: () => runPromise(desktopEffects.windowMaximizeToggle()),
+  windowClose: () => runPromise(desktopEffects.windowClose()),
+  windowIsMaximized: () => runPromise(desktopEffects.windowIsMaximized()),
+  onWindowMaximizedChange: (listener) => desktopEffects.onWindowMaximizedChange(listener),
 };

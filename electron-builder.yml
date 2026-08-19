@@ -31,6 +31,6 @@ linux:
     - deb
 publish:
   provider: github
-  owner: YUouriii
-  repo: app-BloxMind-ai
+  owner: BloxMind-studio
+  repo: bloxmind-desktop
   vPrefixedTagName: true

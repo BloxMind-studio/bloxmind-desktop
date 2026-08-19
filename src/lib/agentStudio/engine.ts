@@ -1,3 +1,4 @@
+import { type AiRunner, executeNode, type Payload } from "./execution";
 import { makeRunId } from "./generator";
 import { TOOL_BY_ID } from "./tools";
 import type { AgentDefinition, AgentRun, RunLog, RunStatus } from "./types";
@@ -48,73 +49,86 @@ export interface RunHooks {
   onFinish: (status: RunStatus) => void;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, ms);
-  });
-}
-
 function makeLog(level: RunLog["level"], message: string, nodeId?: string): RunLog {
   return { id: makeRunId(), time: Date.now(), level, message, nodeId };
 }
 
+export interface RunOptions {
+  /** When aborted, the run stops cleanly and reports "stopped". */
+  signal?: AbortSignal;
+  /** Initial payload threaded through the pipeline. */
+  target?: Payload;
+  /** Optional AI runner so process nodes execute against the engine. */
+  ai?: AiRunner | null;
+}
+
 /**
- * Executes a workflow by walking each enabled node in order, emitting a
- * realistic log line per step and streaming progress through `hooks`. Step
- * timing is compressed so users see the pipeline complete in real time.
+ * Executes a workflow by running each enabled node in order through the real
+ * node executor, threading a payload through the pipeline and streaming
+ * progress via `hooks`. Honours an AbortSignal so a run can be stopped without
+ * being falsely reported as succeeded.
  */
 export async function runWorkflow(
   agent: Pick<AgentDefinition, "name" | "workflow">,
   hooks: RunHooks,
+  options: RunOptions = {},
 ): Promise<RunStatus> {
+  const { signal, target, ai } = options;
   const nodeStates: Record<string, RunStatus> = {};
   const enabledNodes = agent.workflow.filter((node) => node.enabled);
+  let payload: Payload = target ? { ...target } : {};
 
   hooks.onStatus("running", nodeStates);
 
   for (const node of enabledNodes) {
+    if (signal?.aborted) return finishStopped(hooks, nodeStates);
+
     nodeStates[node.id] = "running";
     hooks.onStatus("running", { ...nodeStates });
     hooks.onLog(makeLog("info", `▶ Running "${node.label}"`, node.id));
 
-    await sleep(700);
+    try {
+      const result = await executeNode(node, payload, {
+        signal: signal ?? new AbortController().signal,
+        ai,
+      });
+      payload = result.payload;
+      nodeStates[node.id] = "succeeded";
+      hooks.onStatus("running", { ...nodeStates });
+      hooks.onLog(makeLog(result.filtered ? "warn" : "success", result.message, node.id));
 
-    const tool = TOOL_BY_ID.get(node.toolId);
-    if (node.kind === "process") {
-      hooks.onLog(makeLog("info", "  ~ model thinking…", node.id));
-      await sleep(500);
-      hooks.onLog(
-        makeLog(
-          "success",
-          `  ✓ ${tool?.scriptArgs[0]?.describe(node.config) ?? "processed"}`,
-          node.id,
-        ),
-      );
-    } else if (node.kind === "fetch") {
-      hooks.onLog(
-        makeLog(
-          "success",
-          `  ✓ fetched ${tool?.scriptArgs[0]?.describe(node.config) ?? "data"}`,
-          node.id,
-        ),
-      );
-    } else {
-      hooks.onLog(
-        makeLog("success", `  ✓ ${tool?.scriptArgs[0]?.describe(node.config) ?? "done"}`, node.id),
-      );
+      // A filter that dropped the payload short-circuits the rest of the pipeline.
+      if (result.filtered) {
+        hooks.onLog(makeLog("info", "Filtered — remaining steps skipped", node.id));
+        const finalStatus: RunStatus = "succeeded";
+        hooks.onStatus(finalStatus, { ...nodeStates });
+        hooks.onFinish(finalStatus);
+        return finalStatus;
+      }
+    } catch (err) {
+      nodeStates[node.id] = "failed";
+      const message = err instanceof Error ? err.message : String(err);
+      hooks.onLog(makeLog("error", `✗ ${node.label}: ${message}`, node.id));
+      const finalStatus: RunStatus = "failed";
+      hooks.onStatus(finalStatus, { ...nodeStates });
+      hooks.onFinish(finalStatus);
+      return finalStatus;
     }
-
-    nodeStates[node.id] = "succeeded";
-    hooks.onStatus("running", { ...nodeStates });
   }
 
   const finalStatus: RunStatus = "succeeded";
   hooks.onStatus(finalStatus, { ...nodeStates });
-  hooks.onLog(
-    makeLog(finalStatus === "succeeded" ? "success" : "error", "Workflow completed successfully"),
-  );
+  hooks.onLog(makeLog("success", "Workflow completed successfully"));
   hooks.onFinish(finalStatus);
   return finalStatus;
+}
+
+function finishStopped(hooks: RunHooks, nodeStates: Record<string, RunStatus>): RunStatus {
+  const status: RunStatus = "stopped";
+  hooks.onLog(makeLog("warn", "Run stopped by user"));
+  hooks.onStatus(status, { ...nodeStates });
+  hooks.onFinish(status);
+  return status;
 }
 
 export function createRun(

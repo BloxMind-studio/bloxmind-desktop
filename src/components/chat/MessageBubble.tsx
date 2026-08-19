@@ -10,6 +10,7 @@ import { SmartPartsRenderer } from "@/components/chat/partViews";
 import { BloxMindThinking } from "@/components/chat/ThinkingIndicator";
 import { UserPartsView } from "@/components/chat/UserPartsView";
 import { useRegenerateResponse } from "@/hooks/mutations/useRegenerateResponse";
+import { useRetryMessage } from "@/hooks/mutations/useRetryMessage";
 import { useMessage } from "@/hooks/useMessages";
 import { useSessionStatus } from "@/hooks/useSessionStatuses";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
@@ -35,11 +36,17 @@ export const MessageBubble = memo(function MessageBubble({
   const sessionStatus = useSessionStatus(activeSessionId);
   const isBusy = sessionStatus?.type === "busy";
   const regenerate = useRegenerateResponse();
+  const retry = useRetryMessage();
 
   const handleRegenerate = useCallback(() => {
     if (regenerate.isPending) return;
     regenerate.mutate({ assistantMessageId: messageId });
   }, [regenerate, messageId]);
+
+  const handleRetry = useCallback(() => {
+    if (retry.isPending) return;
+    retry.mutate({ assistantMessageId: messageId });
+  }, [retry, messageId]);
 
   const handleCopy = useCallback(() => {
     if (!msg) return;
@@ -152,6 +159,36 @@ export const MessageBubble = memo(function MessageBubble({
                     messageId={messageId}
                   />
                 )}
+                {/* Retry button: shown on errored assistant messages. */}
+                {!isUser &&
+                  "error" in msg.info &&
+                  msg.info.error &&
+                  msg.info.error.name !== "MessageAbortedError" && (
+                    <button
+                      type="button"
+                      onClick={handleRetry}
+                      disabled={retry.isPending}
+                      className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-amber-500/80 transition-colors hover:bg-amber-500/10 disabled:pointer-events-none disabled:opacity-50"
+                      title="Retry this message"
+                    >
+                      <svg
+                        width="11"
+                        height="11"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <polyline points="23 4 23 10 17 10" />
+                        <polyline points="1 20 1 14 7 14" />
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                      </svg>
+                      <span>{retry.isPending ? "Retrying…" : "Retry"}</span>
+                    </button>
+                  )}
                 {/* Regenerate button: latest assistant message only. Once the
                     re-run starts, the session turns busy and this whole
                     toolbar hides, which doubles as the disabled state. */}

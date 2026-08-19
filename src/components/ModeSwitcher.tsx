@@ -1,4 +1,4 @@
-import { Bot, Gamepad2, LayoutTemplate } from "lucide-react";
+import { Bot, Gamepad2, Joystick, LayoutTemplate } from "lucide-react";
 import { useAppMode } from "@/providers/ModeProvider";
 import type { AppMode } from "@/types/desktop";
 
@@ -8,13 +8,15 @@ const MODES: ReadonlyArray<{
   icon: typeof Gamepad2;
 }> = [
   { mode: "roblox", label: "Roblox", icon: Gamepad2 },
+  { mode: "games", label: "Games", icon: Joystick },
   { mode: "apps", label: "Apps", icon: LayoutTemplate },
   { mode: "agent", label: "Agent", icon: Bot },
 ];
 
 /**
  * Global mode switcher shown in the top bar. Switches the entire workspace
- * between Roblox Studio Mode, Apps Builder Mode, and Agent Mode.
+ * between Roblox Studio Mode, Games Studio Mode, Apps Builder Mode, and Agent
+ * Mode.
  */
 export function ModeSwitcher() {
   const { mode, setMode } = useAppMode();

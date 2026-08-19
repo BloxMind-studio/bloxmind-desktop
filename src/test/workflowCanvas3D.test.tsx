@@ -154,6 +154,56 @@ describe("WorkflowCanvas3D interaction", () => {
     expect(screen.queryByTestId("connect-drag-line")).toBeNull();
   });
 
+  it("locks pipe anchors to the exact port handle coordinates", () => {
+    const { container } = setup();
+    // Sequential wiring renders n1→n2 and n2→n3.
+    for (const [from, to] of [
+      ["n1", "n2"],
+      ["n2", "n3"],
+    ] as const) {
+      const out = container.querySelector(`[data-node-id="${from}"] [data-port="exit"]`);
+      const input = container.querySelector(`[data-node-id="${to}"] [data-port="entry"]`);
+      const pipe = container.querySelector(`[data-testid="pipe-${from}-${to}"] .blox-pipe-flow`);
+      expect(out).not.toBeNull();
+      expect(input).not.toBeNull();
+      expect(pipe).not.toBeNull();
+
+      const d = pipe?.getAttribute("d") ?? "";
+      const start = d.match(/^M ([-\d.]+) ([-\d.]+)/);
+      expect(start).not.toBeNull();
+      const outX = parseFloat(out?.getAttribute("cx") ?? "0");
+      const outY = parseFloat(out?.getAttribute("cy") ?? "0");
+      // The pipe path is rounded to 1 decimal, so compare within that tolerance.
+      expect(Math.abs(parseFloat(start?.[1] ?? "") - outX)).toBeLessThan(0.06);
+      expect(Math.abs(parseFloat(start?.[2] ?? "") - outY)).toBeLessThan(0.06);
+
+      const end = d.match(/ ([-\d.]+) ([-\d.]+)$/);
+      expect(end).not.toBeNull();
+      const inX = parseFloat(input?.getAttribute("cx") ?? "0");
+      const inY = parseFloat(input?.getAttribute("cy") ?? "0");
+      expect(Math.abs(parseFloat(end?.[1] ?? "") - inX)).toBeLessThan(0.06);
+      expect(Math.abs(parseFloat(end?.[2] ?? "") - inY)).toBeLessThan(0.06);
+    }
+  });
+
+  it("gleams the input/output handles when a pipe is connected to them", () => {
+    const { container } = setup();
+    const glowOf = (nodeId: string, port: "entry" | "exit") =>
+      container
+        .querySelector(`[data-node-id="${nodeId}"] [data-port="${port}"]`)
+        ?.getAttribute("filter");
+
+    // n1 only sends: its output glows, its input does not.
+    expect(glowOf("n1", "exit")).toContain("blox-port-glow");
+    expect(glowOf("n1", "entry")).toBeFalsy();
+    // n2 both receives and sends.
+    expect(glowOf("n2", "entry")).toContain("blox-port-glow");
+    expect(glowOf("n2", "exit")).toContain("blox-port-glow");
+    // n3 only receives.
+    expect(glowOf("n3", "entry")).toContain("blox-port-glow");
+    expect(glowOf("n3", "exit")).toBeFalsy();
+  });
+
   it("removes an explicit pipe on double-click", () => {
     const wired = { ...agent, connections: [{ from: "n1", to: "n3" }] };
     const { container, onUnlinkEdge } = setup({ agent: wired });

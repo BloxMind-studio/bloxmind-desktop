@@ -106,6 +106,8 @@ function makeWrapper(
               port: 34999,
               ready: true,
               initError: null,
+              sseConnected: true,
+              sseFailureCount: 0,
             }}
           >
             <ModelPreferencesContext.Provider value={preferences as never}>

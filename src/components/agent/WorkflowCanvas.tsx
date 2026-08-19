@@ -1,8 +1,9 @@
-import { Box, List, Play, Plus } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Box, List, Play, Plus, RotateCcw } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { iconFor } from "@/lib/agentStudio/icons";
 import { TOOL_BY_ID, TOOLS } from "@/lib/agentStudio/tools";
-import type { AgentDefinition, IsoWorldPos, NodeKind, WorkflowNode } from "@/lib/agentStudio/types";
+import type { AgentDefinition, NodeKind, WorkflowNode } from "@/lib/agentStudio/types";
+import { useNodePositions } from "@/lib/agentStudio/useNodePositions";
 import { useAgentStudio } from "@/providers/AgentStudioProvider";
 import { NODE_KINDS } from "./NodeEditor";
 import { WorkflowCanvas2D } from "./WorkflowCanvas2D";
@@ -28,7 +29,12 @@ export function WorkflowCanvas({
   const [addingKind, setAddingKind] = useState<NodeKind | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   /** Block positions dragged by the user on the 3D floor plane. */
-  const [positions, setPositions] = useState<Record<string, IsoWorldPos>>({});
+  const {
+    positions,
+    setPositions: savePositions,
+    removePosition,
+    resetPositions,
+  } = useNodePositions(agent.id);
 
   const addTool = useMemo(() => TOOLS.filter((tool) => tool.category === addingKind), [addingKind]);
 
@@ -39,19 +45,20 @@ export function WorkflowCanvas({
     });
   };
 
-  const removeNode = (nodeId: string) => {
-    updateAgent({
-      ...agent,
-      workflow: agent.workflow.filter((node) => node.id !== nodeId),
-      connections: agent.connections?.filter((edge) => edge.from !== nodeId && edge.to !== nodeId),
-    });
-    setPositions((current) => {
-      const next = { ...current };
-      delete next[nodeId];
-      return next;
-    });
-    if (selectedNodeId === nodeId) setSelectedNodeId(null);
-  };
+  const removeNode = useCallback(
+    (nodeId: string) => {
+      updateAgent({
+        ...agent,
+        workflow: agent.workflow.filter((node) => node.id !== nodeId),
+        connections: agent.connections?.filter(
+          (edge) => edge.from !== nodeId && edge.to !== nodeId,
+        ),
+      });
+      removePosition(nodeId);
+      if (selectedNodeId === nodeId) setSelectedNodeId(null);
+    },
+    [agent, updateAgent, removePosition, selectedNodeId],
+  );
 
   const linkNodes = (from: string, to: string) => {
     if (from === to) return;
@@ -95,6 +102,30 @@ export function WorkflowCanvas({
   }
 
   const hasEnabled = agent.workflow.some((node) => node.enabled);
+
+  // Keyboard shortcuts: Delete/Backspace removes the selected node, Escape
+  // deselects. Shortcuts are suppressed while typing in an input/textarea.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      const tag = (event.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+
+      if (event.key === "Delete" || event.key === "Backspace") {
+        if (selectedNodeId) {
+          event.preventDefault();
+          removeNode(selectedNodeId);
+        }
+      }
+
+      if (event.key === "Escape") {
+        setSelectedNodeId(null);
+        setAddingKind(null);
+      }
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selectedNodeId, removeNode]);
 
   return (
     <div className={className}>
@@ -143,6 +174,18 @@ export function WorkflowCanvas({
               3D
             </button>
           </fieldset>
+
+          {Object.keys(positions).length > 0 && (
+            <button
+              type="button"
+              onClick={resetPositions}
+              title="Reset node positions to the automatic layout"
+              className="inline-flex items-center gap-1.5 rounded-md border bg-background px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-hover/12 hover:text-foreground"
+            >
+              <RotateCcw aria-hidden="true" size={11} />
+              Reset layout
+            </button>
+          )}
 
           {hasEnabled && agent.workflow.length > 0 && (
             <button
@@ -205,7 +248,7 @@ export function WorkflowCanvas({
           removeNode={removeNode}
           onOpenAdd={() => setAddingKind("fetch")}
           positions={positions}
-          onPositionsChange={setPositions}
+          onPositionsChange={savePositions}
           onLinkNodes={linkNodes}
           onUnlinkEdge={unlinkEdge}
         />

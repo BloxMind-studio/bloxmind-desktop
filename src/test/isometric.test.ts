@@ -79,13 +79,15 @@ describe("blockGeometry", () => {
     expect(geo.sortKey).toBe(entry.x + entry.z);
   });
 
-  it("anchors the side handles onto the cube's left and right faces", () => {
+  it("anchors the side handles dead-center on the cube's left and right faces", () => {
     const [entry] = layoutWorkflowIso([node("a", "trigger")]);
     const geo = blockGeometry(entry);
-    // Output handle sits to the right of the input handle…
-    expect(geo.portOut.x).toBeGreaterThan(geo.portIn.x);
-    // …on the right face, slightly lower than the input handle on the left face
-    expect(geo.portOut.y).toBeGreaterThan(geo.portIn.y);
+    // Output handle sits on the right side, input on the left…
+    expect(geo.portOut.x).toBeGreaterThan(0);
+    expect(geo.portIn.x).toBeLessThan(0);
+    // …mirrored and at the same height so both read as symmetric mid-face anchors
+    expect(geo.portOut.x).toBeCloseTo(-geo.portIn.x, 5);
+    expect(geo.portOut.y).toBeCloseTo(geo.portIn.y, 5);
     // Both lie within the vertical span of the extruded body
     const bodyTop = Math.min(geo.top.y, geo.right.y, geo.front.y, geo.left.y);
     const bodyBottom = Math.max(geo.leftDown.y, geo.rightDown.y, geo.frontDown.y);

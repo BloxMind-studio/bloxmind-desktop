@@ -7,12 +7,17 @@ import { BloxMindLogo } from "@/components/BloxMindLogo";
 import ChatInput from "@/components/ChatInput";
 import ChatMessages from "@/components/ChatMessages";
 import ChatSidebar from "@/components/ChatSidebar";
+import { ReconnectBanner } from "@/components/chat/ReconnectBanner";
 import Explorer from "@/components/Explorer";
+import { GameStudio } from "@/components/GameStudio";
 import LoadingScreen from "@/components/LoadingScreen";
 import MeshPanel from "@/components/MeshPanel";
 import PlaytestPanel from "@/components/PlaytestPanel";
 import StudioSetup from "@/components/StudioSetup";
 import StudioTargetPicker from "@/components/StudioTargetPicker";
+import { AgentSettings } from "@/components/settings/AgentSettings";
+import { AppsSettings } from "@/components/settings/AppsSettings";
+import { GamesSettings } from "@/components/settings/GamesSettings";
 import { useCreateSession } from "@/hooks/mutations/useCreateSession";
 import { useSessionStatus } from "@/hooks/useSessionStatuses";
 import { useSessions } from "@/hooks/useSessions";
@@ -102,7 +107,7 @@ function ProjectIndexButton() {
 }
 
 function Chat() {
-  const { ready, initError } = useOpenCodeClient();
+  const { ready, initError, sseConnected, sseFailureCount } = useOpenCodeClient();
   const { mode } = useAppMode();
   const { activeSessionId, clearSession } = useActiveSession();
   const sessionStatus = useSessionStatus(activeSessionId);
@@ -119,6 +124,9 @@ function Chat() {
   const { sidebarCollapsed, setSidebarCollapsed, explorerCollapsed, setExplorerCollapsed } =
     useUIPreferences();
   const [showSettings, setShowSettings] = useState(false);
+  const [settingsPanel, setSettingsPanel] = useState<"general" | "apps" | "agent" | "games" | null>(
+    null,
+  );
   const [showStudioSetup, setShowStudioSetup] = useState(false);
   const [showPlaytest, setShowPlaytest] = useState(false);
   const [showMesh, setShowMesh] = useState(false);
@@ -247,8 +255,26 @@ function Chat() {
     () => setSidebarCollapsed(!sidebarCollapsed),
     [sidebarCollapsed, setSidebarCollapsed],
   );
-  const handleSessionSelect = useCallback(() => setShowSettings(false), []);
-  const handleOpenSettings = useCallback(() => setShowSettings(true), []);
+  const handleSessionSelect = useCallback(() => {
+    setShowSettings(false);
+    setSettingsPanel(null);
+  }, []);
+  const handleOpenGeneralSettings = useCallback(() => {
+    setSettingsPanel("general");
+    setShowSettings(true);
+  }, []);
+  const handleOpenAppsSettings = useCallback(() => {
+    setSettingsPanel("apps");
+    setShowSettings(true);
+  }, []);
+  const handleOpenGamesSettings = useCallback(() => {
+    setSettingsPanel("games");
+    setShowSettings(true);
+  }, []);
+  const handleOpenAgentSettings = useCallback(() => {
+    setSettingsPanel("agent");
+    setShowSettings(true);
+  }, []);
   const handleToggleExplorer = useCallback(() => {
     if (showPlaytest) {
       posthog.capture("playtest_closed", analyticsProperties("playtest"));
@@ -292,22 +318,49 @@ function Chat() {
   // Main chat UI
   if (mode !== "roblox") {
     return (
-      <div className="flex min-h-0 flex-1">
-        {mode === "apps" ? <AppsBuilder /> : <AgentWorkbench />}
+      <div data-testid="apps-mode-root" className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {showSettings && settingsPanel === "apps" && (
+          <Suspense fallback={<LoadingScreen message="Loading settings..." />}>
+            <AppsSettings onClose={handleSessionSelect} />
+          </Suspense>
+        )}
+        {showSettings && settingsPanel === "games" && (
+          <Suspense fallback={<LoadingScreen message="Loading settings..." />}>
+            <GamesSettings onClose={handleSessionSelect} />
+          </Suspense>
+        )}
+        {showSettings && settingsPanel === "agent" && (
+          <Suspense fallback={<LoadingScreen message="Loading settings..." />}>
+            <AgentSettings onClose={handleSessionSelect} />
+          </Suspense>
+        )}
+        <div
+          data-testid="apps-mode-workspace"
+          className={`flex min-h-0 flex-1 flex-col ${showSettings ? "hidden" : ""}`}
+        >
+          {mode === "apps" ? (
+            <AppsBuilder onOpenSettings={handleOpenAppsSettings} />
+          ) : mode === "games" ? (
+            <GameStudio onOpenSettings={handleOpenGamesSettings} />
+          ) : (
+            <AgentWorkbench onOpenSettings={handleOpenAgentSettings} />
+          )}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-0 flex-1">
+    <div className="flex min-h-0 flex-1 overflow-hidden">
       <ChatSidebar
         collapsed={sidebarCollapsed}
         onToggle={handleToggleSidebar}
         onSessionSelect={handleSessionSelect}
-        onOpenSettings={handleOpenSettings}
+        onOpenSettings={handleOpenGeneralSettings}
       />
 
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <ReconnectBanner sseConnected={sseConnected} consecutiveFailures={sseFailureCount} />
         {showStudioSetup || studioConnection.state === "waiting" ? (
           <StudioSetup
             connected={studioConnection.state === "connected"}
@@ -317,7 +370,7 @@ function Chat() {
           />
         ) : studioConnection.state === "checking" ? (
           <LoadingScreen message="Finding Roblox Studio" animation="dots" />
-        ) : showSettings ? (
+        ) : showSettings && settingsPanel === "general" ? (
           <Suspense fallback={<LoadingScreen message="Loading settings..." />}>
             <Settings onClose={handleSessionSelect} />
           </Suspense>

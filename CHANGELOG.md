@@ -5,6 +5,27 @@ All notable changes to BloxMind are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.97] - 2026-08-19
+
+### Added
+
+- Added a full **Games Studio** mode: describe a game and the AI writes a playable
+  React Three Fiber 3D game (physics, HUD, full-canvas WebGL preview), saved
+  separately from apps.
+- Added **runtime self-heal**: when the app/game preview fails, a **Fix with AI**
+  button feeds the error straight back to the model to repair the code.
+- Added **preview compile metrics** (modules compiled / served from cache / ms) so
+  the shared compile cache is visible while building.
+
+### Changed
+
+- The **Apps Builder** is now web-only — the 3D-game option was removed; 3D builds
+  now live in Games Studio.
+- Unified the Apps and Games builders onto one shared engine (`useStudioBuilder`),
+  so fixes and features land once instead of twice.
+- Added a bounded cross-build compile cache for previews, so unchanged modules are
+  not re-transpiled on every update.
+
 ## [0.9.96] - 2026-08-13
 
 ### Added

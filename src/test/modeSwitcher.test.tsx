@@ -63,10 +63,11 @@ describe("ModeSwitcher rendering", () => {
     window.localStorage.clear();
   });
 
-  it("exposes buttons for all three modes", () => {
+  it("exposes buttons for all four modes", () => {
     renderHarness();
     expect(screen.getByRole("tab", { name: /roblox/i })).toBeTruthy();
     expect(screen.getByRole("tab", { name: /agent/i })).toBeTruthy();
     expect(screen.getByRole("tab", { name: /apps/i })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: /games/i })).toBeTruthy();
   });
 });

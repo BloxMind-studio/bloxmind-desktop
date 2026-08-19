@@ -72,6 +72,11 @@ jobs:
       - name: Type-check
         run: pnpm typecheck
 
+      - name: Run core engine tests
+        run: |
+          cd repos/bloxmind-core-engine
+          VITE_CONFIG_NATIVE_IGNORE_WARNING=true node_modules/.bin/vitest run
+
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 20

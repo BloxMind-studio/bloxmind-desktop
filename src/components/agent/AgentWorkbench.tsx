@@ -1,7 +1,8 @@
-import { Plus, RefreshCw, Zap } from "lucide-react";
+import { Plus, RefreshCw, Settings, Zap } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { AgentDefinition } from "@/lib/agentStudio/types";
 import { useAgentStudio } from "@/providers/AgentStudioProvider";
+import { useAgentPreferences } from "@/providers/PreferencesProvider";
 import { ActiveAgentsDashboard } from "./ActiveAgentsDashboard";
 import { AgentCreationSuite } from "./AgentCreationSuite";
 import { AgentStudioSidebar } from "./AgentStudioSidebar";
@@ -14,7 +15,8 @@ type StudioView = "create" | "agents";
  * the agent creation suite / workflow canvas, and the right panel shows the
  * active-agents dashboard with live logs.
  */
-export function AgentWorkbench() {
+export function AgentWorkbench({ onOpenSettings }: { onOpenSettings?: () => void }) {
+  const agentPrefs = useAgentPreferences();
   const {
     agents,
     activeAgentId,
@@ -22,6 +24,7 @@ export function AgentWorkbench() {
     createAgentFromPrompt,
     createBlankAgentDraft,
     deleteAgent,
+    runAgent,
   } = useAgentStudio();
   const [view, setView] = useState<StudioView>("create");
   const [draftPrompt, setDraftPrompt] = useState("");
@@ -41,9 +44,13 @@ export function AgentWorkbench() {
   function handleGenerate() {
     const prompt = draftPrompt.trim();
     if (!prompt) return;
-    createAgentFromPrompt(prompt);
+    const newId = createAgentFromPrompt(prompt);
     setDraftPrompt("");
     setView("create");
+    if (agentPrefs.autoRunOnCreate) {
+      // Run after a tick so the agent is fully registered in state
+      setTimeout(() => runAgent(newId), 0);
+    }
   }
 
   function handleSelectAgent(agent: AgentDefinition) {
@@ -57,23 +64,26 @@ export function AgentWorkbench() {
 
   return (
     <div className="flex min-h-0 flex-1">
-      <AgentStudioSidebar
-        agents={filteredAgents}
-        activeAgentId={activeAgentId}
-        search={search}
-        onSearchChange={setSearch}
-        onSelectAgent={handleSelectAgent}
-        onDeleteAgent={handleDeleteAgent}
-        onCreateAgent={() => setView("create")}
-        onTemplate={(template) => {
-          if (template.prompt) {
-            createAgentFromPrompt(template.prompt);
-          } else {
-            createBlankAgentDraft();
-          }
-          setView("create");
-        }}
-      />
+      {agentPrefs.showAgentSidebar && (
+        <AgentStudioSidebar
+          agents={filteredAgents}
+          activeAgentId={activeAgentId}
+          search={search}
+          onSearchChange={setSearch}
+          onSelectAgent={handleSelectAgent}
+          onDeleteAgent={handleDeleteAgent}
+          onCreateAgent={() => setView("create")}
+          onTemplate={(template) => {
+            const newId = template.prompt
+              ? createAgentFromPrompt(template.prompt)
+              : createBlankAgentDraft();
+            setView("create");
+            if (agentPrefs.autoRunOnCreate) {
+              setTimeout(() => runAgent(newId), 0);
+            }
+          }}
+        />
+      )}
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <div className="grid h-10 shrink-0 grid-cols-[minmax(6rem,2fr)_minmax(0,3fr)] items-center border-b px-3">
@@ -89,6 +99,16 @@ export function AgentWorkbench() {
               >
                 <Zap aria-hidden="true" size={13} />
                 Active agents
+              </button>
+            )}
+            {onOpenSettings && (
+              <button
+                type="button"
+                onClick={onOpenSettings}
+                title="Agent mode settings"
+                className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-hover/12 hover:text-foreground"
+              >
+                <Settings aria-hidden="true" size={13} />
               </button>
             )}
             <button

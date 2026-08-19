@@ -52,6 +52,27 @@ describe("browser desktop fallback", () => {
       activeMode: "roblox",
       sseReconnectDelay: 3000,
       sseHeartbeatTimeout: 30000,
+      appsSettings: {
+        autoPreview: true,
+        autoRun: false,
+        defaultViewport: "desktop",
+        showFileTree: true,
+        showLineNumbers: true,
+      },
+      agentSettings: {
+        autoRunOnCreate: false,
+        showWorkflowCanvas: true,
+        showAgentSidebar: true,
+        enableLogging: true,
+        autoSaveDrafts: true,
+      },
+      gamesSettings: {
+        autoPreview: true,
+        autoRun: false,
+        showControlsHint: true,
+        showFileTree: true,
+        showLineNumbers: true,
+      },
     });
   });
 
@@ -94,6 +115,27 @@ describe("browser desktop fallback", () => {
       activeMode: "roblox",
       sseReconnectDelay: 3000,
       sseHeartbeatTimeout: 30000,
+      appsSettings: {
+        autoPreview: true,
+        autoRun: false,
+        defaultViewport: "desktop",
+        showFileTree: true,
+        showLineNumbers: true,
+      },
+      agentSettings: {
+        autoRunOnCreate: false,
+        showWorkflowCanvas: true,
+        showAgentSidebar: true,
+        enableLogging: true,
+        autoSaveDrafts: true,
+      },
+      gamesSettings: {
+        autoPreview: true,
+        autoRun: false,
+        showControlsHint: true,
+        showFileTree: true,
+        showLineNumbers: true,
+      },
     });
   });
 
@@ -134,6 +176,27 @@ describe("browser desktop fallback", () => {
       activeMode: "roblox",
       sseReconnectDelay: 3000,
       sseHeartbeatTimeout: 30000,
+      appsSettings: {
+        autoPreview: true,
+        autoRun: false,
+        defaultViewport: "desktop",
+        showFileTree: true,
+        showLineNumbers: true,
+      },
+      agentSettings: {
+        autoRunOnCreate: false,
+        showWorkflowCanvas: true,
+        showAgentSidebar: true,
+        enableLogging: true,
+        autoSaveDrafts: true,
+      },
+      gamesSettings: {
+        autoPreview: true,
+        autoRun: false,
+        showControlsHint: true,
+        showFileTree: true,
+        showLineNumbers: true,
+      },
     });
   });
 

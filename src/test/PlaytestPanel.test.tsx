@@ -53,6 +53,8 @@ function Harness({
             port: 1,
             ready: true,
             initError: null,
+            sseConnected: true,
+            sseFailureCount: 0,
           }}
         >
           <ActiveSessionContext.Provider

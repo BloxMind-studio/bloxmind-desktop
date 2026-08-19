@@ -117,6 +117,8 @@ function TestSidebar({
           port: 4096,
           ready: true,
           initError: null,
+          sseConnected: true,
+          sseFailureCount: 0,
         }}
       >
         <ActiveSessionProvider activeSessionIdRef={activeSessionIdRef}>

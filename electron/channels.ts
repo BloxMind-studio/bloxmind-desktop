@@ -33,4 +33,10 @@ export const channels = {
   rojoSetupProgress: "rojo:setup-progress",
   rojoBinaryPath: "rojo:binary-path",
   rojoCheckInstalled: "rojo:check-installed",
+  // ── Window controls ─────────────────────────────────────────────────
+  windowMinimize: "window:minimize",
+  windowMaximizeToggle: "window:maximize-toggle",
+  windowClose: "window:close",
+  windowIsMaximized: "window:is-maximized",
+  onWindowMaximizedChange: "window:maximized-change",
 } as const;

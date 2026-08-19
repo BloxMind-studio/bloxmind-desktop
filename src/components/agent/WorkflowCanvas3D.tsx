@@ -148,6 +148,8 @@ export function WorkflowCanvas3D({
     () => resolveWorkflowEdges(agent.workflow, agent.connections),
     [agent.workflow, agent.connections],
   );
+  const incomingIds = useMemo(() => new Set(edges.map((edge) => edge.to)), [edges]);
+  const outgoingIds = useMemo(() => new Set(edges.map((edge) => edge.from)), [edges]);
 
   // ── Scene fit: center the layout inside the viewport with a computed base scale.
   const base = useMemo(() => {
@@ -509,6 +511,17 @@ export function WorkflowCanvas3D({
               floodOpacity="0.9"
             />
           </filter>
+          <filter id="blox-hover" x="-80%" y="-80%" width="260%" height="260%">
+            <feDropShadow dx="0" dy="0" stdDeviation="7" floodColor="#ffffff" floodOpacity="0.35" />
+          </filter>
+          <filter id="blox-port-glow" x="-60%" y="-60%" width="220%" height="220%">
+            <feGaussianBlur stdDeviation="2.5" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
           <radialGradient id="blox-port-entry">
             <stop offset="0%" stopColor="#d8b4fe" />
             <stop offset="100%" stopColor="#7c3aed" />
@@ -601,8 +614,15 @@ export function WorkflowCanvas3D({
             const isHovered = entry.node.id === hoveredId;
             const isDisabled = !entry.node.enabled;
             const isConnectTarget = connectDrag?.targetId === entry.node.id;
-            const lifted = (isHovered || isSelected || isConnectTarget) && !isDisabled;
+            const hasIncoming = incomingIds.has(entry.node.id);
+            const hasOutgoing = outgoingIds.has(entry.node.id);
+            const inputLit = hasIncoming || isConnectTarget;
             const opacity = isDisabled ? 0.32 : 1;
+            const meshFilter = isSelected
+              ? "url(#blox-selected)"
+              : isHovered && !isDisabled
+                ? "url(#blox-hover)"
+                : undefined;
             const label = (tool?.name ?? entry.node.label).slice(0, 18);
             const Icon = iconFor(tool?.icon);
             const topFace = polygon([geo.top, geo.right, geo.front, geo.left]);
@@ -632,10 +652,7 @@ export function WorkflowCanvas3D({
                   filter="url(#blox-shadow-blur)"
                 />
 
-                <g
-                  transform={lifted ? "translate(0 -7)" : undefined}
-                  filter={isSelected ? "url(#blox-selected)" : undefined}
-                >
+                <g filter={meshFilter}>
                   {/* Left vertical face */}
                   <path
                     d={polygon([geo.left, geo.front, geo.frontDown, geo.leftDown])}
@@ -699,7 +716,7 @@ export function WorkflowCanvas3D({
                 </g>
 
                 {/* Tool icon + title centered on the cube body */}
-                <g transform={lifted ? "translate(0 -7)" : undefined} pointerEvents="none">
+                <g pointerEvents="none">
                   <g
                     transform={`translate(${(geo.center.x - 8).toFixed(1)} ${(geo.center.y + 2).toFixed(1)})`}
                   >
@@ -721,7 +738,19 @@ export function WorkflowCanvas3D({
                 </g>
 
                 {/* Input + output handles anchored to the cube's side faces */}
-                <g transform={lifted ? "translate(0 -7)" : undefined}>
+                <g>
+                  {inputLit && (
+                    <circle
+                      cx={geo.portIn.x}
+                      cy={geo.portIn.y}
+                      r={PORT_RADIUS + 3.5}
+                      fill="none"
+                      stroke="#a78bfa"
+                      strokeWidth="1.5"
+                      opacity="0.9"
+                      className="blox-pulse"
+                    />
+                  )}
                   <circle
                     cx={geo.portIn.x}
                     cy={geo.portIn.y}
@@ -730,10 +759,23 @@ export function WorkflowCanvas3D({
                     stroke="#4c1d95"
                     strokeWidth="1.5"
                     data-port="entry"
+                    filter={inputLit ? "url(#blox-port-glow)" : undefined}
                     style={{ cursor: "pointer" }}
                   >
-                    <title>Input socket</title>
+                    <title>{`Input socket${inputLit ? (isConnectTarget ? " — drop to connect" : " — connected") : ""}`}</title>
                   </circle>
+                  {hasOutgoing && (
+                    <circle
+                      cx={geo.portOut.x}
+                      cy={geo.portOut.y}
+                      r={PORT_RADIUS + 3.5}
+                      fill="none"
+                      stroke="#fdba74"
+                      strokeWidth="1.5"
+                      opacity="0.9"
+                      className="blox-pulse"
+                    />
+                  )}
                   <circle
                     cx={geo.portOut.x}
                     cy={geo.portOut.y}
@@ -742,9 +784,10 @@ export function WorkflowCanvas3D({
                     stroke="#7c2d12"
                     strokeWidth="1.5"
                     data-port="exit"
+                    filter={hasOutgoing ? "url(#blox-port-glow)" : undefined}
                     style={{ cursor: "crosshair" }}
                   >
-                    <title>Output socket — drag to rewire</title>
+                    <title>{`Output socket${hasOutgoing ? " — connected" : " — drag to rewire"}`}</title>
                   </circle>
                 </g>
               </g>
