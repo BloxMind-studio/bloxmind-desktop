@@ -40,7 +40,12 @@ jobs:
         run: pnpm lint
 
   build:
-    if: github.event_name == 'workflow_call'
+    # Runs whenever this workflow is invoked as a reusable workflow (from
+    # ci.yml / release.yml). Guarding on `github.event_name == 'workflow_call'`
+    # is unreliable — GitHub forwards the *caller's* trigger event (e.g.
+    # workflow_dispatch / push) into the reusable workflow — so exclude only
+    # the direct pull_request trigger, which is covered by `pr-checks` above.
+    if: github.event_name != 'pull_request'
     timeout-minutes: 45
     strategy:
       fail-fast: false
