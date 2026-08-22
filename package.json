@@ -18,7 +18,7 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build": "tsc && vite build",
-    "package": "pnpm build && electron-builder",
+    "package": "node scripts/ensure-env.mjs && pnpm build && electron-builder",
     "preview": "vite preview",
     "lint": "biome check src/ electron/ scripts/",
     "lint:fix": "biome check --write src/ electron/ scripts/",

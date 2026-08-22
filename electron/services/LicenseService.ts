@@ -74,14 +74,24 @@ export function createLicenseService(): LicenseService {
   let pendingLogin: PendingLogin | null = null;
   let heartbeatTimer: NodeJS.Timeout | null = null;
 
-  // TEMPORARY DEV BYPASS: while running from source (`pnpm dev`) the app is
-  // unlocked without a license, so development does not require a
-  // ROBLOX_CLIENT_ID. The full auth machinery below stays active and begins
-  // enforcing once the app is packaged with a configured client id.
-  const isDevelopmentBypass = !app.isPackaged;
+  // LICENSING BYPASS: the Roblox-license gate is only enforced in packaged,
+  // production builds that carry a configured ROBLOX_CLIENT_ID. Two situations
+  // intentionally bypass the gate and launch straight into the app:
+  //
+  //   1. Running from source (`pnpm dev`) — development needs no client id.
+  //   2. Packaged test/preview builds with NO client id configured — so a
+  //      build can never dead-lock users on the sign-in screen while the
+  //      production OAuth secret is not yet injected by CI.
+  //
+  // The full OAuth/PKCE/JWT machinery below stays intact and begins enforcing
+  // as soon as a real client id is configured.
+  const isBypassMode = !app.isPackaged || !ROBLOX_OAUTH_CLIENT_ID;
+  if (isBypassMode && app.isPackaged) {
+    console.warn("[license] ROBLOX_CLIENT_ID not set. Defaulting to local test bypass mode.");
+  }
 
   function getStatus(): LicenseStatus {
-    if (isDevelopmentBypass) {
+    if (isBypassMode) {
       return { kind: "authenticated", profile: null, hwid: null };
     }
     return {
