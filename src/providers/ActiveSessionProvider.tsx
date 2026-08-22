@@ -1,5 +1,16 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import { toast } from "sonner";
+import { useSessions } from "@/hooks/useSessions";
+import { desktop } from "@/lib/desktop";
 import { qk } from "@/lib/queryKeys";
 
 interface ActiveSessionContextValue {
@@ -30,12 +41,44 @@ export function ActiveSessionProvider({
 }) {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const queryClient = useQueryClient();
+  const { data: sessions } = useSessions();
+
+  const syncRojoToSession = useCallback((sessionID: string) => {
+    void desktop
+      .rojoStartForSession(sessionID)
+      .then((status) => {
+        if (status.active) {
+          toast("Rojo switched to this session", {
+            description: `Rojo is serving this session's project on port ${status.port}. In Roblox Studio's Rojo plugin, press Disconnect, then Connect to load the correct project.`,
+            duration: 8000,
+          });
+        }
+      })
+      .catch((error: unknown) => {
+        toast.error("Rojo switch failed", {
+          description: error instanceof Error ? error.message : String(error),
+          duration: 8000,
+        });
+      });
+  }, []);
 
   const selectSession = useCallback(
     async (sessionID: string) => {
+      const wasActive = activeSessionIdRef.current === sessionID;
       activeSessionIdRef.current = sessionID;
       setActiveSessionId(sessionID);
       queryClient.setQueryData(qk.sessionError(sessionID), null);
+
+      // Remember this session so the next launch can resume it.
+      void desktop.sessionStoreSetLastActive(sessionID).catch(() => undefined);
+
+      // A session switch must never leak the previous session's files into the
+      // newly opened Roblox Studio Place. Point Rojo at an isolated, freshly
+      // generated workspace for this session and surface the
+      // Disconnect → Connect prompt to the user.
+      if (!wasActive) {
+        syncRojoToSession(sessionID);
+      }
 
       // Mark every session-owned snapshot stale. The newly mounted observers fetch
       // them once, while switching remains immediate and cannot race an older click.
@@ -50,13 +93,28 @@ export function ActiveSessionProvider({
         ),
       );
     },
-    [queryClient, activeSessionIdRef],
+    [queryClient, activeSessionIdRef, syncRojoToSession],
   );
 
   const clearSession = useCallback(() => {
     activeSessionIdRef.current = null;
     setActiveSessionId(null);
   }, [activeSessionIdRef]);
+
+  // On startup, with no session chosen yet, resume the one the user last had
+  // open. The engine loses sessions on restart, so this is what makes history
+  // feel persistent rather than vanishing every launch.
+  useEffect(() => {
+    if (activeSessionId || !sessions || sessions.length === 0) return;
+    let cancelled = false;
+    void desktop.sessionStoreGetLastActive().then((last) => {
+      if (cancelled || !last) return;
+      if (sessions.some((session) => session.id === last)) void selectSession(last);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [sessions, activeSessionId, selectSession]);
 
   const value = useMemo<ActiveSessionContextValue>(
     () => ({ activeSessionId, selectSession, clearSession, activeSessionIdRef }),

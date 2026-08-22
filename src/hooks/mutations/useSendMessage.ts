@@ -164,6 +164,14 @@ export function useSendMessage(options?: { onError?: (error: Error) => void }) {
       });
     },
 
+    onSuccess: (_data, _variables, context) => {
+      // Ensure the user bubble appears even if the SSE `message.updated`
+      // event is dropped or delayed: force a messages refetch for this session.
+      if (context?.sessionID) {
+        void queryClient.invalidateQueries({ queryKey: qk.messages(context.sessionID) });
+      }
+    },
+
     // Reconcile the optimistic status with the server's authoritative value.
     // SSE normally drives the session back to idle, but a missed/dropped event
     // after `promptAsync` resolves would otherwise leave the optimistic "busy"
@@ -171,6 +179,9 @@ export function useSendMessage(options?: { onError?: (error: Error) => void }) {
     // status here converges the cache immediately on both success and error.
     onSettled: async (_data, _error, _input, context) => {
       if (!context || !client) return;
+      // Fallback messages fetch — covers the case where SSE never delivered
+      // `message.updated` (e.g. transient disconnect right after send).
+      void queryClient.invalidateQueries({ queryKey: qk.messages(context.sessionID) });
       try {
         const res = await client.session.status({}, { throwOnError: true });
         const authoritative = res.data?.[context.sessionID];

@@ -627,7 +627,7 @@ function ExplorerLoading() {
       {[78, 62, 85, 70, 58, 81].map((width, index) => (
         <div
           key={width}
-          className="h-4 animate-pulse rounded bg-muted"
+          className="h-4 animate-shimmer rounded bg-muted"
           style={{ width: `${width}%`, marginLeft: `${(index % 3) * 10}px` }}
         />
       ))}

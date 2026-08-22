@@ -302,7 +302,7 @@ export function OpenCodeClientProvider({
     if (!client || !ready) return;
 
     const abortController = new AbortController();
-    const consecutiveFailures = 0;
+    let consecutiveFailures = 0;
     let reconnectToastId: string | number | undefined;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
     let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
@@ -311,11 +311,11 @@ export function OpenCodeClientProvider({
     let permanentlyDisconnected = false;
 
     const bumpFailures = () => {
-      bumpFailures();
+      consecutiveFailures += 1;
       setSseFailureCount(consecutiveFailures);
     };
     const resetFailures = () => {
-      resetFailures();
+      consecutiveFailures = 0;
       permanentlyDisconnected = false;
       setSseFailureCount(0);
     };

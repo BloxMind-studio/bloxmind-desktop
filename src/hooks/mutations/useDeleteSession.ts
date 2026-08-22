@@ -1,6 +1,7 @@
 import type { Session, SessionStatus } from "@opencode-ai/sdk/v2/client";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
+import { desktop } from "@/lib/desktop";
 import { qk } from "@/lib/queryKeys";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
@@ -32,6 +33,9 @@ export function useDeleteSession() {
       if (activeSessionId === sessionID) {
         clearSession();
       }
+
+      // Drop the local transcript mirror too so it doesn't reappear on restart.
+      void desktop.sessionStoreDelete(sessionID).catch(() => undefined);
     },
   });
 }

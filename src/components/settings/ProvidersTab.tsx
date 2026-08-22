@@ -326,7 +326,7 @@ export function ProvidersTab() {
 
       {/* Connect dialog overlay */}
       {dialog.step !== "closed" && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#161616]/60">
           <div
             ref={dialogRef}
             className="mx-4 w-full max-w-sm rounded-xl border bg-card p-5 shadow-lg"

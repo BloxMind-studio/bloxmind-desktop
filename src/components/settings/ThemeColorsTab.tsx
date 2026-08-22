@@ -57,6 +57,35 @@ function isColor(value: string): boolean {
   );
 }
 
+/** Renders the currently applied color as an `rgba(r, g, b[, a])` hint for the
+ *  text input's placeholder, so the hint always reflects the applied value
+ *  instead of a hard-coded example. Falls back to a generic example for
+ *  malformed values. */
+function toRgbaHint(value: string): string {
+  const trimmed = value.trim();
+  const hex = /^#([0-9a-f]{3,8})$/i.exec(trimmed);
+  if (hex) {
+    let h = hex[1];
+    if (h.length === 3 || h.length === 4) h = [...h].map((c) => c + c).join("");
+    const r = Number.parseInt(h.slice(0, 2), 16);
+    const g = Number.parseInt(h.slice(2, 4), 16);
+    const b = Number.parseInt(h.slice(4, 6), 16);
+    if (h.length === 8) {
+      const a = String((Number.parseInt(h.slice(6, 8), 16) / 255).toFixed(2)).replace(/\.?0+$/, "");
+      return `rgba(${r}, ${g}, ${b}, ${a})`;
+    }
+    return `rgba(${r}, ${g}, ${b})`;
+  }
+  const rgb = /^rgba?\((\s*\d+\s*),\s*(\d+)\s*,\s*(\d+)(?:\s*[,/]\s*([\d.]+%?))?\s*\)$/i.exec(
+    trimmed,
+  );
+  if (rgb) {
+    return rgb[4]
+      ? `rgba(${rgb[1]}, ${rgb[2]}, ${rgb[3]}, ${rgb[4]})`
+      : `rgba(${rgb[1]}, ${rgb[2]}, ${rgb[3]})`;
+  }
+  return "e.g. #39FF14 or rgba(57, 255, 20, 0.2)";
+}
 export function ThemeColorsTab() {
   const { themePreset, themeColors, setThemePreset, setThemeColors } = useUIPreferences();
 
@@ -180,7 +209,7 @@ function ColorField({
         >
           <span className="absolute inset-0" style={{ backgroundColor: value }} />
           <span className="absolute inset-0 grid place-items-center opacity-0 hover:opacity-100">
-            <span className="rounded bg-black/40 px-1 text-[9px] font-semibold text-white">
+            <span className="rounded bg-[#161616]/60 px-1 text-[9px] font-semibold text-[#E6E6E6]">
               ...
             </span>
           </span>
@@ -228,7 +257,7 @@ function ColorField({
           className={`h-8 w-full rounded-md border bg-background px-2 font-mono text-xs outline-none transition-colors focus:ring-1 focus:ring-hover/40 ${
             valid ? "border-border" : "border-red-500/60"
           }`}
-          placeholder="#39FF14 or rgba(57, 255, 20, 0.2)"
+          placeholder={toRgbaHint(value)}
         />
         {!valid && (
           <p className="mt-1 text-[10px] text-red-500" role="alert" aria-live="polite">

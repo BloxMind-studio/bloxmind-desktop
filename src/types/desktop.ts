@@ -19,72 +19,6 @@ import {
   type StudioTargetSelection,
 } from "./studioTarget";
 
-// ── Apps Mode settings ────────────────────────────────────────────────────
-
-export const AppsSettingsSchema = Schema.mutable(
-  Schema.Struct({
-    autoPreview: Schema.Boolean,
-    autoRun: Schema.Boolean,
-    defaultViewport: Schema.Literal("mobile", "desktop"),
-    showFileTree: Schema.Boolean,
-    showLineNumbers: Schema.Boolean,
-  }),
-);
-
-export type AppsSettings = typeof AppsSettingsSchema.Type;
-
-export const DEFAULT_APPS_SETTINGS: AppsSettings = {
-  autoPreview: true,
-  autoRun: false,
-  defaultViewport: "desktop",
-  showFileTree: true,
-  showLineNumbers: true,
-};
-
-// ── Games Mode settings ───────────────────────────────────────────────────
-
-export const GamesSettingsSchema = Schema.mutable(
-  Schema.Struct({
-    autoPreview: Schema.Boolean,
-    autoRun: Schema.Boolean,
-    showControlsHint: Schema.Boolean,
-    showFileTree: Schema.Boolean,
-    showLineNumbers: Schema.Boolean,
-  }),
-);
-
-export type GamesSettings = typeof GamesSettingsSchema.Type;
-
-export const DEFAULT_GAMES_SETTINGS: GamesSettings = {
-  autoPreview: true,
-  autoRun: false,
-  showControlsHint: true,
-  showFileTree: true,
-  showLineNumbers: true,
-};
-
-// ── Agent Mode settings ────────────────────────────────────────────────────
-
-export const AgentSettingsSchema = Schema.mutable(
-  Schema.Struct({
-    autoRunOnCreate: Schema.Boolean,
-    showWorkflowCanvas: Schema.Boolean,
-    showAgentSidebar: Schema.Boolean,
-    enableLogging: Schema.Boolean,
-    autoSaveDrafts: Schema.Boolean,
-  }),
-);
-
-export type AgentSettings = typeof AgentSettingsSchema.Type;
-
-export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
-  autoRunOnCreate: false,
-  showWorkflowCanvas: true,
-  showAgentSidebar: true,
-  enableLogging: true,
-  autoSaveDrafts: true,
-};
-
 // ── Rojo live-sync types ────────────────────────────────────────────────
 
 export interface RojoStatus {
@@ -132,6 +66,7 @@ export const AccentColorSchema = Schema.Literal(
   "emerald",
   "rose",
   "amber",
+  "cyan",
 );
 export const LayoutDensitySchema = Schema.Literal("compact", "comfortable");
 export const FontStyleSchema = Schema.Literal(
@@ -163,9 +98,6 @@ export type FontStyle = typeof FontStyleSchema.Type;
 export type ThemePreset = typeof ThemePresetSchema.Type;
 export type ThemeColors = typeof ThemeColorsSchema.Type;
 
-export const AppModeSchema = Schema.Literal("roblox", "agent", "apps", "games");
-export type AppMode = typeof AppModeSchema.Type;
-
 export const AppConfigSchema = Schema.mutable(
   Schema.Struct({
     lastModel: Schema.NullOr(Schema.String),
@@ -195,15 +127,9 @@ export const AppConfigSchema = Schema.mutable(
     autoScroll: Schema.Boolean,
     enterToSend: Schema.Boolean,
     notificationsEnabled: Schema.Boolean,
-    // Workspace mode
-    activeMode: AppModeSchema,
     // SSE connection
     sseReconnectDelay: Schema.Number.pipe(Schema.int(), Schema.between(1_000, 60_000)),
     sseHeartbeatTimeout: Schema.Number.pipe(Schema.int(), Schema.between(5_000, 120_000)),
-    // Mode-specific settings
-    appsSettings: AppsSettingsSchema,
-    agentSettings: AgentSettingsSchema,
-    gamesSettings: GamesSettingsSchema,
   }),
 );
 
@@ -217,14 +143,14 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   defaultVariant: null,
   studioTargetPrograms: null,
   studioTargetsBySession: {},
-  accentColor: "emerald",
+  accentColor: "cyan",
   layoutDensity: "comfortable",
   fontSize: 1,
   fontStyle: "quiet",
   soundEffects: true,
   themePreset: "dark-neon",
   themeColors: {
-    selectedBg: "#39FF14",
+    selectedBg: "#06B6D4",
     selectedFg: "#000000",
     hoverBg: "#E0E0E0",
     hoverFg: "#000000",
@@ -238,30 +164,8 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   autoScroll: true,
   enterToSend: true,
   notificationsEnabled: true,
-  activeMode: "roblox",
   sseReconnectDelay: 3_000,
   sseHeartbeatTimeout: 30_000,
-  appsSettings: {
-    autoPreview: true,
-    autoRun: false,
-    defaultViewport: "desktop",
-    showFileTree: true,
-    showLineNumbers: true,
-  },
-  agentSettings: {
-    autoRunOnCreate: false,
-    showWorkflowCanvas: true,
-    showAgentSidebar: true,
-    enableLogging: true,
-    autoSaveDrafts: true,
-  },
-  gamesSettings: {
-    autoPreview: true,
-    autoRun: false,
-    showControlsHint: true,
-    showFileTree: true,
-    showLineNumbers: true,
-  },
 };
 
 export const AppConfigPatchSchema = Schema.partial(AppConfigSchema);
@@ -297,6 +201,36 @@ export const UpdateInfoSchema = Schema.mutable(
 
 export type UpdateInfo = typeof UpdateInfoSchema.Type;
 
+// ── Session transcript persistence ──────────────────────────────────────
+// The bundled OpenCode `serve` engine does not flush session content to disk
+// in this app's setup, so BloxMind mirrors each conversation to its own store
+// under the app's userData directory. These types describe that on-disk shape.
+
+export interface StoredSessionMessages {
+  messageIds: string[];
+  messagesById: Record<string, unknown>;
+}
+
+export interface StoredSession {
+  id: string;
+  title: string | null;
+  /** Creation time in milliseconds (Date.now() epoch). */
+  createdAt: number;
+  /** Last update time in milliseconds (Date.now() epoch). */
+  updatedAt: number;
+  messages: StoredSessionMessages;
+  metadata?: Record<string, unknown>;
+}
+
+export interface StoredSessionSummary {
+  id: string;
+  title: string | null;
+  createdAt: number;
+  updatedAt: number;
+  messageCount: number;
+  metadata?: Record<string, unknown>;
+}
+
 export interface DesktopApi {
   compileExplorerProgram(program: ExplorerProgramEnvelope): Promise<GeneratedProgramArtifact>;
   invokeExplorerProgram(artifact: GeneratedProgramArtifact): Promise<ExplorerSnapshot>;
@@ -327,14 +261,24 @@ export interface DesktopApi {
   checkpointList(sessionId: string): Promise<Checkpoint[]>;
   checkpointValidate(): Promise<ValidationResult>;
   rojoStart(workspace: string): Promise<RojoStatus>;
+  rojoStartForSession(sessionId: string): Promise<RojoStatus>;
   rojoStop(): Promise<void>;
   rojoStatus(): Promise<RojoStatus>;
   rojoToggle(workspace: string): Promise<RojoStatus>;
+  rojoToggleForSession(sessionId: string): Promise<RojoStatus>;
   rojoLogs(): Promise<RojoLogEntry[]>;
   onRojoLog(listener: (entry: RojoLogEntry) => void): () => void;
   rojoSetup(onProgress: (progress: RojoInstallProgress) => void): Promise<RojoInstallResult>;
   rojoBinaryPath(): Promise<string | null>;
   rojoCheckInstalled(): Promise<boolean>;
+  prepareSessionWorkspace(sessionId: string): Promise<string>;
+  // ── Session transcript persistence ─────────────────────────────────────
+  sessionStoreList(): Promise<StoredSessionSummary[]>;
+  sessionStoreGet(id: string): Promise<StoredSession | null>;
+  sessionStoreSave(session: StoredSession): Promise<void>;
+  sessionStoreDelete(id: string): Promise<void>;
+  sessionStoreSetLastActive(id: string | null): Promise<void>;
+  sessionStoreGetLastActive(): Promise<string | null>;
   windowMinimize(): Promise<void>;
   windowMaximizeToggle(): Promise<void>;
   windowClose(): Promise<void>;

@@ -1,6 +1,9 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
+import { KNIT_SKILL } from "../src/agent/skills/knitSkill";
+import { PROFILE_SERVICE_SKILL } from "../src/agent/skills/profileServiceSkill";
+
 /**
  * OpenCode-native agent skills shipped with the app. Each entry becomes a
  * `.opencode/skills/<name>/SKILL.md` file in the OpenCode workspace so the
@@ -399,6 +402,35 @@ build strictly from it:
 - Keep this blueprint in the session context so later phases (lighting,
   props, gameplay hooks) can reference exact coordinates.
 
+## Studio execution & Luau API rules (read first)
+
+These rules prevent the most common build failures. Follow them on every
+\`execute_luau\` call.
+
+- **Always resolve a live Studio target first.** Call \`list_roblox_studios\`
+  and use one of the returned \`studio_id\` values. Studio instances disconnect
+  when the place closes or reloads — if you get a "studio_id is not connected"
+  error, call \`list_roblox_studios\` again and retry with a fresh id. Never
+  reuse an id you cached earlier in the session.
+- **Constructors take the right types.**
+  - \`Vector3.new(x, y, z)\` — exactly three numbers.
+  - \`CFrame.new(...)\` — use explicit components or a Vector3/position; never
+    pass a single number where a Vector3 is expected.
+  - \`Region3.new(minCorner: Vector3, maxCorner: Vector3)\` — two Vector3
+    corners, not six numbers.
+  - \`Enum.Material.X\` for terrain/part materials — never a bare number.
+- **Write valid, initialized Luau.** Declare and initialize every variable
+  before you use it; referencing a \`nil\` value in arithmetic raises
+  "attempt to perform arithmetic on nil". Keep each script syntactically valid
+  (matching \`end\`/\`do\`/brackets) or \`execute_luau\` returns
+  "Failed to parse command code". Prefer small, verified snippets over one huge
+  script.
+- **Verify unfamiliar engine APIs live.** When unsure whether a property or
+  method exists, test it in the Studio Command Bar / Output before running a
+  large build script — do not guess and accept the 404. If a skill such as
+  \`roblox-map-building\` is not found by the loader, fall back to these
+  embedded instructions rather than stopping.
+
 ## Phase 1 — Blockout
 
 - Create \`Workspace.Map.Blockout\` with one Anchored Part per zone from the
@@ -439,9 +471,24 @@ build strictly from it:
 
 ## Phase 3 — Terrain
 
-- Sculpt with the \`Workspace.Terrain\` API: \`FillBlock\`, \`FillBall\`,
-  \`FillCylinder\`, \`ReplaceMaterial\` for hills, rivers, caves; voxels are
-  4 studs — keep terrain features multiples of that.
+- Sculpt with the \`Workspace.Terrain\` API using these **exact, current**
+  signatures. The old \`resolution\` argument on \`FillBlock\` was removed,
+  while \`FillRegion\` still requires \`resolution = 4\` — confusing the two is
+  the #1 terrain failure:
+  - \`Terrain:FillBlock(cframe: CFrame, size: Vector3, material: Enum.Material)\`
+    — **3 arguments, no resolution**.
+  - \`Terrain:FillRegion(region: Region3, 4, material: Enum.Material)\` — the
+    middle argument is the voxel resolution and **must be exactly 4**.
+  - \`Terrain:FillBall(center: Vector3, radius: number, material: Enum.Material)\`
+  - \`Terrain:FillCylinder(cframe: CFrame, height: number, radius: number, material: Enum.Material)\`
+  - Pass the material as an \`Enum.Material\` value (e.g. \`Enum.Material.Grass\`),
+    **never a bare number** — a number lands in the material slot and raises
+    "Unable to cast double to Material".
+  - Build \`region\` as \`Region3.new(Vector3.new(x1,y1,z1), Vector3.new(x2,y2,z2))\`
+    (two Vector3 corners) and align it to the voxel grid with
+    \`region:ExpandToGrid(4)\`. Do **not** pass six numbers to \`Region3.new\`
+    (that raises "invalid argument #1 to 'new' (Vector3 expected, got number)").
+  - Voxels are 4 studs — keep terrain features multiples of that.
 - One dominant terrain material per biome (Grassfield, Rock, Sand, Snow);
   blend with at most one transition material.
 - End each terrain edit by setting \`Material\` then re-verify boundaries
@@ -464,6 +511,12 @@ build strictly from it:
 - Add one \`Atmosphere\` (Density 0.3-0.6, tune Glare/Haze and the fog color
   from the blueprint), one \`Sky\`, and 2-3 effects: \`BloomEffect\`,
   \`ColorCorrectionEffect\`, and \`SunRays\` for exterior hero moments.
+- **Sun & rays (verified members):** \`Sky\` has **no** \`SunRayColor\`
+  property — customize the sun via \`Sky.SunAngularSize\`, \`Sky.SunTextureId\`,
+  or the skybox faces. Add a \`SunRaysEffect\` under \`Lighting\` and drive it
+  with \`SunRaysIntensity\`, \`SunRaysSize\`, \`SunRaysSpread\` — there is
+  **no** \`Color\` property on \`SunRaysEffect\` (tint via Lighting/Atmosphere
+  instead).
 - Accent lights: \`PointLight\`/\`SpotLight\` only at landmarks and gameplay
   points to direct the player visually; keep total light instances under ~30.
   Prefer emissive materials (MaterialVariant neon + slight brightness) over
@@ -496,225 +549,6 @@ known limitation. After phase 7, report the full summary against the blueprint
 and the plan.
 `;
 
-const APP_WEB_BLUEPRINT_SKILL = `---
-name: app-web-blueprint
-description: Web app architecture for BloxMind App Studio — turn an app request into a concrete Vite + React + TypeScript structure (component tree, data model, state, API surface, plain-CSS styling) before writing files. Use when planning a new web app or a significant change.
-license: MIT
----
-
-# App Web Blueprint (App Studio)
-
-Design a complete Vite + React + TypeScript app before writing it. The in-app
-preview compiles on the fly, so every file must be standard, self-contained,
-and free of anything the preview can't resolve.
-
-## Target structure
-
-Standard single-page app (5-15 files):
-
-- \`package.json\` — deps: \`react\`, \`react-dom\` (^18.3.1),
-  \`lucide-react\` (^1.0.0); devDeps: \`typescript\` (~5.6.2), \`vite\`
-  (^5.4.8), \`@vitejs/plugin-react\` (^4.3.1), \`@types/react\`,
-  \`@types/react-dom\`; scripts \`dev\`: "vite".
-- \`index.html\`, \`vite.config.ts\`, \`tsconfig.json\`,
-  \`src/main.tsx\` (entry), \`src/App.tsx\` (root screen),
-  \`src/index.css\` (hand-written plain CSS).
-- Supporting modules under \`src/\` split by concern: components, data/sim
-  (mock data), lib (fetchers, helpers), hooks.
-
-## Resolvable imports only
-
-The preview can import ONLY: \`react\`, \`react-dom\`,
-\`react-dom/client\`, \`react/jsx-runtime\`, \`lucide-react\`. No
-node/native modules inside \`src/\`. No TypeScript enums (transpile ambiguities)
-or compiler-only tricks — keep it standard so on-the-fly compilation succeeds.
-
-## Blueprint checklist
-
-1. Confirm: app name, target (mobile/desktop), theme (dark/light), and the
-   one primary job it does. Choose sensible defaults when the user left them
-   open and state them.
-2. Component tree: top-level \`App\` + 2-4 focused screens/panels; what each
-   renders and its props.
-3. Data model: the typed shapes (fields + types) and where mock data lives
-   (a \`src/data/*.ts\` module). Prefer typed \`interface\`s, avoid \`any\`.
-4. State: what's local state, what's lifted, what's derived; escapes like
-   timers/intervals that must be cleaned up.
-5. Styling: plain CSS in \`src/index.css\` with a distinctive look (layout,
-   spacing, color, hover states, responsive breakpoints for mobile/desktop).
-6. API surface: if a backend is needed (auth, persistence, external API
-   proxy), a small Node.js + Express server under \`server/\` with its own
-   \`server/package.json\`; frontend calls relative URLs like \`/api/...\`.
-
-## Quality bar
-
-No \`TODO\`/stub/placeholder "lorem" content — every feature actually works.
-Reuse dependencies already declared in package.json. Keep one tight
-single-screen experience instead of over-scaffolding many screens.
-`;
-
-const APP_CANVAS_ANIMATION_SKILL = `---
-name: app-canvas-animation
-description: Motion and animation for BloxMind App Studio — CSS transitions, keyframes, and canvas animation that make web app UIs feel polished. Use when an app needs animations, micro-interactions, animated charts, particles, or sprite/canvas work.
-license: MIT
----
-
-# App Canvas Animation (App Studio)
-
-Add motion with plain CSS and the Canvas 2D API — no animation libraries
-(Tailwind/GSAP/framer aren't resolvable in the preview).
-
-## CSS motion
-
-- Prefer \`transition\` for state-driven micro-interactions (hover, focus,
-  toggled classes): \`transition: transform 150ms cubic-bezier(0.22,1,0.36,1)\`
-  — the recommended easing for snappy-but-soft UI motion; default 150-200ms,
-  go 300ms+ for big layout moves.
-- Keyframes for looped/decorative motion (pulse, shimmer, float, typing
-  caret). Drive \`transform\` + \`opacity\` only when possible — they're GPU
-  friendly; avoid animating \`width\`/\`height\`/\`top\`/\`left\`/layout props.
-- Respect the user: wrap decorative animation in
-  \`@media (prefers-reduced-motion: reduce)\` and disable it.
-- Use \`will-change\` sparingly (a small number of continuously animating
-  elements) and only on the animated property.
-
-## Canvas sheet (React)
-
-\`\`\`tsx
-function useCanvasDraw(draw: (ctx: CanvasRenderingContext2D, t: number) => void) {
-  const ref = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const canvas = ref.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    const dpr = window.devicePixelRatio || 1;
-    const resize = () => {
-      canvas.width = canvas.clientWidth * dpr;
-      canvas.height = canvas.clientHeight * dpr;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    };
-    resize();
-    window.addEventListener("resize", resize);
-    let raf = 0;
-    const start = performance.now();
-    const loop = (now: number) => {
-      draw(ctx, (now - start) / 1000);
-      raf = requestAnimationFrame(loop);
-    };
-    raf = requestAnimationFrame(loop);
-    return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener("resize", resize);
-    };
-  }, [draw]);
-  return ref;
-}
-\`\`\`
-
-- Clear each frame (\`ctx.clearRect\`) or redraw the shape from a saved
-  background; set a high-contrast \`ctx.fillStyle\`/capped \`alpha\`.
-- For charts: \`arc\`/line segments for rings and sparklines, update from
-  state so the canvas re-renders on data change — or drop to pure CSS bars/
-  donut conic gradients when the visual is simple enough.
-- Respect \`prefers-reduced-motion\` inside the loop (draw a static frame) so
-  the animation degrades gracefully.
-
-## Recipes
-
-- **Hover/press cards**: scale 1.02 on hover, 0.98 on press, 150ms ease-out.
-- **Entrance**: fade + translateY(8px) 200ms with a small per-item stagger
-  (\`animation-delay\`) for lists — first item 0ms, then ~40ms steps.
-- **Pulse/glow**: opacity .4↔1 alternating keyframe on a decorative layer.
-- **Progress/loading**: indeterminate bar sweep (translateX -100%→100%),
-  or a ring that fills via \`stroke-dasharray\` on a circle.
-- **Confetti**: ~60 particles in a \`useCanvasDraw\` loop with gravity,
-  decaying velocity, and random hue; stop after ~2s.
-
-## Verify
-
-- No layout thrash: only transform/opacity animated.
-- Timer/RAF/interval canceled in cleanup (no leaks when the component unmounts).
-- Respects \`prefers-reduced-motion\`.
-`;
-
-const APP_DATA_API_SKILL = `---
-name: app-data-api
-description: Data and API integration for BloxMind App Studio — fetching live data, async state patterns, mock-data first with a live swap, and localStorage persistence. Use when an app loads remote data, needs a fake backend, or persists state.
-license: MIT
----
-
-# App Data & API (App Studio)
-
-Wire data into React apps in the preview. Only \`fetch\` and browser APIs are
-available — no axios/firebase/socket.io (not resolvable).
-
-## Async state pattern
-
-For each fetchable resource use three states (or a tiny reducer):
-
-\`\`\`tsx
-const [data, setData] = useState<Item[] | null>(null);
-const [error, setError] = useState<string | null>(null);
-const [pending, setPending] = useState(true);
-
-useEffect(() => {
-  let cancelled = false;
-  async function load() {
-    try {
-      const res = await fetch("https://api.example.com/items");
-      if (!res.ok) throw new Error("HTTP " + res.status);
-      const json = await res.json();
-      if (!cancelled) { setData(json); setPending(false); }
-    } catch (err) {
-      if (!cancelled) { setError(err instanceof Error ? err.message : "Failed to load"); setPending(false); }
-    }
-  }
-  void load();
-  return () => { cancelled = true; };
-}, []);
-\`\`\`
-
-- Always handle \`!res.ok\` — treat non-2xx as an error, never parse the body.
-- Guard setState with a cancelled/abort flag so a stale response can't clobber
-  a newer one (unmounts and re-fetches).
-- Show pending/error/empty states in the UI; never leave the user looking at a
-  blank screen or a silent failure.
-
-## Real public APIs (CORS-friendly, no key)
-
-- Open-Meteo (\`https://api.open-meteo.com/v1/forecast?latitude=..&longitude=..&current_weather=true&daily=weathercode,temperature_2m_max,temperature_2m_min&timezone=auto\`) — weather without a key.
-- JSONPlaceholder (\`https://jsonplaceholder.typicode.com/users\`) — fake users/posts for demos.
-- pokeapi (\`https://pokeapi.co/api/v2/pokemon?limit=20\`), dog.ceo, OpenAI-free endpoints.
-
-Validate the exact endpoint shape at generation time with websearch if unsure
-(URL params, casing of response keys) so \`res.json()\` mappings are correct.
-
-## Mock-data first, live swap
-
-- Ship with realistic mock data in \`src/data/*.ts\` so the preview works
-  offline; expose one \`fetchItems(): Promise<Item[]>\` that returns the mock
-  (optionally a short \`wait\` to feel real). Structure the code so swapping
-  the implementation for a \`fetch\` call is a one-line change.
-- If the app calls a backend, scaffold \`server/index.js\` (Express) with its
-  own \`server/package.json\`; frontend references relative \`/api/...\` URLs.
-
-## Persistence
-
-- \`localStorage\` for small settings/state:
-  \`JSON.stringify\` on write, \`JSON.parse\` with a try/catch (and a default)
-  on read — never let a corrupt value crash the app.
-- Avoid abusing localStorage as the main store; use it for user data/favorites
-  layered over fetched content.
-
-## Verify
-
-- Pending, error, and empty states all render and recover (retry button on error).
-- \`fetch\` calls use relative \`/api/...\` for the bundled server.
-- No cross-origin calls blocked by CORS (or they have an error state, not a crash).
-- Timers and in-flight fetches are cleaned up on unmount.
-`;
-
 export interface AgentSkillFile {
   /** Path relative to the OpenCode workspace, e.g. .opencode/skills/x/SKILL.md */
   relativePath: string;
@@ -739,16 +573,12 @@ export const AGENT_SKILLS: readonly AgentSkillFile[] = [
     content: MAP_BUILDING_SKILL,
   },
   {
-    relativePath: ".opencode/skills/app-web-blueprint/SKILL.md",
-    content: APP_WEB_BLUEPRINT_SKILL,
+    relativePath: KNIT_SKILL.relativePath,
+    content: KNIT_SKILL.content,
   },
   {
-    relativePath: ".opencode/skills/app-canvas-animation/SKILL.md",
-    content: APP_CANVAS_ANIMATION_SKILL,
-  },
-  {
-    relativePath: ".opencode/skills/app-data-api/SKILL.md",
-    content: APP_DATA_API_SKILL,
+    relativePath: PROFILE_SERVICE_SKILL.relativePath,
+    content: PROFILE_SERVICE_SKILL.content,
   },
 ];
 
@@ -797,9 +627,10 @@ const AGENTS_MD_BLOCK = `${AGENTS_MD_MARKER_BEGIN}
 ### Skills
 - Domain playbooks live in .opencode/skills/: Roblox animation (roblox-animation,
   roblox-animation-runtime), map planning and building (roblox-map-planning,
-  roblox-map-building), and App Studio web builds (app-web-blueprint,
-  app-canvas-animation, app-data-api). Load the matching skill before starting
-  that kind of task.
+  roblox-map-building), and client-server frameworks (roblox-knit,
+  roblox-profile-service). Load the matching skill before starting that kind of
+  task. For any system built on a Roblox package, keep wally.toml and the
+  default.project.json Packages mount in sync with the code you generate.
 ${AGENTS_MD_MARKER_END}`;
 
 /**

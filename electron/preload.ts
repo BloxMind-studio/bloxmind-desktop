@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 
 import type { AppConfig, DesktopApi, OpenCodeStartupProgress } from "../src/types/desktop";
+import type { ElectronAuthApi, LicenseStatus } from "../src/types/license";
 import { channels } from "./channels";
 
 const api: DesktopApi = {
@@ -41,6 +42,8 @@ const api: DesktopApi = {
   rojoStop: () => ipcRenderer.invoke(channels.rojoStop),
   rojoStatus: () => ipcRenderer.invoke(channels.rojoStatus),
   rojoToggle: (workspace) => ipcRenderer.invoke(channels.rojoToggle, workspace),
+  rojoStartForSession: (sessionId) => ipcRenderer.invoke(channels.rojoStartSession, sessionId),
+  rojoToggleForSession: (sessionId) => ipcRenderer.invoke(channels.rojoToggleSession, sessionId),
   rojoLogs: () => ipcRenderer.invoke(channels.rojoLogs),
   onRojoLog: (listener) => {
     const handler = (
@@ -77,6 +80,16 @@ const api: DesktopApi = {
   },
   rojoBinaryPath: () => ipcRenderer.invoke(channels.rojoBinaryPath),
   rojoCheckInstalled: () => ipcRenderer.invoke(channels.rojoCheckInstalled),
+  // ── Session workspaces ────────────────────────────────────────────────
+  prepareSessionWorkspace: (sessionId) =>
+    ipcRenderer.invoke(channels.prepareSessionWorkspace, sessionId),
+  // ── Session transcript persistence ─────────────────────────────────────
+  sessionStoreList: () => ipcRenderer.invoke(channels.sessionStoreList),
+  sessionStoreGet: (id) => ipcRenderer.invoke(channels.sessionStoreGet, id),
+  sessionStoreSave: (session) => ipcRenderer.invoke(channels.sessionStoreSave, session),
+  sessionStoreDelete: (id) => ipcRenderer.invoke(channels.sessionStoreDelete, id),
+  sessionStoreSetLastActive: (id) => ipcRenderer.invoke(channels.sessionStoreSetLastActive, id),
+  sessionStoreGetLastActive: () => ipcRenderer.invoke(channels.sessionStoreGetLastActive),
   // ── Window controls ─────────────────────────────────────────────────
   windowMinimize: () => ipcRenderer.invoke(channels.windowMinimize),
   windowMaximizeToggle: () => ipcRenderer.invoke(channels.windowMaximizeToggle),
@@ -91,3 +104,17 @@ const api: DesktopApi = {
 };
 
 contextBridge.exposeInMainWorld("BloxMind", api);
+
+const authApi: ElectronAuthApi = {
+  loginWithRoblox: () => ipcRenderer.invoke(channels.authLogin),
+  getLicenseStatus: () => ipcRenderer.invoke(channels.authStatus),
+  logout: () => ipcRenderer.invoke(channels.authLogout),
+  onStatusChanged: (listener) => {
+    const handleStatus = (_event: Electron.IpcRendererEvent, status: LicenseStatus) =>
+      listener(status);
+    ipcRenderer.on(channels.authStatusChanged, handleStatus);
+    return () => ipcRenderer.removeListener(channels.authStatusChanged, handleStatus);
+  },
+};
+
+contextBridge.exposeInMainWorld("electron", { auth: authApi });

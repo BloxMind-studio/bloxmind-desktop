@@ -26,6 +26,8 @@ import {
   type RojoInstallResult,
   type RojoLogEntry,
   type RojoStatus,
+  type StoredSession,
+  type StoredSessionSummary,
   type UpdateInfo,
   UpdateInfoSchema,
 } from "@/types/desktop";
@@ -100,9 +102,11 @@ interface DesktopEffects {
   ) => Effect.Effect<readonly Checkpoint[], DesktopError>;
   readonly checkpointValidate: () => Effect.Effect<ValidationResult, DesktopError>;
   readonly rojoStart: (workspace: string) => Effect.Effect<RojoStatus, DesktopError>;
+  readonly rojoStartForSession: (sessionId: string) => Effect.Effect<RojoStatus, DesktopError>;
   readonly rojoStop: () => Effect.Effect<void, DesktopError>;
   readonly rojoStatus: () => Effect.Effect<RojoStatus, DesktopError>;
   readonly rojoToggle: (workspace: string) => Effect.Effect<RojoStatus, DesktopError>;
+  readonly rojoToggleForSession: (sessionId: string) => Effect.Effect<RojoStatus, DesktopError>;
   readonly rojoLogs: () => Effect.Effect<RojoLogEntry[], DesktopError>;
   readonly onRojoLog: (listener: (entry: RojoLogEntry) => void) => () => void;
   readonly rojoSetup: (
@@ -110,6 +114,13 @@ interface DesktopEffects {
   ) => Effect.Effect<RojoInstallResult, DesktopError>;
   readonly rojoBinaryPath: () => Effect.Effect<string | null, DesktopError>;
   readonly rojoCheckInstalled: () => Effect.Effect<boolean, DesktopError>;
+  readonly prepareSessionWorkspace: (sessionId: string) => Effect.Effect<string, DesktopError>;
+  readonly sessionStoreList: () => Effect.Effect<StoredSessionSummary[], DesktopError>;
+  readonly sessionStoreGet: (id: string) => Effect.Effect<StoredSession | null, DesktopError>;
+  readonly sessionStoreSave: (session: StoredSession) => Effect.Effect<void, DesktopError>;
+  readonly sessionStoreDelete: (id: string) => Effect.Effect<void, DesktopError>;
+  readonly sessionStoreSetLastActive: (id: string | null) => Effect.Effect<void, DesktopError>;
+  readonly sessionStoreGetLastActive: () => Effect.Effect<string | null, DesktopError>;
   readonly windowMinimize: () => Effect.Effect<void, DesktopError>;
   readonly windowMaximizeToggle: () => Effect.Effect<void, DesktopError>;
   readonly windowClose: () => Effect.Effect<void, DesktopError>;
@@ -199,9 +210,13 @@ const browserEffects: DesktopEffects = {
   checkpointValidate: () =>
     Effect.fail(new DesktopError({ message: "Checkpointing requires the desktop app." })),
   rojoStart: () => Effect.fail(new DesktopError({ message: "Rojo requires the desktop app." })),
+  rojoStartForSession: () =>
+    Effect.fail(new DesktopError({ message: "Rojo requires the desktop app." })),
   rojoStop: () => Effect.fail(new DesktopError({ message: "Rojo requires the desktop app." })),
   rojoStatus: () => Effect.fail(new DesktopError({ message: "Rojo requires the desktop app." })),
   rojoToggle: () => Effect.fail(new DesktopError({ message: "Rojo requires the desktop app." })),
+  rojoToggleForSession: () =>
+    Effect.fail(new DesktopError({ message: "Rojo requires the desktop app." })),
   rojoLogs: () => Effect.fail(new DesktopError({ message: "Rojo requires the desktop app." })),
   onRojoLog: () => () => {},
   rojoSetup: () => Effect.fail(new DesktopError({ message: "Rojo requires the desktop app." })),
@@ -209,6 +224,14 @@ const browserEffects: DesktopEffects = {
     Effect.fail(new DesktopError({ message: "Rojo requires the desktop app." })),
   rojoCheckInstalled: () =>
     Effect.fail(new DesktopError({ message: "Rojo requires the desktop app." })),
+  prepareSessionWorkspace: () =>
+    Effect.fail(new DesktopError({ message: "Session workspaces require the desktop app." })),
+  sessionStoreList: () => Effect.succeed([] as StoredSessionSummary[]),
+  sessionStoreGet: () => Effect.succeed(null),
+  sessionStoreSave: () => Effect.void,
+  sessionStoreDelete: () => Effect.void,
+  sessionStoreSetLastActive: () => Effect.void,
+  sessionStoreGetLastActive: () => Effect.succeed(null),
   windowMinimize: () =>
     Effect.fail(new DesktopError({ message: "Window control requires the desktop app." })),
   windowMaximizeToggle: () =>
@@ -312,15 +335,31 @@ function makeBridgeEffects(api: DesktopApi): DesktopEffects {
         decodeBridgeValue("Validation result is invalid", ValidationResultSchema),
       ),
     rojoStart: (workspace) => invoke("Failed to start Rojo", () => api.rojoStart(workspace)),
+    rojoStartForSession: (sessionId) =>
+      invoke("Failed to start Rojo for session", () => api.rojoStartForSession(sessionId)),
     rojoStop: () => invoke("Failed to stop Rojo", () => api.rojoStop()),
     rojoStatus: () => invoke("Failed to get Rojo status", () => api.rojoStatus()),
     rojoToggle: (workspace) => invoke("Failed to toggle Rojo", () => api.rojoToggle(workspace)),
+    rojoToggleForSession: (sessionId) =>
+      invoke("Failed to toggle Rojo for session", () => api.rojoToggleForSession(sessionId)),
     rojoLogs: () => invoke("Failed to get Rojo logs", () => api.rojoLogs()),
     onRojoLog: (listener) => api.onRojoLog(listener),
     rojoSetup: (onProgress) => invoke("Failed to set up Rojo", () => api.rojoSetup(onProgress)),
     rojoBinaryPath: () => invoke("Failed to get Rojo binary path", () => api.rojoBinaryPath()),
     rojoCheckInstalled: () =>
       invoke("Failed to check Rojo installation", () => api.rojoCheckInstalled()),
+    prepareSessionWorkspace: (sessionId) =>
+      invoke("Failed to prepare session workspace", () => api.prepareSessionWorkspace(sessionId)),
+    sessionStoreList: () => invoke("Failed to read saved sessions", () => api.sessionStoreList()),
+    sessionStoreGet: (id) => invoke("Failed to read saved session", () => api.sessionStoreGet(id)),
+    sessionStoreSave: (session) =>
+      invoke("Failed to save session transcript", () => api.sessionStoreSave(session)),
+    sessionStoreDelete: (id) =>
+      invoke("Failed to delete saved session", () => api.sessionStoreDelete(id)),
+    sessionStoreSetLastActive: (id) =>
+      invoke("Failed to remember the active session", () => api.sessionStoreSetLastActive(id)),
+    sessionStoreGetLastActive: () =>
+      invoke("Failed to read the last active session", () => api.sessionStoreGetLastActive()),
     windowMinimize: () => invoke("Failed to minimize the window", () => api.windowMinimize()),
     windowMaximizeToggle: () =>
       invoke("Failed to toggle the window maximized state", () => api.windowMaximizeToggle()),
@@ -370,14 +409,24 @@ export const desktop: DesktopApi = {
   ],
   checkpointValidate: () => runPromise(desktopEffects.checkpointValidate()),
   rojoStart: (workspace) => runPromise(desktopEffects.rojoStart(workspace)),
+  rojoStartForSession: (sessionId) => runPromise(desktopEffects.rojoStartForSession(sessionId)),
   rojoStop: () => runPromise(desktopEffects.rojoStop()),
   rojoStatus: () => runPromise(desktopEffects.rojoStatus()),
   rojoToggle: (workspace) => runPromise(desktopEffects.rojoToggle(workspace)),
+  rojoToggleForSession: (sessionId) => runPromise(desktopEffects.rojoToggleForSession(sessionId)),
   rojoLogs: () => runPromise(desktopEffects.rojoLogs()),
   onRojoLog: (listener) => desktopEffects.onRojoLog(listener),
   rojoSetup: (onProgress) => runPromise(desktopEffects.rojoSetup(onProgress)),
   rojoBinaryPath: () => runPromise(desktopEffects.rojoBinaryPath()),
   rojoCheckInstalled: () => runPromise(desktopEffects.rojoCheckInstalled()),
+  prepareSessionWorkspace: (sessionId) =>
+    runPromise(desktopEffects.prepareSessionWorkspace(sessionId)),
+  sessionStoreList: () => runPromise(desktopEffects.sessionStoreList()),
+  sessionStoreGet: (id) => runPromise(desktopEffects.sessionStoreGet(id)),
+  sessionStoreSave: (session) => runPromise(desktopEffects.sessionStoreSave(session)),
+  sessionStoreDelete: (id) => runPromise(desktopEffects.sessionStoreDelete(id)),
+  sessionStoreSetLastActive: (id) => runPromise(desktopEffects.sessionStoreSetLastActive(id)),
+  sessionStoreGetLastActive: () => runPromise(desktopEffects.sessionStoreGetLastActive()),
   windowMinimize: () => runPromise(desktopEffects.windowMinimize()),
   windowMaximizeToggle: () => runPromise(desktopEffects.windowMaximizeToggle()),
   windowClose: () => runPromise(desktopEffects.windowClose()),

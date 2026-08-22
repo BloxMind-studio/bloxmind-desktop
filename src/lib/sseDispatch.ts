@@ -8,6 +8,7 @@ import type {
 } from "@opencode-ai/sdk/v2/client";
 import type { QueryClient } from "@tanstack/react-query";
 import { Data, Effect, Schema } from "effect";
+import { toast } from "sonner";
 import type { ModelError } from "@/lib/modelError";
 import { qk } from "@/lib/queryKeys";
 import { isVisibleSession } from "@/lib/sessionVisibility";
@@ -131,6 +132,19 @@ function dispatchEvent(
       queryClient.setQueryData<Record<string, SessionStatus>>(qk.statuses, (prev) => {
         return { ...prev, [sessionID]: status };
       });
+      // Mirror the idle-session refetch (see `session.idle`): when a session
+      // reports idle via the status event, pull the authoritative messages so
+      // any parts dropped from the SSE stream get restored.
+      if (status.type === "idle" && sessionID === currentSessionId) {
+        void queryClient.invalidateQueries({
+          queryKey: qk.messages(sessionID),
+          refetchType: "active",
+        });
+        void queryClient.invalidateQueries({
+          queryKey: qk.todos(sessionID),
+          refetchType: "active",
+        });
+      }
       break;
     }
     case "session.compacted": {
@@ -148,15 +162,15 @@ function dispatchEvent(
         ...prev,
         [sessionID]: { type: "idle" } as SessionStatus,
       }));
-      if (
-        sessionID === currentSessionId &&
-        event.properties.error &&
-        event.properties.error.name !== "MessageAbortedError"
-      ) {
-        queryClient.setQueryData<ModelError | null>(
-          qk.sessionError(sessionID),
-          event.properties.error,
-        );
+      const err = event.properties.error;
+      if (sessionID === currentSessionId && err && err.name !== "MessageAbortedError") {
+        queryClient.setQueryData<ModelError | null>(qk.sessionError(sessionID), err);
+        const data = err.data as { message?: string } | undefined;
+        const msg = data?.message ?? String(err);
+        toast.error("OpenCode error", {
+          description: msg.slice(0, 200),
+          duration: 8000,
+        });
       }
       break;
     }
@@ -166,6 +180,21 @@ function dispatchEvent(
         if (prev?.[sessionID]?.type === "idle") return prev;
         return { ...prev, [sessionID]: { type: "idle" } as SessionStatus };
       });
+      // The OpenCode engine (anomalyco/opencode >= 1.14.42) drops SyncEvent
+      // publishes — notably `message.part.updated` — from the `/event` SSE
+      // stream, so message shells appear but their parts never arrive over
+      // SSE. The persisted store is still authoritative, so refetch the
+      // messages once the agent goes idle to pull the completed parts.
+      if (sessionID === currentSessionId) {
+        void queryClient.invalidateQueries({
+          queryKey: qk.messages(sessionID),
+          refetchType: "active",
+        });
+        void queryClient.invalidateQueries({
+          queryKey: qk.todos(sessionID),
+          refetchType: "active",
+        });
+      }
       break;
     }
     case "message.updated": {

@@ -269,6 +269,27 @@ describe("sseDispatch", () => {
 
       expect(qc.getQueryData(qk.statuses)).toBe(initial);
     });
+
+    it("invalidates the active session's messages so dropped SyncEvent parts are restored", () => {
+      // The engine (anomalyco/opencode >= 1.14.42) drops `message.part.updated`
+      // from the `/event` SSE stream, so parts never arrive via SSE. The
+      // persisted store stays authoritative, so idle must trigger a refetch.
+      qc.setQueryData(qk.statuses, { s1: { type: "busy" } as SessionStatus });
+      qc.setQueryData(qk.messages("s1"), { messageIds: [], messagesById: {} });
+
+      dispatch(qc, { type: "session.idle", properties: { sessionID: "s1" } }, "s1");
+
+      expect(qc.getQueryState(qk.messages("s1"))?.isInvalidated).toBe(true);
+    });
+
+    it("does not invalidate messages for a non-active session", () => {
+      qc.setQueryData(qk.statuses, { s2: { type: "busy" } as SessionStatus });
+      qc.setQueryData(qk.messages("s2"), { messageIds: [], messagesById: {} });
+
+      dispatch(qc, { type: "session.idle", properties: { sessionID: "s2" } }, "s1");
+
+      expect(qc.getQueryState(qk.messages("s2"))?.isInvalidated).toBeFalsy();
+    });
   });
 
   describe("session.error", () => {

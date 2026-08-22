@@ -249,7 +249,7 @@ function buildInstaller(options: RojoInstallerOptions): RojoInstaller {
         const version = release.tag_name.replace(/^v/, "");
 
         const binaryAsset = findBinaryAsset(release);
-        const zipTemp = join(options.binDirectory, `rojo-${version}.tmp`);
+        const zipTemp = join(options.binDirectory, `rojo-${version}.zip`);
         report(onProgress, "binary-download", `Downloading Rojo ${version}…`, 0);
         yield* toEffectTry(
           () =>

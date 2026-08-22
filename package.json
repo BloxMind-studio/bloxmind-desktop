@@ -1,7 +1,7 @@
 {
   "name": "@bloxmind-studio/desktop",
   "private": true,
-  "version": "0.9.97",
+  "version": "0.9.98",
   "description": "AI-assisted Roblox development from a secure desktop app",
   "type": "module",
   "main": "dist-electron/main/main.js",
@@ -31,16 +31,10 @@
     "typecheck": "tsc --noEmit && tsc -p electron/tsconfig.json --noEmit && tsc -p scripts/tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@bloxmind-studio/types": "workspace:*",
-    "@bloxmind-studio/ui": "workspace:*",
-    "@dimforge/rapier3d-compat": "^0.20.0",
     "@lexical/react": "^0.48.0",
     "@lexical/utils": "^0.48.0",
     "@modelcontextprotocol/sdk": "1.30.0",
     "@opencode-ai/sdk": "^1.18.18",
-    "@react-three/drei": "^9.122.0",
-    "@react-three/fiber": "^8.18.0",
-    "@react-three/rapier": "^1.5.0",
     "@shikijs/core": "^4.4.3",
     "@shikijs/engine-javascript": "^4.4.3",
     "@shikijs/langs": "^4.4.3",
@@ -61,8 +55,7 @@
     "sonner": "^2.0.8",
     "sucrase": "3.35.0",
     "systeminformation": "^5.31.16",
-    "tar": "^7.5.20",
-    "three": "^0.185.1"
+    "tar": "^7.5.20"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.8",
@@ -73,7 +66,6 @@
     "@types/node": "^25.2.2",
     "@types/react": "^18.3.1",
     "@types/react-dom": "^18.3.1",
-    "@types/three": "^0.185.4",
     "@vitejs/plugin-react": "^6.0.3",
     "@vitest/coverage-v8": "^4.1.10",
     "electron": "^43.4.0",

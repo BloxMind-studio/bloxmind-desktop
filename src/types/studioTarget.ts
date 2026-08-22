@@ -12,6 +12,7 @@ export type StudioTarget = typeof StudioTargetSchema.Type;
 export const StudioTargetDiscoverySchema = Schema.Struct({
   targets: Schema.Array(StudioTargetSchema),
   selectedKey: Schema.NullOr(Schema.String.pipe(Schema.minLength(1), Schema.maxLength(512))),
+  error: Schema.optional(Schema.NullOr(Schema.String.pipe(Schema.maxLength(1024)))),
 });
 
 export type StudioTargetDiscovery = typeof StudioTargetDiscoverySchema.Type;

@@ -27,12 +27,28 @@ export const channels = {
   rojoLogs: "rojo:logs",
   rojoStart: "rojo:start",
   rojoStop: "rojo:stop",
+  rojoStartSession: "rojo:start-session",
+  rojoToggleSession: "rojo:toggle-session",
   onRojoLog: "rojo:on-log",
   // ── Rojo 1-click setup ─────────────────────────────────────────────
   rojoSetup: "rojo:setup",
   rojoSetupProgress: "rojo:setup-progress",
   rojoBinaryPath: "rojo:binary-path",
   rojoCheckInstalled: "rojo:check-installed",
+  // ── Session workspaces ───────────────────────────────────────────────
+  prepareSessionWorkspace: "session:prepare-workspace",
+  // ── Session transcript persistence (app-side, survives engine restart) ──
+  sessionStoreList: "session-store:list",
+  sessionStoreGet: "session-store:get",
+  sessionStoreSave: "session-store:save",
+  sessionStoreDelete: "session-store:delete",
+  sessionStoreSetLastActive: "session-store:set-last-active",
+  sessionStoreGetLastActive: "session-store:get-last-active",
+  // ── Licensing & Roblox auth ──────────────────────────────────────────
+  authLogin: "auth:login",
+  authLogout: "auth:logout",
+  authStatus: "auth:status",
+  authStatusChanged: "auth:status-changed",
   // ── Window controls ─────────────────────────────────────────────────
   windowMinimize: "window:minimize",
   windowMaximizeToggle: "window:maximize-toggle",

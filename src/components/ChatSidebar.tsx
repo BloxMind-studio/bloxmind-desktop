@@ -587,7 +587,7 @@ const ChatSidebar = memo(function ChatSidebar({
             createPortal(
               // biome-ignore lint/a11y/noStaticElementInteractions: supplementary backdrop dismissal; the alertdialog itself is keyboard accessible
               <div
-                className="animate-lightbox-backdrop fixed inset-0 z-[300] flex items-center justify-center bg-black/55 p-4 backdrop-blur-[2px]"
+                className="animate-lightbox-backdrop fixed inset-0 z-[300] flex items-center justify-center bg-[#161616]/70 p-4 backdrop-blur-[2px]"
                 onMouseDown={(event) => {
                   if (event.target === event.currentTarget) cancelDelete();
                 }}

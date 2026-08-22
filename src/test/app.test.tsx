@@ -705,7 +705,18 @@ describe("User journeys", () => {
     const session = makeSession("s1", "My Session");
     const client = createClient({
       get: vi.fn().mockResolvedValue({ data: session }),
-      messages: vi.fn().mockResolvedValue({ data: [] }),
+      // Mirror the real server: the idle refetch (see sseDispatch) must restore
+      // whatever the SSE stream has already committed to the cache.
+      messages: vi.fn().mockImplementation(() => {
+        const cache = queryClient.getQueryData<MessagesCache>(qk.messages("s1"));
+        const data = cache
+          ? cache.messageIds.map((id) => {
+              const m = cache.messagesById[id];
+              return { info: m.info, parts: m.parts };
+            })
+          : [];
+        return Promise.resolve({ data });
+      }),
     });
     const queryClient = createQueryClient();
     seedReadyState(queryClient, { sessions: [session] });
@@ -784,16 +795,12 @@ describe("User journeys", () => {
       );
     });
 
-    // The bash command should be visible after expanding the thinking block
+    // While the agent is still generating we only show the "Thinking..."
+    // placeholder — the reasoning/tool block stays hidden until the turn ends.
     await waitFor(() => {
-      expect(screen.getByText("Thought")).toBeInTheDocument();
+      expect(screen.getByText("Thinking...")).toBeInTheDocument();
     });
-    await fireEvent.click(screen.getByText("Thought"));
-    await waitFor(() => {
-      expect(screen.getByText("List source files")).toBeInTheDocument();
-      expect(screen.getByText("$ ls -la src/")).toBeInTheDocument();
-      expect(screen.getByText("Running...")).toBeInTheDocument();
-    });
+    expect(screen.queryByText("Thought")).not.toBeInTheDocument();
 
     // SSE: tool completes with output
     act(() => {
@@ -821,10 +828,11 @@ describe("User journeys", () => {
       );
     });
 
-    // Running indicator should be gone, output should be available
+    // Still generating (no final text yet) — thinking block stays hidden.
     await waitFor(() => {
-      expect(screen.queryByText("Running...")).not.toBeInTheDocument();
+      expect(screen.getByText("Thinking...")).toBeInTheDocument();
     });
+    expect(screen.queryByText("Thought")).not.toBeInTheDocument();
 
     // SSE: session idle — turn finished
     act(() => {
@@ -838,9 +846,14 @@ describe("User journeys", () => {
       );
     });
 
-    // The thought header stays visible after the turn ends.
+    // After completion the reasoning/tool block becomes readable.
     await waitFor(() => {
       expect(screen.getByText("Thought")).toBeInTheDocument();
+    });
+    await fireEvent.click(screen.getByText("Thought"));
+    await waitFor(() => {
+      expect(screen.getByText("List source files")).toBeInTheDocument();
+      expect(screen.getByText("$ ls -la src/")).toBeInTheDocument();
     });
   });
 

@@ -7,6 +7,11 @@ files:
   - "dist/**/*"
   - "dist-electron/**/*"
   - "package.json"
+extraResources:
+  # Shipped to process.resourcesPath/.env and read by electron/licensingConfig.ts
+  # for the Roblox OAuth client id and license server URL at runtime.
+  - from: ".env"
+    to: ".env"
 npmRebuild: false
 asar: true
 mac:
@@ -30,6 +35,9 @@ linux:
   target:
     - deb
 publish:
+  # Must match the repository that actually hosts the releases (+ the README
+  # download links and `git remote`), otherwise electron-updater looks for
+  # latest.yml in the wrong place and updates silently never arrive.
   provider: github
   owner: BloxMind-studio
   repo: bloxmind-desktop

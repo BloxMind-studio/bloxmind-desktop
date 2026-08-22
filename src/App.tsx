@@ -3,16 +3,16 @@ import { useEffect, useRef, useState } from "react";
 import { BloxMindLogo } from "@/components/BloxMindLogo";
 import Chat from "@/components/Chat";
 import ErrorBoundary from "@/components/ErrorBoundary";
-import { ModeSwitcher } from "@/components/ModeSwitcher";
+import { LicenseGate } from "@/components/LicenseGate";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { WindowControls } from "@/components/WindowControls";
+import { useSessionPersistence } from "@/hooks/useSessionPersistence";
 import { useUpdater } from "@/hooks/useUpdater";
 import { desktop } from "@/lib/desktop";
 import { ActiveSessionProvider } from "@/providers/ActiveSessionProvider";
-import { AgentStudioProvider } from "@/providers/AgentStudioProvider";
 import { ExplorerReferenceProvider } from "@/providers/ExplorerReferenceProvider";
-import { ModeProvider } from "@/providers/ModeProvider";
+import { LicenseProvider } from "@/providers/LicenseProvider";
 import { OpenCodeClientProvider } from "@/providers/OpenCodeClientProvider";
 import { PreferencesProvider } from "@/providers/PreferencesProvider";
 import { ProjectIndexProvider } from "@/providers/ProjectIndexProvider";
@@ -21,6 +21,7 @@ import { StudioTargetProvider } from "@/providers/StudioTargetProvider";
 
 function AppInner() {
   useUpdater();
+  useSessionPersistence();
   const [appVersion, setAppVersion] = useState<string | null>(null);
 
   useEffect(() => {
@@ -39,26 +40,20 @@ function AppInner() {
   return (
     <main className="flex h-dvh w-screen flex-col overflow-hidden">
       <div
-        className="app-titlebar flex h-9 shrink-0 items-center justify-between gap-3 border-b border-border/50 bg-gradient-to-r from-card via-card to-accent/5 px-3 pt-[env(titlebar-area-height,0px)] [-webkit-app-region:drag]"
+        className="app-titlebar flex h-9 shrink-0 items-center justify-between gap-3 border-b border-border/60 bg-background px-3 pt-[env(titlebar-area-height,0px)] [-webkit-app-region:drag]"
         style={{
           paddingTop: "max(0.5rem, env(titlebar-area-height))",
           paddingLeft: "max(0.75rem, env(titlebar-area-height))",
         }}
       >
         <div className="flex items-center gap-2 [-webkit-app-region:no-drag]">
-          <div className="relative">
-            <BloxMindLogo size={18} />
-            <div className="absolute -inset-1 rounded-full bg-accent/20 blur-sm" />
-          </div>
+          <BloxMindLogo size={18} />
           <span className="font-serif text-sm font-semibold italic text-foreground tracking-tight">
             BloxMind
           </span>
         </div>
         <div className="flex items-center gap-2 [-webkit-app-region:no-drag]">
-          <div className="rounded-full border border-border/60 bg-background/30 px-2 py-0.5">
-            <ModeSwitcher />
-          </div>
-          <div className="h-1 w-1 rounded-full bg-accent/60 animate-pulse" />
+          <div className="h-1 w-1 rounded-full bg-accent" />
           <span className="text-[10px] font-medium tabular-nums text-muted-foreground/80">
             {appVersion ? `v${appVersion}` : ""}
           </span>
@@ -80,23 +75,23 @@ function App() {
     <ErrorBoundary>
       <QueryProvider>
         <ThemeProvider>
-          <ModeProvider>
-            <OpenCodeClientProvider activeSessionIdRef={activeSessionIdRef}>
-              <ActiveSessionProvider activeSessionIdRef={activeSessionIdRef}>
-                <PreferencesProvider>
-                  <StudioTargetProvider>
-                    <ExplorerReferenceProvider>
-                      <ProjectIndexProvider>
-                        <AgentStudioProvider>
+          <LicenseProvider>
+            <LicenseGate>
+              <OpenCodeClientProvider activeSessionIdRef={activeSessionIdRef}>
+                <ActiveSessionProvider activeSessionIdRef={activeSessionIdRef}>
+                  <PreferencesProvider>
+                    <StudioTargetProvider>
+                      <ExplorerReferenceProvider>
+                        <ProjectIndexProvider>
                           <AppInner />
-                        </AgentStudioProvider>
-                      </ProjectIndexProvider>
-                    </ExplorerReferenceProvider>
-                  </StudioTargetProvider>
-                </PreferencesProvider>
-              </ActiveSessionProvider>
-            </OpenCodeClientProvider>
-          </ModeProvider>
+                        </ProjectIndexProvider>
+                      </ExplorerReferenceProvider>
+                    </StudioTargetProvider>
+                  </PreferencesProvider>
+                </ActiveSessionProvider>
+              </OpenCodeClientProvider>
+            </LicenseGate>
+          </LicenseProvider>
         </ThemeProvider>
       </QueryProvider>
     </ErrorBoundary>

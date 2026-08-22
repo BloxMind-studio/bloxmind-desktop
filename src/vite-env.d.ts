@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 
 import type { DesktopApi } from "@/types/desktop";
+import type { ElectronAuthApi } from "@/types/license";
 
 declare global {
   interface ImportMetaEnv {
@@ -15,5 +16,8 @@ declare global {
 
   interface Window {
     BloxMind?: DesktopApi;
+    electron?: {
+      auth?: ElectronAuthApi;
+    };
   }
 }

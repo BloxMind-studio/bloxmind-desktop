@@ -105,7 +105,7 @@ export const UsageLimitDialog = memo(function UsageLimitDialog({
       ref={dialogRef}
       aria-labelledby={titleId}
       aria-describedby={descriptionId}
-      className="fixed inset-0 z-50 m-0 h-full max-h-none w-full max-w-none bg-transparent p-4 backdrop:bg-black/40"
+      className="fixed inset-0 z-50 m-0 h-full max-h-none w-full max-w-none bg-transparent p-4 backdrop:bg-[#161616]/50"
       onCancel={(event) => {
         event.preventDefault();
         close(false);

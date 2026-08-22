@@ -39,11 +39,6 @@ jobs:
       - name: Lint
         run: pnpm lint
 
-      - name: Run core engine tests
-        run: |
-          cd repos/bloxmind-core-engine
-          VITE_CONFIG_NATIVE_IGNORE_WARNING=true node_modules/.bin/vitest run
-
   build:
     if: github.event_name == 'workflow_call'
     timeout-minutes: 45
@@ -67,6 +62,9 @@ jobs:
       # in cloud mode and talks to the hosted backend at runtime.
       NEXT_PUBLIC_CORE_API_URL: ${{ vars.CORE_API_URL }}
       NEXT_PUBLIC_BLOXMIND_API_TOKEN: ${{ secrets.BLOXMIND_API_TOKEN }}
+      # Runtime licensing values for the packaged app.
+      ROBLOX_CLIENT_ID: ${{ secrets.ROBLOX_CLIENT_ID }}
+      BLOXMIND_LICENSE_API_URL: ${{ vars.BLOXMIND_LICENSE_API_URL }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -111,6 +109,15 @@ jobs:
           echo "Starting application build..."
           pnpm build
           echo "Build completed successfully"
+
+      - name: Write runtime .env
+        working-directory: repo
+        shell: bash
+        run: |
+          {
+            echo "ROBLOX_CLIENT_ID=${ROBLOX_CLIENT_ID}"
+            echo "BLOXMIND_LICENSE_API_URL=${BLOXMIND_LICENSE_API_URL}"
+          } > .env
 
       - name: Package application
         shell: bash

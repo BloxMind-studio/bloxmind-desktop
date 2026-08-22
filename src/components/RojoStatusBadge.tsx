@@ -1,6 +1,7 @@
 import { memo, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { desktop } from "@/lib/desktop";
+import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import type { RojoStatus } from "@/types/desktop";
 
 /**
@@ -12,6 +13,7 @@ import type { RojoStatus } from "@/types/desktop";
 function RojoStatusBadgeImpl() {
   const [status, setStatus] = useState<RojoStatus | null>(null);
   const [toggling, setToggling] = useState(false);
+  const { activeSessionId } = useActiveSession();
 
   useEffect(() => {
     let cancelled = false;
@@ -37,9 +39,12 @@ function RojoStatusBadgeImpl() {
     if (toggling) return;
     setToggling(true);
     try {
-      // Toggle uses the BloxMind workspace as the project root.
-      const info = await desktop.getOpenCodeInfo();
-      const s = await desktop.rojoToggle(info.workspace);
+      // When a session is active, toggle its isolated per-session Rojo server
+      // so Studio never syncs the wrong project. Otherwise fall back to the
+      // shared BloxMind workspace.
+      const s = activeSessionId
+        ? await desktop.rojoToggleForSession(activeSessionId)
+        : await desktop.rojoToggle((await desktop.getOpenCodeInfo()).workspace);
       setStatus(s);
     } catch {
       // ignore — status will refresh on next poll

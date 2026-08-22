@@ -77,12 +77,29 @@ export const MessageBubble = memo(function MessageBubble({
 
   const shouldShowCopyButton = hasTextContent && !hasOnlyThinkingParts && !isUser;
 
+  // The "Thinking..." placeholder should stay visible for as long as the agent
+  // is still generating this assistant message — i.e. until it has produced a
+  // final text answer (or errored). Showing it only while `parts.length === 0`
+  // was wrong: the engine commits reasoning/tool parts mid-think, which cleared
+  // the indicator even though the actual response wasn't ready yet.
+  const hasFinalText = msg.parts.some(
+    (p) => p.type === "text" && typeof p.text === "string" && p.text.trim().length > 0,
+  );
+  const hasError =
+    "error" in msg.info && msg.info.error && msg.info.error.name !== "MessageAbortedError";
+  // A turn is "complete" once the agent produced a final text answer, errored,
+  // or the session reported idle. While it is still generating we only show the
+  // "Thinking..." placeholder and hide the reasoning/tool parts; after
+  // completion the reasoning block becomes readable — the two never coexist.
+  const isComplete = hasFinalText || hasError || sessionStatus?.type === "idle";
+  const showThinking = !isUser && !isComplete && isLastIndex;
+
   return (
     <div className={`animate-fade-in-up flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div
         className={`relative max-w-[85%] ${
           isUser
-            ? "rounded-2xl rounded-br-sm bg-gradient-to-br from-foreground to-foreground/95 px-4 py-2.5 text-background shadow-lg shadow-foreground/20"
+            ? "rounded-2xl rounded-br-sm bg-foreground px-4 py-2.5 text-background shadow-sm"
             : "w-full"
         }`}
       >
@@ -90,8 +107,8 @@ export const MessageBubble = memo(function MessageBubble({
           <UserPartsView parts={msg.parts} />
         ) : (
           <div className="space-y-2">
-            {msg.parts.length === 0 && <BloxMindThinking />}
-            <SmartPartsRenderer parts={msg.parts} />
+            {showThinking && <BloxMindThinking />}
+            <SmartPartsRenderer parts={msg.parts} hideThinking={showThinking} />
             {"error" in msg.info &&
               msg.info.error &&
               msg.info.error.name !== "MessageAbortedError" && (

@@ -537,7 +537,13 @@ const ThinkingBlock = memo(function ThinkingBlock({ parts }: { parts: Part[] }) 
 
 // ── Smart part renderer: groups thinking parts, renders text outside ────
 
-export const SmartPartsRenderer = memo(function SmartPartsRenderer({ parts }: { parts: Part[] }) {
+export const SmartPartsRenderer = memo(function SmartPartsRenderer({
+  parts,
+  hideThinking = false,
+}: {
+  parts: Part[];
+  hideThinking?: boolean;
+}) {
   const thinkingParts: Part[] = [];
   const textParts: Part[] = [];
 
@@ -552,6 +558,11 @@ export const SmartPartsRenderer = memo(function SmartPartsRenderer({ parts }: { 
       part.type === "retry" ||
       part.type === "compaction"
     ) {
+      // While the agent is still generating we hide the thinking/reasoning
+      // parts and surface only the "Thinking..." placeholder instead. Once the
+      // response is complete they are shown (collapsible) so the user can read
+      // what was thought — the two must never appear at the same time.
+      if (hideThinking) continue;
       thinkingParts.push(part);
     }
   }

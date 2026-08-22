@@ -45,6 +45,12 @@ describe("agent skill pack", () => {
     expect(names).toContain(".opencode/skills/roblox-map-building/SKILL.md");
   });
 
+  it("ships Knit and ProfileService framework skills", () => {
+    const names = AGENT_SKILLS.map((skill) => skill.relativePath);
+    expect(names).toContain(".opencode/skills/roblox-knit/SKILL.md");
+    expect(names).toContain(".opencode/skills/roblox-profile-service/SKILL.md");
+  });
+
   it("satisfies OpenCode's frontmatter and naming contract", () => {
     for (const skill of AGENT_SKILLS) {
       const fields = parseFrontmatter(skill.content);
@@ -205,6 +211,46 @@ describe("agent skill pack", () => {
     expect(building).toContain("service**");
     expect(building).toMatch(/pre-bake/i);
     expect(building).toMatch(/verify it .* Command Bar/);
+  });
+
+  it("teaches standard Knit Service and Controller structure with Wally wiring", () => {
+    const knit = AGENT_SKILLS.find((skill) =>
+      skill.relativePath.endsWith("roblox-knit/SKILL.md"),
+    )?.content;
+    expect(knit).toBeDefined();
+    expect(knit).toContain("Knit.CreateService");
+    expect(knit).toContain("Knit.CreateController");
+    expect(knit).toContain("Client = {}");
+    expect(knit).toContain("Knit.Start()");
+    expect(knit).toContain("Knit.CreateRemote");
+    expect(knit).toMatch(/Client_/);
+    expect(knit).toContain("sleitnick/knit");
+    expect(knit).toMatch(/wally\.toml/);
+    expect(knit).toMatch(/Packages/);
+    expect(knit).toMatch(/default\.project\.json/);
+    expect(knit).toMatch(/separation of concerns/i);
+    expect(knit).toMatch(/ServerScriptService/);
+    expect(knit).toMatch(/StarterPlayerScripts/);
+  });
+
+  it("teaches ProfileService session locking, auto-save, and fallback defaults", () => {
+    const profileService = AGENT_SKILLS.find((skill) =>
+      skill.relativePath.endsWith("roblox-profile-service/SKILL.md"),
+    )?.content;
+    expect(profileService).toBeDefined();
+    expect(profileService).toContain("ProfileService.GetProfileStore");
+    expect(profileService).toContain("LoadProfileAsync");
+    expect(profileService).toContain("AddUserId");
+    expect(profileService).toContain("RemoveUserId");
+    expect(profileService).toContain("ListenToRelease");
+    expect(profileService).toContain("Reconcile");
+    expect(profileService).toContain("profile:Release");
+    expect(profileService).toMatch(/session lock/i);
+    expect(profileService).toMatch(/auto.sav/i);
+    expect(profileService).toMatch(/fallback default/i);
+    expect(profileService).toContain("madstudioroblox/profile-service");
+    expect(profileService).toMatch(/wally\.toml/);
+    expect(profileService).toMatch(/data loss/i);
   });
 
   it("writes every skill to the OpenCode workspace layout", async () => {

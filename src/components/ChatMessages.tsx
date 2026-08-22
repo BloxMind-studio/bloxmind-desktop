@@ -58,6 +58,46 @@ function ChatMessages() {
   // badge and restore button would never appear after a capture.
   const sessionStatusType = sessionStatus?.type;
   const checkpoint = useCheckpointHistory(activeSessionId ?? undefined);
+
+  // ── Authoritative message sync while the agent is generating ──────────
+  // The OpenCode engine (anomalyco/opencode >= 1.14.42) drops SyncEvent
+  // publishes — including `message.part.updated` — from the `/event` SSE
+  // stream. Message bubbles still appear (their shells arrive), but their
+  // parts never do, so they render as "..." / "Thinking..." and the assistant
+  // response never shows. The persisted store (`session.messages()`) stays
+  // authoritative, so we poll it whenever there's an active session.
+  // We also poll a bit faster while the status says "busy" or "retry",
+  // and fall back to a slower poll otherwise (covers the case where the
+  // engine doesn't emit session.status events at all).
+  useEffect(() => {
+    if (!activeSessionId) return;
+    const isActivelyGenerating = sessionStatus?.type === "busy" || sessionStatus?.type === "retry";
+    const POLL_MS = isActivelyGenerating ? 1200 : 3000;
+    const timer = window.setInterval(() => {
+      void queryClient.invalidateQueries({
+        queryKey: qk.messages(activeSessionId),
+        refetchType: "active",
+      });
+      void queryClient.invalidateQueries({
+        queryKey: qk.todos(activeSessionId),
+        refetchType: "active",
+      });
+    }, POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [activeSessionId, sessionStatus?.type, queryClient]);
+
+  // ── Fallback: if the last assistant message has been "Thinking..." for >10s
+  // without getting any parts, force a refetch (covers dropped session.idle).
+  useEffect(() => {
+    if (lastMessage?.info.role !== "assistant" || lastMessage.parts.length > 0) return;
+    const timer = window.setTimeout(() => {
+      void queryClient.invalidateQueries({
+        queryKey: qk.messages(activeSessionId ?? ""),
+        refetchType: "active",
+      });
+    }, 10_000);
+    return () => window.clearTimeout(timer);
+  }, [lastMessage, activeSessionId, queryClient]);
   const {
     capture: captureCheckpoint,
     validate: validateWorkspace,

@@ -2,6 +2,7 @@ import type { OpencodeClient } from "@opencode-ai/sdk/v2/client";
 import { hashKey, type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 
+import { desktop } from "@/lib/desktop";
 import { qk } from "@/lib/queryKeys";
 import type { MessagesCache } from "@/lib/sseDispatch";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
@@ -72,24 +73,73 @@ export async function fetchMessages(
     }
     observed = next;
   });
-  let res: Awaited<ReturnType<OpencodeClient["session"]["messages"]>>;
-  try {
-    res = await client.session.messages({ sessionID }, { throwOnError: true });
-  } finally {
-    unsubscribe();
-  }
-  const messageIds: string[] = [];
-  const messagesById: Record<string, MessageWithParts> = {};
-  for (const msg of res.data ?? []) {
-    messageIds.push(msg.info.id);
-    messagesById[msg.info.id] = { info: msg.info, parts: msg.parts };
-  }
+
+  // The engine drops sessions on restart (it does not persist transcripts), so
+  // an existing session may be unknown to it now. Re-register it under the same
+  // id so prompts work again; the history itself is restored from the local
+  // store below.
+  const engineMessages = await loadEngineMessages(client, sessionID);
+  const local = await readLocalMessages(sessionID);
+  const fetched = mergeMessagesLocalFirst(local, engineMessages);
+  unsubscribe();
+
   return mergeMessagesSnapshot(
     before,
-    { messageIds, messagesById },
+    fetched,
     queryClient.getQueryData<MessagesCache>(queryKey),
     observedChanges,
   );
+}
+
+async function loadEngineMessages(
+  client: OpencodeClient,
+  sessionID: string,
+): Promise<Array<{ info: MessageWithParts["info"]; parts: MessageWithParts["parts"] }>> {
+  try {
+    const res = await client.session.messages({ sessionID }, { throwOnError: true });
+    return (res.data ?? []) as Array<{
+      info: MessageWithParts["info"];
+      parts: MessageWithParts["parts"];
+    }>;
+  } catch {
+    try {
+      const directory = await desktop.prepareSessionWorkspace(sessionID);
+      await client.v2.session.create(
+        { id: sessionID, location: { directory } },
+        { throwOnError: true },
+      );
+    } catch {
+      // Re-registration failed; the next prompt will surface the real error.
+    }
+    return [];
+  }
+}
+
+async function readLocalMessages(sessionID: string): Promise<MessagesCache | null> {
+  try {
+    const stored = await desktop.sessionStoreGet(sessionID);
+    return (stored?.messages as MessagesCache | undefined) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Build the snapshot from the engine result, overlaying any history that only
+ * survives in BloxMind's local transcript store (engine order first so the
+ * newest engine messages stay at the tail, local history ids kept otherwise).
+ */
+export function mergeMessagesLocalFirst(
+  local: MessagesCache | null,
+  engine: Array<{ info: MessageWithParts["info"]; parts: MessageWithParts["parts"] }>,
+): MessagesCache {
+  const messagesById: Record<string, MessageWithParts> = { ...(local?.messagesById ?? {}) };
+  const messageIds = [...(local?.messageIds ?? [])];
+  for (const msg of engine) {
+    messagesById[msg.info.id] = { info: msg.info, parts: msg.parts };
+    if (!messageIds.includes(msg.info.id)) messageIds.push(msg.info.id);
+  }
+  return { messageIds, messagesById };
 }
 
 export function useMessageIds(): string[] {

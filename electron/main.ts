@@ -20,6 +20,7 @@ import {
   AppConfigSchema,
   DEFAULT_APP_CONFIG,
   type OpenCodeStartupProgress,
+  type StoredSession,
 } from "../src/types/desktop";
 import { GeneratedProgramArtifactSchema } from "../src/types/generatedProgram";
 import {
@@ -30,12 +31,14 @@ import {
 } from "../src/types/studioTarget";
 import { handleLastWindowClosed } from "./appLifecycle";
 import { channels } from "./channels";
+import { BLOXMIND_PROTOCOL } from "./licensingConfig";
 import { compareReleaseVersions, parseReleaseVersion } from "./releaseVersion";
 import { CheckpointServiceTag, makeCheckpointServiceLayer } from "./services/CheckpointService";
 import {
   GeneratedProgramRuntime,
   GeneratedProgramRuntimeLive,
 } from "./services/GeneratedProgramRuntime";
+import { createLicenseService } from "./services/LicenseService";
 import { makeOpenCodeLayer, OpenCode } from "./services/OpenCode";
 import {
   makeRojoInstallerLayer,
@@ -47,8 +50,19 @@ import {
   makeRojoServerManagerLayer,
   RojoServerManagerTag,
 } from "./services/RojoServerManager";
+import {
+  deleteSession,
+  flushPendingWrites,
+  getLastActive,
+  getSession,
+  listSessions,
+  reconcileIndex,
+  setLastActive,
+  stageSession,
+} from "./services/SessionStore";
 import { makeStudioMcpBrokerLayer } from "./services/StudioMcpBroker";
 import { type SweepReport, sweepStaleProcesses } from "./services/staleProcessSweep";
+import { ensureSessionWorkspace, sessionWorkspaceDir } from "./sessionWorkspace";
 
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
 const defaultConfig: AppConfig = DEFAULT_APP_CONFIG;
@@ -101,6 +115,7 @@ const openCodeRuntime = ManagedRuntime.make(
           Layer.provide(
             makeRojoServerManagerLayer({
               binDirectory: join(app.getPath("userData"), "bin"),
+              sessionWorkspaceDir,
             }),
           ),
         ),
@@ -108,6 +123,7 @@ const openCodeRuntime = ManagedRuntime.make(
       Layer.merge(
         makeRojoServerManagerLayer({
           binDirectory: join(app.getPath("userData"), "bin"),
+          sessionWorkspaceDir,
         }),
         makeRojoInstallerLayer({
           binDirectory: join(app.getPath("userData"), "bin"),
@@ -118,6 +134,39 @@ const openCodeRuntime = ManagedRuntime.make(
     GeneratedProgramRuntimeLive.pipe(Layer.provide(studioMcpBrokerLayer)),
   ).pipe(Layer.provide(studioMcpBrokerLayer)),
 );
+
+// ── Licensing & Roblox auth ───────────────────────────────────────────
+// Created at module scope so IPC handlers and the deep-link router can
+// reach it regardless of which effect registered them.
+const licenseService = createLicenseService();
+
+licenseService.onStatus((status) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(channels.authStatusChanged, status);
+  }
+});
+
+// A revoked license (401/403 heartbeat) must shut down live-sync so the
+// session can no longer mutate Roblox Studio data behind a lock screen.
+licenseService.onRevoked(() => {
+  openCodeRuntime
+    .runPromise(
+      Effect.gen(function* () {
+        const rojo = yield* RojoServerManagerTag;
+        yield* rojo.stop();
+      }),
+    )
+    .catch(Effect.logWarning);
+});
+
+// Register `bloxmind://` as our protocol handler so Roblox's OAuth redirect
+// returns to this app. Under `electron .` (dev) the protocol must point at
+// the electron executable with the app path as an argument.
+if (process.defaultApp && process.argv.length >= 2) {
+  app.setAsDefaultProtocolClient(BLOXMIND_PROTOCOL, process.execPath, [process.argv[1]]);
+} else {
+  app.setAsDefaultProtocolClient(BLOXMIND_PROTOCOL);
+}
 
 const expectedContract = (name: string) => ({
   name,
@@ -605,6 +654,22 @@ const registerIpcHandlers = Effect.sync(() => {
       }),
     ),
   );
+  ipcMain.handle(channels.rojoStartSession, (_event, sessionId: string) =>
+    openCodeRuntime.runPromise(
+      Effect.gen(function* () {
+        const rojo = yield* RojoServerManagerTag;
+        return yield* rojo.startForSession(sessionId);
+      }),
+    ),
+  );
+  ipcMain.handle(channels.rojoToggleSession, (_event, sessionId: string) =>
+    openCodeRuntime.runPromise(
+      Effect.gen(function* () {
+        const rojo = yield* RojoServerManagerTag;
+        return yield* rojo.toggleForSession(sessionId);
+      }),
+    ),
+  );
   ipcMain.handle(channels.rojoLogs, () =>
     openCodeRuntime.runPromise(
       Effect.gen(function* () {
@@ -613,6 +678,44 @@ const registerIpcHandlers = Effect.sync(() => {
       }),
     ),
   );
+  // ── Session workspaces ────────────────────────────────────────────────
+  // Create a session's isolated directory BEFORE the session exists so the
+  // renderer can point the session's location at it from the very start.
+  ipcMain.handle(channels.prepareSessionWorkspace, (_event, sessionId: string) =>
+    ensureSessionWorkspace(sessionId),
+  );
+  // ── Session transcript persistence ────────────────────────────────────
+  // The engine does not flush conversations to disk in this setup, so the app
+  // keeps its own durable copy and rehydrates it on launch.
+  ipcMain.handle(channels.sessionStoreList, async () => {
+    const sessions = await listSessions();
+    console.debug(
+      `[main.ts] IPC sessionStoreList: returned ${sessions.length} session(s): ${sessions.map((s) => s.id).join(", ")}`,
+    );
+    return sessions;
+  });
+  ipcMain.handle(channels.sessionStoreGet, async (_event, id: string) => {
+    const session = await getSession(id);
+    console.debug(
+      `[main.ts] IPC sessionStoreGet: ${id} -> ${session ? `found (${session.messages?.messageIds?.length ?? 0} messages)` : "null"}`,
+    );
+    return session;
+  });
+  ipcMain.handle(channels.sessionStoreSave, (_event, session: StoredSession) => {
+    console.debug(
+      `[main.ts] IPC sessionStoreSave: session=${session.id}, messageCount=${session.messages?.messageIds?.length ?? "undefined"}`,
+    );
+    stageSession(session);
+  });
+  ipcMain.handle(channels.sessionStoreDelete, (_event, id: string) => deleteSession(id));
+  ipcMain.handle(channels.sessionStoreSetLastActive, (_event, id: string | null) =>
+    setLastActive(id),
+  );
+  ipcMain.handle(channels.sessionStoreGetLastActive, () => getLastActive());
+  // ── Licensing & Roblox auth ─────────────────────────────────────────
+  ipcMain.handle(channels.authLogin, () => licenseService.loginWithRoblox());
+  ipcMain.handle(channels.authLogout, () => licenseService.logout());
+  ipcMain.handle(channels.authStatus, () => licenseService.getLicenseStatus());
   // ── Rojo 1-click setup ─────────────────────────────────────────────
   ipcMain.handle(channels.rojoSetup, () =>
     openCodeRuntime.runPromise(
@@ -788,12 +891,27 @@ const registerAppLifecycle = Effect.sync(() => {
     ),
   );
 
+  // macOS delivers protocol deep-links via the open-url event instead of
+  // argv; forward them to the auth service (no-op unless a login is pending).
+  app.on("open-url", (event, url) => {
+    event.preventDefault();
+    licenseService.handleAuthCallbackUrl(url);
+  });
+
   app.on("before-quit", (event) => {
+    console.debug(
+      "[main.ts] before-quit fired — quitting=",
+      quitting,
+      "shutdownInFlight=",
+      shutdownInFlight !== null,
+    );
     if (quitting) return;
     event.preventDefault();
     // A second quit trigger while cleanup is running must not fork another
     // parallel cleanup (which would double-dispose the OpenCode runtime).
     if (shutdownInFlight !== null) return;
+    // Stop the license heartbeat and cancel any in-flight Roblox sign-in.
+    licenseService.stop();
     // Await both cleanups in parallel, each individually bounded, so quit
     // can never hang indefinitely. Errors are logged, never thrown.
     shutdownInFlight = Effect.runPromise(
@@ -801,14 +919,49 @@ const registerAppLifecycle = Effect.sync(() => {
         [
           // cleanupRojo() never rejects; its internal timeout bounds it.
           Effect.promise(() => cleanupRojo()),
+          // Force any debounced session transcript writes to disk so the last
+          // second of conversation is never lost on quit.
+          Effect.promise(() => flushPendingWrites()),
           disposeOpenCodeRuntimeBounded,
         ],
-        { concurrency: 2 },
+        { concurrency: 3 },
       ).pipe(Effect.catchAll(Effect.logError)),
     ).then(() => {
+      console.debug("[main.ts] before-quit cleanup done — calling app.quit()");
       quitting = true;
       app.quit();
     });
+  });
+});
+
+// `will-quit` fires after the renderer windows have unloaded, so any final
+// session-save IPCs the renderer emitted during its own unload should already
+// be staged in the Main process. Flush them to disk before the process exits.
+//
+// Use `setImmediate` rather than a bare `.then()` microtask: the renderer's
+// `beforeunload` → `ipcRenderer.invoke()` calls are delivered as I/O callbacks
+// (poll phase), which only run *after* all pending microtasks. A microtask
+// chain like `flushPendingWrites().then(() => app.exit(0))` would resolve
+// immediately when the queue is empty and call `app.exit(0)` before those IPC
+// messages were processed — silently dropping the user's last edits.
+// `setImmediate` queues the flush in the *check* phase, which runs after the
+// poll phase drains, giving every IPC message time to land in the pending map.
+app.on("will-quit", (event) => {
+  console.debug("[main.ts] will-quit fired");
+  event.preventDefault();
+  console.debug("[main.ts] will-quit: scheduling setImmediate for flushPendingWrites");
+  setImmediate(() => {
+    console.debug("[main.ts] setImmediate callback — flushing pending writes before app.exit(0)");
+    void flushPendingWrites()
+      .catch((error) => {
+        console.error("[SessionStore] Final flush before quit failed:", error);
+      })
+      // `finally`, not `then`: the app must always exit, even if the flush
+      // rejected — otherwise quit hangs with all windows already destroyed.
+      .finally(() => {
+        console.debug("[main.ts] will-quit: calling app.exit(0) — process terminating");
+        app.exit(0);
+      });
   });
 });
 
@@ -830,7 +983,10 @@ if (!hasSingleInstanceLock) {
   );
   app.quit();
 } else {
-  app.on("second-instance", () => {
+  app.on("second-instance", (_event, argv) => {
+    // Windows forwards `bloxmind://` deep-links through the argv of a second
+    // launch; route them to the auth service (no-op unless a login is pending).
+    licenseService.handleStartupArgs(argv);
     // Ignore events before boot completes (window/IPC handlers not ready) or
     // while shutting down — the primary instance's own boot/quit already
     // satisfies the second launch's intent.
@@ -862,6 +1018,21 @@ if (!hasSingleInstanceLock) {
         catch: (cause) =>
           new DesktopMainError({ message: "Electron failed to become ready", cause }),
       });
+      // Handle a `bloxmind://` deep-link that cold-started this instance
+      // (Windows delivers it in process.argv for the first launch).
+      licenseService.handleStartupArgs(process.argv);
+      // Restore a previously verified license asynchronously; the renderer
+      // pulls the current status via IPC and reacts to later 401 revocations.
+      void licenseService.restoreSession().catch((error: unknown) => {
+        Effect.runFork(Effect.logError(error));
+      });
+      // Rebuild the session index from disk so a corrupt or missing index.json
+      // can never hide previously saved sessions on launch.
+      yield* Effect.tryPromise({
+        try: () => reconcileIndex(),
+        catch: (cause) =>
+          new DesktopMainError({ message: "Failed to reconcile session index", cause }),
+      }).pipe(Effect.catchAll(Effect.logWarning));
       yield* registerIpcHandlers;
       yield* Effect.sync(() => Menu.setApplicationMenu(null));
       yield* createWindow();

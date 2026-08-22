@@ -1,6 +1,7 @@
 import { useUIPreferences } from "@/providers/PreferencesProvider";
 
 const ACCENT_COLORS = [
+  { value: "cyan" as const, label: "Cyan", class: "bg-cyan-500" },
   { value: "indigo" as const, label: "Indigo", class: "bg-indigo-500" },
   { value: "blue" as const, label: "Blue", class: "bg-blue-500" },
   { value: "violet" as const, label: "Violet", class: "bg-violet-500" },

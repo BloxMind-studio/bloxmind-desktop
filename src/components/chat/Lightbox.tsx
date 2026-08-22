@@ -81,7 +81,7 @@ export const LightboxProvider = memo(function LightboxProvider({
     <LightboxContext.Provider value={api}>
       {children}
       {state && (
-        <div className="animate-lightbox-backdrop fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm">
+        <div className="animate-lightbox-backdrop fixed inset-0 z-[100] flex items-center justify-center bg-[#161616]/75 backdrop-blur-sm">
           {/* Backdrop layer: clicking outside the image closes the lightbox.
               Escape + arrow keys are handled by the window listener above. */}
           <button
@@ -167,7 +167,7 @@ export const LightboxProvider = memo(function LightboxProvider({
           )}
 
           {state.urls.length > 1 && (
-            <div className="animate-fade-in-up absolute bottom-6 left-1/2 -translate-x-1/2 rounded-full bg-black/50 px-3 py-1 text-xs font-medium text-white/80 backdrop-blur-sm">
+            <div className="animate-fade-in-up absolute bottom-6 left-1/2 -translate-x-1/2 rounded-full bg-[#161616]/70 px-3 py-1 text-xs font-medium text-[#E6E6E6]/90 backdrop-blur-sm">
               {state.index + 1} / {state.urls.length}
             </div>
           )}

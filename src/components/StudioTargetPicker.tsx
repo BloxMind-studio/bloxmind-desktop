@@ -107,14 +107,17 @@ export default function StudioTargetPicker() {
             {status === "loading" ? (
               <output className="block space-y-2 p-2" aria-label="Loading Studio targets">
                 {[0, 1].map((item) => (
-                  <div key={item} className="h-12 animate-pulse rounded-lg bg-muted" />
+                  <div key={item} className="h-12 animate-shimmer rounded-lg bg-muted" />
                 ))}
               </output>
             ) : status === "empty" ? (
               <div className="px-4 py-7 text-center">
-                <p className="text-sm font-medium">No Studio windows found</p>
+                <p className="text-sm font-medium">
+                  {error ? "Couldn't reach Roblox Studio" : "No Studio windows found"}
+                </p>
                 <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
-                  Studio MCP is connected, but it has not reported an open Studio window yet.
+                  {error ??
+                    "Studio MCP is connected, but it has not reported an open Studio window yet."}
                 </p>
               </div>
             ) : status === "error" ? (
@@ -169,7 +172,7 @@ export default function StudioTargetPicker() {
               </div>
             )}
           </div>
-          {error && status !== "error" ? (
+          {error && status !== "error" && status !== "empty" ? (
             <div
               role="alert"
               className="line-clamp-3 break-words border-t border-red-200 bg-red-50 px-4 py-2.5 text-[10px] leading-4 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"

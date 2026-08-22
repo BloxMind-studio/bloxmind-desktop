@@ -24,7 +24,22 @@ function normalizeMcpResult(result: unknown): any {
 const targetDiscoverySource = `
 ${NORMALIZE_MCP_RESULT}
 async function run({ callTool }: { input: unknown; callTool: (name: string, args: Record<string, unknown>) => Promise<unknown> }) {
-  const data = normalizeMcpResult(await callTool("list_roblox_studios", {})) ?? {};
+  // Surface Studio-side rejections instead of silently producing an empty list:
+  // when the MCP tool answers with isError, the reason lives in the text content
+  // and must reach the user, not masquerade as "no Studio windows yet".
+  const toolResult = await callTool("list_roblox_studios", {});
+  const envelope = toolResult && typeof toolResult === "object" && !Array.isArray(toolResult) ? toolResult : null;
+  if (envelope && envelope.isError === true) {
+    const detail = Array.isArray(envelope.content)
+      ? envelope.content
+          .filter((part) => part && typeof part === "object" && part.type === "text" && typeof part.text === "string")
+          .map((part) => part.text)
+          .join(" ")
+          .trim()
+      : "";
+    return { targets: [], selectedKey: null, error: detail || "Roblox Studio could not be reached" };
+  }
+  const data = normalizeMcpResult(toolResult) ?? {};
   const studios = Array.isArray(data.studios) ? data.studios : [];
   const targets = studios.flatMap((studio: any) => {
     const key = typeof studio?.id === "string" ? studio.id : "";
@@ -36,7 +51,7 @@ async function run({ callTool }: { input: unknown; callTool: (name: string, args
     }];
   });
   const active = studios.find((studio: any) => studio?.active === true);
-  return { targets, selectedKey: typeof active?.id === "string" ? active.id : null };
+  return { targets, selectedKey: typeof active?.id === "string" ? active.id : null, error: null };
 }`;
 
 const targetSelectionSource = `
@@ -44,16 +59,37 @@ ${NORMALIZE_MCP_RESULT}
 async function run({ input, callTool }: { input: any; callTool: (name: string, args: Record<string, unknown>) => Promise<unknown> }) {
   const targetKey = typeof input?.targetKey === "string" ? input.targetKey : "";
   if (!targetKey) throw new Error("A Studio target is required");
-  await callTool("set_active_studio", { studio_id: targetKey });
-  const data = normalizeMcpResult(await callTool("list_roblox_studios", {})) ?? {};
+  // Roblox's Studio MCP exposes no "switch target" tool and never marks a
+  // studio as active; instance ids also rotate when Studio reconnects.
+  // Selection therefore means: confirm the chosen window is still connected
+  // right now and hand back its CURRENT id and label for later calls.
+  const toolResult = await callTool("list_roblox_studios", {});
+  const envelope = toolResult && typeof toolResult === "object" && !Array.isArray(toolResult) ? toolResult : null;
+  if (envelope && envelope.isError === true) {
+    const detail = Array.isArray(envelope.content)
+      ? envelope.content
+          .filter((part) => part && typeof part === "object" && part.type === "text" && typeof part.text === "string")
+          .map((part) => part.text)
+          .join(" ")
+          .trim()
+      : "";
+    throw new Error(
+      detail
+        ? "Roblox Studio rejected the selection request: " + detail
+        : "Roblox Studio rejected the selection request",
+    );
+  }
+  const data = normalizeMcpResult(toolResult) ?? {};
   const studios = Array.isArray(data.studios) ? data.studios : [];
-  const selected = studios.find((studio: any) => studio?.id === targetKey && studio?.active === true);
-  if (!selected) throw new Error("Studio target could not be verified");
+  const selected = studios.find((studio: any) => studio?.id === targetKey);
+  if (!selected || typeof selected.id !== "string") {
+    throw new Error("Studio target could not be verified");
+  }
   return {
     selected: {
-      key: targetKey,
-      label: typeof selected.name === "string" && selected.name ? selected.name : targetKey,
-      detail: "Active",
+      key: selected.id,
+      label: typeof selected.name === "string" && selected.name ? selected.name : selected.id,
+      detail: null,
     },
     verified: true,
   };

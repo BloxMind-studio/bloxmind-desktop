@@ -162,6 +162,7 @@ export function StudioTargetProvider({ children }: { children: ReactNode }) {
       }
       setSelected(nextSelected);
       setStatus(result.targets.length === 0 ? "empty" : "ready");
+      setError(result.error ?? null);
       posthog.capture(
         "studio_target_discovery_succeeded",
         analyticsProperties("studio_target", {

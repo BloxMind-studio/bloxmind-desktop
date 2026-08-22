@@ -1,30 +1,25 @@
 import { Box, Boxes, FolderTree, Map as MapIcon, Play, Swords } from "lucide-react";
 import posthog from "posthog-js/dist/module.full.no-external.js";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
-import { AppsBuilder } from "@/components/AppsBuilder";
-import { AgentWorkbench } from "@/components/agent/AgentWorkbench";
+import AnimationPanel from "@/components/AnimationPanel";
 import { BloxMindLogo } from "@/components/BloxMindLogo";
 import ChatInput from "@/components/ChatInput";
 import ChatMessages from "@/components/ChatMessages";
 import ChatSidebar from "@/components/ChatSidebar";
 import { ReconnectBanner } from "@/components/chat/ReconnectBanner";
 import Explorer from "@/components/Explorer";
-import { GameStudio } from "@/components/GameStudio";
 import LoadingScreen from "@/components/LoadingScreen";
+import MapPanel from "@/components/MapPanel";
 import MeshPanel from "@/components/MeshPanel";
 import PlaytestPanel from "@/components/PlaytestPanel";
 import StudioSetup from "@/components/StudioSetup";
 import StudioTargetPicker from "@/components/StudioTargetPicker";
-import { AgentSettings } from "@/components/settings/AgentSettings";
-import { AppsSettings } from "@/components/settings/AppsSettings";
-import { GamesSettings } from "@/components/settings/GamesSettings";
 import { useCreateSession } from "@/hooks/mutations/useCreateSession";
 import { useSessionStatus } from "@/hooks/useSessionStatuses";
 import { useSessions } from "@/hooks/useSessions";
 import { useStudioConnection } from "@/hooks/useStudioConnection";
 import { analyticsProperties, POSTHOG_PROJECT_TOKEN } from "@/lib/analytics";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
-import { useAppMode } from "@/providers/ModeProvider";
 import {
   SIDE_PANEL_EXIT_MS,
   TOOLTIP_DURATION_MS,
@@ -69,8 +64,8 @@ function ProjectIndexButton() {
         onClick={handleClick}
         disabled={isLoading}
         aria-label={indexed ? summary : "Index project structure"}
-        className="inline-flex h-7 items-center rounded-md border bg-background px-2 text-[11px] font-medium text-muted-foreground transition-[background-color,color] hover:bg-hover/12 disabled:opacity-50"
-        title={indexed ? summary : "Index project structure"}
+        className="flex h-7 w-7 items-center justify-center rounded-md border border-border/60 bg-background text-muted-foreground transition-colors hover:bg-hover/12 disabled:opacity-50"
+        title={indexed ? summary : (error ?? "Index project structure")}
       >
         <div className="relative">
           <FolderTree aria-hidden="true" size={13} />
@@ -83,11 +78,6 @@ function ProjectIndexButton() {
             <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 animate-ping rounded-full bg-amber-400" />
           )}
         </div>
-        {error && (
-          <span className="ml-1.5 text-[11px] text-red-500" title={error}>
-            Error
-          </span>
-        )}
       </button>
 
       {showTooltip && indexed && (
@@ -108,7 +98,6 @@ function ProjectIndexButton() {
 
 function Chat() {
   const { ready, initError, sseConnected, sseFailureCount } = useOpenCodeClient();
-  const { mode } = useAppMode();
   const { activeSessionId, clearSession } = useActiveSession();
   const sessionStatus = useSessionStatus(activeSessionId);
   const isBusy = sessionStatus !== undefined && sessionStatus.type !== "idle";
@@ -124,22 +113,24 @@ function Chat() {
   const { sidebarCollapsed, setSidebarCollapsed, explorerCollapsed, setExplorerCollapsed } =
     useUIPreferences();
   const [showSettings, setShowSettings] = useState(false);
-  const [settingsPanel, setSettingsPanel] = useState<"general" | "apps" | "agent" | "games" | null>(
-    null,
-  );
   const [showStudioSetup, setShowStudioSetup] = useState(false);
+  const [showAnimation, setShowAnimation] = useState(false);
+  const [showMap, setShowMap] = useState(false);
   const [showPlaytest, setShowPlaytest] = useState(false);
   const [showMesh, setShowMesh] = useState(false);
-  const sidePanelOpen = showPlaytest || showMesh || (hasStudioTarget && !explorerCollapsed);
   const desiredSidePanel = showPlaytest
     ? "playtest"
     : showMesh
       ? "mesh"
-      : hasStudioTarget && !explorerCollapsed
-        ? "explorer"
-        : null;
+      : showAnimation
+        ? "animation"
+        : showMap
+          ? "map"
+          : hasStudioTarget && !explorerCollapsed
+            ? "explorer"
+            : null;
   const [renderedSidePanel, setRenderedSidePanel] = useState<
-    "explorer" | "playtest" | "mesh" | null
+    "explorer" | "playtest" | "mesh" | "animation" | "map" | null
   >(null);
   const [sidePanelExiting, setSidePanelExiting] = useState(false);
   const sidePanelTimerRef = useRef<number | null>(null);
@@ -178,7 +169,14 @@ function Chat() {
       }
 
       // Cmd/Ctrl+E → Toggle explorer
-      if (e.key === "e" && hasStudioTarget && !showPlaytest && !showMesh) {
+      if (
+        e.key === "e" &&
+        hasStudioTarget &&
+        !showPlaytest &&
+        !showMesh &&
+        !showAnimation &&
+        !showMap
+      ) {
         e.preventDefault();
         setExplorerCollapsed(!explorerCollapsed);
       }
@@ -190,6 +188,8 @@ function Chat() {
     hasStudioTarget,
     showPlaytest,
     showMesh,
+    showAnimation,
+    showMap,
     createSession,
     setExplorerCollapsed,
     explorerCollapsed,
@@ -257,22 +257,8 @@ function Chat() {
   );
   const handleSessionSelect = useCallback(() => {
     setShowSettings(false);
-    setSettingsPanel(null);
   }, []);
   const handleOpenGeneralSettings = useCallback(() => {
-    setSettingsPanel("general");
-    setShowSettings(true);
-  }, []);
-  const handleOpenAppsSettings = useCallback(() => {
-    setSettingsPanel("apps");
-    setShowSettings(true);
-  }, []);
-  const handleOpenGamesSettings = useCallback(() => {
-    setSettingsPanel("games");
-    setShowSettings(true);
-  }, []);
-  const handleOpenAgentSettings = useCallback(() => {
-    setSettingsPanel("agent");
     setShowSettings(true);
   }, []);
   const handleToggleExplorer = useCallback(() => {
@@ -290,12 +276,50 @@ function Chat() {
       return;
     }
 
+    if (showAnimation) {
+      setShowAnimation(false);
+      setExplorerCollapsed(false);
+      return;
+    }
+
+    if (showMap) {
+      setShowMap(false);
+      setExplorerCollapsed(false);
+      return;
+    }
+
     setExplorerCollapsed(!explorerCollapsed);
-  }, [showPlaytest, showMesh, explorerCollapsed, setExplorerCollapsed]);
+  }, [showPlaytest, showMesh, showAnimation, showMap, explorerCollapsed, setExplorerCollapsed]);
+  const handleOpenAnimation = useCallback(() => {
+    if (!hasStudioTarget) return;
+    posthog.capture("animation_opened", analyticsProperties("animation"));
+    setShowMap(false);
+    setShowMesh(false);
+    setShowPlaytest(false);
+    setShowAnimation(true);
+  }, [hasStudioTarget]);
+  const handleCloseAnimation = useCallback(() => {
+    posthog.capture("animation_closed", analyticsProperties("animation"));
+    setShowAnimation(false);
+  }, []);
+  const handleOpenMap = useCallback(() => {
+    if (!hasStudioTarget) return;
+    posthog.capture("map_opened", analyticsProperties("map"));
+    setShowAnimation(false);
+    setShowMesh(false);
+    setShowPlaytest(false);
+    setShowMap(true);
+  }, [hasStudioTarget]);
+  const handleCloseMap = useCallback(() => {
+    posthog.capture("map_closed", analyticsProperties("map"));
+    setShowMap(false);
+  }, []);
   const handleOpenPlaytest = useCallback(() => {
     if (!hasStudioTarget) return;
     posthog.capture("playtest_opened", analyticsProperties("playtest"));
     setExplorerCollapsed(true);
+    setShowAnimation(false);
+    setShowMap(false);
     setShowMesh(false);
     setShowPlaytest(true);
   }, [hasStudioTarget, setExplorerCollapsed]);
@@ -307,6 +331,8 @@ function Chat() {
     if (!hasStudioTarget) return;
     posthog.capture("mesh_opened", analyticsProperties("mesh"));
     setExplorerCollapsed(true);
+    setShowAnimation(false);
+    setShowMap(false);
     setShowPlaytest(false);
     setShowMesh(true);
   }, [hasStudioTarget, setExplorerCollapsed]);
@@ -316,40 +342,6 @@ function Chat() {
   }, []);
 
   // Main chat UI
-  if (mode !== "roblox") {
-    return (
-      <div data-testid="apps-mode-root" className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        {showSettings && settingsPanel === "apps" && (
-          <Suspense fallback={<LoadingScreen message="Loading settings..." />}>
-            <AppsSettings onClose={handleSessionSelect} />
-          </Suspense>
-        )}
-        {showSettings && settingsPanel === "games" && (
-          <Suspense fallback={<LoadingScreen message="Loading settings..." />}>
-            <GamesSettings onClose={handleSessionSelect} />
-          </Suspense>
-        )}
-        {showSettings && settingsPanel === "agent" && (
-          <Suspense fallback={<LoadingScreen message="Loading settings..." />}>
-            <AgentSettings onClose={handleSessionSelect} />
-          </Suspense>
-        )}
-        <div
-          data-testid="apps-mode-workspace"
-          className={`flex min-h-0 flex-1 flex-col ${showSettings ? "hidden" : ""}`}
-        >
-          {mode === "apps" ? (
-            <AppsBuilder onOpenSettings={handleOpenAppsSettings} />
-          ) : mode === "games" ? (
-            <GameStudio onOpenSettings={handleOpenGamesSettings} />
-          ) : (
-            <AgentWorkbench onOpenSettings={handleOpenAgentSettings} />
-          )}
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden">
       <ChatSidebar
@@ -370,7 +362,7 @@ function Chat() {
           />
         ) : studioConnection.state === "checking" ? (
           <LoadingScreen message="Finding Roblox Studio" animation="dots" />
-        ) : showSettings && settingsPanel === "general" ? (
+        ) : showSettings ? (
           <Suspense fallback={<LoadingScreen message="Loading settings..." />}>
             <Settings onClose={handleSessionSelect} />
           </Suspense>
@@ -461,49 +453,52 @@ function Chat() {
               <div className="ml-2 flex min-w-0 items-center justify-end gap-1.5">
                 <StudioTargetPicker />
                 {hasStudioTarget ? (
-                  <div className="flex shrink-0 items-center gap-1.5">
+                  <div className="flex shrink-0 items-center gap-1">
                     <ProjectIndexButton />
                     <button
                       type="button"
+                      onClick={handleOpenAnimation}
+                      disabled={isBusy}
+                      className="flex h-7 w-7 items-center justify-center rounded-md border border-border/60 bg-background text-muted-foreground transition-colors hover:bg-hover/12 disabled:opacity-40"
+                      title={isBusy ? "Wait for the agent to finish" : "Create an animation"}
+                    >
+                      <Swords aria-hidden="true" size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleOpenMap}
+                      disabled={isBusy}
+                      className="flex h-7 w-7 items-center justify-center rounded-md border border-border/60 bg-background text-muted-foreground transition-colors hover:bg-hover/12 disabled:opacity-40"
+                      title={isBusy ? "Wait for the agent to finish" : "Plan a map"}
+                    >
+                      <MapIcon aria-hidden="true" size={13} />
+                    </button>
+                    <button
+                      type="button"
                       onClick={handleToggleExplorer}
-                      className="inline-flex h-7 items-center rounded-md border bg-background px-2 text-[11px] font-medium text-muted-foreground transition-[background-color,color] hover:bg-hover/12"
+                      className={`flex h-7 w-7 items-center justify-center rounded-md border transition-colors ${!explorerCollapsed ? "border-border bg-hover/12 text-foreground" : "border-border/60 bg-background text-muted-foreground hover:bg-hover/12"}`}
                       aria-pressed={!explorerCollapsed}
                       title={explorerCollapsed ? "Open Explorer" : "Close Explorer"}
                     >
                       <Boxes aria-hidden="true" size={13} />
-                      <span
-                        className={`overflow-hidden whitespace-nowrap transition-[max-width,margin,opacity] duration-200 ${sidePanelOpen ? "ml-0 max-w-0 opacity-0" : "ml-1.5 max-w-16 opacity-100"}`}
-                      >
-                        Explorer
-                      </span>
                     </button>
                     <button
                       type="button"
                       onClick={handleOpenMesh}
                       disabled={isBusy}
-                      className="inline-flex h-7 items-center rounded-md border bg-background px-2 text-[11px] font-medium text-muted-foreground transition-[background-color,color] hover:bg-hover/12 disabled:opacity-40"
+                      className="flex h-7 w-7 items-center justify-center rounded-md border border-border/60 bg-background text-muted-foreground transition-colors hover:bg-hover/12 disabled:opacity-40"
                       title={isBusy ? "Wait for the agent to finish" : "Generate a mesh"}
                     >
                       <Box aria-hidden="true" size={13} />
-                      <span
-                        className={`overflow-hidden whitespace-nowrap transition-[max-width,margin,opacity] duration-200 ${sidePanelOpen ? "ml-0 max-w-0 opacity-0" : "ml-1.5 max-w-16 opacity-100"}`}
-                      >
-                        Mesh
-                      </span>
                     </button>
                     <button
                       type="button"
                       onClick={handleOpenPlaytest}
                       disabled={isBusy}
-                      className="inline-flex h-7 items-center rounded-md bg-foreground px-2 text-[11px] font-semibold text-background transition-opacity hover:opacity-85 disabled:opacity-40"
+                      className="flex h-7 w-7 items-center justify-center rounded-md bg-foreground text-background transition-opacity hover:opacity-85 disabled:opacity-40"
                       title={isBusy ? "Wait for the agent to finish" : "Create a playtest plan"}
                     >
                       <Play aria-hidden="true" size={13} fill="currentColor" />
-                      <span
-                        className={`overflow-hidden whitespace-nowrap transition-[max-width,margin,opacity] duration-200 ${sidePanelOpen ? "ml-0 max-w-0 opacity-0" : "ml-1.5 max-w-16 opacity-100"}`}
-                      >
-                        Playtest
-                      </span>
                     </button>
                   </div>
                 ) : null}
@@ -525,7 +520,11 @@ function Chat() {
         <div
           className={`flex w-72 shrink-0 overflow-hidden ${sidePanelExiting ? "animate-side-panel-out" : "animate-side-panel-in"}`}
         >
-          {renderedSidePanel === "explorer" ? (
+          {renderedSidePanel === "animation" ? (
+            <AnimationPanel onClose={handleCloseAnimation} />
+          ) : renderedSidePanel === "map" ? (
+            <MapPanel onClose={handleCloseMap} />
+          ) : renderedSidePanel === "explorer" ? (
             <Explorer
               key={`${activeSessionId}:${studioTarget?.selected?.key ?? "unselected"}`}
               collapsed={false}

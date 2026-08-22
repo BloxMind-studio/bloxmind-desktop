@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Nunito+Sans:wght@400;500;600;700&family=Orbitron:wght@700;900&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Fira+Code:wght@400;500&family=Nunito+Sans:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap');
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
@@ -10,8 +10,8 @@
 @custom-variant dark (&:is(.dark *));
 
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-   BLOXMIND â€” DIGITAL WORKSHOP THEME
-   A warm, tactile, precision-crafted aesthetic inspired by master craftspersons.
+   BLOXMIND â€” DEEP GLASS THEME
+   A deep, glassy, precision-crafted aesthetic with cyber-cyan accents.
    â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 /* â”€â”€ Typography System â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -21,7 +21,7 @@
   --font-sans: var(--app-font-sans);
   --font-display: var(--app-font-sans);
   --font-serif: var(--app-font-sans);
-  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+  --font-mono: "Fira Code", ui-monospace, "SF Mono", monospace;
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -76,24 +76,24 @@
 /* â”€â”€ Workshop Color Palette â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 :root {
-  /* Cyberpunk neon accent — matrix green for terminal/dev-tool feel */
-  --accent-hsl: 134 50% 50%;
-  --accent-hsl-soft: 134 50% 55%;
-  --accent-hsl-glow: 134 50% 60%;
+  /* Calm arctic-blue accent — cool, low-saturation, easy on the eyes */
+  --accent-hsl: 209 58% 52%;
+  --accent-hsl-soft: 209 58% 58%;
+  --accent-hsl-glow: 209 64% 64%;
   --app-font-scale: 1;
 
-  /* Interactive state colors — selected is themeable, hover is locked neutral grey */
-  --selected: #22C55E;
-  --selected-foreground: #000000;
-  --hover: #E0E0E0;
-  --hover-foreground: #000000;
+  /* Interactive state colors — soft blue selected, neutral grey hover */
+  --selected: #4C8DCB;
+  --selected-foreground: #FBFDFF;
+  --hover: #E4E4E4;
+  --hover-foreground: #1A1A1A;
 
   /* Base text font — overridden by the data-font-style preset at runtime */
-  --app-font-sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --app-font-sans: "Geist", "Segoe UI", system-ui, -apple-system, sans-serif;
 
   /* Texture variables */
-  --grain-opacity: 0.025;
-  --blueprint-opacity: 0.015;
+  --grain-opacity: 0; /* Paper-grain overlay — disabled for a clean, calm surface */
+  --blueprint-opacity: 0; /* Blueprint grid overlay — disabled for a clean, calm surface */
 }
 
 html {
@@ -314,20 +314,55 @@ body::after {
   }
 }
 
+/* Gentle "breathe" — a slow, calming scale pulse for idle/loading states */
+@keyframes breathe {
+  0%, 100% { transform: scale(1); opacity: 0.85; }
+  50%      { transform: scale(1.06); opacity: 1; }
+}
+
+/* Slow ambient drift — barely-there background motion for a living surface */
+@keyframes drift {
+  0%   { background-position: 0% 0%, 100% 100%; }
+  50%  { background-position: 30% 20%, 70% 80%; }
+  100% { background-position: 0% 0%, 100% 100%; }
+}
+
+/* Soft shimmer for skeletons / loading placeholders */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
 .animate-fade-in {
-  animation: fade-in 0.3s ease-out;
+  animation: fade-in 0.4s ease-out;
 }
 
 .animate-fade-in-up {
-  animation: fade-in-up 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: fade-in-up 0.5s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .animate-slide-in-right {
-  animation: slide-in-right 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: slide-in-right 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .animate-scale-in {
-  animation: scale-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: scale-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.animate-breathe {
+  animation: breathe 3.2s ease-in-out infinite;
+}
+
+.animate-shimmer {
+  background-image: linear-gradient(
+    100deg,
+    transparent 20%,
+    color-mix(in oklch, var(--foreground) 8%, transparent) 40%,
+    color-mix(in oklch, var(--foreground) 8%, transparent) 60%,
+    transparent 80%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
 }
 
 /* ── BloxMind logo animations ───────────────────────────────────────────── */
@@ -347,11 +382,10 @@ body::after {
   50%      { opacity: 0.8; }
 }
 
-/* Gentle side-to-side sway for inline thinking indicator */
+/* Calm "breathe" motion for the inline thinking indicator */
 @keyframes BloxMind-think {
-  0%, 100% { transform: translateY(0) rotate(0deg); }
-  25%      { transform: translateY(-1px) rotate(-3deg); }
-  75%      { transform: translateY(-1px) rotate(3deg); }
+  0%, 100% { transform: scale(1); opacity: 0.82; }
+  50%      { transform: scale(1.05); opacity: 1; }
 }
 
 .BloxMind-face {
@@ -359,7 +393,7 @@ body::after {
 }
 
 .BloxMind-face-think {
-  animation: BloxMind-think 1.8s ease-in-out infinite;
+  animation: breathe 3.2s ease-in-out infinite;
 }
 
 .BloxMind-eye {
@@ -375,88 +409,100 @@ body::after {
 
 :root {
   --radius: 0.625rem;
-  /* Light mode — soft canvas with green accent */
-  --background: #F8FAFC;
-  --foreground: #0F172A;
-  --card: #FFFFFF;
-  --card-foreground: #0F172A;
-  --popover: #FFFFFF;
-  --popover-foreground: #0F172A;
-  --primary: #22C55E;
-  --primary-foreground: #000000;
-  --secondary: #E2E8F0;
-  --secondary-foreground: #0F172A;
-  --muted: #F1F5F9;
-  --muted-foreground: #000000;
-  --accent: #22C55E;
-  --accent-foreground: #000000;
-  --destructive: #EF4444;
+  /* Light mode — soft cool canvas, no pure white/black for eye comfort */
+  --background: #E9EEF4;
+  --foreground: #1F2A36;
+  --card: #F6F9FC;
+  --card-foreground: #1F2A36;
+  --popover: #F6F9FC;
+  --popover-foreground: #1F2A36;
+  --primary: #4C8DCB;
+  --primary-foreground: #FBFDFF;
+  --secondary: #DDE5EE;
+  --secondary-foreground: #1F2A36;
+  --muted: #E3E9F1;
+  --muted-foreground: #5A6B7D;
+  --accent: #4C8DCB;
+  --accent-foreground: #FBFDFF;
+  --destructive: #D9695F;
   --destructive-foreground: #FFFFFF;
   --border: #CBD5E1;
   --input: #CBD5E1;
-  --ring: #22C55E;
-  --chart-1: #22C55E;
-  --chart-2: #22D3EE;
-  --chart-3: #10B981;
-  --chart-4: #F59E0B;
-  --chart-5: #EF4444;
-  --sidebar: #F1F5F9;
-  --sidebar-foreground: #0F172A;
-  --sidebar-primary: #22C55E;
-  --sidebar-primary-foreground: #000000;
-  --sidebar-accent: #E2E8F0;
-  --sidebar-accent-foreground: #0F172A;
+  --ring: #4C8DCB;
+  --chart-1: #4C8DCB;
+  --chart-2: #6FB1D6;
+  --chart-3: #7E9CD8;
+  --chart-4: #9DB6D9;
+  --chart-5: #C2A8D6;
+  --sidebar: #E1E8F0;
+  --sidebar-foreground: #1F2A36;
+  --sidebar-primary: #4C8DCB;
+  --sidebar-primary-foreground: #FBFDFF;
+  --sidebar-accent: #D4DEE9;
+  --sidebar-accent-foreground: #1F2A36;
   --sidebar-border: #CBD5E1;
-  --sidebar-ring: #22C55E;
+  --sidebar-ring: #4C8DCB;
 }
 
 /* â”€â”€ Stone palette (dark) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .dark {
-  /* OLED dark — pure black background with neon green accents */
-  --background: #000000;
-  --foreground: #E5E7EB;
-  --card: #0A0A0A;
-  --card-foreground: #E5E7EB;
-  --popover: #0A0A0A;
-  --popover-foreground: #E5E7EB;
-  --primary: #22C55E;
-  --primary-foreground: #000000;
-  --secondary: #1c1c1c;
-  --secondary-foreground: #ffffff;
-  --muted: #1c1c1c;
-  --muted-foreground: #a3a3a3;
-  --accent: #22C55E;
-  --accent-foreground: #000000;
-  --destructive: #EF4444;
-  --destructive-foreground: #FFFFFF;
-  --border: #262626;
-  --input: #262626;
-  --ring: #22C55E;
-  --chart-1: #22C55E;
-  --chart-2: #22D3EE;
-  --chart-3: #10B981;
-  --chart-4: #F59E0B;
-  --chart-5: #EF4444;
-  --sidebar: #000000;
-  --sidebar-foreground: #E5E7EB;
-  --sidebar-primary: #22C55E;
-  --sidebar-primary-foreground: #000000;
-  --sidebar-accent: #1c1c1c;
-  --sidebar-accent-foreground: #E5E7EB;
-  --sidebar-border: #262626;
-  --sidebar-ring: #22C55E;
+  /* Comfortable neutral black — soft near-black with grey surfaces, no blue */
+  --background: #161616;
+  --foreground: #E6E6E6;
+  --card: rgba(255, 255, 255, 0.045);
+  --card-foreground: #E6E6E6;
+  --popover: rgba(26, 26, 26, 0.92);
+  --popover-foreground: #E6E6E6;
+  --primary: #5C9BD4;
+  --primary-foreground: #161616;
+  --secondary: rgba(255, 255, 255, 0.07);
+  --secondary-foreground: #E6E6E6;
+  --muted: rgba(255, 255, 255, 0.06);
+  --muted-foreground: #9A9A9A;
+  --accent: #5C9BD4;
+  --accent-foreground: #161616;
+  --destructive: #E0746A;
+  --destructive-foreground: #161616;
+  --border: rgba(255, 255, 255, 0.10);
+  --input: rgba(255, 255, 255, 0.10);
+  --ring: #5C9BD4;
+  --chart-1: #5C9BD4;
+  --chart-2: #6FB1D6;
+  --chart-3: #7E9CD8;
+  --chart-4: #9DB6D9;
+  --chart-5: #C2A8D6;
+  --sidebar: rgba(18, 18, 18, 0.85);
+  --sidebar-foreground: #E6E6E6;
+  --sidebar-primary: #5C9BD4;
+  --sidebar-primary-foreground: #161616;
+  --sidebar-accent: rgba(255, 255, 255, 0.07);
+  --sidebar-accent-foreground: #E6E6E6;
+  --sidebar-border: rgba(255, 255, 255, 0.10);
+  --sidebar-ring: #5C9BD4;
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    /* Calm, slow transitions so theme/state changes feel relaxing, not abrupt */
+    transition:
+      background-color 0.35s ease,
+      border-color 0.35s ease,
+      color 0.3s ease,
+      fill 0.3s ease,
+      box-shadow 0.3s ease;
   }
   body {
     @apply bg-background text-foreground;
     font-family: var(--app-font-sans);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    /* Subtle neutral ambient wash — barely perceptible, eases eye strain */
+    background-image:
+      radial-gradient(120% 80% at 12% 0%, color-mix(in oklch, var(--foreground) 4%, transparent), transparent 60%),
+      radial-gradient(120% 90% at 100% 100%, color-mix(in oklch, var(--foreground) 3%, transparent), transparent 55%);
+    background-attachment: fixed;
   }
   html, body, #root {
     margin: 0;
@@ -469,17 +515,23 @@ body::after {
 }
 
 /* Text style presets — applied by the Appearance tab via data-font-style */
-:root[data-font-style="quiet"] { --app-font-sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif; }
+:root[data-font-style="quiet"] { --app-font-sans: "Geist", "Segoe UI", system-ui, -apple-system, sans-serif; }
 :root[data-font-style="rounded"] { --app-font-sans: "Nunito Sans", "Verdana", system-ui, sans-serif; }
 :root[data-font-style="classic"] { --app-font-sans: "Georgia", "Times New Roman", serif; }
-:root[data-font-style="mono"] { --app-font-sans: "JetBrains Mono", ui-monospace, "SF Mono", monospace; }
+:root[data-font-style="mono"] { --app-font-sans: "Fira Code", ui-monospace, "SF Mono", monospace; }
 :root[data-font-style="serif"] { --app-font-sans: "Source Serif 4", "Iowan Old Style", "Palatino Linotype", serif; }
 :root[data-font-style="humanist"] { --app-font-sans: "Gill Sans", "Trebuchet MS", system-ui, sans-serif; }
+
+/* Enable Fira Code ligatures for code and logs */
+code, pre, kbd, samp {
+  font-variant-ligatures: contextual;
+  font-feature-settings: "calt" 1, "liga" 1, "cclt" 1;
+}
 
 /* â”€â”€ Base Layer Enhancements â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 @layer base {
-  /* Improved heading hierarchy — Orbitron for display headings */
+  /* Improved heading hierarchy — Geist for display headings */
   h1, h2, h3, h4, h5, h6 {
     @apply font-display font-semibold tracking-tight;
     line-height: 1.2;
@@ -544,7 +596,7 @@ body::after {
     box-shadow: 0 1px 4px 0 oklch(1 0 0 / 0.12), 0 1px 2px -1px oklch(1 0 0 / 0.12);
   }
 
-  /* Card enhancements — subtle ambient shadows */
+  /* Card enhancements — subtle glass surfaces */
   .card {
     @apply backdrop-blur-sm;
     box-shadow: 0 1px 2px 0 oklch(0 0 0 / 0.02), 0 1px 1px -1px oklch(0 0 0 / 0.02);
@@ -552,8 +604,9 @@ body::after {
 
   .dark .card {
     @apply relative;
-    box-shadow: 0 1px 3px 0 oklch(0 0 0 / 0.1);
-    border-color: oklch(0 0 0 / 0.08);
+    box-shadow: 0 1px 3px 0 oklch(0 0 0 / 0.2);
+    border-color: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
   }
 
   /* Input focus: neutral ring glow in light, neon green in dark */
@@ -581,6 +634,7 @@ body::after {
   @apply rounded-lg border backdrop-blur-md;
   box-shadow: 0 2px 6px -2px oklch(0 0 0 / 0.05), 0 1px 2px -1px oklch(0 0 0 / 0.03);
   animation: slide-in-right 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: auto;
 }
 
 .dark [data-sonner-toaster] [data-sonner-toast] {
@@ -647,6 +701,7 @@ body::after {
   background: var(--muted) !important;
   color: var(--muted-foreground) !important;
   transition: all 150ms ease;
+  pointer-events: auto !important;
 }
 
 [data-sonner-toaster] [data-sonner-toast] [data-close-button]:hover {

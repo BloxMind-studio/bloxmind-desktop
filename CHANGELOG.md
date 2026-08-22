@@ -5,6 +5,34 @@ All notable changes to BloxMind are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.98] - 2026-08-22
+
+### Added
+
+- Added **Roblox sign-in and app licensing**: sign in with your Roblox account via
+  OAuth (PKCE + custom `bloxmind://` redirect), a device-bound license check, and
+  a background heartbeat that locks the app when the session is revoked.
+- Added **durable chat history**: sessions are mirrored to disk and rehydrated on
+  launch, so conversations survive the AI engine's in-memory lifecycle.
+- Added **per-session isolated workspaces** for Rojo serve, so each session gets a
+  clean project tree free of stray references from earlier places.
+- Added a rich **Animation request panel** (R15/R6 KeyframeSequence authoring) and
+  a **Map request panel** wired to structured AI generation.
+
+### Changed
+
+- Removed the standalone **Apps Builder**, **Games Studio**, and **Agent Studio**
+  and re-unified the app around a single focused Roblox chat-to-build flow. The
+  shared builder machine and its 3D/agent tooling were rolled back to reduce
+  duplication and maintenance surface.
+- The default theme accent was retuned to a deep slate profile with custom
+  selected/hover color presets.
+
+### Removed
+
+- `@bloxmind-studio/ui` and `@bloxmind-studio/types` workspace packages (no longer
+  used by the app).
+
 ## [0.9.97] - 2026-08-19
 
 ### Added
@@ -19,7 +47,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
-- The **Apps Builder** is now web-only — the 3D-game option was removed; 3D builds
+- The **Apps Builder** is now web-only â€” the 3D-game option was removed; 3D builds
   now live in Games Studio.
 - Unified the Apps and Games builders onto one shared engine (`useStudioBuilder`),
   so fixes and features land once instead of twice.
@@ -30,7 +58,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
-- Added **Agent Studio**: design reusable agents as visual node workflows on a 3D isometric canvas (with a 2D fallback), edit nodes, generate a full agent from a short prompt, and run it — the engine compiles each workflow into a runnable Python script and streams live execution logs with per-node status.
+- Added **Agent Studio**: design reusable agents as visual node workflows on a 3D isometric canvas (with a 2D fallback), edit nodes, generate a full agent from a short prompt, and run it â€” the engine compiles each workflow into a runnable Python script and streams live execution logs with per-node status.
 - Added an **app-mode switcher** (Roblox / Apps / Agent) that persists in `AppConfig` and `localStorage` across restarts.
 - Added an **Apps Builder** for assembling apps from a component palette.
 - Added broad unit coverage for the agent engine, isometric math, both workflow canvases, and the mode switcher.
@@ -55,13 +83,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
-- Checkpoint history is hardened against corrupt or truncated `localStorage` — malformed cache JSON can no longer crash rendering, and hook outputs are memoized.
+- Checkpoint history is hardened against corrupt or truncated `localStorage` â€” malformed cache JSON can no longer crash rendering, and hook outputs are memoized.
 - A failed update check now surfaces a single low-key toast per launch instead of failing silently.
 ## [0.9.94] - 2026-08-11
 
 ### Fixed
 
-- Fixed a runtime crash (`Cannot access 'setDetailedAnalyticsEnabled' before initialization`) that occurred when config data first loaded — the analytics consent handler is now declared before the effect that references it, avoiding a temporal-dead-zone failure
+- Fixed a runtime crash (`Cannot access 'setDetailedAnalyticsEnabled' before initialization`) that occurred when config data first loaded â€” the analytics consent handler is now declared before the effect that references it, avoiding a temporal-dead-zone failure
 
 ## [0.9.93] - 2026-08-11
 
@@ -115,7 +143,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - Fixed the agent getting stuck in retry loops while debugging rigs: the animation skill now forbids guessing engine APIs (e.g. the non-existent Humanoid:GetRigInfo()), requires enumerating Motor6D joints via GetDescendants, enforces Pose-to-Motor6D name matching and Animator-based playback, and mandates static Motor6D.Transform verification instead of brute-forcing simulated keyboard input to catch sub-second states.
 - Fixed the session list silently going stale if the live event stream dropped and reconnected by adding a slow watchdog poll that reconciles it with the server, matching the existing session-status watchdog.
-- Fixed the packaged app reporting "v0.9.5 is available" while already on v0.9.5 — the update check now compares versions numerically and respects electron-updater's update-not-available signal, so it correctly shows "Up to date".
+- Fixed the packaged app reporting "v0.9.5 is available" while already on v0.9.5 â€” the update check now compares versions numerically and respects electron-updater's update-not-available signal, so it correctly shows "Up to date".
 - Fixed AI mesh generation timing out after ~60 seconds by raising the Studio MCP request timeout to 10 minutes and teaching the agent to verify the workspace before retrying a timed-out generation.
 - Fixed Mesh mode's "Enhance with AI" failing with "invalid mesh description" on models without structured-output support by falling back to parsing the text response and surfacing structured-output errors clearly.
 - Fixed "Enhance with AI" pasting raw `<structured_output>` tags into the description by unwrapping leaked tags and accepting renamed JSON keys such as `prompt`.
@@ -133,7 +161,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - Fixed the Explorer failing to load by sending the required `datamodel_type: Edit` parameter to Roblox Studio's `search_game_tree` MCP tool.
 - Fixed the Explorer getting permanently stuck after a first failed sync by retrying automatically with capped backoff.
-- Fixed the Explorer hiding the real failure reason — Studio-side errors now surface in the panel banner instead of a generic message.
+- Fixed the Explorer hiding the real failure reason â€” Studio-side errors now surface in the panel banner instead of a generic message.
 - Fixed checkpoint restore so the agent's context rewinds automatically, removing the need to send a manual "continue from here" message.
 
 ## [0.9.2] - 2026-08-08
@@ -311,22 +339,22 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - OpenCode downloads are restricted to official GitHub release assets and verified with SHA-256 digests before installation and on every cache reuse.
 - Electron runs with context isolation, renderer sandboxing, Node.js integration disabled, validated IPC payloads, and external navigation blocked.
 
-[Unreleased]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.9.9...HEAD
-[0.9.9]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.9.8...v0.9.9
-[0.9.8]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.9.5...v0.9.8
-[0.9.5]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.9.2...v0.9.5
-[0.9.2]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.9.1...v0.9.2
-[0.9.1]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.9.0...v0.9.1
-[0.9.0]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.8.1...v0.9.0
-[0.8.1]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.8.0...v0.8.1
-[0.8.0]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.7.1...v0.8.0
-[0.7.1]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.7.0...v0.7.1
-[0.7.0]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.6.7...v0.7.0
-[0.6.7]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.6.6...v0.6.7
-[0.6.6]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.6.5...v0.6.6
-[0.6.5]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.6.4...v0.6.5
-[0.6.4]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.6.3...v0.6.4
-[0.6.3]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.6.2...v0.6.3
-[0.6.2]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.6.1...v0.6.2
-[0.6.1]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.6.0...v0.6.1
-[0.6.0]: https://github.com/YUouriii/app-BloxMind-ai/compare/v0.5.2...v0.6.0
+[Unreleased]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.9.9...HEAD
+[0.9.9]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.9.8...v0.9.9
+[0.9.8]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.9.5...v0.9.8
+[0.9.5]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.9.2...v0.9.5
+[0.9.2]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.9.1...v0.9.2
+[0.9.1]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.9.0...v0.9.1
+[0.9.0]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.8.1...v0.9.0
+[0.8.1]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.8.0...v0.8.1
+[0.8.0]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.7.1...v0.8.0
+[0.7.1]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.7.0...v0.7.1
+[0.7.0]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.6.7...v0.7.0
+[0.6.7]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.6.6...v0.6.7
+[0.6.6]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.6.5...v0.6.6
+[0.6.5]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.6.4...v0.6.5
+[0.6.4]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.6.3...v0.6.4
+[0.6.3]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.6.2...v0.6.3
+[0.6.2]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.6.1...v0.6.2
+[0.6.1]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.6.0...v0.6.1
+[0.6.0]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.5.2...v0.6.0

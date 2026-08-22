@@ -1,8 +1,9 @@
 # Builder Unification Plan — Apps Studio & Games Studio (D)
 
-**Status:** APPLIED — verified green (tsc clean · 534 unit tests / 62 files pass ·
-hook + GameStudio biome-clean). Manual smoke test on the live UI still recommended
-before release.
+**Status:** SUPERSEDED / ARCHIVED — the unified `useStudioBuilder` machine, Apps
+Studio, Games Studio, and Agent Studio were **rolled back** (see uncommitted working
+tree vs `HEAD`). This plan documents the refactor that was reverted; keep it only
+as historical context.
 
 ## 1. Why
 

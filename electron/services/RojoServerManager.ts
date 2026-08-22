@@ -5,6 +5,11 @@ import { join } from "node:path";
 
 import { Data, Effect, Layer } from "effect";
 
+import {
+  SESSION_PROJECT_JSON,
+  PROJECT_SOURCE_DIRS as SESSION_PROJECT_SOURCE_DIRS,
+} from "../sessionWorkspace";
+
 // ── Types ────────────────────────────────────────────────────────────────
 
 export class RojoError extends Data.TaggedError("RojoError")<{
@@ -28,13 +33,17 @@ export interface RojoLogEntry {
 
 export interface RojoServerManagerOptions {
   binDirectory: string;
+  /** Resolve the isolated workspace directory for a session. */
+  sessionWorkspaceDir?: (sessionId: string) => string;
 }
 
 export interface RojoServerManager {
   readonly start: (workspace: string) => Effect.Effect<RojoStatus, RojoError>;
+  readonly startForSession: (sessionId: string) => Effect.Effect<RojoStatus, RojoError>;
   readonly stop: () => Effect.Effect<void, RojoError>;
   readonly status: () => Effect.Effect<RojoStatus, RojoError>;
   readonly toggle: (workspace: string) => Effect.Effect<RojoStatus, RojoError>;
+  readonly toggleForSession: (sessionId: string) => Effect.Effect<RojoStatus, RojoError>;
   readonly getLogs: () => Effect.Effect<RojoLogEntry[], RojoError>;
   readonly onLog: (listener: (entry: RojoLogEntry) => void) => () => void;
 }
@@ -203,43 +212,34 @@ export function cleanupRojo(): Promise<void> {
   return boundedKill(() => killExisting(), CLEANUP_TIMEOUT_MS);
 }
 
-const DEFAULT_PROJECT_JSON = {
-  name: "BloxMind Project",
-  tree: {
-    $className: "DataModel",
-    ReplicatedStorage: {
-      $className: "ReplicatedStorage",
-      BloxMind: {
-        $path: "src",
-      },
-    },
-    ServerScriptService: {
-      $className: "ServerScriptService",
-      Server: {
-        $path: "server",
-      },
-    },
-    StarterPlayer: {
-      $className: "StarterPlayer",
-      StarterPlayerScripts: {
-        $className: "StarterPlayerScripts",
-        Client: {
-          $path: "client",
-        },
-      },
-    },
-  },
-};
+const PROJECT_SOURCE_DIRS = SESSION_PROJECT_SOURCE_DIRS;
 
-async function ensureProjectJson(workspace: string): Promise<void> {
+async function ensureProjectJson(workspace: string, overwrite: boolean): Promise<void> {
   const projectFile = join(workspace, "default.project.json");
+  const writeProject = async () => {
+    // The project tree references src/, server/ and client/ via $path. Rojo 7.x
+    // refuses to serve when a $path directory is missing, so create them first.
+    // Sessions start from an empty tree this way and can never inherit scripts
+    // from an earlier place/session.
+    for (const dir of PROJECT_SOURCE_DIRS) {
+      await mkdir(join(workspace, dir), { recursive: true });
+    }
+    await writeFile(projectFile, JSON.stringify(SESSION_PROJECT_JSON, null, 2), "utf8");
+  };
+  if (overwrite) {
+    // Always regenerate so a session can never inherit legacy tree references
+    // (old scripts like ForceR6 / CombatAnimations) from a previous place.
+    await mkdir(workspace, { recursive: true });
+    await writeProject();
+    return;
+  }
   try {
     await access(projectFile);
   } catch {
     // File doesn't exist — create it with a standard Roblox project structure.
     // Ensure the workspace directory exists first.
     await mkdir(workspace, { recursive: true });
-    await writeFile(projectFile, JSON.stringify(DEFAULT_PROJECT_JSON, null, 2), "utf8");
+    await writeProject();
   }
 }
 
@@ -281,8 +281,13 @@ function buildManager(options: RojoServerManagerOptions): RojoServerManager {
       }
     });
 
-  const start = (workspace: string): Effect.Effect<RojoStatus, RojoError> =>
+  const spawnServer = (params: {
+    workspace: string;
+    port: number;
+    overwriteProject: boolean;
+  }): Effect.Effect<RojoStatus, RojoError> =>
     Effect.gen(function* () {
+      const { workspace, port, overwriteProject } = params;
       // Gracefully stop any existing process and wait for the port to be
       // released before binding a new one. This prevents "Address already in use".
       if (runtime) {
@@ -291,9 +296,10 @@ function buildManager(options: RojoServerManagerOptions): RojoServerManager {
         yield* Effect.sleep("300 millis");
       }
 
-      // Ensure default.project.json exists — rojo serve requires it.
+      // Ensure default.project.json exists — rojo serve requires it. Sessions
+      // overwrite it so a new session starts from a clean, isolated tree.
       yield* Effect.tryPromise({
-        try: () => ensureProjectJson(workspace),
+        try: () => ensureProjectJson(workspace, overwriteProject),
         catch: (cause) =>
           new RojoError({ message: "Failed to create default.project.json", cause }),
       });
@@ -316,7 +322,7 @@ function buildManager(options: RojoServerManagerOptions): RojoServerManager {
       const serveArgs = [
         "serve",
         "--port",
-        String(DEFAULT_ROJO_PORT),
+        String(port),
         "--address",
         "127.0.0.1",
         "default.project.json",
@@ -372,7 +378,7 @@ function buildManager(options: RojoServerManagerOptions): RojoServerManager {
       runtime = {
         child,
         workspace,
-        port: DEFAULT_ROJO_PORT,
+        port,
         clientConnected: false,
         serverError: null,
         logs: [],
@@ -409,7 +415,7 @@ function buildManager(options: RojoServerManagerOptions): RojoServerManager {
               if (ROJO_LISTENING_REGEX.test(clean)) {
                 pending = false;
                 cleanup();
-                const port = detectPort(text) ?? DEFAULT_ROJO_PORT;
+                const port = detectPort(text) ?? params.port;
                 if (runtime) {
                   runtime.port = port;
                   runtime.serverError = null;
@@ -496,8 +502,61 @@ function buildManager(options: RojoServerManagerOptions): RojoServerManager {
       };
     });
 
+  const start = (workspace: string): Effect.Effect<RojoStatus, RojoError> =>
+    spawnServer({ workspace, port: DEFAULT_ROJO_PORT, overwriteProject: false });
+
+  const startForSession = (sessionId: string): Effect.Effect<RojoStatus, RojoError> =>
+    Effect.gen(function* () {
+      if (!options.sessionWorkspaceDir) {
+        return yield* Effect.fail(
+          new RojoError({ message: "Per-session Rojo isolation is not configured" }),
+        );
+      }
+      // Serve the session's isolated workspace on the default port. The Rojo
+      // Studio plugin only connects to the host:port in its settings (34872),
+      // so a per-session port would leave Studio permanently unable to find
+      // the server. Isolation comes from the workspace, not the port: each
+      // switch kills the previous server and serves a freshly generated,
+      // empty project so nothing leaks from an earlier session.
+      const workspace = options.sessionWorkspaceDir(sessionId);
+      return yield* spawnServer({ workspace, port: DEFAULT_ROJO_PORT, overwriteProject: true });
+    });
+
+  const toggle = (workspace: string): Effect.Effect<RojoStatus, RojoError> =>
+    Effect.gen(function* () {
+      if (runtime && runtime.child.exitCode === null) {
+        yield* Effect.promise(() => killExisting());
+        yield* Effect.logInfo("[rojo] toggled off");
+        return {
+          active: false,
+          port: null,
+          error: null,
+          workspace: null,
+          clientConnected: false,
+        };
+      }
+      return yield* start(workspace);
+    });
+
+  const toggleForSession = (sessionId: string): Effect.Effect<RojoStatus, RojoError> =>
+    Effect.gen(function* () {
+      if (runtime && runtime.child.exitCode === null) {
+        yield* Effect.promise(() => killExisting());
+        yield* Effect.logInfo("[rojo] toggled off");
+        return {
+          active: false,
+          port: null,
+          error: null,
+          workspace: null,
+          clientConnected: false,
+        };
+      }
+      return yield* startForSession(sessionId);
+    });
+
   return {
     start,
+    startForSession,
     stop: () =>
       Effect.gen(function* () {
         yield* Effect.promise(() => killExisting());
@@ -520,21 +579,8 @@ function buildManager(options: RojoServerManagerOptions): RojoServerManager {
           clientConnected: runtime.clientConnected,
         };
       }),
-    toggle: (workspace: string) =>
-      Effect.gen(function* () {
-        if (runtime && runtime.child.exitCode === null) {
-          yield* Effect.promise(() => killExisting());
-          yield* Effect.logInfo("[rojo] toggled off");
-          return {
-            active: false,
-            port: null,
-            error: null,
-            workspace: null,
-            clientConnected: false,
-          };
-        }
-        return yield* start(workspace);
-      }),
+    toggle,
+    toggleForSession,
     getLogs: () => Effect.sync(() => (runtime ? [...runtime.logs] : [])),
     onLog: (listener: (entry: RojoLogEntry) => void) => {
       if (!runtime) return () => {};

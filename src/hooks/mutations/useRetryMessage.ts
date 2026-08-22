@@ -70,7 +70,7 @@ export function useRetryMessage() {
       for (let i = assistantIndex - 1; i >= 0; i--) {
         const candidateId = ids[i];
         const candidate = cache?.messagesById[candidateId];
-        if (!candidate || candidate.info.role !== "user") continue;
+        if (candidate?.info.role !== "user") continue;
         if (
           candidate.parts.some(
             (p) => p.type === "text" && (p.text ?? "").startsWith("[SYSTEM_NOTIFICATION"),

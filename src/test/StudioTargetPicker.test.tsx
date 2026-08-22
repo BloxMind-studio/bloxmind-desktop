@@ -169,6 +169,20 @@ describe("StudioTargetPicker", () => {
     ).toBeVisible();
   });
 
+  it("surfaces the Studio MCP error when no windows can be reached", async () => {
+    discoverStudioTargets.mockResolvedValue({
+      targets: [],
+      selectedKey: null,
+      error:
+        "Unable to reach Roblox Studio right now. Ask the user to confirm that Studio is running with the MCP server enabled in Assistant settings.",
+    });
+    renderPicker();
+    fireEvent.click(await screen.findByRole("button", { name: /No Studios/ }));
+
+    expect(screen.getByText("Couldn't reach Roblox Studio")).toBeVisible();
+    expect(screen.getByText(/MCP server enabled in Assistant settings/)).toBeVisible();
+  });
+
   it("keeps the prior target when verification fails", async () => {
     discoverStudioTargets.mockResolvedValue({
       targets: [
