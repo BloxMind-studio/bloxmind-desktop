@@ -29,6 +29,15 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      - name: Cache Electron binaries
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+            ~/AppData/Local/electron/Cache
+          key: ${{ runner.os }}-electron-${{ hashFiles('**/pnpm-lock.yaml') }}
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -51,6 +60,15 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+
+      - name: Cache Electron binaries
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+            ~/AppData/Local/electron/Cache
+          key: ${{ runner.os }}-electron-${{ hashFiles('**/pnpm-lock.yaml') }}
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -91,6 +109,15 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Cache Electron binaries
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+            ~/AppData/Local/electron/Cache
+          key: ${{ runner.os }}-electron-${{ hashFiles('**/pnpm-lock.yaml') }}
 
       - name: Install Playwright browsers
         run: pnpm exec playwright install --with-deps chromium
