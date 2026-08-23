@@ -39,6 +39,10 @@ export async function installAppMocks(page: Page): Promise<void> {
       maxTokens: 4096,
       systemPrompt: "",
       customApiEndpoint: null,
+      fontStyle: "quiet",
+      sidebarCollapsed: false,
+      explorerCollapsed: false,
+      customApiEndpoint: null,
       autoScroll: true,
       enterToSend: true,
       notificationsEnabled: true,
@@ -64,6 +68,7 @@ export async function installAppMocks(page: Page): Promise<void> {
           workspace: "e2e-workspace",
         }),
       onOpenCodeStartupProgress: () => () => {},
+      onWindowMaximizedChange: () => () => {},
       getVersion: () => Promise.resolve("0.0.0-e2e"),
       loadConfig: () => Promise.resolve(loadConfig()),
       patchConfig: (patch: Record<string, unknown>) => {

@@ -24,7 +24,9 @@ export function WindowControls() {
     const unsubscribe = desktop.onWindowMaximizedChange((value) => setMaximized(value));
     return () => {
       disposed = true;
-      unsubscribe();
+      // Bridge implementations always hand back a synchronous unsubscribe; the
+      // guard keeps a contract-drifting mock from white-screening the app.
+      if (typeof unsubscribe === "function") unsubscribe();
     };
   }, []);
 
