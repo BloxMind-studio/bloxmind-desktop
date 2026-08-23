@@ -37,6 +37,7 @@ export function useEnhanceMeshBrief() {
         {
           title: "Mesh brief enhancement (temporary)",
           agent: selectedAgent ?? undefined,
+          metadata: { BloxMindHidden: true, purpose: "enhance" },
           permission: [{ permission: "*", pattern: "*", action: "deny" }],
         },
         { throwOnError: true },

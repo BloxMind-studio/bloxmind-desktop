@@ -1,4 +1,9 @@
-import { parseEnhancedText, resolveEnhancedText, TEXT_ENHANCEMENT_SCHEMA } from "./enhancePrompt";
+import {
+  parseEnhancedText,
+  resolveEnhancedObject,
+  resolveEnhancedText,
+  TEXT_ENHANCEMENT_SCHEMA,
+} from "./enhancePrompt";
 
 export type MapMode = "arena" | "obby" | "showcase" | "hub" | "tycoon" | "roleplay" | "custom";
 
@@ -78,4 +83,38 @@ export function resolveEnhancedMapBrief(
   parts: Parameters<typeof resolveEnhancedText>[1],
 ): string {
   return resolveEnhancedText(info, parts, "map");
+}
+
+export const MAP_FIELDS_ENHANCEMENT_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "brief",
+    "playerCount",
+    "traversalTime",
+    "themePillars",
+    "landmarks",
+    "zones",
+    "notes",
+  ],
+  properties: {
+    brief: { type: "string", minLength: 1 },
+    playerCount: { type: "string" },
+    traversalTime: { type: "string" },
+    themePillars: { type: "string" },
+    landmarks: { type: "string" },
+    zones: { type: "string" },
+    notes: { type: "string" },
+  },
+} as const;
+
+export function parseEnhancedMapFields(value: unknown) {
+  return resolveEnhancedObject({ structured: value }, undefined);
+}
+
+export function resolveEnhancedMapFields(
+  info: Parameters<typeof resolveEnhancedObject>[0],
+  parts: Parameters<typeof resolveEnhancedObject>[1],
+) {
+  return resolveEnhancedObject(info, parts);
 }

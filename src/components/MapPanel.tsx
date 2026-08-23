@@ -90,7 +90,13 @@ export default function MapPanel({ onClose }: { onClose: () => void }) {
     );
     try {
       const enhanced = await enhance.mutateAsync({ brief, mode });
-      setBrief(enhanced);
+      if ("brief" in enhanced) setBrief(enhanced.brief);
+      if (enhanced.playerCount) setPlayerCount(enhanced.playerCount);
+      if (enhanced.traversalTime) setTraversalTime(enhanced.traversalTime);
+      if (enhanced.themePillars) setThemePillars(enhanced.themePillars);
+      if (enhanced.landmarks) setLandmarks(enhanced.landmarks);
+      if (enhanced.zones) setZones(enhanced.zones);
+      if (enhanced.notes) setNotes(enhanced.notes);
       posthog.capture(
         "map_enhance_succeeded",
         analyticsProperties(

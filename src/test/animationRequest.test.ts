@@ -4,6 +4,7 @@ import {
   formatAnimationPrompt,
   parseEnhancedAnimationBrief,
   resolveEnhancedAnimationBrief,
+  resolveEnhancedAnimationFields,
 } from "@/lib/animationRequest";
 
 describe("formatAnimationPrompt", () => {
@@ -79,5 +80,46 @@ describe("resolveEnhancedAnimationBrief", () => {
 
   it("throws on a completely empty response", () => {
     expect(() => resolveEnhancedAnimationBrief(undefined, undefined)).toThrow(/empty/i);
+  });
+});
+
+describe("resolveEnhancedAnimationFields", () => {
+  const textPart = (text: string) => ({ type: "text", text });
+
+  it("resolves a structured multi-field payload into every animation field", () => {
+    const out = resolveEnhancedAnimationFields(
+      {
+        structured: {
+          brief: "a heavy sword slash",
+          duration: "1.5s",
+          beats: "wind-up, impact, recover",
+          notes: "no root motion",
+        },
+      },
+      undefined,
+    );
+    expect(out).toEqual({
+      brief: "a heavy sword slash",
+      duration: "1.5s",
+      beats: "wind-up, impact, recover",
+      notes: "no root motion",
+    });
+  });
+
+  it("parses a multi-field JSON payload from text parts", () => {
+    const out = resolveEnhancedAnimationFields(undefined, [
+      textPart(JSON.stringify({ brief: "punch", beats: "wind-up, strike" })),
+    ]);
+    expect(out.brief).toBe("punch");
+    expect(out.beats).toBe("wind-up, strike");
+  });
+
+  it("falls back to a single brief in plain prose", () => {
+    const out = resolveEnhancedAnimationFields(undefined, [textPart("A looping victory dance.")]);
+    expect(out).toEqual({ brief: "A looping victory dance." });
+  });
+
+  it("throws on a completely empty response", () => {
+    expect(() => resolveEnhancedAnimationFields(undefined, undefined)).toThrow(/empty/i);
   });
 });

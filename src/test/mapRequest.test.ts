@@ -4,6 +4,7 @@ import {
   MAP_MODES,
   parseEnhancedMapBrief,
   resolveEnhancedMapBrief,
+  resolveEnhancedMapFields,
 } from "@/lib/mapRequest";
 
 describe("formatMapPrompt", () => {
@@ -75,5 +76,52 @@ describe("resolveEnhancedMapBrief", () => {
 
   it("throws on a completely empty response", () => {
     expect(() => resolveEnhancedMapBrief(undefined, undefined)).toThrow(/empty/i);
+  });
+});
+
+describe("resolveEnhancedMapFields", () => {
+  const textPart = (text: string) => ({ type: "text", text });
+
+  it("resolves a structured multi-field payload into every map field", () => {
+    const out = resolveEnhancedMapFields(
+      {
+        structured: {
+          brief: "a neon arena",
+          playerCount: "8 players",
+          traversalTime: "2 min",
+          themePillars: "neon, water",
+          landmarks: "tower",
+          zones: "spawn, loop",
+          notes: "readable",
+        },
+      },
+      undefined,
+    );
+    expect(out).toEqual({
+      brief: "a neon arena",
+      playerCount: "8 players",
+      traversalTime: "2 min",
+      themePillars: "neon, water",
+      landmarks: "tower",
+      zones: "spawn, loop",
+      notes: "readable",
+    });
+  });
+
+  it("parses a multi-field JSON payload from text parts", () => {
+    const out = resolveEnhancedMapFields(undefined, [
+      textPart(JSON.stringify({ brief: "arena", notes: "fair 4v4" })),
+    ]);
+    expect(out.brief).toBe("arena");
+    expect(out.notes).toBe("fair 4v4");
+  });
+
+  it("falls back to a single brief in plain prose", () => {
+    const out = resolveEnhancedMapFields(undefined, [textPart("A dusk-lit neon arena.")]);
+    expect(out).toEqual({ brief: "A dusk-lit neon arena." });
+  });
+
+  it("throws on a completely empty response", () => {
+    expect(() => resolveEnhancedMapFields(undefined, undefined)).toThrow(/empty/i);
   });
 });

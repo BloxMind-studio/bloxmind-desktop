@@ -1,4 +1,9 @@
-import { parseEnhancedText, resolveEnhancedText, TEXT_ENHANCEMENT_SCHEMA } from "./enhancePrompt";
+import {
+  parseEnhancedText,
+  resolveEnhancedObject,
+  resolveEnhancedText,
+  TEXT_ENHANCEMENT_SCHEMA,
+} from "./enhancePrompt";
 
 export type AnimationRig = "r15" | "r6" | "both";
 
@@ -110,4 +115,27 @@ export function resolveEnhancedAnimationBrief(
   parts: Parameters<typeof resolveEnhancedText>[1],
 ): string {
   return resolveEnhancedText(info, parts, "animation");
+}
+
+export const ANIMATION_FIELDS_ENHANCEMENT_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["brief", "duration", "beats", "notes"],
+  properties: {
+    brief: { type: "string", minLength: 1 },
+    duration: { type: "string" },
+    beats: { type: "string" },
+    notes: { type: "string" },
+  },
+} as const;
+
+export function parseEnhancedAnimationFields(value: unknown) {
+  return resolveEnhancedObject({ structured: value }, undefined);
+}
+
+export function resolveEnhancedAnimationFields(
+  info: Parameters<typeof resolveEnhancedObject>[0],
+  parts: Parameters<typeof resolveEnhancedObject>[1],
+) {
+  return resolveEnhancedObject(info, parts);
 }

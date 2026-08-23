@@ -1,9 +1,9 @@
 import { useMutation } from "@tanstack/react-query";
 import {
-  MAP_BRIEF_ENHANCEMENT_SCHEMA,
+  MAP_FIELDS_ENHANCEMENT_SCHEMA,
   type MapMode,
   mapModeOption,
-  resolveEnhancedMapBrief,
+  resolveEnhancedMapFields,
 } from "@/lib/mapRequest";
 import { splitModelKey } from "@/lib/splitModelKey";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
@@ -37,6 +37,7 @@ export function useEnhanceMapBrief() {
         {
           title: "Map brief enhancement (temporary)",
           agent: selectedAgent ?? undefined,
+          metadata: { BloxMindHidden: true, purpose: "enhance" },
           permission: [{ permission: "*", pattern: "*", action: "deny" }],
         },
         { throwOnError: true },
@@ -54,21 +55,21 @@ export function useEnhanceMapBrief() {
             variant: selectedVariant ?? undefined,
             format: {
               type: "json_schema",
-              schema: MAP_BRIEF_ENHANCEMENT_SCHEMA,
+              schema: MAP_FIELDS_ENHANCEMENT_SCHEMA,
               retryCount: 2,
             },
             system:
-              "You rewrite short ideas into precise prompts for building Roblox maps. Return only the requested structured data. Never call tools and never modify files or Roblox Studio.",
+              "You expand short ideas into a complete, detailed Roblox map build brief. Return the requested JSON. Never call tools and never modify files or Roblox Studio.",
             parts: [
               {
                 type: "text",
-                text: `Rewrite the map idea below into one detailed, immersive map brief (2-4 sentences) for a Roblox map in the "${modeOption.label}" mode (${modeOption.hint}). Describe the theme, atmosphere, named zones, key landmarks, player flow, scale, and the signature gameplay moment. Do not mention Roblox tools.\n\nIDEA\n${brief.trim()}`,
+                text: `Expand the map idea below into a full build brief for a Roblox map in "${modeOption.label}" mode (${modeOption.hint}). Fill EVERY field: rewrite the brief as an immersive 2-4 sentence summary (theme, atmosphere, signature gameplay moment); propose a player count; propose a traversal time; list theme pillars; list landmarks; list zones; and make notes covering flow, scale, and pacing. Be concrete and specific.\n\nIDEA\n${brief.trim()}`,
               },
             ],
           },
           { throwOnError: true },
         );
-        return resolveEnhancedMapBrief(response.data?.info, response.data?.parts);
+        return resolveEnhancedMapFields(response.data?.info, response.data?.parts);
       } finally {
         await client.session.delete({ sessionID: enhancementSessionId }).catch(() => undefined);
       }

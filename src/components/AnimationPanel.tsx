@@ -89,7 +89,10 @@ export default function AnimationPanel({ onClose }: { onClose: () => void }) {
     );
     try {
       const enhanced = await enhance.mutateAsync({ brief, kind, rig });
-      setBrief(enhanced);
+      if ("brief" in enhanced) setBrief(enhanced.brief);
+      if (enhanced.duration) setDuration(enhanced.duration);
+      if (enhanced.beats) setBeats(enhanced.beats);
+      if (enhanced.notes) setNotes(enhanced.notes);
       posthog.capture(
         "animation_enhance_succeeded",
         analyticsProperties(

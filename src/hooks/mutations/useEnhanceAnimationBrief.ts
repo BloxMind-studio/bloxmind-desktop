@@ -1,11 +1,11 @@
 import { useMutation } from "@tanstack/react-query";
 import {
-  ANIMATION_BRIEF_ENHANCEMENT_SCHEMA,
+  ANIMATION_FIELDS_ENHANCEMENT_SCHEMA,
   type AnimationKind,
   type AnimationRig,
   animationKindOption,
   animationRigOption,
-  resolveEnhancedAnimationBrief,
+  resolveEnhancedAnimationFields,
 } from "@/lib/animationRequest";
 import { splitModelKey } from "@/lib/splitModelKey";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
@@ -40,6 +40,7 @@ export function useEnhanceAnimationBrief() {
         {
           title: "Animation brief enhancement (temporary)",
           agent: selectedAgent ?? undefined,
+          metadata: { BloxMindHidden: true, purpose: "enhance" },
           permission: [{ permission: "*", pattern: "*", action: "deny" }],
         },
         { throwOnError: true },
@@ -58,21 +59,21 @@ export function useEnhanceAnimationBrief() {
             variant: selectedVariant ?? undefined,
             format: {
               type: "json_schema",
-              schema: ANIMATION_BRIEF_ENHANCEMENT_SCHEMA,
+              schema: ANIMATION_FIELDS_ENHANCEMENT_SCHEMA,
               retryCount: 2,
             },
             system:
-              "You rewrite short ideas into precise prompts for authoring Roblox character animations. Return only the requested structured data. Never call tools and never modify files or Roblox Studio.",
+              "You expand short ideas into a complete, detailed Roblox character animation brief. Return the requested JSON. Never call tools and never modify files or Roblox Studio.",
             parts: [
               {
                 type: "text",
-                text: `Rewrite the animation idea below into one detailed animation brief (2-4 sentences) for a Roblox character animation of type "${kindOption.label}" (${kindOption.hint}) targeting the ${rigOption.label} rig (${rigOption.hint}). Describe the key poses, timing, anticipation, follow-through, mood, and any loop/beat requirements. Do not mention Roblox tools.\n\nIDEA\n${brief.trim()}`,
+                text: `Expand the animation idea below into a full brief for a Roblox character animation of type "${kindOption.label}" (${kindOption.hint}) targeting the ${rigOption.label} rig (${rigOption.hint}). Fill EVERY field: rewrite the brief as a concrete 2-4 sentence motion description (key poses, mood, feel); propose a duration; list key beats; and make notes covering timing, anticipation, follow-through, loop, and rig constraints. Be specific and actionable.\n\nIDEA\n${brief.trim()}`,
               },
             ],
           },
           { throwOnError: true },
         );
-        return resolveEnhancedAnimationBrief(response.data?.info, response.data?.parts);
+        return resolveEnhancedAnimationFields(response.data?.info, response.data?.parts);
       } finally {
         await client.session.delete({ sessionID: enhancementSessionId }).catch(() => undefined);
       }
