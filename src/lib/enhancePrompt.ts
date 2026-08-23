@@ -59,6 +59,27 @@ function unwrapStructuredOutputTag(text: string): string {
 }
 
 /**
+ * Pulls a JSON object out of a value even when it is embedded in a larger
+ * prose string (`"Here is your brief:\n{...}\n"`). Schema-less models often
+ * wrap their structured answer in a sentence or two, which makes a plain
+ * `JSON.parse` of the whole text fail; finding the first `{` to the last `}`
+ * and parsing just that slice recovers the object. Also turns a JSON string
+ * held in `info.structured` into a real object.
+ */
+function extractEmbeddedJsonObject(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  const text = value.trim();
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start === -1 || end <= start) return value;
+  try {
+    return JSON.parse(text.slice(start, end + 1));
+  } catch {
+    return value;
+  }
+}
+
+/**
  * Resolve the enhanced brief from a prompt response. Structured output is
  * preferred, but providers without schema-mode support leave `structured`
  * undefined (sometimes with a StructuredOutputError on the message) while the
@@ -228,7 +249,7 @@ export function resolveEnhancedObject<F extends string>(
   };
 
   if (info?.structured !== undefined) {
-    const structured = accept(normalize(info.structured, fieldKeys));
+    const structured = accept(normalize(extractEmbeddedJsonObject(info.structured), fieldKeys));
     if (structured) return structured;
   }
 
@@ -261,6 +282,13 @@ export function resolveEnhancedObject<F extends string>(
       if (parsed) return parsed;
     } catch {
       // Not JSON (or not the expected shape) - try the next candidate.
+    }
+    // Schema-less models often wrap the JSON in prose; parse the object that
+    // sits inside the text so multi-field enhancement still works.
+    const extracted = extractEmbeddedJsonObject(candidateText);
+    if (extracted !== candidateText) {
+      const parsed = accept(normalize(extracted, fieldKeys));
+      if (parsed) return parsed;
     }
   }
 

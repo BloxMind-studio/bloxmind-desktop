@@ -148,6 +148,26 @@ describe("resolveEnhancedMapFields", () => {
     expect(out.notes).toBe("keep the arena fair");
   });
 
+  it("recovers all fields when the model wraps the JSON in prose", () => {
+    const json = JSON.stringify({
+      brief: "an abandoned hilltop hospital under failing emergency lights",
+      playerCount: "6v6",
+      traversalTime: "2 minutes",
+      themePillars: ["sterile decay", "light as information"],
+      landmarks: ["the last lamp", "wrecked med-evac chopper"],
+      zones: ["central atrium", "rooftop helipad"],
+      notes: "CODE BLUE cycles re-route the fight every 90 seconds",
+    });
+    const out = resolveEnhancedMapFields(undefined, [
+      textPart(`Here is your enhanced map brief:\n${json}\nLet me know if you want changes.`),
+    ]);
+    expect(out.playerCount).toBe("6v6");
+    expect(out.traversalTime).toBe("2 minutes");
+    expect(out.themePillars).toBe("sterile decay, light as information");
+    expect(out.landmarks).toBe("the last lamp, wrecked med-evac chopper");
+    expect(out.notes).toBe("CODE BLUE cycles re-route the fight every 90 seconds");
+  });
+
   it("falls back to a single brief in plain prose", () => {
     const out = resolveEnhancedMapFields(undefined, [textPart("A dusk-lit neon arena.")]);
     expect(out).toEqual({ brief: "A dusk-lit neon arena." });
