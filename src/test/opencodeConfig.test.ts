@@ -37,6 +37,12 @@ describe("OpenCode configuration", () => {
     expect(prompt).toMatch(/wally\.toml/i);
     expect(prompt).toMatch(/Packages folder/i);
     expect(prompt).toMatch(/batch related edits into one pass/i);
+    // The Studio MCP exposes its own assistant skills; the prompt must point
+    // the agent at them so both skill families get used.
+    expect(prompt).toContain("rbx-docs-search");
+    expect(prompt).toContain("rbx-scene-analysis");
+    expect(prompt).toContain("rbx-unit-test");
+    expect(prompt).toContain("rbx-perf-profiling");
   });
 
   it("focuses sampling for more consistent Studio output", () => {
@@ -45,6 +51,10 @@ describe("OpenCode configuration", () => {
 
   it("allows the agent to load the managed skill pack without prompting", () => {
     expect(createOpenCodeConfig(broker).permission.skill).toEqual({ "*": "allow" });
+  });
+
+  it("points the skill loader at the app-managed pack deterministically", () => {
+    expect(createOpenCodeConfig(broker).skills).toEqual({ paths: [".opencode/skills"] });
   });
 
   it("keeps bash on ask so git or shell commands require in-app approval", () => {

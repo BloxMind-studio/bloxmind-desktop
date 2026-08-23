@@ -43,6 +43,12 @@ export function createOpenCodeConfig(broker: { url: string; token: string }) {
       skill: { "*": "allow" },
       bash: "ask",
     },
+    // Point the skill loader explicitly at the app-managed pack so discovery is
+    // deterministic and never depends on ambient OpenCode config folders where
+    // stale/foreign SKILL.md files could shadow the shipped skills.
+    skills: {
+      paths: [".opencode/skills"],
+    },
     agent: {
       studio: {
         mode: "primary",
@@ -73,6 +79,7 @@ export function createOpenCodeConfig(broker: { url: string; token: string }) {
           "- Lighting: `Lighting.Technology = Enum.Technology.Future`. `Sky` has NO `SunRayColor` — use `Sky.SunAngularSize`/`Sky.SunTextureId`/skybox faces. `SunRaysEffect` (under Lighting) has NO `Color` — use `SunRaysIntensity`/`SunRaysSize`/`SunRaysSpread`.\n" +
           "- Luau: `Vector3.new(x, y, z)` takes exactly 3 numbers; initialize every variable before use (nil arithmetic throws 'attempt to perform arithmetic on nil'); keep scripts syntactically valid or `execute_luau` returns 'Failed to parse command code'. Prefer small, verified snippets over one huge script.\n\n" +
           "FRAMEWORKS: load roblox-knit and roblox-profile-service for Knit, ProfileService, or package systems; keep wally.toml and the Packages folder in sync with default.project.json.\n\n" +
+          "ASSISTANT SKILLS: the Studio MCP also exposes rbx-* skills that complement the playbooks — use rbx-docs-search when unsure about a Roblox API, rbx-scene-analysis before editing an existing scene, rbx-unit-test after writing gameplay scripts, rbx-perf-profiling after large builds, and rbx-device-simulator-lua for mobile constraints.\n\n" +
           "SLOW TOOLS: generate_mesh runs for minutes; on timeout inspect before retrying, never insert duplicates.\n\n" +
           "ROJO: src/, server/, client/ auto-sync via `rojo serve`; preserve default.project.json's layout (ServerScriptService, ReplicatedStorage, StarterPlayerScripts). After restore_checkpoint, wait for Rojo to pick up reverted files.\n\n" +
           "GIT: check status/diff before editing; commit, push, pull, and other filesystem-changing commands need explicit approval.",

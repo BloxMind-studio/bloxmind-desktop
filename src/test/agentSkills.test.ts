@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -274,6 +274,69 @@ describe("agent skill pack", () => {
 
     const target = join(workspace, ...AGENT_SKILLS[0].relativePath.split("/"));
     await expect(readFile(target, "utf8")).resolves.toBe(AGENT_SKILLS[0].content);
+  });
+
+  it("prunes foreign skill folders that are not part of the shipped pack", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "bloxmind-skills-"));
+    tempDirectories.push(workspace);
+
+    // Simulate a leftover from an older app generation (e.g. the removed
+    // Apps/Game/Agent studios) that OpenCode discovery should never see.
+    const foreign = join(workspace, ".opencode", "skills", "roblox-game");
+    await mkdir(foreign, { recursive: true });
+    await writeFile(
+      join(foreign, "SKILL.md"),
+      "---\nname: roblox-game\ndescription: stale\n---\n\n# stale\n",
+      "utf8",
+    );
+
+    await writeAgentSkills(workspace);
+
+    await expect(readFile(join(foreign, "SKILL.md"), "utf8")).rejects.toThrow();
+    await expect(readdir(join(workspace, ".opencode", "skills"))).resolves.toHaveLength(
+      AGENT_SKILLS.length,
+    );
+    for (const skill of AGENT_SKILLS) {
+      const target = join(workspace, ...skill.relativePath.split("/"));
+      await expect(readFile(target, "utf8")).resolves.toBe(skill.content);
+    }
+  });
+
+  it("preserves user-added skills that are not on the stale list", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "bloxmind-skills-"));
+    tempDirectories.push(workspace);
+
+    const custom = join(workspace, ".opencode", "skills", "my-own-skill");
+    await mkdir(custom, { recursive: true });
+    await writeFile(
+      join(custom, "SKILL.md"),
+      "---\nname: my-own-skill\ndescription: mine\n---\n\n# mine\n",
+      "utf8",
+    );
+
+    await writeAgentSkills(workspace);
+
+    await expect(readFile(join(custom, "SKILL.md"), "utf8")).resolves.toContain("mine");
+  });
+
+  it("mirrors the pack into the global skills directory when provided", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "bloxmind-skills-"));
+    const globalRoot = await mkdtemp(join(tmpdir(), "bloxmind-global-skills-"));
+    tempDirectories.push(workspace, globalRoot);
+
+    // A stale leftover in the global root must be pruned there too.
+    const staleGlobal = join(globalRoot, "roblox-toolbox");
+    await mkdir(staleGlobal, { recursive: true });
+    await writeFile(join(staleGlobal, "SKILL.md"), "stale", "utf8");
+
+    await writeAgentSkills(workspace, globalRoot);
+
+    await expect(readdir(globalRoot)).resolves.toHaveLength(AGENT_SKILLS.length);
+    for (const skill of AGENT_SKILLS) {
+      const segments = skill.relativePath.split("/");
+      const target = join(globalRoot, ...segments.slice(-2));
+      await expect(readFile(target, "utf8")).resolves.toBe(skill.content);
+    }
   });
 
   it("creates the workspace AGENTS.md with efficiency and quality conventions", async () => {

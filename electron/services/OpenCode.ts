@@ -1,5 +1,6 @@
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
+import { type ChildProcessWithoutNullStreams, execFileSync, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -224,10 +225,30 @@ function prepareOpenCode(
     yield* fileOperation("Failed to write the OpenCode configuration", () =>
       writeFile(join(configDirectory, "opencode.json"), JSON.stringify(config, null, 2)),
     );
-    // Ship the managed agent skill pack (animation playbook etc.) alongside the
-    // config so OpenCode's native skill discovery sees it at startup.
+    // Project-level skill discovery walks up from the working directory until
+    // it reaches a git worktree — without one, `.opencode/skills` is never
+    // scanned and the agent only sees MCP-provided skills. Anchor the
+    // workspace with a repo when git is available (best-effort); machines
+    // without git still receive the pack through the global config skills
+    // directory written below.
+    yield* Effect.ignore(
+      Effect.try({
+        try: () => {
+          if (existsSync(join(options.workspace, ".git"))) return;
+          execFileSync("git", ["init", "--quiet"], {
+            cwd: options.workspace,
+            stdio: "ignore",
+            windowsHide: true,
+          });
+        },
+        catch: () => new OpenCodeError({ message: "Could not anchor the workspace with git" }),
+      }),
+    );
+    // Ship the managed agent skill pack alongside the config: into the project
+    // `.opencode/skills` AND the global config skills directory, so discovery
+    // works with or without a git worktree.
     yield* fileOperation("Failed to write the agent skill pack", () =>
-      writeAgentSkills(options.workspace),
+      writeAgentSkills(options.workspace, join(xdgConfig, "opencode", "skills")),
     );
 
     const password = yield* Effect.try({

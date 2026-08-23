@@ -1,4 +1,5 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import type { Dirent } from "node:fs";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { KNIT_SKILL } from "../src/agent/skills/knitSkill";
@@ -625,12 +626,20 @@ const AGENTS_MD_BLOCK = `${AGENTS_MD_MARKER_BEGIN}
   KeyframeSequence data statically instead.
 
 ### Skills
-- Domain playbooks live in .opencode/skills/: Roblox animation (roblox-animation,
-  roblox-animation-runtime), map planning and building (roblox-map-planning,
-  roblox-map-building), and client-server frameworks (roblox-knit,
-  roblox-profile-service). Load the matching skill before starting that kind of
-  task. For any system built on a Roblox package, keep wally.toml and the
-  default.project.json Packages mount in sync with the code you generate.
+- BloxMind playbooks live in .opencode/skills/: Roblox animation authoring and
+  playback (roblox-animation, roblox-animation-runtime), map planning and
+  building (roblox-map-planning, roblox-map-building), and client-server
+  frameworks (roblox-knit, roblox-profile-service). Load the matching playbook
+  before starting that kind of task. For any system built on a Roblox package,
+  keep wally.toml and the default.project.json Packages mount in sync with the
+  code you generate.
+- The Roblox Studio MCP also exposes assistant skills — use them alongside the
+  playbooks: rbx-docs-search to verify an uncertain Roblox API before coding
+  it, rbx-scene-analysis to understand an existing place before modifying it,
+  rbx-unit-test to validate gameplay scripts you wrote, rbx-perf-profiling
+  after large map builds or heavy rigs, rbx-device-simulator-lua for
+  mobile/device constraints, and rbx-create-skill to capture a reusable
+  workflow. Prefer the targeted playbook first, then reach for these.
 ${AGENTS_MD_MARKER_END}`;
 
 /**
@@ -669,15 +678,62 @@ export async function writeAgentsMarkdown(workspace: string): Promise<void> {
 }
 
 /**
- * Write the managed skill pack into the OpenCode workspace. Files are always
- * overwritten: the workspace belongs to the app and skills must track the
- * shipped version.
+ * Skill folder names left behind by removed app generations (the Apps/Game/
+ * Agent studios). These are the ONLY folders pruning ever deletes — everything
+ * else on disk (user-added skills, MCP-provided skills) is preserved so the
+ * agent keeps benefiting from every skill available to it.
  */
-export async function writeAgentSkills(workspace: string): Promise<void> {
+const STALE_SKILL_DIRECTORIES = new Set([
+  "app-canvas-animation",
+  "app-data-api",
+  "app-web-blueprint",
+  "roblox-game",
+  "roblox-scripting",
+  "roblox-toolbox",
+]);
+
+/**
+ * Sync one skills root: prune only the known-stale folders, then write the
+ * managed pack. Used for both the project workspace and the global config
+ * skills directory.
+ */
+async function syncSkillsRoot(skillsRoot: string): Promise<void> {
+  await mkdir(skillsRoot, { recursive: true });
+  const existingEntries: Dirent[] = await readdir(skillsRoot, { withFileTypes: true }).catch(
+    () => [],
+  );
+  for (const entry of existingEntries) {
+    if (!entry.isDirectory() || !STALE_SKILL_DIRECTORIES.has(entry.name)) continue;
+    await rm(join(skillsRoot, entry.name), { recursive: true, force: true }).catch(() => undefined);
+  }
+
   for (const skill of AGENT_SKILLS) {
-    const target = join(workspace, ...skill.relativePath.split("/"));
+    // relativePath is ".opencode/skills/<name>/SKILL.md" — the last two
+    // segments are the skill folder + file regardless of which root we sync.
+    const target = join(skillsRoot, ...skill.relativePath.split("/").slice(-2));
     await mkdir(dirname(target), { recursive: true });
     await writeFile(target, skill.content, "utf8");
   }
+}
+
+/**
+ * Write the managed skill pack into the OpenCode workspace and, when the
+ * global config skills directory is provided, into that directory too.
+ *
+ * Two roots, because OpenCode loads skills from two places:
+ * - Project: `<workspace>/.opencode/skills` — only scanned when the workspace
+ *   is anchored to a git worktree.
+ * - Global: `$XDG_CONFIG_HOME/opencode/skills` — always scanned.
+ *
+ * Managed files are always overwritten so upgrades ship on relaunch. Pruning
+ * deletes ONLY the known-stale folders from removed app generations; anything
+ * else on disk (user-added skills) is preserved.
+ */
+export async function writeAgentSkills(
+  workspace: string,
+  globalSkillsDirectory?: string,
+): Promise<void> {
+  await syncSkillsRoot(join(workspace, ".opencode", "skills"));
+  if (globalSkillsDirectory) await syncSkillsRoot(globalSkillsDirectory);
   await writeAgentsMarkdown(workspace);
 }
