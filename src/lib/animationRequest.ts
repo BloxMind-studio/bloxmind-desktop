@@ -117,6 +117,8 @@ export function resolveEnhancedAnimationBrief(
   return resolveEnhancedText(info, parts, "animation");
 }
 
+export const ANIMATION_FIELDS = ["brief", "duration", "beats", "notes"] as const;
+
 export const ANIMATION_FIELDS_ENHANCEMENT_SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -130,12 +132,12 @@ export const ANIMATION_FIELDS_ENHANCEMENT_SCHEMA = {
 } as const;
 
 export function parseEnhancedAnimationFields(value: unknown) {
-  return resolveEnhancedObject({ structured: value }, undefined);
+  return resolveEnhancedObject({ structured: value }, undefined, ANIMATION_FIELDS);
 }
 
 export function resolveEnhancedAnimationFields(
   info: Parameters<typeof resolveEnhancedObject>[0],
   parts: Parameters<typeof resolveEnhancedObject>[1],
 ) {
-  return resolveEnhancedObject(info, parts);
+  return resolveEnhancedObject(info, parts, ANIMATION_FIELDS);
 }

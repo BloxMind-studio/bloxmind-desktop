@@ -85,6 +85,16 @@ export function resolveEnhancedMapBrief(
   return resolveEnhancedText(info, parts, "map");
 }
 
+export const MAP_FIELDS = [
+  "brief",
+  "playerCount",
+  "traversalTime",
+  "themePillars",
+  "landmarks",
+  "zones",
+  "notes",
+] as const;
+
 export const MAP_FIELDS_ENHANCEMENT_SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -109,12 +119,12 @@ export const MAP_FIELDS_ENHANCEMENT_SCHEMA = {
 } as const;
 
 export function parseEnhancedMapFields(value: unknown) {
-  return resolveEnhancedObject({ structured: value }, undefined);
+  return resolveEnhancedObject({ structured: value }, undefined, MAP_FIELDS);
 }
 
 export function resolveEnhancedMapFields(
   info: Parameters<typeof resolveEnhancedObject>[0],
   parts: Parameters<typeof resolveEnhancedObject>[1],
 ) {
-  return resolveEnhancedObject(info, parts);
+  return resolveEnhancedObject(info, parts, MAP_FIELDS);
 }

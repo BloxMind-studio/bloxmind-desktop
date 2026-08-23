@@ -63,11 +63,11 @@ export function useEnhanceAnimationBrief() {
               retryCount: 2,
             },
             system:
-              "You expand short ideas into a complete, detailed Roblox character animation brief. Return the requested JSON. Never call tools and never modify files or Roblox Studio.",
+              "You expand short ideas into a complete, detailed Roblox character animation brief. If you support JSON schema, return the requested JSON object. Otherwise return plain labeled lines, one field per line, e.g.: duration: 1.5s, key beats: wind-up, impact, recover, notes: ... Never call tools and never modify files or Roblox Studio.",
             parts: [
               {
                 type: "text",
-                text: `Expand the animation idea below into a full brief for a Roblox character animation of type "${kindOption.label}" (${kindOption.hint}) targeting the ${rigOption.label} rig (${rigOption.hint}). Fill EVERY field: rewrite the brief as a concrete 2-4 sentence motion description (key poses, mood, feel); propose a duration; list key beats; and make notes covering timing, anticipation, follow-through, loop, and rig constraints. Be specific and actionable.\n\nIDEA\n${brief.trim()}`,
+                text: `Expand the animation idea below into a full brief for a Roblox character animation of type "${kindOption.label}" (${kindOption.hint}) targeting the ${rigOption.label} rig (${rigOption.hint}). Fill EVERY field: rewrite the brief as a concrete 2-4 sentence motion description (key poses, mood, feel); propose a duration; list key beats; and make notes covering timing, anticipation, follow-through, loop, and rig constraints. If returning JSON use exactly these keys: brief, duration, beats, notes. Otherwise return one line per field as "key: value". Be specific and actionable.\n\nIDEA\n${brief.trim()}`,
               },
             ],
           },

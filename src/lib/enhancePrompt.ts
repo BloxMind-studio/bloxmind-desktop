@@ -115,33 +115,121 @@ export interface EnhancedFieldsRecord {
   [field: string]: string;
 }
 
+/** Turns a single value into a short string for a field: arrays become a
+ *  comma-joined list, numbers and booleans become text. Blank/null are dropped
+ *  so a field the model left empty is not overwritten. */
+function stringifyFieldValue(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string") return value.trim() || null;
+  if (Array.isArray(value)) {
+    const parts = value
+      .map((entry) => (typeof entry === "string" ? entry : JSON.stringify(entry)).trim())
+      .filter(Boolean);
+    return parts.length > 0 ? parts.join(", ") : null;
+  }
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (typeof value === "object") {
+    const serialized = JSON.stringify(value);
+    return serialized && serialized !== "{}" ? serialized : null;
+  }
+  return null;
+}
+
+/**
+ * Recognized field labels (lowercased) used by the keyed-line fallback for
+ * schema-less models. Each maps to the field key the panels consume.
+ */
+const FIELD_LABELS: Record<string, string> = {
+  brief: "brief",
+  description: "brief",
+  idea: "brief",
+  "player count": "playerCount",
+  players: "playerCount",
+  "traversal time": "traversalTime",
+  "theme pillars": "themePillars",
+  landmarks: "landmarks",
+  landmark: "landmarks",
+  zones: "zones",
+  zone: "zones",
+  notes: "notes",
+  note: "notes",
+  duration: "duration",
+  "key beats": "beats",
+  beats: "beats",
+  beat: "beats",
+};
+
+/** Fallback used when a schema-less model answered in prose that labels each
+ *  value, e.g. `player count: 4v4`. Each recognized line fills its field;
+ *  unrecognized/blank lines are skipped. */
+function parseKeyedLines(text: string): EnhancedFieldsRecord {
+  const record: EnhancedFieldsRecord = {};
+  const key = (raw: string) => raw.toLowerCase().replace(/[-_.]/g, " ").replace(/\s+/g, " ").trim();
+  for (const line of text.split("\n")) {
+    const colon = line.indexOf(":");
+    if (colon === -1) continue;
+    const label = key(line.slice(0, colon));
+    if (!FIELD_LABELS[label]) continue;
+    const value = line.slice(colon + 1).trim();
+    if (!value) continue;
+    record[FIELD_LABELS[label]] = value;
+  }
+  return record;
+}
+
+/** Match a field key to a canonical panel key (e.g. `theme_pillars` ->
+ *  `themePillars`), so snake_case keys still fill the UI. */
+function canonicalFieldKey(key: string): string | null {
+  const normalized = key.replace(/[-_\s]/g, "").toLowerCase();
+  for (const label of Object.keys(FIELD_LABELS)) {
+    if (normalized === label.replace(/[-_\s]/g, "")) return FIELD_LABELS[label];
+  }
+  if (/^[a-z][a-zA-Z0-9]*$/.test(key) && key !== "description") return key;
+  return null;
+}
+
+function normalize(value: unknown, fields?: string[]): EnhancedFieldsRecord {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const record: EnhancedFieldsRecord = {};
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+      const fieldKey = canonicalFieldKey(key);
+      if (!fieldKey) continue;
+      const serialized = stringifyFieldValue(entry);
+      if (!serialized) continue;
+      if (fields && !fields.includes(fieldKey)) continue;
+      record[fieldKey] = serialized;
+    }
+    return record;
+  }
+  return {};
+}
+
 /**
  * Like `resolveEnhancedText`, but for a multi-field enhancement: the schema
- * returns an object of short strings (one per editable panel field) and the
- * resolver normalizes structured output / JSON-in-text / <structured_output>
- * wraps into an `EnhancedFieldsRecord`. Falls back to treating the whole
- * answer as a single `brief` when the model ignores the schema entirely.
+ * returns an object of short values (strings or arrays), one per panel field,
+ * and the resolver normalizes structured output / JSON-in-text /
+ * <structured_output> / keyed-line prose into an `EnhancedFieldsRecord`.
  */
-export function resolveEnhancedObject(
+export function resolveEnhancedObject<F extends string>(
   info:
     | { structured?: unknown; error?: { name?: string; data?: { message?: string } } }
     | undefined,
   parts: Array<{ type: string; text?: unknown }> | undefined,
+  fields?: readonly F[],
 ): EnhancedFieldsRecord {
-  const normalize = (value: unknown): EnhancedFieldsRecord => {
-    if (value && typeof value === "object" && !Array.isArray(value)) {
-      const record: EnhancedFieldsRecord = {};
-      for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
-        if (typeof entry === "string" && entry.trim()) record[key] = entry.trim();
+  const fieldKeys = fields ? [...fields] : undefined;
+  const accept = (entry: EnhancedFieldsRecord): EnhancedFieldsRecord | null => {
+    if (fieldKeys) {
+      for (const key of Object.keys(entry)) {
+        if (!fieldKeys.includes(key as F)) delete entry[key];
       }
-      return record;
     }
-    return {};
+    return Object.keys(entry).length > 0 ? entry : null;
   };
 
   if (info?.structured !== undefined) {
-    const structured = normalize(info.structured);
-    if (Object.keys(structured).length > 0) return structured;
+    const structured = accept(normalize(info.structured, fieldKeys));
+    if (structured) return structured;
   }
 
   const text = (parts ?? [])
@@ -169,14 +257,18 @@ export function resolveEnhancedObject(
   ];
   for (const candidateText of candidates) {
     try {
-      const parsed = normalize(JSON.parse(candidateText));
-      if (Object.keys(parsed).length > 0) return parsed;
+      const parsed = accept(normalize(JSON.parse(candidateText), fieldKeys));
+      if (parsed) return parsed;
     } catch {
       // Not JSON (or not the expected shape) - try the next candidate.
     }
   }
 
-  // Last resort: the model wrote a plain prose rewrite of the whole request;
-  // treat it as the brief so the enhancement still lands in the UI.
+  // Schema-less models often answer as labeled lines that fill multiple fields;
+  // use those before collapsing to a lone brief.
+  const keyed = accept(parseKeyedLines(unwrapped));
+  if (keyed) return keyed;
+
+  // Absolute fallback: plain prose rewrite of the whole request.
   return { brief: unwrapped };
 }

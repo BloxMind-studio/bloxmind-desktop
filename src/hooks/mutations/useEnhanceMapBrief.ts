@@ -59,11 +59,11 @@ export function useEnhanceMapBrief() {
               retryCount: 2,
             },
             system:
-              "You expand short ideas into a complete, detailed Roblox map build brief. Return the requested JSON. Never call tools and never modify files or Roblox Studio.",
+              "You expand short ideas into a complete, detailed Roblox map build brief. If you support JSON schema, return the requested JSON object. Otherwise return plain labeled lines, one field per line, e.g.: player count: 4v4, traversal time: 3 minutes, theme pillars: neon dusk, notes: ... Never call tools and never modify files or Roblox Studio.",
             parts: [
               {
                 type: "text",
-                text: `Expand the map idea below into a full build brief for a Roblox map in "${modeOption.label}" mode (${modeOption.hint}). Fill EVERY field: rewrite the brief as an immersive 2-4 sentence summary (theme, atmosphere, signature gameplay moment); propose a player count; propose a traversal time; list theme pillars; list landmarks; list zones; and make notes covering flow, scale, and pacing. Be concrete and specific.\n\nIDEA\n${brief.trim()}`,
+                text: `Expand the map idea below into a full build brief for a Roblox map in "${modeOption.label}" mode (${modeOption.hint}). Fill EVERY field: rewrite the brief as an immersive 2-4 sentence summary (theme, atmosphere, signature gameplay moment); propose a player count; propose a traversal time; list theme pillars; list landmarks; list zones; and make notes covering flow, scale, and pacing. If returning JSON use exactly these keys: brief, playerCount, traversalTime, themePillars, landmarks, zones, notes. Otherwise return one line per field as "key: value". Be concrete and specific.\n\nIDEA\n${brief.trim()}`,
               },
             ],
           },

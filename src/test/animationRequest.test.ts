@@ -114,6 +114,19 @@ describe("resolveEnhancedAnimationFields", () => {
     expect(out.beats).toBe("wind-up, strike");
   });
 
+  it("fills multiple fields from a keyed-line prose answer", () => {
+    const out = resolveEnhancedAnimationFields(undefined, [
+      textPart(
+        ["duration: 1.5s", "key beats: wind-up, impact, recover", "notes: no root motion"].join(
+          "\n",
+        ),
+      ),
+    ]);
+    expect(out.duration).toBe("1.5s");
+    expect(out.beats).toBe("wind-up, impact, recover");
+    expect(out.notes).toBe("no root motion");
+  });
+
   it("falls back to a single brief in plain prose", () => {
     const out = resolveEnhancedAnimationFields(undefined, [textPart("A looping victory dance.")]);
     expect(out).toEqual({ brief: "A looping victory dance." });

@@ -116,6 +116,38 @@ describe("resolveEnhancedMapFields", () => {
     expect(out.notes).toBe("fair 4v4");
   });
 
+  it("stringifies array fields into a comma-joined list", () => {
+    const out = resolveEnhancedMapFields(
+      {
+        structured: {
+          brief: "arena",
+          themePillars: ["neon dusk", "glass water"],
+          zones: ["spawn", "main loop"],
+        },
+      },
+      undefined,
+    );
+    expect(out.themePillars).toBe("neon dusk, glass water");
+    expect(out.zones).toBe("spawn, main loop");
+  });
+
+  it("fills multiple fields from a keyed-line prose answer", () => {
+    const out = resolveEnhancedMapFields(undefined, [
+      textPart(
+        [
+          "player count: 8 players",
+          "traversal time: 3 minutes",
+          "theme pillars: neon dusk, glass water",
+          "notes: keep the arena fair",
+        ].join("\n"),
+      ),
+    ]);
+    expect(out.playerCount).toBe("8 players");
+    expect(out.traversalTime).toBe("3 minutes");
+    expect(out.themePillars).toBe("neon dusk, glass water");
+    expect(out.notes).toBe("keep the arena fair");
+  });
+
   it("falls back to a single brief in plain prose", () => {
     const out = resolveEnhancedMapFields(undefined, [textPart("A dusk-lit neon arena.")]);
     expect(out).toEqual({ brief: "A dusk-lit neon arena." });
