@@ -1,3 +1,5 @@
+import { parseEnhancedText, resolveEnhancedText, TEXT_ENHANCEMENT_SCHEMA } from "./enhancePrompt";
+
 export type MapMode = "arena" | "obby" | "showcase" | "hub" | "tycoon" | "roleplay" | "custom";
 
 export interface MapRequest {
@@ -63,4 +65,17 @@ export function formatMapPrompt(request: MapRequest): string {
   );
 
   return lines.join("\n\n");
+}
+
+export const MAP_BRIEF_ENHANCEMENT_SCHEMA = TEXT_ENHANCEMENT_SCHEMA;
+
+export function parseEnhancedMapBrief(value: unknown): string {
+  return parseEnhancedText(value, "map");
+}
+
+export function resolveEnhancedMapBrief(
+  info: Parameters<typeof resolveEnhancedText>[0],
+  parts: Parameters<typeof resolveEnhancedText>[1],
+): string {
+  return resolveEnhancedText(info, parts, "map");
 }

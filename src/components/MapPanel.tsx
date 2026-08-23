@@ -1,6 +1,7 @@
 import posthog from "posthog-js/dist/module.full.no-external.js";
 import { useState } from "react";
 import { toast } from "sonner";
+import { useEnhanceMapBrief } from "@/hooks/mutations/useEnhanceMapBrief";
 import { useSendMessage } from "@/hooks/mutations/useSendMessage";
 import {
   analyticsProperties,
@@ -67,6 +68,7 @@ function splitLines(value: string): string[] {
 
 export default function MapPanel({ onClose }: { onClose: () => void }) {
   const sendMessage = useSendMessage();
+  const enhance = useEnhanceMapBrief();
   const { selectedModel } = useModelPreferences();
   const [brief, setBrief] = useState("");
   const [mode, setMode] = useState<MapMode>("arena");
@@ -78,6 +80,49 @@ export default function MapPanel({ onClose }: { onClose: () => void }) {
   const [notes, setNotes] = useState("");
 
   const [provider, model] = selectedModel ? splitModelKey(selectedModel) : [undefined, undefined];
+
+  async function enhanceBrief() {
+    if (!brief.trim() || enhance.isPending) return;
+    const startedAt = performance.now();
+    posthog.capture(
+      "map_enhance_started",
+      analyticsProperties("map", detailedAnalyticsProperties({ provider, model, mode })),
+    );
+    try {
+      const enhanced = await enhance.mutateAsync({ brief, mode });
+      setBrief(enhanced);
+      posthog.capture(
+        "map_enhance_succeeded",
+        analyticsProperties(
+          "map",
+          detailedAnalyticsProperties({
+            outcome: "success",
+            provider,
+            model,
+            duration_ms: Math.round(performance.now() - startedAt),
+          }),
+        ),
+      );
+    } catch (error) {
+      posthog.capture(
+        "map_enhance_failed",
+        errorAnalyticsProperties(
+          "map",
+          "brief_enhancement",
+          error,
+          detailedAnalyticsProperties({
+            provider,
+            model,
+            duration_ms: Math.round(performance.now() - startedAt),
+            error_category: mapErrorCategory(error),
+          }),
+        ),
+      );
+      toast.error("Couldn't enhance the description", {
+        description: error instanceof Error ? error.message : "Try again.",
+      });
+    }
+  }
 
   function generateMapPlan() {
     if (!brief.trim()) {
@@ -164,6 +209,14 @@ export default function MapPanel({ onClose }: { onClose: () => void }) {
           <p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">
             Give the player fantasy first, then let the plan turn it into zones and flow.
           </p>
+          <button
+            type="button"
+            onClick={enhanceBrief}
+            disabled={enhance.isPending || !brief.trim()}
+            className="mt-2 text-[11px] font-medium text-muted-foreground transition-colors disabled:opacity-50"
+          >
+            {enhance.isPending ? "Enhancing..." : "Enhance with AI"}
+          </button>
         </div>
 
         <ChipRow label="Map mode" items={MAP_MODES} value={mode} onChange={setMode} />
@@ -253,7 +306,7 @@ export default function MapPanel({ onClose }: { onClose: () => void }) {
         <button
           type="button"
           onClick={generateMapPlan}
-          disabled={sendMessage.isPending}
+          disabled={sendMessage.isPending || enhance.isPending}
           className="w-full rounded-lg bg-foreground px-4 py-2 text-xs font-semibold text-background transition-opacity hover:opacity-85 disabled:opacity-50"
         >
           {sendMessage.isPending ? "Sending..." : "Generate map plan"}

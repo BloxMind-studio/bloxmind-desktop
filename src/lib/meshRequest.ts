@@ -1,3 +1,4 @@
+import { parseEnhancedText, resolveEnhancedText, TEXT_ENHANCEMENT_SCHEMA } from "./enhancePrompt";
 export type MeshStyle = "blocky" | "low-poly" | "cartoon" | "realistic";
 
 export interface MeshStyleOption {
@@ -66,104 +67,15 @@ export function formatMeshPrompt(request: MeshRequest): string {
   return lines.join("\n\n");
 }
 
-export const MESH_BRIEF_ENHANCEMENT_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  required: ["description"],
-  properties: {
-    description: { type: "string", minLength: 1 },
-  },
-} as const;
+export const MESH_BRIEF_ENHANCEMENT_SCHEMA = TEXT_ENHANCEMENT_SCHEMA;
 
 export function parseEnhancedMeshBrief(value: unknown): string {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("The enhancer returned an invalid mesh description.");
-  }
-  const candidate = value as Record<string, unknown>;
-  // The schema asks for "description", but models without schema mode often
-  // rename the field (commonly "prompt"); accept known aliases, then fall back
-  // to the lone string property when exactly one exists.
-  let description = "";
-  for (const key of ["description", "prompt", "text"]) {
-    const entry = candidate[key];
-    if (typeof entry === "string" && entry.trim()) {
-      description = entry.trim();
-      break;
-    }
-  }
-  if (!description) {
-    const stringValues = Object.values(candidate).filter(
-      (entry): entry is string => typeof entry === "string" && entry.trim().length > 0,
-    );
-    if (stringValues.length === 1) description = stringValues[0].trim();
-  }
-  if (!description) throw new Error("The enhancer returned an empty mesh description.");
-  return description;
+  return parseEnhancedText(value, "mesh");
 }
 
-function stripCodeFence(text: string): string {
-  return text
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```$/, "")
-    .trim();
-}
-
-/**
- * OpenCode asks schema-less models to wrap their JSON in literal
- * `<structured_output>` tags; when extraction fails those tags leak into the
- * text parts, so unwrap them before attempting to parse.
- */
-function unwrapStructuredOutputTag(text: string): string {
-  const match = text.match(/<structured_output>\s*([\s\S]*?)\s*<\/structured_output>/i);
-  return match ? match[1].trim() : text;
-}
-
-/**
- * Resolve the enhanced brief from a prompt response. Structured output is
- * preferred, but providers without schema-mode support leave `structured`
- * undefined (sometimes with a StructuredOutputError on the message) while the
- * raw text still holds the answer, so fall back to parsing the text parts.
- */
 export function resolveEnhancedMeshBrief(
-  info:
-    | { structured?: unknown; error?: { name?: string; data?: { message?: string } } }
-    | undefined,
-  parts: Array<{ type: string; text?: unknown }> | undefined,
+  info: Parameters<typeof resolveEnhancedText>[0],
+  parts: Parameters<typeof resolveEnhancedText>[1],
 ): string {
-  if (info?.structured !== undefined) return parseEnhancedMeshBrief(info.structured);
-
-  const text = (parts ?? [])
-    .filter(
-      (part): part is { type: string; text: string } =>
-        part.type === "text" && typeof part.text === "string" && part.text.trim().length > 0,
-    )
-    .map((part) => part.text.trim())
-    .join("\n")
-    .trim();
-
-  if (!text) {
-    if (info?.error?.name === "StructuredOutputError") {
-      const detail = info.error.data?.message;
-      throw new Error(
-        `The model couldn't produce structured output${detail ? ` (${detail})` : ""}. Try a different model for Enhance.`,
-      );
-    }
-    throw new Error("The enhancer returned an empty response.");
-  }
-
-  const unwrapped = unwrapStructuredOutputTag(text);
-  const candidates = [
-    ...new Set([unwrapped, stripCodeFence(unwrapped), text, stripCodeFence(text)]),
-  ];
-  for (const candidateText of candidates) {
-    try {
-      return parseEnhancedMeshBrief(JSON.parse(candidateText));
-    } catch {
-      // Not JSON (or not the expected shape) — try the next candidate.
-    }
-  }
-
-  // Last resort: the model answered in plain prose despite the schema; the
-  // rewrite itself is still usable as the enhanced brief.
-  return unwrapped;
+  return resolveEnhancedText(info, parts, "mesh");
 }

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { formatAnimationPrompt } from "@/lib/animationRequest";
+import {
+  ANIMATION_KINDS,
+  formatAnimationPrompt,
+  parseEnhancedAnimationBrief,
+  resolveEnhancedAnimationBrief,
+} from "@/lib/animationRequest";
 
 describe("formatAnimationPrompt", () => {
   it("includes rig, loop, and verification instructions", () => {
@@ -19,5 +24,60 @@ describe("formatAnimationPrompt", () => {
     expect(prompt).toContain("Loop: no");
     expect(prompt).toContain("Key beats: wind-up | impact | recover");
     expect(prompt).toContain("Verify playback in Studio");
+  });
+
+  it("exposes every animation kind with a non-empty hint", () => {
+    for (const option of ANIMATION_KINDS) {
+      expect(option.label.trim()).toBeTruthy();
+      expect(option.hint.trim()).toBeTruthy();
+    }
+  });
+});
+
+describe("parseEnhancedAnimationBrief", () => {
+  it("returns the trimmed description", () => {
+    expect(parseEnhancedAnimationBrief({ description: "  a heavy slash  " })).toBe("a heavy slash");
+  });
+
+  it("rejects malformed enhancer output", () => {
+    expect(() => parseEnhancedAnimationBrief(null)).toThrow(/invalid/i);
+    expect(() => parseEnhancedAnimationBrief({ description: "" })).toThrow(/empty/i);
+  });
+
+  it("accepts renamed keys when the schema key is missing", () => {
+    expect(parseEnhancedAnimationBrief({ prompt: "a snappy uppercut combo" })).toBe(
+      "a snappy uppercut combo",
+    );
+  });
+});
+
+describe("resolveEnhancedAnimationBrief", () => {
+  const textPart = (text: string) => ({ type: "text", text });
+
+  it("prefers structured output when present", () => {
+    expect(
+      resolveEnhancedAnimationBrief({ structured: { description: "from structured" } }, []),
+    ).toBe("from structured");
+  });
+
+  it("unwraps structured-output tags around JSON", () => {
+    const wrapped = [
+      "<structured_output>",
+      '{"prompt": "A three-hit dagger combo ending in a spin."}',
+      "</structured_output>",
+    ].join("\n");
+    expect(resolveEnhancedAnimationBrief(undefined, [textPart(wrapped)])).toBe(
+      "A three-hit dagger combo ending in a spin.",
+    );
+  });
+
+  it("falls back to plain prose when the model ignored the schema", () => {
+    expect(resolveEnhancedAnimationBrief(undefined, [textPart("A looping victory dance.")])).toBe(
+      "A looping victory dance.",
+    );
+  });
+
+  it("throws on a completely empty response", () => {
+    expect(() => resolveEnhancedAnimationBrief(undefined, undefined)).toThrow(/empty/i);
   });
 });

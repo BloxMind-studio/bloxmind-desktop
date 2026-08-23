@@ -1,3 +1,5 @@
+import { parseEnhancedText, resolveEnhancedText, TEXT_ENHANCEMENT_SCHEMA } from "./enhancePrompt";
+
 export type AnimationRig = "r15" | "r6" | "both";
 
 export type AnimationKind =
@@ -95,4 +97,17 @@ export function formatAnimationPrompt(request: AnimationRequest): string {
   );
 
   return lines.join("\n\n");
+}
+
+export const ANIMATION_BRIEF_ENHANCEMENT_SCHEMA = TEXT_ENHANCEMENT_SCHEMA;
+
+export function parseEnhancedAnimationBrief(value: unknown): string {
+  return parseEnhancedText(value, "animation");
+}
+
+export function resolveEnhancedAnimationBrief(
+  info: Parameters<typeof resolveEnhancedText>[0],
+  parts: Parameters<typeof resolveEnhancedText>[1],
+): string {
+  return resolveEnhancedText(info, parts, "animation");
 }

@@ -1,6 +1,7 @@
 import posthog from "posthog-js/dist/module.full.no-external.js";
 import { useState } from "react";
 import { toast } from "sonner";
+import { useEnhanceAnimationBrief } from "@/hooks/mutations/useEnhanceAnimationBrief";
 import { useSendMessage } from "@/hooks/mutations/useSendMessage";
 import {
   analyticsProperties,
@@ -67,6 +68,7 @@ function ChipRow<T extends string>({
 
 export default function AnimationPanel({ onClose }: { onClose: () => void }) {
   const sendMessage = useSendMessage();
+  const enhance = useEnhanceAnimationBrief();
   const { selectedModel } = useModelPreferences();
   const [brief, setBrief] = useState("");
   const [kind, setKind] = useState<AnimationKind>("combat combo");
@@ -77,6 +79,49 @@ export default function AnimationPanel({ onClose }: { onClose: () => void }) {
   const [notes, setNotes] = useState("");
 
   const [provider, model] = selectedModel ? splitModelKey(selectedModel) : [undefined, undefined];
+
+  async function enhanceBrief() {
+    if (!brief.trim() || enhance.isPending) return;
+    const startedAt = performance.now();
+    posthog.capture(
+      "animation_enhance_started",
+      analyticsProperties("animation", detailedAnalyticsProperties({ provider, model, kind, rig })),
+    );
+    try {
+      const enhanced = await enhance.mutateAsync({ brief, kind, rig });
+      setBrief(enhanced);
+      posthog.capture(
+        "animation_enhance_succeeded",
+        analyticsProperties(
+          "animation",
+          detailedAnalyticsProperties({
+            outcome: "success",
+            provider,
+            model,
+            duration_ms: Math.round(performance.now() - startedAt),
+          }),
+        ),
+      );
+    } catch (error) {
+      posthog.capture(
+        "animation_enhance_failed",
+        errorAnalyticsProperties(
+          "animation",
+          "brief_enhancement",
+          error,
+          detailedAnalyticsProperties({
+            provider,
+            model,
+            duration_ms: Math.round(performance.now() - startedAt),
+            error_category: animationErrorCategory(error),
+          }),
+        ),
+      );
+      toast.error("Couldn't enhance the description", {
+        description: error instanceof Error ? error.message : "Try again.",
+      });
+    }
+  }
 
   function generateAnimation() {
     if (!brief.trim()) {
@@ -170,6 +215,14 @@ export default function AnimationPanel({ onClose }: { onClose: () => void }) {
           <p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">
             Be concrete about the motion and the intended gameplay feel.
           </p>
+          <button
+            type="button"
+            onClick={enhanceBrief}
+            disabled={enhance.isPending || !brief.trim()}
+            className="mt-2 text-[11px] font-medium text-muted-foreground transition-colors disabled:opacity-50"
+          >
+            {enhance.isPending ? "Enhancing..." : "Enhance with AI"}
+          </button>
         </div>
 
         <ChipRow label="Animation type" items={ANIMATION_KINDS} value={kind} onChange={setKind} />
@@ -237,7 +290,7 @@ export default function AnimationPanel({ onClose }: { onClose: () => void }) {
         <button
           type="button"
           onClick={generateAnimation}
-          disabled={sendMessage.isPending}
+          disabled={sendMessage.isPending || enhance.isPending}
           className="w-full rounded-lg bg-foreground px-4 py-2 text-xs font-semibold text-background transition-opacity hover:opacity-85 disabled:opacity-50"
         >
           {sendMessage.isPending ? "Sending..." : "Generate animation"}
