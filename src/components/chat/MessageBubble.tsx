@@ -9,6 +9,7 @@ import { ModelErrorCard } from "@/components/chat/ErrorViews";
 import { SmartPartsRenderer } from "@/components/chat/partViews";
 import { BloxMindThinking } from "@/components/chat/ThinkingIndicator";
 import { UserPartsView } from "@/components/chat/UserPartsView";
+import { WorkingIndicator } from "@/components/chat/WorkingIndicator";
 import { useRegenerateResponse } from "@/hooks/mutations/useRegenerateResponse";
 import { useRetryMessage } from "@/hooks/mutations/useRetryMessage";
 import { useMessage } from "@/hooks/useMessages";
@@ -108,6 +109,7 @@ export const MessageBubble = memo(function MessageBubble({
         ) : (
           <div className="space-y-2">
             {showThinking && <BloxMindThinking />}
+            {showThinking && <WorkingIndicator parts={msg.parts} active={showThinking} />}
             <SmartPartsRenderer parts={msg.parts} hideThinking={showThinking} />
             {"error" in msg.info &&
               msg.info.error &&
