@@ -76,6 +76,22 @@ export function useCreateSession() {
         return [newSession, ...prev];
       });
 
+      // Persist a durable shell immediately. A brand-new session has no
+      // messages yet, and the persistence hook deliberately skips empties —
+      // without this shell the session lives only in engine memory, so any
+      // transient listing failure made freshly created chats vanish from the
+      // sidebar. Later saves overwrite this file as messages arrive.
+      void desktop
+        .sessionStoreSave({
+          id: newSession.id,
+          title: newSession.title ?? "New session",
+          createdAt: Math.floor((newSession.time?.created ?? Date.now() / 1000) * 1000),
+          updatedAt: Date.now(),
+          messages: { messageIds: [], messagesById: {} },
+          metadata: { ...(newSession.metadata ?? {}) },
+        })
+        .catch(() => undefined);
+
       // Clear messages/todos/questions/permissions for new session
       queryClient.setQueryData(qk.messages(newSession.id), {
         messageIds: [],

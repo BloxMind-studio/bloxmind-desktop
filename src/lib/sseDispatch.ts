@@ -112,6 +112,9 @@ function dispatchEvent(
     }
     case "session.deleted": {
       const { info } = event.properties;
+      if (info.id === currentSessionId) {
+        console.debug(`[sseDispatch] the ACTIVE session was deleted by the engine: ${info.id}`);
+      }
       queryClient.setQueryData<Session[]>(qk.sessions, (prev) => {
         if (!prev) return prev;
         return prev.filter((s) => s.id !== info.id);

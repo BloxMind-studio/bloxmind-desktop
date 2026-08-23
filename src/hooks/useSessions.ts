@@ -1,5 +1,5 @@
 import type { Session } from "@opencode-ai/sdk/v2/client";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { desktop } from "@/lib/desktop";
 import { qk } from "@/lib/queryKeys";
@@ -19,23 +19,31 @@ import type { StoredSessionSummary } from "@/types/desktop";
  * store (because the engine dropped them on restart) are re-added here so the
  * sidebar still shows the user's history.
  */
-export async function fetchSessionList(client: {
-  session: {
-    list(
-      input: Record<string, never>,
-      options?: { throwOnError?: boolean },
-    ): Promise<{ data?: Session[] }>;
-  };
-  v2: {
+export async function fetchSessionList(
+  client: {
     session: {
-      list?(
+      list(
         input: Record<string, never>,
         options?: { throwOnError?: boolean },
-      ): Promise<{ data?: unknown }>;
+      ): Promise<{ data?: Session[] }>;
     };
-  };
-}): Promise<Session[]> {
+    v2: {
+      session: {
+        list?(
+          input: Record<string, never>,
+          options?: { throwOnError?: boolean },
+        ): Promise<{ data?: unknown }>;
+      };
+    };
+  },
+  previous?: Session[],
+): Promise<Session[]> {
   const byId = new Map<string, Session>();
+  // Set when either engine listing REJECTS. A rejection means we only have a
+  // partial picture — folding in the previous cache below stops a transient
+  // failure from dropping live sessions (which used to close the active chat
+  // the moment a fresh, never-messaged session was omitted from one pass).
+  let engineListingsFailed = false;
 
   console.debug(
     `[fetchSessionList] window.BloxMind=${typeof window !== "undefined" && !!window.BloxMind}, ` +
@@ -53,6 +61,10 @@ export async function fetchSessionList(client: {
       v2List ? v2List({}, { throwOnError: true }) : Promise.resolve({ data: [] }),
       v1List ? v1List({}, { throwOnError: true }) : Promise.resolve({ data: [] }),
     ]);
+    if (settled.some((outcome) => outcome.status === "rejected")) {
+      engineListingsFailed = true;
+      console.warn("[fetchSessionList] an engine listing source rejected; merging previous cache");
+    }
     const v2 =
       settled[0].status === "fulfilled"
         ? ((settled[0].value as { data?: unknown } | undefined)?.data as
@@ -78,6 +90,7 @@ export async function fetchSessionList(client: {
     }
   } catch (error) {
     console.error("[fetchSessionList] engine listing threw:", error);
+    engineListingsFailed = true;
   }
 
   // ── Hard safety net ─────────────────────────────────────────────────────
@@ -97,6 +110,18 @@ export async function fetchSessionList(client: {
     }
   } catch (error) {
     console.error("[fetchSessionList] sessionStoreList() rejected:", error);
+  }
+
+  // A failed/partial engine pass must never drop sessions the UI already
+  // knows about. Union the previous cache (hidden ones stay filtered below);
+  // genuine deletions are safe because the delete flows mutate this same
+  // cache before the next fetch runs.
+  if (engineListingsFailed && previous) {
+    for (const session of previous) {
+      if (!session?.id || byId.has(session.id)) continue;
+      if (!isVisibleSession(session)) continue;
+      byId.set(session.id, session);
+    }
   }
 
   const result = [...byId.values()]
@@ -122,10 +147,14 @@ export function localSummaryToSession(summary: StoredSessionSummary): Session {
 
 export function useSessions() {
   const { client, ready } = useOpenCodeClient();
+  const queryClient = useQueryClient();
 
   return useQuery<Session[]>({
     queryKey: qk.sessions,
-    queryFn: () => (client ? fetchSessionList(client) : Promise.resolve([])),
+    queryFn: () =>
+      client
+        ? fetchSessionList(client, queryClient.getQueryData<Session[]>(qk.sessions))
+        : Promise.resolve([]),
     enabled: ready && !!client,
     // Watchdog poll (see useSessionStatuses for rationale): the session list is
     // normally kept fresh by SSE invalidation, but a dropped or reconnecting
