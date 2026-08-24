@@ -204,6 +204,17 @@ describe("agent skill pack", () => {
     expect(building).toMatch(/asset palette/i);
     expect(building).toMatch(/Toolbox/i);
     expect(building).toMatch(/Clone/i);
+    // API guardrails for the 5 captured Luau runtime errors
+    // (skill markdown renders escaped backticks as plain ones)
+    expect(building).toContain("`Instance` objects directly to `table.concat()`");
+    expect(building).toContain("Enum.PartType.Wedge");
+    expect(building).toMatch(/NEVER call .*Terrain:Destroy/i);
+    expect(building).toContain("workspace.Terrain:Clear()");
+    expect(building).toMatch(/NEVER set .*\.SunRaysSize/);
+    expect(building).toMatch(/Intensity` \(0-1\) and `Spread/);
+    expect(building).toContain("Enum.Material.Rock");
+    expect(building).not.toContain("Enum.Material.Wedge");
+    expect(building).toContain("ClearAllChildren");
   });
 
   it("uses GeometryService for runtime CSG and forbids the phantom SolidModeling service", () => {

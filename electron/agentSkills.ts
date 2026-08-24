@@ -417,7 +417,11 @@ These rules prevent the most common build failures. Follow them on every
 - **Defensive indexing always** — \`:FindFirstChild()\` before property access; nil-check nested reads (\`if obj and obj.Props then\`).
 - Before each \`execute_luau\` call, self-scan the snippet for forbidden tokens (\`DirectionalLight\`, \`TeamService\`, \`NegativeZ\`, \`.Technology\`) and remove them first.
 - **NEVER pass nil values into \`Vector3.new()\` or assign nil to a \`.Size\` property.** Always validate x/y/z as non-nil numbers or provide explicit fallbacks (e.g. \`Vector3.new(x or 4, y or 1, z or 2)\`).
-
+- **NEVER pass \`Instance\` objects directly to \`table.concat()\`.** Extract \`.Name\` or other string properties first before concatenating.
+- **\`Wedge\` is a Shape (\`part.Shape = Enum.PartType.Wedge\`), NOT a Material.** Valid rock materials are \`Enum.Material.Rock\`, \`Enum.Material.Basalt\`, \`Enum.Material.Slate\`, \`Enum.Material.Pebble\`.
+- **NEVER call \`workspace.Terrain:Destroy()\`.** To reset terrain, use \`workspace.Terrain:Clear()\`. For \`FillBlock\`/\`FillRegion\`, ensure every axis >= 1 to avoid 'Extents cannot be empty'.
+- **\`SunRaysEffect\` ONLY accepts \`Intensity\` (0-1) and \`Spread\` (0-1).** NEVER set \`.Size\` or \`.SunRaysSize\` ' invalid members.'.
+- **ALWAYS verify existence before \`:GetChildren()\`/\`:ClearAllChildren()\`.** \`local folder = workspace:FindFirstChild('MyFolder'); if folder then folder:ClearAllChildren() end\`.
 - **Always resolve a live Studio target first.** Call \`list_roblox_studios\`
   and use one of the returned \`studio_id\` values. Studio instances disconnect
   when the place closes or reloads — if you get a "studio_id is not connected"

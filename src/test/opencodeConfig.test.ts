@@ -49,6 +49,16 @@ describe("OpenCode configuration", () => {
     expect(prompt).toContain("DirectionalLight");
     expect(prompt).toContain("FindFirstChild");
     expect(prompt).toMatch(/CRITICAL.*EXECUTION CONSTRAINTS/i);
+    // API guardrails for the 5 most common Luau runtime errors
+    expect(prompt).toContain("table.concat");
+    expect(prompt).toContain("Enum.PartType.Wedge");
+    expect(prompt).toMatch(/NEVER call .*Terrain:Destroy/i);
+    expect(prompt).toContain("workspace.Terrain:Clear()");
+    expect(prompt).toMatch(/Intensity.*Spread|Spread.*Intensity/);
+    expect(prompt).toMatch(/NEVER set .*\.SunRaysSize/);
+    expect(prompt).not.toContain("Enum.Material.Wedge");
+    expect(prompt).toContain("FindFirstChild");
+    expect(prompt).toContain(":GetChildren()");
   });
 
   it("focuses sampling for more consistent Studio output", () => {

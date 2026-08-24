@@ -1,6 +1,6 @@
 import { Box, Boxes, FolderTree, Map as MapIcon, Play, Swords } from "lucide-react";
 import posthog from "posthog-js/dist/module.full.no-external.js";
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AnimationPanel from "@/components/AnimationPanel";
 import { BloxMindLogo } from "@/components/BloxMindLogo";
 import ChatInput from "@/components/ChatInput";
@@ -30,6 +30,8 @@ import { useProjectIndexContext } from "@/providers/ProjectIndexProvider";
 import { useStudioTargetOptional } from "@/providers/StudioTargetProvider";
 
 const Settings = lazy(() => import("@/components/Settings"));
+
+type ActiveTab = "explorer" | "animation" | "map" | "mesh" | "play" | "skills" | null;
 
 /**
  * Compact button that shows the project index state and triggers a re-index.
@@ -147,6 +149,36 @@ function Chat() {
             : activeSessionId
               ? "chat"
               : "home";
+
+  // ── Single Source of Truth for Active Tab (exclusive highlight) ──
+  // Only the button matching currentActiveTab receives the active CSS class.
+  // When a modal/top screen (Map, Play, Settings, StudioSetup, etc.) covers Explorer,
+  // the Explorer highlight is cleared — no two tabs are active simultaneously.
+  const activeTab: ActiveTab = useMemo(() => {
+    // Any full-screen overlay deactivates navigation highlights
+    if (showSettings || showStudioSetup) return null;
+    if (studioConnection.state === "waiting" || studioConnection.state === "checking") return null;
+    if (!ready || !activeSessionId) return null;
+    // Exclusive side-panel precedence (play > mesh > animation > map > explorer)
+    if (showPlaytest) return "play";
+    if (showMesh) return "mesh";
+    if (showAnimation) return "animation";
+    if (showMap) return "map";
+    if (hasStudioTarget && !explorerCollapsed) return "explorer";
+    return null;
+  }, [
+    showSettings,
+    showStudioSetup,
+    studioConnection.state,
+    ready,
+    activeSessionId,
+    showPlaytest,
+    showMesh,
+    showAnimation,
+    showMap,
+    hasStudioTarget,
+    explorerCollapsed,
+  ]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -292,11 +324,12 @@ function Chat() {
   }, [showPlaytest, showMesh, showAnimation, showMap, explorerCollapsed, setExplorerCollapsed]);
   const handleOpenAnimation = useCallback(() => {
     if (!hasStudioTarget) return;
-    posthog.capture("animation_opened", analyticsProperties("animation"));
+    // active tab → animation (exclusive, Explorer deactivates when covered)
     setShowMap(false);
     setShowMesh(false);
     setShowPlaytest(false);
     setShowAnimation(true);
+    posthog.capture("animation_opened", analyticsProperties("animation"));
   }, [hasStudioTarget]);
   const handleCloseAnimation = useCallback(() => {
     posthog.capture("animation_closed", analyticsProperties("animation"));
@@ -304,11 +337,12 @@ function Chat() {
   }, []);
   const handleOpenMap = useCallback(() => {
     if (!hasStudioTarget) return;
-    posthog.capture("map_opened", analyticsProperties("map"));
+    // active tab → map (exclusive, Explorer deactivates when covered)
     setShowAnimation(false);
     setShowMesh(false);
     setShowPlaytest(false);
     setShowMap(true);
+    posthog.capture("map_opened", analyticsProperties("map"));
   }, [hasStudioTarget]);
   const handleCloseMap = useCallback(() => {
     posthog.capture("map_closed", analyticsProperties("map"));
@@ -316,12 +350,13 @@ function Chat() {
   }, []);
   const handleOpenPlaytest = useCallback(() => {
     if (!hasStudioTarget) return;
-    posthog.capture("playtest_opened", analyticsProperties("playtest"));
+    // active tab → play (exclusive, Explorer deactivates when covered)
     setExplorerCollapsed(true);
     setShowAnimation(false);
     setShowMap(false);
     setShowMesh(false);
     setShowPlaytest(true);
+    posthog.capture("playtest_opened", analyticsProperties("playtest"));
   }, [hasStudioTarget, setExplorerCollapsed]);
   const handleClosePlaytest = useCallback(() => {
     posthog.capture("playtest_closed", analyticsProperties("playtest"));
@@ -329,12 +364,13 @@ function Chat() {
   }, []);
   const handleOpenMesh = useCallback(() => {
     if (!hasStudioTarget) return;
-    posthog.capture("mesh_opened", analyticsProperties("mesh"));
+    // active tab → mesh (exclusive, Explorer deactivates when covered)
     setExplorerCollapsed(true);
     setShowAnimation(false);
     setShowMap(false);
     setShowPlaytest(false);
     setShowMesh(true);
+    posthog.capture("mesh_opened", analyticsProperties("mesh"));
   }, [hasStudioTarget, setExplorerCollapsed]);
   const handleCloseMesh = useCallback(() => {
     posthog.capture("mesh_closed", analyticsProperties("mesh"));
@@ -459,7 +495,8 @@ function Chat() {
                       type="button"
                       onClick={handleOpenAnimation}
                       disabled={isBusy}
-                      className="flex h-7 w-7 items-center justify-center rounded-md border border-border/60 bg-background text-muted-foreground transition-colors hover:bg-hover/12 disabled:opacity-40"
+                      className={`flex h-7 w-7 items-center justify-center rounded-md border transition-colors disabled:opacity-40 ${activeTab === "animation" ? "border-border bg-hover/12 text-foreground" : "border-border/60 bg-background text-muted-foreground hover:bg-hover/12"}`}
+                      aria-pressed={activeTab === "animation"}
                       title={isBusy ? "Wait for the agent to finish" : "Create an animation"}
                     >
                       <Swords aria-hidden="true" size={13} />
@@ -468,7 +505,8 @@ function Chat() {
                       type="button"
                       onClick={handleOpenMap}
                       disabled={isBusy}
-                      className="flex h-7 w-7 items-center justify-center rounded-md border border-border/60 bg-background text-muted-foreground transition-colors hover:bg-hover/12 disabled:opacity-40"
+                      className={`flex h-7 w-7 items-center justify-center rounded-md border transition-colors disabled:opacity-40 ${activeTab === "map" ? "border-border bg-hover/12 text-foreground" : "border-border/60 bg-background text-muted-foreground hover:bg-hover/12"}`}
+                      aria-pressed={activeTab === "map"}
                       title={isBusy ? "Wait for the agent to finish" : "Plan a map"}
                     >
                       <MapIcon aria-hidden="true" size={13} />
@@ -476,9 +514,9 @@ function Chat() {
                     <button
                       type="button"
                       onClick={handleToggleExplorer}
-                      className={`flex h-7 w-7 items-center justify-center rounded-md border transition-colors ${!explorerCollapsed ? "border-border bg-hover/12 text-foreground" : "border-border/60 bg-background text-muted-foreground hover:bg-hover/12"}`}
-                      aria-pressed={!explorerCollapsed}
-                      title={explorerCollapsed ? "Open Explorer" : "Close Explorer"}
+                      className={`flex h-7 w-7 items-center justify-center rounded-md border transition-colors ${activeTab === "explorer" ? "border-border bg-hover/12 text-foreground" : "border-border/60 bg-background text-muted-foreground hover:bg-hover/12"}`}
+                      aria-pressed={activeTab === "explorer"}
+                      title={activeTab === "explorer" ? "Close Explorer" : "Open Explorer"}
                     >
                       <Boxes aria-hidden="true" size={13} />
                     </button>
@@ -486,7 +524,8 @@ function Chat() {
                       type="button"
                       onClick={handleOpenMesh}
                       disabled={isBusy}
-                      className="flex h-7 w-7 items-center justify-center rounded-md border border-border/60 bg-background text-muted-foreground transition-colors hover:bg-hover/12 disabled:opacity-40"
+                      className={`flex h-7 w-7 items-center justify-center rounded-md border transition-colors disabled:opacity-40 ${activeTab === "mesh" ? "border-border bg-hover/12 text-foreground" : "border-border/60 bg-background text-muted-foreground hover:bg-hover/12"}`}
+                      aria-pressed={activeTab === "mesh"}
                       title={isBusy ? "Wait for the agent to finish" : "Generate a mesh"}
                     >
                       <Box aria-hidden="true" size={13} />
@@ -495,7 +534,8 @@ function Chat() {
                       type="button"
                       onClick={handleOpenPlaytest}
                       disabled={isBusy}
-                      className="flex h-7 w-7 items-center justify-center rounded-md bg-foreground text-background transition-opacity hover:opacity-85 disabled:opacity-40"
+                      className={`flex h-7 w-7 items-center justify-center rounded-md border transition-colors disabled:opacity-40 ${activeTab === "play" ? "border-transparent bg-foreground text-background hover:opacity-85" : "border-border/60 bg-background text-muted-foreground hover:bg-hover/12"}`}
+                      aria-pressed={activeTab === "play"}
                       title={isBusy ? "Wait for the agent to finish" : "Create a playtest plan"}
                     >
                       <Play aria-hidden="true" size={13} fill="currentColor" />
