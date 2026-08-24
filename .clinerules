@@ -79,3 +79,58 @@ Before **any** `git commit` or `git push`:
 5. Only then `git commit` / `git push`.
 
 Sub-agents and AI CLIs spawned via OpenCode or Cline must read this section **and** `opencode.jsonc` before acting.
+
+---
+
+## 🌲 Feature Branch Workflow & Isolation Guardrails
+
+**Never commit directly to `main`.** All work must be isolated in a feature branch and verified before merging.
+
+### Branch Naming & Creation
+
+Before starting any feature, fix, refactor, or chore:
+
+1. `git branch --show-current` → verify current branch.
+2. If on `main`, immediately create and switch:
+   - `feature/<short-description>` — new features
+   - `fix/<short-description>` — bug fixes
+   - `refactor/<short-description>` — code improvements
+   - `chore/<short-description>` — deps/config updates
+   ```bash
+   git checkout -b feature/<short-description>
+   # or via manager:
+   node scripts/git-workflow.mjs create feature/<short-description>
+   ```
+
+### Branch Lifecycle & Verification
+
+- Develop and test **entirely** inside the feature branch.
+- Before any merge, run verification inside the branch:
+  ```bash
+  npx tsc --noEmit
+  npx tsc -p electron/tsconfig.json --noEmit
+  npx tsc -p scripts/tsconfig.json --noEmit
+  pnpm exec vitest run
+  # or
+  node scripts/git-workflow.mjs verify
+  ```
+- Only proceed to merge if all checks pass.
+
+### Safe Merging Strategy
+
+```bash
+git checkout main
+git pull origin main
+git merge feature/<short-description> --no-ff -m "Merge feature/<short-description> into main"
+git push origin main
+# also sync secondary remotes if present:
+git push orgrelease main 2>/dev/null || true
+git push https://github.com/YUouriii/app-BloxMind-ai.git main 2>/dev/null || true
+git branch -d feature/<short-description>
+# or via manager:
+node scripts/git-workflow.mjs merge feature/<short-description>
+```
+
+`main` must remain clean and free of unverified code. Direct pushes to `main` without a feature branch are forbidden.
+
+Workflow manager source of truth: `scripts/git-workflow.mjs` (also handles multi-repo remote checks via `electron/opencodeConfig.ts:resolveTargetRepo`).
