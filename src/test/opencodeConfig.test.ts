@@ -21,7 +21,7 @@ describe("OpenCode configuration", () => {
     // Roblox API references (Terrain/Sky/Lighting/animation) so the agent stays
     // correct even when project skills are not discoverable by the engine. The
     // references are intentionally detailed; guard against runaway bloat only.
-    expect(prompt.trim().split(/\s+/).length).toBeLessThanOrEqual(800);
+    expect(prompt.trim().split(/\s+/).length).toBeLessThanOrEqual(1300);
     expect(prompt).toMatch(/inspect only when needed/i);
     expect(prompt).toContain("smallest coherent change");
     expect(prompt).toContain("most relevant Studio check");
@@ -43,6 +43,12 @@ describe("OpenCode configuration", () => {
     expect(prompt).toContain("rbx-scene-analysis");
     expect(prompt).toContain("rbx-unit-test");
     expect(prompt).toContain("rbx-perf-profiling");
+    // The Studio MCP enforces strict Luau execution constraints; the guardrail
+    // section must be present and the crashing Lighting.Technology pattern removed.
+    expect(prompt).not.toContain("Enum.Technology.Future");
+    expect(prompt).toContain("DirectionalLight");
+    expect(prompt).toContain("FindFirstChild");
+    expect(prompt).toMatch(/CRITICAL.*EXECUTION CONSTRAINTS/i);
   });
 
   it("focuses sampling for more consistent Studio output", () => {

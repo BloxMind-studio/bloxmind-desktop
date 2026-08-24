@@ -379,7 +379,7 @@ build strictly from it:
   "grid_size": 4,
   "map_bounds": { "x": 200, "z": 200 },
   "lighting": {
-    "technology": "Future",
+    "lighting_mode": "runtime (shape via Lighting clock/brightness - see Phase 5)",
     "time_of_day": "00:00:00",
     "atmosphere_density": 0.45,
     "fog_color": "#120024"
@@ -408,6 +408,16 @@ build strictly from it:
 These rules prevent the most common build failures. Follow them on every
 \`execute_luau\` call.
 
+- **Never create \`Instance.new("DirectionalLight")\`** — the class does not exist. Use \`PointLight\`, \`SpotLight\`, \`SurfaceLight\`; directional sunlight comes from \`Lighting\` (see Phase 5).
+- **Never read or write \`Lighting.Technology\` at runtime** — not scriptable; throws a security capability error.
+- **Service names are exact** — \`game:GetService("Teams")\`, never "TeamService".
+- **Do not invent Enums** — no \`Enum.NormalId.NegativeZ\`; valid faces are \`Enum.NormalId.Front\`/\`Back\`/\`Top\`/\`Bottom\`/\`Left\`/\`Right\`.
+- **CFrames are CFrame values** — assign \`part.CFrame = CFrame.new(...)\`; never a bare number or single \`Vector3\`.
+- **Region3int16** has no direct \`.X\`; read coordinates via \`region.Min.X\` and \`region.Max.X\`.
+- **Defensive indexing always** — \`:FindFirstChild()\` before property access; nil-check nested reads (\`if obj and obj.Props then\`).
+- Before each \`execute_luau\` call, self-scan the snippet for forbidden tokens (\`DirectionalLight\`, \`TeamService\`, \`NegativeZ\`, \`.Technology\`) and remove them first.
+- **NEVER pass nil values into \`Vector3.new()\` or assign nil to a \`.Size\` property.** Always validate x/y/z as non-nil numbers or provide explicit fallbacks (e.g. \`Vector3.new(x or 4, y or 1, z or 2)\`).
+
 - **Always resolve a live Studio target first.** Call \`list_roblox_studios\`
   and use one of the returned \`studio_id\` values. Studio instances disconnect
   when the place closes or reloads — if you get a "studio_id is not connected"
@@ -431,6 +441,70 @@ These rules prevent the most common build failures. Follow them on every
   large build script — do not guess and accept the 404. If a skill such as
   \`roblox-map-building\` is not found by the loader, fall back to these
   embedded instructions rather than stopping.
+
+### 🏗️ MANDATORY WORKSPACE HIERARCHY & EXECUTION SEQUENCING
+
+To ensure deterministic map architecture and prevent missing folder runtime errors, you MUST adhere to these execution sequence constraints:
+
+1. **Hierarchy First (Pass 0 is Non-Negotiable):**
+   - NEVER skip folder hierarchy creation to "minimize tool calls." Creating structured workspace folders is a mandatory prerequisite, NOT an optional optimization.
+   - All target root and child folders (\`Map\`, \`Zones\`, \`Kit\`, \`Structures\`, \`Lighting\`, etc.) MUST exist before placing any models, terrain, or CSG operations.
+
+2. **Defensive Folder Creation Pattern:**
+   - Every script that references a folder MUST use defensive initialization. NEVER assume a folder exists.
+   - Use this standard helper pattern in generated Luau scripts:
+     \`\`\`lua
+     local function getOrCreateFolder(parent, name)
+         local folder = parent:FindFirstChild(name)
+         if not folder then
+             folder = Instance.new("Folder")
+             folder.Name = name
+             folder.Parent = parent
+         end
+         return folder
+     end
+     \`\`\`
+
+3. **No Lazy Merging:**
+   - Separate structural workspace scaffolding from detailed geometry building if combining them risks skipping hierarchy setup.
+
+### 🏔️ ORGANIC PROCEDURAL TERRAIN RULES
+
+To ensure realistic landscapes with smooth hills, valleys, and natural elevations:
+
+1. **No Blocky/Spherical Terrain Primitives:**
+   - NEVER create individual \`Part\` instances (cubes or spheres) with \`Grass\`, \`Ground\`, or \`Rock\` materials to fake hills or rocks.
+   - All open landscapes, hills, and natural environments MUST use native \`workspace.Terrain\`.
+
+2. **Perlin Noise Heightmap Standard:**
+   - When generating natural landscapes, the generated Luau script MUST utilize \`math.noise\` to calculate smooth, continuous heightmaps.
+   - Standard implementation pattern:
+     \`\`\`lua
+     local terrain = workspace.Terrain
+     local gridSize = 4
+     local mapSize = 120
+     local frequency = 0.02
+     local amplitude = 20
+
+     for x = -mapSize, mapSize, gridSize do
+         for z = -mapSize, mapSize, gridSize do
+             local height = math.noise(x * frequency, 0, z * frequency) * amplitude
+             local position = Vector3.new(x, height / 2, z)
+             local size = Vector3.new(gridSize, math.max(height + 12, 4), gridSize)
+
+             -- Base organic grass terrain
+             terrain:FillBlock(CFrame.new(position), size, Enum.Material.Grass)
+
+             -- Automatic rock material for high peaks
+             if height > 12 then
+                 terrain:FillBlock(CFrame.new(x, height, z), Vector3.new(gridSize, 4, gridSize), Enum.Material.Rock)
+             end
+         end
+     end
+     \`\`\`
+
+3. **Material Blending:**
+   - Automatically transition materials based on elevation (e.g., Grass for lower ground/hills, Rock for peaks, Sand near water).
 
 ## Phase 1 — Blockout
 
@@ -504,11 +578,47 @@ These rules prevent the most common build failures. Follow them on every
   barrels), then micro (grass tufts, lamps). Stop when the budget says so.
 - MeshParts for organic shapes; plain Parts for anything box-like.
 
+### 🧱 ANTI-CLIPPING & PRECISE SPATIAL POSITIONING
+
+- **No Internal Props:** Lights, lanterns, and decorations MUST NOT be embedded inside structural pillars or walls. Use bounding offsets: \`wall.CFrame * CFrame.new(0, 0, wall.Size.Z/2 + prop.Size.Z/2)\`.
+- **Bridge Alignment:** Wooden planks for bridges must be sequentially offset along the Z/X axis without overlapping geometry or misaligned heights.
+
+### 🌲 ADVANCED PROCEDURAL TREE GENERATION (Multi-Species)
+
+When generating trees, the Agent MUST NOT build basic stacked sphere leaves. Implement distinct tree variations:
+
+- **Oak Tree (Standard):** Irregular overlapping leaf blocks rotated with random \`CFrame.Angles\`.
+- **Sakura Tree (Cherry Blossom):** Pink/Magenta leaves (\`Color3.fromRGB(255, 183, 197)\`), spreading canopy branches.
+- **Pine / Nordic Tree (Coniferous):** Cone-shaped layered canopy tapering upwards.
+- **Tree Generation Pattern:**
+  \`\`\`lua
+  local function createTree(treeType, position)
+      local trunk = Instance.new("Part")
+      trunk.Size = Vector3.new(1.5, 10, 1.5)
+      trunk.CFrame = CFrame.new(position + Vector3.new(0, 5, 0))
+      trunk.Material = Enum.Material.Wood
+      trunk.Color = Color3.fromRGB(101, 67, 33)
+      trunk.Anchored = true
+      trunk.Parent = workspace
+
+      -- Canopy logic based on treeType (Sakura / Oak / Pine) with randomized angle variations
+      -- ...
+  end
+  \`\`\`
+
+### 🪨 NATURAL IRREGULAR BOULDERS (No Perfect Spheres)
+
+NEVER generate rocks using pure \`Part\` with \`Shape = Sphere\`.
+
+Construct rocks by combining multiple offset wedge/block parts rotated at random angles (\`math.rad(math.random(0, 360))\`) and varying scales (\`Vector3.new(...)\`), grouped into a \`Model\` or combined via CSG \`UnionAsync\`.
+
+### 🧹 DEBRIS & DECORATION GROUND SNAP
+
+Any branches, rocks, or small environmental props MUST drop precisely to the terrain surface using Raycasting or exact Y-height math so they don't float inside or above grass blades.
+
 ## Phase 5 — Lighting and atmosphere
 
-- Set \`Lighting.Technology = Enum.Technology.Future\` for real-time shadows
-  and physically based lighting; then \`Lighting.TimeOfDay\` for the mood from
-  the plan (dawn 06:30, dusk 17:30, night 00:00).
+- NEVER read or write \`Lighting.Technology\` at runtime — not scriptable, throws a security capability error. Shape the mood and real-time shadows with \`Lighting.ClockTime\`, \`Lighting.TimeOfDay\`, \`Lighting.Brightness\`, and \`Lighting.GeographicLatitude\` across the plan (dawn 06:30, dusk 17:30, night 00:00).
 - Add one \`Atmosphere\` (Density 0.3-0.6, tune Glare/Haze and the fog color
   from the blueprint), one \`Sky\`, and 2-3 effects: \`BloomEffect\`,
   \`ColorCorrectionEffect\`, and \`SunRays\` for exterior hero moments.

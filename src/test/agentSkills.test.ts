@@ -180,16 +180,27 @@ describe("agent skill pack", () => {
     expect(building).toMatch(/R15/i);
   });
 
-  it("uses Future lighting, post-processing, SunRays, and a props asset palette", () => {
+  it("forbids the DirectionalLight class and Lighting.Technology; uses runtime-safe lights and post-processing", () => {
     const building = AGENT_SKILLS.find((skill) =>
       skill.relativePath.endsWith("roblox-map-building/SKILL.md"),
     )?.content;
     expect(building).toBeDefined();
-    expect(building).toContain("Enum.Technology.Future");
+    expect(building).not.toContain("Enum.Technology.Future");
+    expect(building).toContain("NEVER");
+    expect(building).toContain("DirectionalLight");
+    expect(building).toContain('game:GetService("Teams")');
+    expect(building).not.toContain("Lighting.Technology = Enum");
+    expect(building).toContain("NegativeZ");
+    expect(building).toContain("region.Min.X");
     expect(building).toContain("BloomEffect");
     expect(building).toContain("ColorCorrectionEffect");
     expect(building).toMatch(/SunRays/);
     expect(building).toMatch(/PointLight/);
+    expect(building).toMatch(/SpotLight/);
+    expect(building).toMatch(/SurfaceLight/);
+    expect(building).toContain(".Size");
+    expect(building).toMatch(/nil values into .*Vector3\.new/);
+    expect(building).toContain("Vector3.new(x or 4, y or 1, z or 2)");
     expect(building).toMatch(/asset palette/i);
     expect(building).toMatch(/Toolbox/i);
     expect(building).toMatch(/Clone/i);
@@ -392,6 +403,57 @@ describe("agent skill pack", () => {
     expect(agentsMd).toContain("## My own notes");
     expect(agentsMd).toContain("Keep these.");
     expect(agentsMd.match(/bloxmind-managed:begin/g)?.length).toBe(1);
+  });
+
+  it("prevents prop clipping with bounding offsets and bridge alignment", () => {
+    const building = AGENT_SKILLS.find((skill) =>
+      skill.relativePath.endsWith("roblox-map-building/SKILL.md"),
+    )?.content;
+    expect(building).toBeDefined();
+    expect(building).toContain("ANTI-CLIPPING");
+    expect(building).toContain("No Internal Props");
+    expect(building).toContain("wall.CFrame * CFrame.new(0, 0, wall.Size.Z/2 + prop.Size.Z/2)");
+    expect(building).toContain("Bridge Alignment");
+    expect(building).toMatch(/sequentially offset/i);
+  });
+
+  it("supports advanced procedural tree variations with multi-species patterns", () => {
+    const building = AGENT_SKILLS.find((skill) =>
+      skill.relativePath.endsWith("roblox-map-building/SKILL.md"),
+    )?.content;
+    expect(building).toBeDefined();
+    expect(building).toContain("ADVANCED PROCEDURAL TREE");
+    expect(building).toContain("createTree");
+    expect(building).toContain("Color3.fromRGB(255, 183, 197)");
+    expect(building).toContain("Oak Tree");
+    expect(building).toContain("Sakura");
+    expect(building).toContain("Pine");
+    expect(building).toContain("CFrame.Angles");
+    expect(building).toMatch(/MUST NOT build basic stacked sphere/i);
+  });
+
+  it("forbids perfect spherical rocks and requires irregular boulder construction", () => {
+    const building = AGENT_SKILLS.find((skill) =>
+      skill.relativePath.endsWith("roblox-map-building/SKILL.md"),
+    )?.content;
+    expect(building).toBeDefined();
+    expect(building).toContain("NATURAL IRREGULAR BOULDERS");
+    expect(building).toContain("Shape = Sphere");
+    expect(building).toContain("math.rad(math.random(0, 360))");
+    expect(building).toContain("Vector3.new(...)");
+    expect(building).toContain("UnionAsync");
+    expect(building).toMatch(/wedge\/block/i);
+  });
+
+  it("requires debris and decoration ground snap via Raycasting", () => {
+    const building = AGENT_SKILLS.find((skill) =>
+      skill.relativePath.endsWith("roblox-map-building/SKILL.md"),
+    )?.content;
+    expect(building).toBeDefined();
+    expect(building).toContain("DEBRIS & DECORATION GROUND SNAP");
+    expect(building).toMatch(/Raycasting/i);
+    expect(building).toMatch(/Y-height math/i);
+    expect(building).toMatch(/terrain surface/i);
   });
 
   it("ships AGENTS.md alongside the skill pack", async () => {
