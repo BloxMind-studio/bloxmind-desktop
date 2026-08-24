@@ -232,6 +232,7 @@ export interface StoredSessionSummary {
 }
 
 export interface DesktopApi {
+  stopAgentProcess(): Promise<void>;
   compileExplorerProgram(program: ExplorerProgramEnvelope): Promise<GeneratedProgramArtifact>;
   invokeExplorerProgram(artifact: GeneratedProgramArtifact): Promise<ExplorerSnapshot>;
   compileProjectIndexProgram(

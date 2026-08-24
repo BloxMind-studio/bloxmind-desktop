@@ -392,10 +392,19 @@ interface PromptEditorProps {
   onSubmit(): void;
   onPaste?: ClipboardEventHandler<HTMLDivElement>;
   enterToSend?: boolean;
+  disabled?: boolean;
+}
+
+function EditablePlugin({ editable }: { editable: boolean }) {
+  const [editor] = useLexicalComposerContext();
+  useEffect(() => {
+    editor.setEditable(editable);
+  }, [editor, editable]);
+  return null;
 }
 
 export default forwardRef<PromptEditorHandle, PromptEditorProps>(function PromptEditor(
-  { commands, objects, placeholder, onChange, onSubmit, onPaste, enterToSend = true },
+  { commands, objects, placeholder, onChange, onSubmit, onPaste, enterToSend = true, disabled = false },
   ref,
 ) {
   const editorRef = useMemo(() => ({ current: null as LexicalEditor | null }), []);
@@ -438,13 +447,18 @@ export default forwardRef<PromptEditorHandle, PromptEditorProps>(function Prompt
         theme: { paragraph: "m-0" },
       }}
     >
-      <div className="relative min-w-0 flex-1">
+      <div className={`relative min-w-0 flex-1 ${disabled ? "opacity-60" : ""}`}>
         <RichTextPlugin
           contentEditable={
             <ContentEditable
-              className="app-scrollbar max-h-48 min-h-10 overflow-y-auto whitespace-pre-wrap pb-2 pt-1.5 text-[13.5px] leading-relaxed text-foreground/95 outline-none focus-visible:outline-none! focus-visible:ring-0!"
+              className={`app-scrollbar max-h-48 min-h-10 overflow-y-auto whitespace-pre-wrap pb-2 pt-1.5 text-[13.5px] leading-relaxed outline-none focus-visible:outline-none! focus-visible:ring-0! ${disabled ? "text-muted-foreground/60" : "text-foreground/95"}`}
               aria-label="Message"
+              aria-disabled={disabled}
               onKeyDown={(event) => {
+                if (disabled) {
+                  event.preventDefault();
+                  return;
+                }
                 if (event.key !== "Enter") return;
                 const shouldSubmit = enterToSend ? !event.shiftKey : event.shiftKey;
                 if (!shouldSubmit) return;
@@ -457,7 +471,7 @@ export default forwardRef<PromptEditorHandle, PromptEditorProps>(function Prompt
           }
           placeholder={
             <div className="pointer-events-none absolute left-0 top-1 text-[13px] text-muted-foreground/50">
-              {placeholder}
+              {disabled ? "Agent is working — please wait…" : placeholder}
             </div>
           }
           ErrorBoundary={LexicalErrorBoundary}
@@ -477,6 +491,7 @@ export default forwardRef<PromptEditorHandle, PromptEditorProps>(function Prompt
         <TypeaheadPlugin kind="object" objectIndex={objectIndex} />
         <TypeaheadPlugin kind="command" objectIndex={EMPTY_OBJECT_INDEX} commands={commands} />
         <SetEditorRef editorRef={editorRef} />
+        <EditablePlugin editable={!disabled} />
       </div>
     </LexicalComposer>
   );

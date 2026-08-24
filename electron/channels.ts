@@ -44,6 +44,8 @@ export const channels = {
   sessionStoreDelete: "session-store:delete",
   sessionStoreSetLastActive: "session-store:set-last-active",
   sessionStoreGetLastActive: "session-store:get-last-active",
+  // ── Agent lifecycle ────────────────────────────────────────────────
+  stopAgentProcess: "agent:stop",
   // ── Licensing & Roblox auth ──────────────────────────────────────────
   authLogin: "auth:login",
   authLogout: "auth:logout",

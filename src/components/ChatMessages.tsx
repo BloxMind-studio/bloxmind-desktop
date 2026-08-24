@@ -17,6 +17,7 @@ import { useCheckpoints } from "@/hooks/useCheckpoints";
 import { useMessage, useMessageIds } from "@/hooks/useMessages";
 import { useActivePermission } from "@/hooks/usePermissions";
 import { useActiveQuestion } from "@/hooks/useQuestions";
+import { useSendMessage } from "@/hooks/mutations/useSendMessage";
 import { useSessionError } from "@/hooks/useSessionError";
 import { useSessionStatus } from "@/hooks/useSessionStatuses";
 import { useTodos } from "@/hooks/useTodos";
@@ -58,6 +59,80 @@ function ChatMessages() {
   // badge and restore button would never appear after a capture.
   const sessionStatusType = sessionStatus?.type;
   const checkpoint = useCheckpointHistory(activeSessionId ?? undefined);
+
+  // ── Continue handling for interrupted generations ──────────
+  // When the agent is stopped (abort) or crashes, we persist an "interrupted" marker
+  // and show a Continue button that resumes with a follow-up prompt.
+  const sendMessageForContinue = useSendMessage();
+  const [hasInterruptedFlag, setHasInterruptedFlag] = useState(false);
+  useEffect(() => {
+    if (!activeSessionId) {
+      setHasInterruptedFlag(false);
+      return;
+    }
+    const check = () => {
+      try {
+        const flag = localStorage.getItem(`BloxMind:interrupted:${activeSessionId}`);
+        setHasInterruptedFlag(!!flag);
+      } catch {
+        setHasInterruptedFlag(false);
+      }
+    };
+    check();
+    const interval = setInterval(check, 1000);
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === `BloxMind:interrupted:${activeSessionId}`) check();
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, [activeSessionId, sessionStatus?.type, messageIds.length]);
+  const isLastMessageAborted =
+    (lastMessage?.info as { error?: { name?: string } })?.error?.name === "MessageAbortedError";
+  const showContinue = !isBusy && !!activeSessionId && (hasInterruptedFlag || isLastMessageAborted);
+  const handleContinue = useCallback(() => {
+    if (!activeSessionId || isBusy) return;
+    try {
+      localStorage.removeItem(`BloxMind:interrupted:${activeSessionId}`);
+    } catch {
+      // ignore
+    }
+    setHasInterruptedFlag(false);
+    void sendMessageForContinue
+      .mutateAsync({
+        text: "Continue generating from where you left off based on the previous code/plan.",
+      })
+      .catch(() => undefined);
+  }, [activeSessionId, isBusy, sendMessageForContinue]);
+  // Clear the interrupted marker when a new generation starts or a fresh assistant
+  // message with final text arrives — the interruption is now resolved.
+  useEffect(() => {
+    if (!hasInterruptedFlag || !activeSessionId) return;
+    if (isBusy) {
+      try {
+        localStorage.removeItem(`BloxMind:interrupted:${activeSessionId}`);
+      } catch {
+        // ignore
+      }
+      setHasInterruptedFlag(false);
+      return;
+    }
+    if (lastMessage?.info.role === "assistant") {
+      const hasFinal = lastMessage.parts.some(
+        (p) => p.type === "text" && typeof p.text === "string" && p.text.trim().length > 0,
+      );
+      if (hasFinal && !isLastMessageAborted) {
+        try {
+          localStorage.removeItem(`BloxMind:interrupted:${activeSessionId}`);
+        } catch {
+          // ignore
+        }
+        setHasInterruptedFlag(false);
+      }
+    }
+  }, [hasInterruptedFlag, activeSessionId, isBusy, lastMessage, isLastMessageAborted]);
 
   // ── Authoritative message sync while the agent is generating ──────────
   // The OpenCode engine (anomalyco/opencode >= 1.14.42) drops SyncEvent
@@ -491,6 +566,33 @@ function ChatMessages() {
                 <PermissionPrompt permission={activePermission} onReply={handleReplyPermission} />
               )}
               <BusyThinkingIndicator status={sessionStatus} lastMessage={lastMessage} />
+              {showContinue && (
+                <div className="flex justify-center py-2">
+                  <button
+                    type="button"
+                    onClick={handleContinue}
+                    disabled={sendMessageForContinue.isPending}
+                    className="inline-flex items-center gap-2 rounded-full bg-foreground px-4 py-1.5 text-xs font-medium text-background shadow-sm transition-opacity hover:opacity-90 disabled:opacity-50"
+                    aria-label="Continue generation"
+                    title="Continue generating from where you left off"
+                  >
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <polyline points="9 18 15 12 9 6" />
+                    </svg>
+                    Continue
+                  </button>
+                </div>
+              )}
               {usageAction && (
                 <UsageLimitDialog
                   key={`${usageAction.provider}:${usageAction.reason}`}

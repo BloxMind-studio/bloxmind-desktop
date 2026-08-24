@@ -456,6 +456,40 @@ export function OpenCodeClientProvider({
     };
   }, [client, ready, queryClient, activeSessionIdRef, sseReconnectDelay, sseHeartbeatTimeout]);
 
+  // ── Crash recovery on app load: if persisted status is stuck in
+  // "thinking"/"generating"/"busy", reset to idle/interrupted so the UI never
+  // stays locked. This covers the case where the app was killed mid-generation.
+  useEffect(() => {
+    if (!ready || !client) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      if (cancelled) return;
+      const statuses = queryClient.getQueryData<Record<string, { type: string }>>(qk.statuses);
+      if (!statuses) return;
+      let hasStuck = false;
+      const next: Record<string, { type: string }> = { ...statuses };
+      for (const [id, st] of Object.entries(statuses)) {
+        if (st.type !== "idle") {
+          hasStuck = true;
+          next[id] = { type: "idle" };
+          try {
+            localStorage.setItem(`BloxMind:interrupted:${id}`, String(Date.now()));
+          } catch {
+            // ignore
+          }
+          void client.session.abort({ sessionID: id } as never).catch(() => undefined);
+        }
+      }
+      if (hasStuck && !cancelled) {
+        queryClient.setQueryData(qk.statuses, next);
+      }
+    }, 700);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [ready, client, queryClient]);
+
   const value = useMemo<OpenCodeClientContextValue>(
     () => ({ client, status, port, ready, initError, sseConnected, sseFailureCount }),
     [client, status, port, ready, initError, sseConnected, sseFailureCount],
@@ -514,7 +548,38 @@ export async function prefetchServerState(client: OpencodeClient, queryClient: Q
   const authRes = authResult.status === "fulfilled" ? authResult.value : undefined;
 
   if (statusRes?.data) {
-    queryClient.setQueryData(qk.statuses, statusRes.data);
+    // ── Crash recovery: if the app was killed while the agent was
+    // "thinking"/"generating" (busy/retry), the server may still report that
+    // status on the next launch. Reset any non-idle entries to idle so the UI
+    // never stays stuck, and mark them as interrupted so the Continue button
+    // can appear.
+    const raw = statusRes.data as Record<string, { type: string }>;
+    const hasStuck = Object.values(raw).some((s) => s.type !== "idle");
+    if (hasStuck) {
+      const cleaned: Record<string, { type: string }> = {};
+      for (const [id, st] of Object.entries(raw)) {
+        if (st.type !== "idle") {
+          cleaned[id] = { type: "idle" };
+          try {
+            localStorage.setItem(`BloxMind:interrupted:${id}`, String(Date.now()));
+          } catch {
+            // ignore
+          }
+        } else {
+          cleaned[id] = st;
+        }
+      }
+      queryClient.setQueryData(qk.statuses, cleaned);
+      // Best-effort: also ask the server to abort the stuck sessions so its
+      // MCP loops are killed, not just the UI state.
+      for (const [id, st] of Object.entries(raw)) {
+        if (st.type !== "idle") {
+          void client.session.abort({ sessionID: id } as never).catch(() => undefined);
+        }
+      }
+    } else {
+      queryClient.setQueryData(qk.statuses, statusRes.data);
+    }
   }
 
   if (agentsRes?.data && Array.isArray(agentsRes.data)) {

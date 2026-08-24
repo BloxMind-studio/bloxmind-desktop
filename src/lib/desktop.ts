@@ -126,6 +126,7 @@ interface DesktopEffects {
   readonly windowClose: () => Effect.Effect<void, DesktopError>;
   readonly windowIsMaximized: () => Effect.Effect<boolean, DesktopError>;
   readonly onWindowMaximizedChange: (listener: (maximized: boolean) => void) => () => void;
+  readonly stopAgentProcess: () => Effect.Effect<void, DesktopError>;
 }
 
 type StartupProgressListener = (progress: OpenCodeStartupProgress) => void;
@@ -241,6 +242,7 @@ const browserEffects: DesktopEffects = {
   windowIsMaximized: () =>
     Effect.fail(new DesktopError({ message: "Window control requires the desktop app." })),
   onWindowMaximizedChange: () => () => {},
+  stopAgentProcess: () => Effect.void,
 };
 
 const invoke = <A>(message: string, operation: () => Promise<A>) =>
@@ -367,6 +369,7 @@ function makeBridgeEffects(api: DesktopApi): DesktopEffects {
     windowIsMaximized: () =>
       invoke("Failed to read the window maximized state", () => api.windowIsMaximized()),
     onWindowMaximizedChange: (listener) => api.onWindowMaximizedChange(listener),
+    stopAgentProcess: () => invoke("Failed to stop agent process", () => api.stopAgentProcess()),
   };
 }
 
@@ -432,4 +435,5 @@ export const desktop: DesktopApi = {
   windowClose: () => runPromise(desktopEffects.windowClose()),
   windowIsMaximized: () => runPromise(desktopEffects.windowIsMaximized()),
   onWindowMaximizedChange: (listener) => desktopEffects.onWindowMaximizedChange(listener),
+  stopAgentProcess: () => runPromise(desktopEffects.stopAgentProcess()),
 };

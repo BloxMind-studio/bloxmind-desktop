@@ -5,6 +5,7 @@ import type { ElectronAuthApi, LicenseStatus } from "../src/types/license";
 import { channels } from "./channels";
 
 const api: DesktopApi = {
+  stopAgentProcess: () => ipcRenderer.invoke(channels.stopAgentProcess),
   compileExplorerProgram: (program) => ipcRenderer.invoke(channels.compileExplorerProgram, program),
   compileProjectIndexProgram: (program) =>
     ipcRenderer.invoke(channels.compileProjectIndexProgram, program),
@@ -117,4 +118,7 @@ const authApi: ElectronAuthApi = {
   },
 };
 
-contextBridge.exposeInMainWorld("electron", { auth: authApi });
+contextBridge.exposeInMainWorld("electron", {
+  auth: authApi,
+  stopAgentProcess: () => ipcRenderer.invoke(channels.stopAgentProcess),
+});

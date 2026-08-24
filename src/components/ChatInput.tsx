@@ -204,10 +204,11 @@ const SendButton = memo(function SendButton({
             })
           }
           disabled={abort.isPending}
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground transition-colors hover:bg-hover/12"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-red-500 text-white shadow-sm transition-colors hover:bg-red-600 disabled:opacity-50"
           title="Stop"
+          aria-label="Stop generation"
         >
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
             <rect x="4" y="4" width="16" height="16" rx="2" />
           </svg>
         </button>
@@ -455,31 +456,44 @@ function ChatInput() {
     setLightboxIndex((i) => (i !== null ? (i + 1) % attachments.length : null));
   }, [attachments.length]);
 
-  const onDragEnter = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragCounterRef.current++;
-    if (dragCounterRef.current === 1) setIsDragging(true);
-  }, []);
-  const onDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-  }, []);
-  const onDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragCounterRef.current = Math.max(0, dragCounterRef.current - 1);
-    if (dragCounterRef.current === 0) setIsDragging(false);
-  }, []);
+  const onDragEnter = useCallback(
+    (e: React.DragEvent) => {
+      if (isBusy) return;
+      e.preventDefault();
+      e.stopPropagation();
+      dragCounterRef.current++;
+      if (dragCounterRef.current === 1) setIsDragging(true);
+    },
+    [isBusy],
+  );
+  const onDragOver = useCallback(
+    (e: React.DragEvent) => {
+      if (isBusy) return;
+      e.preventDefault();
+      e.stopPropagation();
+    },
+    [isBusy],
+  );
+  const onDragLeave = useCallback(
+    (e: React.DragEvent) => {
+      if (isBusy) return;
+      e.preventDefault();
+      e.stopPropagation();
+      dragCounterRef.current = Math.max(0, dragCounterRef.current - 1);
+      if (dragCounterRef.current === 0) setIsDragging(false);
+    },
+    [isBusy],
+  );
   const onDrop = useCallback(
     (e: React.DragEvent) => {
+      if (isBusy) return;
       e.preventDefault();
       e.stopPropagation();
       dragCounterRef.current = 0;
       setIsDragging(false);
       if (e.dataTransfer.files.length > 0) addImageFiles(e.dataTransfer.files);
     },
-    [addImageFiles],
+    [addImageFiles, isBusy],
   );
 
   useEffect(() => {
@@ -794,7 +808,9 @@ function ChatInput() {
         accept="image/png,image/jpeg,image/gif,image/webp"
         multiple
         className="hidden"
+        disabled={isBusy}
         onChange={(e) => {
+          if (isBusy) return;
           if (e.target.files) addImageFiles(e.target.files);
           e.target.value = "";
         }}
@@ -859,7 +875,12 @@ function ChatInput() {
             objects={[...objects]}
             onChange={setText}
             onSubmit={handleSubmit}
+            disabled={isBusy}
             onPaste={(e) => {
+              if (isBusy) {
+                e.preventDefault();
+                return;
+              }
               const items = e.clipboardData.items;
               const imageFiles: File[] = [];
               for (const item of Array.from(items)) {
@@ -938,8 +959,9 @@ w-56 overflow-y-auto rounded-lg border bg-popover"
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className={`btn-primary flex h-8 w-8 items-center justify-center rounded-xl border border-border/60 bg-background transition-colors hover:border-hover/50 ${rejectShake ? "animate-reject-shake text-red-500" : "text-muted-foreground/70"}`}
-                title="Attach images"
+                disabled={isBusy}
+                className={`btn-primary flex h-8 w-8 items-center justify-center rounded-xl border border-border/60 bg-background transition-colors hover:border-hover/50 disabled:opacity-40 disabled:pointer-events-none ${rejectShake ? "animate-reject-shake text-red-500" : "text-muted-foreground/70"}`}
+                title={isBusy ? "Agent is working — wait to attach" : "Attach images"}
               >
                 <svg
                   width="15"
