@@ -298,36 +298,46 @@ const sweepStaleProcessesEffect = Effect.tryPromise(() => sweepStaleProcesses())
  * Abort any sessions that are still marked as busy/thinking/generating when the
  * app is quitting. This kills the active LLM/MCP loops so the next launch does
  * not inherit a stuck "Thinking" state. Best-effort: failures are swallowed.
+ * Implemented as a plain Effect (no OpenCode requirement) by delegating to the
+ * managed runtime via runPromise.
  */
-const abortBusySessionsEffect = Effect.gen(function* () {
-  const service = yield* OpenCode;
-  const info = yield* service.info.pipe(Effect.catchAll(() => Effect.succeed(null as unknown as { port: number; authorization: string })));
-  if (!info || !info.port || !info.authorization) return;
-  yield* Effect.tryPromise({
-    try: async () => {
-      const baseUrl = `http://127.0.0.1:${info.port}`;
-      const statusRes = await fetch(`${baseUrl}/session/status`, {
-        headers: { Authorization: info.authorization },
-      });
-      if (!statusRes.ok) return;
-      const statuses = (await statusRes.json()) as Record<string, { type: string }>;
-      for (const [sessionId, status] of Object.entries(statuses)) {
-        if (status.type !== "idle") {
-          try {
-            await fetch(`${baseUrl}/session/${sessionId}/abort`, {
-              method: "POST",
-              headers: { Authorization: info.authorization, "Content-Type": "application/json" },
-              body: JSON.stringify({}),
+const abortBusySessionsEffect: Effect.Effect<void, never, never> = Effect.promise(() =>
+  openCodeRuntime
+    .runPromise(
+      Effect.gen(function* () {
+        const service = yield* OpenCode;
+        const info = yield* service.info.pipe(
+          Effect.catchAll(() => Effect.succeed(null as unknown as { port: number; authorization: string })),
+        );
+        if (!info || !info.port || !info.authorization) return;
+        yield* Effect.tryPromise({
+          try: async () => {
+            const baseUrl = `http://127.0.0.1:${info.port}`;
+            const statusRes = await fetch(`${baseUrl}/session/status`, {
+              headers: { Authorization: info.authorization },
             });
-          } catch {
-            // ignore per-session abort errors
-          }
-        }
-      }
-    },
-    catch: (cause) => new DesktopMainError({ message: "Failed to abort busy sessions", cause }),
-  }).pipe(Effect.catchAll(Effect.logWarning));
-}).pipe(Effect.catchAll(Effect.logWarning));
+            if (!statusRes.ok) return;
+            const statuses = (await statusRes.json()) as Record<string, { type: string }>;
+            for (const [sessionId, status] of Object.entries(statuses)) {
+              if (status.type !== "idle") {
+                try {
+                  await fetch(`${baseUrl}/session/${sessionId}/abort`, {
+                    method: "POST",
+                    headers: { Authorization: info.authorization, "Content-Type": "application/json" },
+                    body: JSON.stringify({}),
+                  });
+                } catch {
+                  // ignore per-session abort errors
+                }
+              }
+            }
+          },
+          catch: (cause) => new DesktopMainError({ message: "Failed to abort busy sessions", cause }),
+        }).pipe(Effect.catchAll(Effect.logWarning));
+      }).pipe(Effect.catchAll(Effect.logWarning)),
+    )
+    .catch(() => undefined),
+).pipe(Effect.catchAll(() => Effect.void)) as Effect.Effect<void, never, never>;
 
 /**
  * Dispose the OpenCode runtime with a hard timeout so quit can never hang

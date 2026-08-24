@@ -1,0 +1,22 @@
+// BloxMind Multi-Repo Workspace — OpenCode / sub-agent routing guardrails
+// This checkout is `bloxmind-desktop` (Electron + React UI). The organization
+// has 3 distinct repos; agents MUST NOT push backend or MCP code into this repo.
+{
+  // OpenCode workspace guidance for any spawned sub-agent or AI CLI.
+  // Loaded automatically alongside electron/opencodeConfig.ts and .clinerules.
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": [
+    "REPOSITORY IDENTITY: This workspace is BloxMind-studio/bloxmind-desktop (Frontend / Electron Desktop App UI). Remote: https://github.com/BloxMind-studio/bloxmind-desktop.git",
+    "REPO TARGET RESOLUTION — inspect changed file paths before ANY git commit/push: (1) src/**, electron/main.ts, electron/preload.ts, electron/channels.ts, electron/opencodeConfig.ts, src/components/**, src/providers/** → BloxMind-studio/bloxmind-desktop (this repo); (2) backend engine core logic — electron/services/OpenCode.ts, electron/services/SessionStore.ts, src/lib/**, src/hooks/**, packages/** → BloxMind-studio/bloxmind-core-engine (https://github.com/BloxMind-studio/bloxmind-core-engine.git); (3) MCP server & Studio bridge — electron/services/StudioMcpBroker.ts, electron/services/Rojo*, electron/services/GeneratedProgramRuntime.ts, repos/** → BloxMind-studio/bloxmind-mcp-server (https://github.com/BloxMind-studio/bloxmind-mcp-server.git).",
+    "AUTOMATED REMOTE CHECK: Before git commit or git push, run `git diff --name-only` and `git remote get-url origin` and resolve the expected target via `resolveTargetRepo(paths)` in electron/opencodeConfig.ts. If the active remote does not match the resolved target, abort, run `git remote set-url origin <correct>` or ask the user, and never force-push cross-repo code. If changed files span multiple targets, split into per-repo commits.",
+    "SUB-AGENT AWARENESS: Any spawned sub-agent or AI CLI must read .clinerules (Multi-Repo Architecture section) and this opencode.jsonc before acting, and must respect the same REPO_TARGETS / REPO_REMOTE_URLS boundaries defined in electron/opencodeConfig.ts."
+  ],
+  "agent": {
+    "studio": {
+      "description": "Roblox Studio development assistant (desktop repo — see opencode.jsonc for multi-repo routing)"
+    }
+  },
+  "skills": {
+    "paths": [".opencode/skills"]
+  }
+}

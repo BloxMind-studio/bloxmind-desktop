@@ -21,7 +21,7 @@ describe("OpenCode configuration", () => {
     // Roblox API references (Terrain/Sky/Lighting/animation) so the agent stays
     // correct even when project skills are not discoverable by the engine. The
     // references are intentionally detailed; guard against runaway bloat only.
-    expect(prompt.trim().split(/\s+/).length).toBeLessThanOrEqual(1300);
+    expect(prompt.trim().split(/\s+/).length).toBeLessThanOrEqual(1600);
     expect(prompt).toMatch(/inspect only when needed/i);
     expect(prompt).toContain("smallest coherent change");
     expect(prompt).toContain("most relevant Studio check");

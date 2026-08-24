@@ -1,5 +1,92 @@
 import { join } from "node:path";
 
+// ── Multi-Repo Routing Guardrails ───────────────────────────────────────
+// BloxMind is split across 3 repos under the BloxMind-studio org. Every
+// automated commit/push MUST resolve the correct target repo from the set of
+// modified file paths and verify the git remote before pushing — never
+// force-push backend or MCP code into the desktop repo.
+export const REPO_TARGETS = {
+  desktop: "BloxMind-studio/bloxmind-desktop",
+  coreEngine: "BloxMind-studio/bloxmind-core-engine",
+  mcpServer: "BloxMind-studio/bloxmind-mcp-server",
+} as const;
+
+export const REPO_REMOTE_URLS = {
+  desktop: "https://github.com/BloxMind-studio/bloxmind-desktop.git",
+  coreEngine: "https://github.com/BloxMind-studio/bloxmind-core-engine.git",
+  mcpServer: "https://github.com/BloxMind-studio/bloxmind-mcp-server.git",
+} as const;
+
+/**
+ * Resolve the target repo for a set of changed file paths.
+ * - `src/**`, `electron/main.ts`, `electron/preload.ts`, `electron/channels.ts`,
+ *   `electron/opencodeConfig.ts`, `src/components/**`, `src/providers/**` → desktop
+ * - Backend core logic (`electron/services/OpenCode.ts`, `electron/services/SessionStore.ts`,
+ *   `src/lib/**`, `src/hooks/**`, `packages/**`) → coreEngine
+ * - MCP/Studio bridge (`electron/services/StudioMcpBroker.ts`, `electron/services/Rojo*`,
+ *   `electron/services/GeneratedProgramRuntime.ts`, `repos/**`) → mcpServer
+ * Returns null when the set spans multiple targets (caller should split commits).
+ */
+export function resolveTargetRepo(
+  filePaths: readonly string[],
+): keyof typeof REPO_TARGETS | null {
+  let target: keyof typeof REPO_TARGETS | null = null;
+  for (const raw of filePaths) {
+    const p = raw.replace(/\\/g, "/");
+    let cur: keyof typeof REPO_TARGETS;
+    if (
+      p.startsWith("src/") ||
+      p === "electron/main.ts" ||
+      p === "electron/preload.ts" ||
+      p === "electron/channels.ts" ||
+      p === "electron/opencodeConfig.ts" ||
+      p.startsWith("electron/agentSkills.ts") ||
+      p.startsWith("src/components/") ||
+      p.startsWith("src/providers/")
+    ) {
+      // src/* is overwhelmingly desktop UI; a few src/lib/* paths that are
+      // truly backend-core will be re-classified below if they dominate.
+      if (p.startsWith("src/lib/") || p.startsWith("src/hooks/")) {
+        // Heuristic: lib/hooks are shared but default to coreEngine when they
+        // are the *only* changed paths; mixed with src/components/** stays desktop.
+        cur = "coreEngine";
+        // If we already chose desktop from a UI file, keep desktop (mixed set → null later)
+        if (target === "desktop") {
+          // Mixed UI + core → ambiguous, caller must split
+          return null;
+        }
+      } else {
+        cur = "desktop";
+      }
+    } else if (
+      p.startsWith("electron/services/OpenCode") ||
+      p.startsWith("electron/services/SessionStore") ||
+      p.startsWith("packages/") ||
+      p === "src/lib/desktop.ts" // example shared lib that is core-owned
+    ) {
+      cur = "coreEngine";
+    } else if (
+      p.startsWith("electron/services/StudioMcpBroker") ||
+      p.startsWith("electron/services/Rojo") ||
+      p.startsWith("electron/services/GeneratedProgramRuntime") ||
+      p.startsWith("repos/") ||
+      p.includes("mcp-server")
+    ) {
+      cur = "mcpServer";
+    } else {
+      // Unknown / root config files default to desktop (this repo)
+      cur = "desktop";
+    }
+    if (target === null) target = cur;
+    else if (target !== cur) return null; // spans multiple repos → must split
+  }
+  return target;
+}
+
+export function remoteUrlForTarget(target: keyof typeof REPO_TARGETS): string {
+  return REPO_REMOTE_URLS[target];
+}
+
 export function studioMcpCommand(platform: NodeJS.Platform, localAppData?: string): string[] {
   if (platform === "darwin") {
     return ["/Applications/RobloxStudio.app/Contents/MacOS/StudioMCP"];
@@ -89,7 +176,9 @@ export function createOpenCodeConfig(broker: { url: string; token: string }) {
           "PROGRESS DISCIPLINE: work strictly phase-by-phase. Acknowledge the phase you are starting in one short line, do the work, then move on. Never re-explain or re-verify a step you already finished; if you catch yourself repeating an action, skip it. Decide any single sub-choice within about 2 minutes and commit.\n\n" +
           "SLOW TOOLS: generate_mesh runs for minutes; on timeout inspect before retrying, never insert duplicates.\n\n" +
           "ROJO: src/, server/, client/ auto-sync via `rojo serve`; preserve default.project.json's layout (ServerScriptService, ReplicatedStorage, StarterPlayerScripts). After restore_checkpoint, wait for Rojo to pick up reverted files.\n\n" +
-          "GIT: check status/diff before editing; commit, push, pull, and other filesystem-changing commands need explicit approval.\n\n⚠️ CRITICAL ROBLOX LUAU EXECUTION CONSTRAINTS\n- Never create `Instance.new(\"DirectionalLight\")` — the class does not exist; use `PointLight`, `SpotLight`, `SurfaceLight`; directional sun from `Lighting` (`ClockTime`/`Brightness`/`GeographicLatitude`).\n- NEVER read or write `Lighting.Technology` at runtime — not scriptable, throws a security capability error.\n- EXACT service names: `game:GetService(\"Teams\")` never \"TeamService\".\n- No invented Enums — no `Enum.NormalId.NegativeZ`; valid faces `Enum.NormalId.Front`/`Back`/`Top`/`Bottom`/`Left`/`Right` (use the enum, not bare).\n- CFrames are CFrame values — `part.CFrame = CFrame.new(...)`; never a number or a single `Vector3`.\n- Region3int16 via `region.Min.X`/`region.Max.X`.\n- FindFirstChild() before access; nil-check nested reads (`if obj and obj.Props then`).\n- NEVER pass nil values into `Vector3.new()` or assign nil to a `.Size` property — always validate x/y/z as non-nil numbers or use fallbacks (`Vector3.new(x or 4, y or 1, z or 2)`).\nTable & String Operations: NEVER pass `Instance` objects directly to `table.concat()` ' extract `.Name` or string properties first.'.\nEnum Correctness: `Wedge` is a Shape (`part.Shape = Enum.PartType.Wedge`), NOT a Material. Valid rock materials are `Enum.Material.Rock`, `Enum.Material.Basalt`, `Enum.Material.Slate`, `Enum.Material.Pebble`.\nTerrain Manipulation: NEVER call `workspace.Terrain:Destroy()` ' use `workspace.Terrain:Clear()`. ' For `FillBlock`/`FillRegion`, ensure all axes >= 1 to avoid 'Extents cannot be empty'.\nLighting & SunRaysEffect: `SunRaysEffect` only accepts `Intensity` (0-1) and `Spread` (0-1). NEVER set `.Size` or `.SunRaysSize` ' invalid members.'.\nDefensive Reference Checking: ALWAYS verify existence before `:GetChildren()`/`:ClearAllChildren()` ' `local folder = workspace:FindFirstChild('MyFolder'); if folder then folder:ClearAllChildren() end`.\n.\n\n",
+          "GIT: check status/diff before editing; commit, push, pull, and other filesystem-changing commands need explicit approval.\n\n" +
+          "MULTI-REPO ROUTING (MANDATORY): BloxMind is 3 repos under BloxMind-studio — (1) bloxmind-desktop = Electron/React UI (src/, electron/main.ts, electron/preload.ts, electron/channels.ts, electron/opencodeConfig.ts, src/components/**, src/providers/**) → https://github.com/BloxMind-studio/bloxmind-desktop.git (this checkout, current origin); (2) bloxmind-core-engine = backend AI core & generation engine (electron/services/OpenCode.ts, electron/services/SessionStore.ts, src/lib/**, src/hooks/**, packages/**) → https://github.com/BloxMind-studio/bloxmind-core-engine.git; (3) bloxmind-mcp-server = Studio MCP bridge & tooling (electron/services/StudioMcpBroker.ts, electron/services/Rojo*, electron/services/GeneratedProgramRuntime.ts, repos/**) → https://github.com/BloxMind-studio/bloxmind-mcp-server.git. Before ANY git commit/push, run `git diff --name-only` and `git remote get-url origin` and resolve the target via resolveTargetRepo(paths) in electron/opencodeConfig.ts (also documented in .clinerules and opencode.jsonc); if the remote does not match the resolved target, abort and either `git remote set-url origin <correct>` or ask the user; never force-push core/mcp code into desktop. If changed files span multiple targets, split into per-repo commits.\n\n" +
+          "⚠️ CRITICAL ROBLOX LUAU EXECUTION CONSTRAINTS\n- Never create `Instance.new(\"DirectionalLight\")` — the class does not exist; use `PointLight`, `SpotLight`, `SurfaceLight`; directional sun from `Lighting` (`ClockTime`/`Brightness`/`GeographicLatitude`).\n- NEVER read or write `Lighting.Technology` at runtime — not scriptable, throws a security capability error.\n- EXACT service names: `game:GetService(\"Teams\")` never \"TeamService\".\n- No invented Enums — no `Enum.NormalId.NegativeZ`; valid faces `Enum.NormalId.Front`/`Back`/`Top`/`Bottom`/`Left`/`Right` (use the enum, not bare).\n- CFrames are CFrame values — `part.CFrame = CFrame.new(...)`; never a number or a single `Vector3`.\n- Region3int16 via `region.Min.X`/`region.Max.X`.\n- FindFirstChild() before access; nil-check nested reads (`if obj and obj.Props then`).\n- NEVER pass nil values into `Vector3.new()` or assign nil to a `.Size` property — always validate x/y/z as non-nil numbers or use fallbacks (`Vector3.new(x or 4, y or 1, z or 2)`).\nTable & String Operations: NEVER pass `Instance` objects directly to `table.concat()` ' extract `.Name` or string properties first.'.\nEnum Correctness: `Wedge` is a Shape (`part.Shape = Enum.PartType.Wedge`), NOT a Material. Valid rock materials are `Enum.Material.Rock`, `Enum.Material.Basalt`, `Enum.Material.Slate`, `Enum.Material.Pebble`.\nTerrain Manipulation: NEVER call `workspace.Terrain:Destroy()` ' use `workspace.Terrain:Clear()`. ' For `FillBlock`/`FillRegion`, ensure all axes >= 1 to avoid 'Extents cannot be empty'.\nLighting & SunRaysEffect: `SunRaysEffect` only accepts `Intensity` (0-1) and `Spread` (0-1). NEVER set `.Size` or `.SunRaysSize` ' invalid members.'.\nDefensive Reference Checking: ALWAYS verify existence before `:GetChildren()`/`:ClearAllChildren()` ' `local folder = workspace:FindFirstChild('MyFolder'); if folder then folder:ClearAllChildren() end`.\n.\n\n",
       },
     },
   };

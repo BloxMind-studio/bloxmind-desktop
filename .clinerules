@@ -51,3 +51,31 @@ When delivering solutions, keep tone direct, technical, and concise:
 
 
 dont do a commit or a push or release a version without my word!!
+
+---
+
+## 🏗️ BloxMind Multi-Repo Architecture & Routing (3-Repo Guardrail)
+
+This checkout is **`bloxmind-desktop`** (Frontend / Electron Desktop App UI). The BloxMind-studio organization has **3 distinct repos** — agents MUST route commits to the correct repo and never push backend/MCP code into the desktop repo.
+
+### Repository Map
+
+| Repo | Purpose | Canonical Paths | Remote |
+|------|---------|-----------------|--------|
+| **bloxmind-desktop** (this checkout) | Electron + React UI | `src/**`, `electron/main.ts`, `electron/preload.ts`, `electron/channels.ts`, `electron/opencodeConfig.ts`, `electron/agentSkills.ts`, `src/components/**`, `src/providers/**` | `https://github.com/BloxMind-studio/bloxmind-desktop.git` |
+| **bloxmind-core-engine** | Backend private logic & AI core generation engine | `electron/services/OpenCode.ts`, `electron/services/SessionStore.ts`, `src/lib/**`, `src/hooks/**`, `packages/**` | `https://github.com/BloxMind-studio/bloxmind-core-engine.git` |
+| **bloxmind-mcp-server** | Roblox Studio MCP server & tooling layer | `electron/services/StudioMcpBroker.ts`, `electron/services/Rojo*`, `electron/services/GeneratedProgramRuntime.ts`, `electron/services/CheckpointService.ts`, `repos/**` | `https://github.com/BloxMind-studio/bloxmind-mcp-server.git` |
+
+Source of truth for routing logic: `electron/opencodeConfig.ts` → `REPO_TARGETS`, `REPO_REMOTE_URLS`, `resolveTargetRepo(paths)`, `remoteUrlForTarget(target)`. Also mirrored in `opencode.jsonc` `instructions`.
+
+### Automated Remote Check & Switch (Mandatory before commit/push)
+
+Before **any** `git commit` or `git push`:
+
+1. `git diff --name-only` (and `git diff --name-only --cached` if staged) → collect changed paths.
+2. `git remote get-url origin` → read active remote.
+3. Call `resolveTargetRepo(changedPaths)` (or manually map via the table above). If it returns `null` (mixed targets), **split** the changes into per-repo commits.
+4. Compare active remote vs `REPO_REMOTE_URLS[target]`. If mismatch, **abort** and either `git remote set-url origin <correct>` or ask the user. **Never** `git push -f` cross-repo code into `bloxmind-desktop`.
+5. Only then `git commit` / `git push`.
+
+Sub-agents and AI CLIs spawned via OpenCode or Cline must read this section **and** `opencode.jsonc` before acting.
