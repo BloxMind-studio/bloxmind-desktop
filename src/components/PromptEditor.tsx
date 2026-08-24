@@ -404,7 +404,16 @@ function EditablePlugin({ editable }: { editable: boolean }) {
 }
 
 export default forwardRef<PromptEditorHandle, PromptEditorProps>(function PromptEditor(
-  { commands, objects, placeholder, onChange, onSubmit, onPaste, enterToSend = true, disabled = false },
+  {
+    commands,
+    objects,
+    placeholder,
+    onChange,
+    onSubmit,
+    onPaste,
+    enterToSend = true,
+    disabled = false,
+  },
   ref,
 ) {
   const editorRef = useMemo(() => ({ current: null as LexicalEditor | null }), []);

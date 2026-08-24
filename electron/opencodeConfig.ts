@@ -27,9 +27,7 @@ export const REPO_REMOTE_URLS = {
  *   `electron/services/GeneratedProgramRuntime.ts`, `repos/**`) → mcpServer
  * Returns null when the set spans multiple targets (caller should split commits).
  */
-export function resolveTargetRepo(
-  filePaths: readonly string[],
-): keyof typeof REPO_TARGETS | null {
+export function resolveTargetRepo(filePaths: readonly string[]): keyof typeof REPO_TARGETS | null {
   let target: keyof typeof REPO_TARGETS | null = null;
   for (const raw of filePaths) {
     const p = raw.replace(/\\/g, "/");

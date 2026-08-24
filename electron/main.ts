@@ -307,9 +307,11 @@ const abortBusySessionsEffect: Effect.Effect<void, never, never> = Effect.promis
       Effect.gen(function* () {
         const service = yield* OpenCode;
         const info = yield* service.info.pipe(
-          Effect.catchAll(() => Effect.succeed(null as unknown as { port: number; authorization: string })),
+          Effect.catchAll(() =>
+            Effect.succeed(null as unknown as { port: number; authorization: string }),
+          ),
         );
-        if (!info || !info.port || !info.authorization) return;
+        if (!info?.port || !info.authorization) return;
         yield* Effect.tryPromise({
           try: async () => {
             const baseUrl = `http://127.0.0.1:${info.port}`;
@@ -323,7 +325,10 @@ const abortBusySessionsEffect: Effect.Effect<void, never, never> = Effect.promis
                 try {
                   await fetch(`${baseUrl}/session/${sessionId}/abort`, {
                     method: "POST",
-                    headers: { Authorization: info.authorization, "Content-Type": "application/json" },
+                    headers: {
+                      Authorization: info.authorization,
+                      "Content-Type": "application/json",
+                    },
                     body: JSON.stringify({}),
                   });
                 } catch {
@@ -332,7 +337,8 @@ const abortBusySessionsEffect: Effect.Effect<void, never, never> = Effect.promis
               }
             }
           },
-          catch: (cause) => new DesktopMainError({ message: "Failed to abort busy sessions", cause }),
+          catch: (cause) =>
+            new DesktopMainError({ message: "Failed to abort busy sessions", cause }),
         }).pipe(Effect.catchAll(Effect.logWarning));
       }).pipe(Effect.catchAll(Effect.logWarning)),
     )
@@ -843,8 +849,12 @@ const registerIpcHandlers = Effect.sync(() => {
     openCodeRuntime.runPromise(
       Effect.gen(function* () {
         const service = yield* OpenCode;
-        const info = yield* service.info.pipe(Effect.catchAll(() => Effect.succeed(null as unknown as { port: number; authorization: string })));
-        if (!info || !info.port || !info.authorization) return;
+        const info = yield* service.info.pipe(
+          Effect.catchAll(() =>
+            Effect.succeed(null as unknown as { port: number; authorization: string }),
+          ),
+        );
+        if (!info?.port || !info.authorization) return;
         yield* Effect.tryPromise({
           try: async () => {
             const baseUrl = `http://127.0.0.1:${info.port}`;
@@ -858,7 +868,10 @@ const registerIpcHandlers = Effect.sync(() => {
                 try {
                   await fetch(`${baseUrl}/session/${sessionId}/abort`, {
                     method: "POST",
-                    headers: { Authorization: info.authorization, "Content-Type": "application/json" },
+                    headers: {
+                      Authorization: info.authorization,
+                      "Content-Type": "application/json",
+                    },
                     body: JSON.stringify({}),
                   });
                 } catch {
@@ -867,7 +880,8 @@ const registerIpcHandlers = Effect.sync(() => {
               }
             }
           },
-          catch: (cause) => new DesktopMainError({ message: "Failed to stop agent process", cause }),
+          catch: (cause) =>
+            new DesktopMainError({ message: "Failed to stop agent process", cause }),
         }).pipe(Effect.catchAll(Effect.logWarning));
       }).pipe(Effect.catchAll(Effect.logWarning)),
     ),

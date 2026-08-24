@@ -12,12 +12,12 @@ import { BusyThinkingIndicator } from "@/components/chat/ThinkingIndicator";
 import { TodoPanel } from "@/components/chat/TodoPanel";
 import { useAnswerQuestion, useRejectQuestion } from "@/hooks/mutations/useAnswerQuestion";
 import { useReplyPermission } from "@/hooks/mutations/useReplyPermission";
+import { useSendMessage } from "@/hooks/mutations/useSendMessage";
 import { useCheckpointHistory } from "@/hooks/useCheckpointHistory";
 import { useCheckpoints } from "@/hooks/useCheckpoints";
 import { useMessage, useMessageIds } from "@/hooks/useMessages";
 import { useActivePermission } from "@/hooks/usePermissions";
 import { useActiveQuestion } from "@/hooks/useQuestions";
-import { useSendMessage } from "@/hooks/mutations/useSendMessage";
 import { useSessionError } from "@/hooks/useSessionError";
 import { useSessionStatus } from "@/hooks/useSessionStatuses";
 import { useTodos } from "@/hooks/useTodos";
@@ -88,7 +88,7 @@ function ChatMessages() {
       clearInterval(interval);
       window.removeEventListener("storage", handleStorage);
     };
-  }, [activeSessionId, sessionStatus?.type, messageIds.length]);
+  }, [activeSessionId]);
   const isLastMessageAborted =
     (lastMessage?.info as { error?: { name?: string } })?.error?.name === "MessageAbortedError";
   const showContinue = !isBusy && !!activeSessionId && (hasInterruptedFlag || isLastMessageAborted);

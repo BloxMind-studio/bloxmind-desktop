@@ -15,8 +15,9 @@ export function useAbort() {
       const sessionID = activeSessionId;
       // Prefer the Electron bridge if present (ensures MCP loops are killed in the main process),
       // otherwise fall back to the direct OpenCode abort.
-      const electronStop = (window as unknown as { electron?: { stopAgentProcess?: () => Promise<void> } })
-        ?.electron?.stopAgentProcess;
+      const electronStop = (
+        window as unknown as { electron?: { stopAgentProcess?: () => Promise<void> } }
+      )?.electron?.stopAgentProcess;
       if (electronStop) {
         try {
           await electronStop();
@@ -33,7 +34,8 @@ export function useAbort() {
         // If the server already considers the session idle (e.g. crash-recovery abort),
         // treat it as success so the UI still unlocks.
         const msg = err instanceof Error ? err.message : String(err);
-        if (!msg.toLowerCase().includes("not found") && !msg.toLowerCase().includes("idle")) throw err;
+        if (!msg.toLowerCase().includes("not found") && !msg.toLowerCase().includes("idle"))
+          throw err;
       }
       return sessionID;
     },
