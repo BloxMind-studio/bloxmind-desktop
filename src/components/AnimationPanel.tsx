@@ -1,5 +1,5 @@
 import posthog from "posthog-js/dist/module.full.no-external.js";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useEnhanceAnimationBrief } from "@/hooks/mutations/useEnhanceAnimationBrief";
 import { useSendMessage } from "@/hooks/mutations/useSendMessage";
@@ -77,11 +77,16 @@ export default function AnimationPanel({ onClose }: { onClose: () => void }) {
   const [loop, setLoop] = useState(false);
   const [beats, setBeats] = useState("");
   const [notes, setNotes] = useState("");
+  const [hasEnhanced, setHasEnhanced] = useState(false);
 
   const [provider, model] = selectedModel ? splitModelKey(selectedModel) : [undefined, undefined];
 
+  useEffect(() => {
+    if (!brief.trim()) setHasEnhanced(false);
+  }, [brief]);
+
   async function enhanceBrief() {
-    if (!brief.trim() || enhance.isPending) return;
+    if (!brief.trim() || enhance.isPending || hasEnhanced) return;
     const startedAt = performance.now();
     posthog.capture(
       "animation_enhance_started",
@@ -93,6 +98,7 @@ export default function AnimationPanel({ onClose }: { onClose: () => void }) {
       if (enhanced.duration) setDuration(enhanced.duration);
       if (enhanced.beats) setBeats(enhanced.beats);
       if (enhanced.notes) setNotes(enhanced.notes);
+      setHasEnhanced(true);
       posthog.capture(
         "animation_enhance_succeeded",
         analyticsProperties(
@@ -221,10 +227,11 @@ export default function AnimationPanel({ onClose }: { onClose: () => void }) {
           <button
             type="button"
             onClick={enhanceBrief}
-            disabled={enhance.isPending || !brief.trim()}
-            className="mt-2 text-[11px] font-medium text-muted-foreground transition-colors disabled:opacity-50"
+            disabled={enhance.isPending || !brief.trim() || hasEnhanced}
+            className={`mt-2 text-[11px] font-medium transition-colors disabled:opacity-50 ${hasEnhanced ? "text-muted-foreground/60 cursor-not-allowed" : "text-muted-foreground"}`}
+            title={hasEnhanced ? "Enhanced — clear the input to enhance again" : undefined}
           >
-            {enhance.isPending ? "Enhancing..." : "Enhance with AI"}
+            {hasEnhanced ? "✓ Enhanced" : enhance.isPending ? "Enhancing..." : "Enhance with AI"}
           </button>
         </div>
 
