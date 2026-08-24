@@ -1,5 +1,5 @@
 import posthog from "posthog-js/dist/module.full.no-external.js";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useEnhanceMapBrief } from "@/hooks/mutations/useEnhanceMapBrief";
 import { useSendMessage } from "@/hooks/mutations/useSendMessage";
@@ -78,11 +78,17 @@ export default function MapPanel({ onClose }: { onClose: () => void }) {
   const [landmarks, setLandmarks] = useState("");
   const [zones, setZones] = useState("");
   const [notes, setNotes] = useState("");
+  const [hasEnhanced, setHasEnhanced] = useState(false);
 
   const [provider, model] = selectedModel ? splitModelKey(selectedModel) : [undefined, undefined];
 
+  // One-time enhance lock: reset only when input is cleared or panel is re-opened (remount)
+  useEffect(() => {
+    if (!brief.trim()) setHasEnhanced(false);
+  }, [brief]);
+
   async function enhanceBrief() {
-    if (!brief.trim() || enhance.isPending) return;
+    if (!brief.trim() || enhance.isPending || hasEnhanced) return;
     const startedAt = performance.now();
     posthog.capture(
       "map_enhance_started",
@@ -97,6 +103,7 @@ export default function MapPanel({ onClose }: { onClose: () => void }) {
       if (enhanced.landmarks) setLandmarks(enhanced.landmarks);
       if (enhanced.zones) setZones(enhanced.zones);
       if (enhanced.notes) setNotes(enhanced.notes);
+      setHasEnhanced(true);
       posthog.capture(
         "map_enhance_succeeded",
         analyticsProperties(
@@ -218,10 +225,11 @@ export default function MapPanel({ onClose }: { onClose: () => void }) {
           <button
             type="button"
             onClick={enhanceBrief}
-            disabled={enhance.isPending || !brief.trim()}
-            className="mt-2 text-[11px] font-medium text-muted-foreground transition-colors disabled:opacity-50"
+            disabled={enhance.isPending || !brief.trim() || hasEnhanced}
+            className={`mt-2 text-[11px] font-medium transition-colors disabled:opacity-50 ${hasEnhanced ? "text-muted-foreground/60 cursor-not-allowed" : "text-muted-foreground"}`}
+            title={hasEnhanced ? "Enhanced — clear the input to enhance again" : undefined}
           >
-            {enhance.isPending ? "Enhancing..." : "Enhance with AI"}
+            {hasEnhanced ? "✓ Enhanced" : enhance.isPending ? "Enhancing..." : "Enhance with AI"}
           </button>
         </div>
 
