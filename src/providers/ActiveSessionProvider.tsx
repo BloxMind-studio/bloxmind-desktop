@@ -8,7 +8,6 @@ import {
   useMemo,
   useState,
 } from "react";
-import { toast } from "sonner";
 import { useSessions } from "@/hooks/useSessions";
 import { desktop } from "@/lib/desktop";
 import { qk } from "@/lib/queryKeys";
@@ -43,23 +42,12 @@ export function ActiveSessionProvider({
   const queryClient = useQueryClient();
   const { data: sessions } = useSessions();
 
-  const syncRojoToSession = useCallback((sessionID: string) => {
-    void desktop
-      .rojoStartForSession(sessionID)
-      .then((status) => {
-        if (status.active) {
-          toast("Rojo switched to this session", {
-            description: `Rojo is serving this session's project on port ${status.port}. In Roblox Studio's Rojo plugin, press Disconnect, then Connect to load the correct project.`,
-            duration: 8000,
-          });
-        }
-      })
-      .catch((error: unknown) => {
-        toast.error("Rojo switch failed", {
-          description: error instanceof Error ? error.message : String(error),
-          duration: 8000,
-        });
-      });
+  const syncRojoToSession = useCallback((_sessionID: string) => {
+    // Unified on ~/BloxMind (option 1): Rojo + checkpoint share the same
+    // workspace, so session switches no longer kill+recreate the server or
+    // wipe the project. No per-session Rojo switch is needed; the global
+    // server started at boot stays alive and Studio stays connected.
+    return;
   }, []);
 
   const selectSession = useCallback(
@@ -72,10 +60,9 @@ export function ActiveSessionProvider({
       // Remember this session so the next launch can resume it.
       void desktop.sessionStoreSetLastActive(sessionID).catch(() => undefined);
 
-      // A session switch must never leak the previous session's files into the
-      // newly opened Roblox Studio Place. Point Rojo at an isolated, freshly
-      // generated workspace for this session and surface the
-      // Disconnect → Connect prompt to the user.
+      // Unified on ~/BloxMind: all sessions share the same workspace and Rojo
+      // server, so no per-session isolation or Disconnect→Connect prompt is
+      // needed. The checkpoint system handles file history via git/journal.
       if (!wasActive) {
         syncRojoToSession(sessionID);
       }
