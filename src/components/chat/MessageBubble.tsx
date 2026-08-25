@@ -20,12 +20,15 @@ import { useActiveSession } from "@/providers/ActiveSessionProvider";
 
 export const MessageBubble = memo(function MessageBubble({
   messageId,
+  promptMessageId,
   showControls = false,
   checkpoint,
   showRestore = true,
   isLastIndex = false,
 }: {
   messageId: string;
+  /** The user prompt that started this task — checkpoints are keyed by it. */
+  promptMessageId?: string;
   showControls?: boolean;
   checkpoint: CheckpointHistory;
   showRestore?: boolean;
@@ -170,12 +173,15 @@ export const MessageBubble = memo(function MessageBubble({
                 {checkpoint.cachedFsCheckpointCount > 0 && (
                   <CheckpointStatusBadge checkpoint={checkpoint} />
                 )}
-                {/* Restore button: only on non-last turns when a checkpoint exists */}
-                {showRestore && !isLastIndex && checkpoint.fsCheckpointCount > 0 && (
+                {/* Restore button: any completed task turn with a checkpoint —
+                    including the just-finished turn (isTaskIdle already hides
+                    it while the agent is still streaming). Targets the task's
+                    user prompt, which is the id checkpoints are captured with. */}
+                {showRestore && checkpoint.fsCheckpointCount > 0 && (
                   <RestoreCheckpointButton
                     checkpoint={checkpoint}
                     isBusy={isBusy}
-                    messageId={messageId}
+                    messageId={promptMessageId ?? messageId}
                   />
                 )}
                 {/* Retry button: shown on errored assistant messages. */}

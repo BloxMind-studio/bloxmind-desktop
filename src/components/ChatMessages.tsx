@@ -339,6 +339,33 @@ function ChatMessages() {
     return roles;
   }, [activeSessionId, messageIds, queryClient]);
 
+  // Map every assistant message to the user prompt that started its task.
+  // Checkpoints are captured with the PROMPT's messageId (busy-start), so the
+  // Restore button must target that id for per-task checkpoint lookup.
+  const anchorPromptByMessageId = useMemo(() => {
+    const map = new Map<string, string | null>();
+    let lastPrompt: string | null = null;
+    messageIds.forEach((id, index) => {
+      const role = rolesByIndex.get(index);
+      if (role === "user") {
+        lastPrompt = id;
+        map.set(id, id);
+      } else {
+        map.set(id, lastPrompt);
+      }
+    });
+    return map;
+  }, [messageIds, rolesByIndex]);
+
+  // Re-sync FS checkpoint state whenever the agent finishes a turn (or the
+  // session first reports idle). Covers checkpoints whose post-capture
+  // refresh raced the UI, restores after regenerate, and the initial load
+  // after an app restart.
+  useEffect(() => {
+    if (sessionStatusType !== "idle") return;
+    void checkpoint.refreshCheckpoints();
+  }, [sessionStatusType, checkpoint.refreshCheckpoints]);
+
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const shouldAutoScroll = useRef(true);
@@ -543,6 +570,7 @@ function ChatMessages() {
                     <div className="pb-4">
                       <MessageBubble
                         messageId={msgId}
+                        promptMessageId={anchorPromptByMessageId.get(msgId) ?? undefined}
                         showControls={isLastOfTask && isTaskIdle}
                         checkpoint={checkpoint}
                         showRestore={showRestore}
