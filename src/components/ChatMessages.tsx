@@ -223,6 +223,9 @@ function ChatMessages() {
       captureDebounceTimerRef.current = setTimeout(() => {
         captureDebounceTimerRef.current = null;
         if (previousStatusRef.current?.type !== "busy") return;
+        // Skip if the user-message capture trigger (below) already snapshotted
+        // this turn.
+        if (capturedForMessageRef.current === lastId) return;
         capturedForMessageRef.current = lastId;
         void captureCheckpoint({
           sessionId: activeSessionId,
@@ -252,6 +255,34 @@ function ChatMessages() {
     sessionStatus,
     checkpoint.refreshCheckpoints,
   ]);
+
+  // Robust pre-task capture: snapshot the workspace the moment a NEW user
+  // prompt arrives, independent of the SSE busy-transition signal (which the
+  // engine is documented to drop). Guarantees a checkpoint exists for every
+  // task, so the badge + Restore/Regenerate always have a target. Guarded by
+  // the same capturedForMessageRef, so it never double-captures a turn.
+  useEffect(() => {
+    if (!activeSessionId) return;
+    if (messageIds.length === 0) return;
+    const lastId = messageIds[messageIds.length - 1];
+    if (!lastId || capturedForMessageRef.current === lastId) return;
+    const cache = queryClient.getQueryData<MessagesCache>(qk.messages(activeSessionId));
+    if (cache?.messagesById[lastId]?.info.role !== "user") return;
+    capturedForMessageRef.current = lastId;
+    void captureCheckpoint({
+      sessionId: activeSessionId,
+      messageId: lastId,
+      tool: "session.promptAsync",
+      paths: [],
+    })
+      .then(() => {
+        void checkpoint.refreshCheckpoints();
+        setTimeout(() => void checkpoint.refreshCheckpoints(), 600);
+      })
+      .catch((err: unknown) => {
+        console.warn("Pre-execution checkpoint capture failed (message trigger):", err);
+      });
+  }, [activeSessionId, messageIds, captureCheckpoint, checkpoint.refreshCheckpoints, queryClient]);
 
   // Auto-save a permanent checkpoint whenever the agent finishes a task
   useEffect(() => {

@@ -400,6 +400,36 @@ describe("useRegenerateResponse", () => {
     expect(fakeClient.session.deleteMessage).not.toHaveBeenCalled();
     expect(fakeClient.session.promptAsync).not.toHaveBeenCalled();
   });
+  it("falls back to the most recent checkpoint when the exact message is missing", async () => {
+    // A checkpoint exists for some other message (e.g. a prior regenerate
+    // deleted the original anchor, or capture missed this turn). The exact
+    // messageId will not match, but regenerate must still restore the latest
+    // snapshot instead of refusing.
+    desktopMock.checkpointList.mockResolvedValue([
+      makeCheckpointFor("msg-user-1"),
+      makeCheckpointFor("msg-user-missing"),
+    ]);
+    const { user2, asst2 } = makeConversation();
+    const fakeClient = makeFakeClient();
+    const qc = makeQC([user2, asst2]);
+
+    const { result } = renderHook(() => useRegenerateResponse(), {
+      wrapper: makeWrapper(qc, fakeClient),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({ assistantMessageId: "msg-asst-2" });
+    });
+
+    // It must have restored the latest checkpoint (msg-user-missing) even
+    // though neither the anchor (msg-user-2) nor assistant matched it.
+    expect(desktopMock.checkpointRestore).toHaveBeenCalledTimes(1);
+    const restoreArg = desktopMock.checkpointRestore.mock.calls[0][0];
+    expect(restoreArg.checkpointId).toBe("cp-msg-user-missing");
+    // And the truncated re-prompt still happened.
+    expect(fakeClient.session.deleteMessage).toHaveBeenCalled();
+    expect(fakeClient.session.promptAsync).toHaveBeenCalled();
+  });
 
   it("refuses to regenerate when the file revert fails", async () => {
     desktopMock.checkpointRestore.mockRejectedValue(new Error("git checkout failed"));

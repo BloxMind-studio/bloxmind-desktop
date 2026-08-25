@@ -44,6 +44,7 @@
     "effect": "^3.22.0",
     "electron-updater": "^6.8.9",
     "extract-zip": "^2.0.1",
+    "isomorphic-git": "^1.41.9",
     "lexical": "^0.48.0",
     "lucide-react": "^1.31.0",
     "posthog-js": "^1.363.1",

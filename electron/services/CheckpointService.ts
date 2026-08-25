@@ -30,6 +30,7 @@ import {
   ValidationResultSchema,
 } from "../../src/types/checkpoints";
 import { RojoServerManagerTag, type RojoStatus } from "./RojoServerManager";
+import { resolveGitBackend } from "./GitBackend";
 
 const exec = promisify(execFile);
 
@@ -178,121 +179,6 @@ function listWorkspaceFiles(root: string): Promise<string[]> {
   return walk(root).then(() => results);
 }
 
-// ── Git helpers ─────────────────────────────────────────────────────────
-
-function git(args: string[], cwd: string): Effect.Effect<string, CheckpointError> {
-  // All git operations are routed through the global `gitMutex` to prevent
-  // concurrent stash/checkout calls from different sessions corrupting the
-  // shared repository's state.
-  return withGitLock(
-    Effect.tryPromise({
-      try: async () => {
-        const result = await exec("git", args, {
-          cwd,
-          windowsHide: true,
-          maxBuffer: 64 * 1024 * 1024,
-        });
-        return result.stdout;
-      },
-      catch: (cause) => new CheckpointError({ message: `git ${args[0]} failed`, cause }),
-    }),
-  );
-}
-
-function isGitRepo(workspace: string): Effect.Effect<boolean, CheckpointError> {
-  return git(["rev-parse", "--is-inside-work-tree"], workspace).pipe(
-    Effect.map((out) => out.trim() === "true"),
-    Effect.catchAll(() => Effect.succeed(false)),
-  );
-}
-
-/**
- * Make sure heavy/derived directories are never staged by the blanket
- * `git add -A` used for untracked-aware snapshots. Writes/extends the
- * workspace `.gitignore`; best-effort — failures never block capture.
- */
-async function ensureWorkspaceGitignoreImpl(root: string): Promise<void> {
-  const file = join(root, ".gitignore");
-  let existing = "";
-  try {
-    existing = await readFile(file, "utf8");
-  } catch {
-    existing = "";
-  }
-  const lines = new Set(existing.split(/\r?\n/).map((line) => line.trim()));
-  // `.git` is managed by git itself and must never appear in .gitignore.
-  const needed = [...SKIP_DIRS].filter((dir) => dir !== ".git");
-  const missing = needed.filter((dir) => !lines.has(dir) && !lines.has(`${dir}/`));
-  if (missing.length === 0) return;
-  const separator = existing === "" || existing.endsWith("\n") ? "" : "\n";
-  await mkdir(root, { recursive: true });
-  await writeFile(file, `${existing}${separator}${missing.join("\n")}\n`, "utf8");
-}
-
-function ensureWorkspaceGitignore(root: string): Effect.Effect<void> {
-  return Effect.tryPromise({
-    try: () => ensureWorkspaceGitignoreImpl(root),
-    catch: (cause) => new CheckpointError({ message: "Failed to update .gitignore", cause }),
-  }).pipe(Effect.catchAll(() => Effect.void));
-}
-
-// ── Index persistence ───────────────────────────────────────────────────
-
-function sessionIndexPath(storeRoot: string, sessionId: string): string {
-  return join(storeRoot, "sessions", sanitize(sessionId), "checkpoints.json");
-}
-
-function sanitize(id: string): string {
-  return id.replace(/[^a-zA-Z0-9._-]/g, "_");
-}
-
-interface SessionIndex {
-  history: Checkpoint[];
-  activeIndex: number;
-}
-
-const SessionIndexSchema = Schema.mutable(
-  Schema.Struct({
-    history: Schema.Array(CheckpointSchema),
-    activeIndex: Schema.Number,
-  }),
-);
-
-const EMPTY_INDEX: SessionIndex = { history: [], activeIndex: -1 };
-
-function loadSessionIndex(storeRoot: string, sessionId: string) {
-  return readJsonFile(sessionIndexPath(storeRoot, sessionId), SessionIndexSchema, EMPTY_INDEX).pipe(
-    Effect.catchAll((error) => {
-      // Self-heal: indices written by older broken builds (empty journal,
-      // no git ref) are useless — drop them so fresh captures/restores work.
-      console.warn(`[checkpoint] ignoring invalid session index: ${error.message}`);
-      return Effect.succeed(EMPTY_INDEX);
-    }),
-    Effect.map((index) => ({
-      history: index.history.map((c) => ({
-        ...c,
-        fullSnapshot: c.fullSnapshot ?? false,
-      })),
-      activeIndex: index.activeIndex,
-    })),
-  );
-}
-
-// Serializes index writes to disk so concurrent capture/restore requests
-// never race on the same checkpoints.json (Windows `rename` fails with EPERM
-// when the destination is briefly locked by another write).
-const storeMutex = Effect.unsafeMakeSemaphore(1);
-
-// Global mutex for git operations. All sessions share the same workspace and
-// therefore the same `.git` directory, so concurrent `git stash create` or
-// `git checkout` calls from different sessions can interleave and corrupt
-// stash refs or produce partial checkouts. This lock wraps every git command
-// that touches the repository.
-const gitMutex = Effect.unsafeMakeSemaphore(1);
-function withGitLock<A, E>(effect: Effect.Effect<A, E>): Effect.Effect<A, E> {
-  return gitMutex.withPermits(1)(effect);
-}
-
 // Per-session mutexes protect the read-modify-write cycle of capture/restore
 // so concurrent operations on the same session can't lose checkpoints.
 const sessionMutexes = new Map<string, Effect.Semaphore>();
@@ -405,34 +291,43 @@ function makeCapture(
         }
       }
 
-      // 2. Git-backed snapshot that INCLUDES untracked files. A bare
-      //    `git stash create` ignores untracked paths, so freshly generated
-      //    Luau scripts would be missing from the snapshot. Stage everything
-      //    first (`git add -A`), create the stash commit from the full
-      //    index+worktree state, then reset the index so capture never leaves
-      //    the user's staging area modified.
-      const gitRef = yield* isGitRepo(options.workspace).pipe(
-        Effect.flatMap((isRepo) => {
-          if (!isRepo) return Effect.succeed<string | null>(null);
-          return Effect.gen(function* () {
-            yield* ensureWorkspaceGitignore(options.workspace);
-            yield* git(["add", "-A", "--"], options.workspace).pipe(
-              Effect.catchAll(() => Effect.succeed("")),
-            );
-            const ref = yield* git(
-              ["stash", "create", `bloxmind:${randomBytes(6).toString("hex")}`],
-              options.workspace,
-            ).pipe(
-              Effect.map((out) => out.trim() || null),
-              Effect.catchAll(() => Effect.succeed<string | null>(null)),
-            );
-            yield* git(["reset", "--quiet"], options.workspace).pipe(
-              Effect.catchAll(() => Effect.succeed("")),
-            );
-            return ref;
-          });
-        }),
-      );
+      // 2. Git-backed snapshot (system git preferred, embedded isomorphic-git
+      //    fallback so clean machines with no `git` binary still get snapshots).
+      //    `git stash create` ignores untracked paths, so freshly generated Luau
+      //    scripts would be missing from the snapshot. Stage everything first
+      //    (`git add -A`), create the snapshot from the full index+worktree
+      //    state, then reset the index so capture never leaves the user's
+      //    staging area modified.
+      //
+      //    `git stash create` requires an existing commit (a "base" from which
+      //    to build a stash commit). A freshly git-initialized workspace has an
+      //    unborn HEAD, so the stash silently fails and gitRef ends up null —
+      //    which would degrade every restore to the incomplete journal. The
+      //    backend ensures a baseline commit exists first so snapshots work.
+      const gitRef = yield* Effect.tryPromise({
+        try: async () => {
+          const backend = await resolveGitBackend();
+          if (!(await backend.isGitRepo(options.workspace))) return null;
+          try {
+            await backend.ensureBaseline(options.workspace);
+          } catch {
+            // baseline failure → journal-only restore
+            return null;
+          }
+          const label = `bloxmind:${randomBytes(6).toString("hex")}`;
+          try {
+            return await backend.snapshot(options.workspace, label);
+          } catch {
+            return null;
+          }
+        },
+        catch: () => null,
+      });
+      if (gitRef === null) {
+        yield* Effect.logWarning(
+          "[checkpoint] git snapshot unavailable (no system git and embedded backend failed); restore is journal-only",
+        );
+      }
 
       // 3. Persist index (DAG: parent = activeIndex).
       //    Locked per-session so concurrent captures can't read the same base
@@ -519,6 +414,37 @@ function restoreFromJournal(
   });
 }
 
+/**
+ * After an explicit full-workspace rollback, delete any file under the workspace
+ * root that was NOT present in the captured checkpoint. Such files were created
+ * by the agent during the turn (created/large/binary files a plain journal
+ * restore leaves behind). Guaranteed-safe: only files outside SKIP_DIRS and
+ * outside the snapshot's tracked set are touched, and only when the caller
+ * explicitly opted out of preserveUserEdits (a destructive, user-requested
+ * rewind). Best-effort per file — a failure never aborts the whole restore.
+ */
+function removeFilesCreatedAfterGitCheckpoint(
+  workspace: string,
+  keepPaths: Set<string>,
+): Effect.Effect<void, CheckpointError> {
+  return Effect.tryPromise({
+    try: async () => {
+      const allFiles = await listWorkspaceFiles(workspace);
+      for (const relPath of allFiles) {
+        if (keepPaths.has(relPath)) continue;
+        const absPath = resolve(workspace, relPath);
+        await rm(absPath, { force: true });
+      }
+      return undefined;
+    },
+    catch: (cause) =>
+      new CheckpointError({
+        message: "Failed to remove post-checkpoint files during restore",
+        cause,
+      }),
+  });
+}
+
 function makeRestore(
   options: CheckpointServiceOptions,
 ): (
@@ -578,9 +504,19 @@ function makeRestore(
 
       if (checkpoint.gitRef) {
         // Restore tracked files from the snapshot, but never run `git clean`.
-        // `git stash create` does not preserve untracked files, so cleaning
-        // here would permanently delete unrelated user files.
-        yield* git(["checkout", checkpoint.gitRef, "--", ...restorePaths], options.workspace).pipe(
+        // Uses the same backend the capture used (system git or embedded
+        // isomorphic-git). Falls back to the journal on failure.
+        yield* Effect.tryPromise({
+          try: async () => {
+            const backend = await resolveGitBackend();
+            await backend.restore(options.workspace, checkpoint.gitRef as string, restorePaths);
+            return undefined;
+          },
+          catch: (error) =>
+            new Error(
+              error instanceof Error ? error.message : String(error),
+            ),
+        }).pipe(
           Effect.catchAll((error) =>
             restoreFromJournal(options, checkpoint).pipe(
               Effect.catchAll(() =>
@@ -597,6 +533,14 @@ function makeRestore(
         yield* restoreFromJournal(options, checkpoint);
         // Files created after a full snapshot are intentionally left alone:
         // without an untracked-file-aware snapshot, deleting them is unsafe.
+      }
+
+      // Explicit rollback on a full-workspace snapshot: also remove files the
+      // agent created after capture (they weren't in the pre-state journal, so
+      // a plain restore leaves them behind and Rojo re-pushes them to Studio).
+      // Only for non-preserving restores (the user explicitly asked to rewind).
+      if (checkpoint.fullSnapshot && !decoded.preserveUserEdits) {
+        yield* removeFilesCreatedAfterGitCheckpoint(options.workspace, new Set(scopedPaths));
       }
 
       // Atomicity: verify restored hashes match pre-state exactly. Entries
