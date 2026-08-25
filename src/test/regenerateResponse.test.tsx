@@ -18,9 +18,9 @@ import type { MessagesCache } from "@/lib/sseDispatch";
 import { ActiveSessionContext } from "@/providers/ActiveSessionProvider";
 import { OpenCodeClientContext } from "@/providers/OpenCodeClientProvider";
 import { ModelPreferencesContext } from "@/providers/PreferencesProvider";
-import type { Checkpoint } from "@/types/checkpoints";
 import { makeAssistantMessage, makeFilePart, makeTextPart, makeUserMessage } from "@/test/fixtures";
 import type { MessageWithParts } from "@/types";
+import type { Checkpoint } from "@/types/checkpoints";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 

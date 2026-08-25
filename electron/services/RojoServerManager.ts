@@ -602,7 +602,9 @@ function buildManager(options: RojoServerManagerOptions): RojoServerManager {
         catch: (cause) =>
           new RojoError({ message: "Failed to touch the project for Rojo resync", cause }),
       }).pipe(
-        Effect.catchAll((error) => Effect.logWarning(`[rojo] resync touch failed: ${error.message}`)),
+        Effect.catchAll((error) =>
+          Effect.logWarning(`[rojo] resync touch failed: ${error.message}`),
+        ),
       );
       // Give the watcher a beat to detect the change and push, then refresh
       // connection state so the caller gets an accurate handshake result.

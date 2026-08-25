@@ -153,6 +153,15 @@ export function useCheckpointHistory(sessionId: string | undefined) {
     }
   }, [sessionId, checkpoints]);
 
+  // Hydrate FS checkpoint state whenever the active session changes (and on
+  // first mount). Without this, counts stay at their initial 0 after an app
+  // restart even though checkpoints persist on disk — leaving the Checkpoint
+  // badge and Restore button permanently invisible until a NEW capture runs.
+  useEffect(() => {
+    if (!sessionId) return;
+    void refreshCheckpoints();
+  }, [sessionId, refreshCheckpoints]);
+
   /** Restore the latest FS checkpoint for a specific message (full file rollback). */
   const restoreLatestFileCheckpoint = useCallback(
     async (targetMessageId: string) => {
