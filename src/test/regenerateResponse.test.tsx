@@ -18,6 +18,7 @@ import type { MessagesCache } from "@/lib/sseDispatch";
 import { ActiveSessionContext } from "@/providers/ActiveSessionProvider";
 import { OpenCodeClientContext } from "@/providers/OpenCodeClientProvider";
 import { ModelPreferencesContext } from "@/providers/PreferencesProvider";
+import type { Checkpoint } from "@/types/checkpoints";
 import { makeAssistantMessage, makeFilePart, makeTextPart, makeUserMessage } from "@/test/fixtures";
 import type { MessageWithParts } from "@/types";
 
@@ -28,6 +29,26 @@ const SESSION_ID = "s1";
 vi.mock("sonner", () => ({
   toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() },
 }));
+
+// Spies for the checkpoint bridge so regenerate can be tested against a
+// restored pre-task snapshot (the unified ~/BloxMind flow requires files to
+// be reverted BEFORE any message deletion or re-prompt).
+const desktopMock = vi.hoisted(() => ({
+  checkpointList: vi.fn(),
+  checkpointRestore: vi.fn(),
+}));
+
+vi.mock("@/lib/desktop", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/desktop")>();
+  return {
+    ...actual,
+    desktop: {
+      ...actual.desktop,
+      checkpointList: (...args: unknown[]) => desktopMock.checkpointList(...args),
+      checkpointRestore: (...args: unknown[]) => desktopMock.checkpointRestore(...args),
+    },
+  };
+});
 
 // Spies for the system-context hooks so individual tests can opt into a
 // Studio target / project index context (both hooks degrade to null when
@@ -143,12 +164,38 @@ function makeConversation() {
   return { user1, asst1, user2, asst2 };
 }
 
+function makeCheckpointFor(messageId: string): Checkpoint {
+  return {
+    id: `cp-${messageId}`,
+    parentId: null,
+    timestamp: Date.now(),
+    sessionId: SESSION_ID,
+    messageId,
+    kind: "pre-exec",
+    tool: null,
+    paths: [],
+    gitRef: "abc123",
+    failureLog: null,
+    fullSnapshot: true,
+  };
+}
+
 // ── Setup ──────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
   vi.clearAllMocks();
   providerSpies.useStudioTargetOptional.mockReturnValue(null);
   providerSpies.useProjectIndexContext.mockReturnValue({ contextPrompt: null });
+  desktopMock.checkpointList.mockResolvedValue([
+    makeCheckpointFor("msg-user-1"),
+    makeCheckpointFor("msg-user-2"),
+  ]);
+  desktopMock.checkpointRestore.mockResolvedValue({
+    restoredId: "cp-x",
+    message: "Restored",
+    filesChanged: ["src/server.luau"],
+    rojoSynced: true,
+  });
 });
 
 // ── useRegenerateResponse ─────────────────────────────────────────────────
@@ -299,5 +346,78 @@ describe("useRegenerateResponse", () => {
     await waitFor(() => {
       expect(qc.getQueryData(qk.statuses)).toEqual({});
     });
+  });
+
+  it("reverts files via the pre-task checkpoint BEFORE deleting messages or re-prompting", async () => {
+    const { user2, asst2 } = makeConversation();
+    const fakeClient = makeFakeClient();
+    const qc = makeQC([user2, asst2]);
+
+    const { result } = renderHook(() => useRegenerateResponse(), {
+      wrapper: makeWrapper(qc, fakeClient),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({ assistantMessageId: "msg-asst-2" });
+    });
+
+    // The restore targets the anchor prompt's pre-exec snapshot…
+    expect(desktopMock.checkpointRestore).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: SESSION_ID,
+        checkpointId: "cp-msg-user-2",
+        dryRun: false,
+      }),
+    );
+    // …and completes strictly BEFORE any message deletion or prompt stream.
+    expect(desktopMock.checkpointRestore.mock.invocationCallOrder[0]).toBeLessThan(
+      fakeClient.session.deleteMessage.mock.invocationCallOrder[0],
+    );
+    expect(fakeClient.session.deleteMessage.mock.invocationCallOrder[0]).toBeLessThan(
+      fakeClient.session.promptAsync.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("refuses to regenerate when no pre-task checkpoint exists (dirty files)", async () => {
+    desktopMock.checkpointList.mockResolvedValue([]);
+    const { user2, asst2 } = makeConversation();
+    const fakeClient = makeFakeClient();
+    const qc = makeQC([user2, asst2]);
+
+    const { result } = renderHook(() => useRegenerateResponse(), {
+      wrapper: makeWrapper(qc, fakeClient),
+    });
+
+    await act(async () => {
+      await expect(
+        result.current.mutateAsync({ assistantMessageId: "msg-asst-2" }),
+      ).rejects.toThrow(/no pre-task checkpoint/i);
+    });
+
+    // Nothing may touch the conversation or stream new code over the
+    // unrestored workspace.
+    expect(desktopMock.checkpointRestore).not.toHaveBeenCalled();
+    expect(fakeClient.session.deleteMessage).not.toHaveBeenCalled();
+    expect(fakeClient.session.promptAsync).not.toHaveBeenCalled();
+  });
+
+  it("refuses to regenerate when the file revert fails", async () => {
+    desktopMock.checkpointRestore.mockRejectedValue(new Error("git checkout failed"));
+    const { user2, asst2 } = makeConversation();
+    const fakeClient = makeFakeClient();
+    const qc = makeQC([user2, asst2]);
+
+    const { result } = renderHook(() => useRegenerateResponse(), {
+      wrapper: makeWrapper(qc, fakeClient),
+    });
+
+    await act(async () => {
+      await expect(
+        result.current.mutateAsync({ assistantMessageId: "msg-asst-2" }),
+      ).rejects.toThrow(/couldn't revert files before regenerating/i);
+    });
+
+    expect(fakeClient.session.deleteMessage).not.toHaveBeenCalled();
+    expect(fakeClient.session.promptAsync).not.toHaveBeenCalled();
   });
 });

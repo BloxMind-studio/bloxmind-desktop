@@ -1,6 +1,6 @@
 import { type ChildProcessWithoutNullStreams, exec, spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { access, mkdir, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { Data, Effect, Layer } from "effect";
@@ -46,6 +46,13 @@ export interface RojoServerManager {
   readonly toggleForSession: (sessionId: string) => Effect.Effect<RojoStatus, RojoError>;
   readonly getLogs: () => Effect.Effect<RojoLogEntry[], RojoError>;
   readonly onLog: (listener: (entry: RojoLogEntry) => void) => () => void;
+  /**
+   * Nudge the running server after a checkpoint restore: touch
+   * `default.project.json` so Rojo's file watcher re-scans the workspace and
+   * pushes the restored tree to Roblox Studio immediately, then re-check the
+   * client connection so callers can report live-sync state accurately.
+   */
+  readonly notifyRestored: () => Effect.Effect<RojoStatus, RojoError>;
 }
 
 export class RojoServerManagerTag extends Effect.Tag("@BloxMind/RojoServerManager")<
@@ -505,21 +512,32 @@ function buildManager(options: RojoServerManagerOptions): RojoServerManager {
   const start = (workspace: string): Effect.Effect<RojoStatus, RojoError> =>
     spawnServer({ workspace, port: DEFAULT_ROJO_PORT, overwriteProject: false });
 
-  const startForSession = (sessionId: string): Effect.Effect<RojoStatus, RojoError> =>
+  const startForSession = (_sessionId: string): Effect.Effect<RojoStatus, RojoError> =>
     Effect.gen(function* () {
-      if (!options.sessionWorkspaceDir) {
-        return yield* Effect.fail(
-          new RojoError({ message: "Per-session Rojo isolation is not configured" }),
-        );
+      // Unified on ~/BloxMind (option 1): checkpoint + Rojo share the same
+      // workspace so restores are visible in Studio. Per-session kill+recreate
+      // is disabled to preserve file state and keep the client connected.
+      // The global Rojo server is started once at boot on ~/BloxMind; session
+      // switches no longer wipe the project.
+      if (runtime && runtime.child.exitCode === null) {
+        yield* refreshClientState();
+        return {
+          active: true,
+          port: runtime.port,
+          error: runtime.serverError,
+          workspace: runtime.workspace,
+          clientConnected: runtime.clientConnected,
+        };
       }
-      // Serve the session's isolated workspace on the default port. The Rojo
-      // Studio plugin only connects to the host:port in its settings (34872),
-      // so a per-session port would leave Studio permanently unable to find
-      // the server. Isolation comes from the workspace, not the port: each
-      // switch kills the previous server and serves a freshly generated,
-      // empty project so nothing leaks from an earlier session.
-      const workspace = options.sessionWorkspaceDir(sessionId);
-      return yield* spawnServer({ workspace, port: DEFAULT_ROJO_PORT, overwriteProject: true });
+      // No active server — report inactive. The global server should be
+      // started via `rojo.start(~/BloxMind)` at app boot and stay alive.
+      return {
+        active: false,
+        port: null,
+        error: null,
+        workspace: null,
+        clientConnected: false,
+      };
     });
 
   const toggle = (workspace: string): Effect.Effect<RojoStatus, RojoError> =>
@@ -538,7 +556,7 @@ function buildManager(options: RojoServerManagerOptions): RojoServerManager {
       return yield* start(workspace);
     });
 
-  const toggleForSession = (sessionId: string): Effect.Effect<RojoStatus, RojoError> =>
+  const toggleForSession = (_sessionId: string): Effect.Effect<RojoStatus, RojoError> =>
     Effect.gen(function* () {
       if (runtime && runtime.child.exitCode === null) {
         yield* Effect.promise(() => killExisting());
@@ -551,7 +569,52 @@ function buildManager(options: RojoServerManagerOptions): RojoServerManager {
           clientConnected: false,
         };
       }
-      return yield* startForSession(sessionId);
+      // In unified mode, toggling on does not spawn a per-session empty
+      // project (which would wipe ~/BloxMind). Report inactive and let the
+      // user toggle the global server.
+      return {
+        active: false,
+        port: null,
+        error: "Rojo is unified on ~/BloxMind — use the main Rojo toggle",
+        workspace: null,
+        clientConnected: false,
+      };
+    });
+
+  const notifyRestored = (): Effect.Effect<RojoStatus, RojoError> =>
+    Effect.gen(function* () {
+      if (!runtime || runtime.child.exitCode !== null) {
+        return { active: false, port: null, error: null, workspace: null, clientConnected: false };
+      }
+      const current = runtime;
+      // Touch default.project.json (rewrite identical bytes) so Rojo's
+      // watcher re-scans the tree and re-pushes restored files to Studio.
+      yield* Effect.tryPromise({
+        try: async () => {
+          const projectFile = join(current.workspace, "default.project.json");
+          const contents = await readFile(projectFile, "utf8").catch(() => null);
+          if (contents !== null) {
+            await writeFile(projectFile, contents, "utf8");
+          } else {
+            await ensureProjectJson(current.workspace, false);
+          }
+        },
+        catch: (cause) =>
+          new RojoError({ message: "Failed to touch the project for Rojo resync", cause }),
+      }).pipe(
+        Effect.catchAll((error) => Effect.logWarning(`[rojo] resync touch failed: ${error.message}`)),
+      );
+      // Give the watcher a beat to detect the change and push, then refresh
+      // connection state so the caller gets an accurate handshake result.
+      yield* Effect.sleep("400 millis");
+      yield* refreshClientState();
+      return {
+        active: true,
+        port: current.port,
+        error: current.serverError,
+        workspace: current.workspace,
+        clientConnected: current.clientConnected,
+      };
     });
 
   return {
@@ -581,6 +644,7 @@ function buildManager(options: RojoServerManagerOptions): RojoServerManager {
       }),
     toggle,
     toggleForSession,
+    notifyRestored,
     getLogs: () => Effect.sync(() => (runtime ? [...runtime.logs] : [])),
     onLog: (listener: (entry: RojoLogEntry) => void) => {
       if (!runtime) return () => {};

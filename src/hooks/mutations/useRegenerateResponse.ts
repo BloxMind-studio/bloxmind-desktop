@@ -2,6 +2,7 @@ import type { Part, SessionStatus } from "@opencode-ai/sdk/v2/client";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
+import { desktop } from "@/lib/desktop";
 import { qk } from "@/lib/queryKeys";
 import { splitModelKey } from "@/lib/splitModelKey";
 import type { MessagesCache } from "@/lib/sseDispatch";
@@ -118,6 +119,35 @@ export function useRegenerateResponse() {
       const promptParts = extractPromptParts(cache?.messagesById[anchorId]?.parts ?? []);
       if (promptParts.every((p) => p.type !== "text")) {
         promptParts.unshift({ type: "text", text: " " });
+      }
+
+      // Unified on ~/BloxMind: file state and Rojo are shared, so regenerating
+      // MUST revert files to the pre-task snapshot BEFORE deleting messages or
+      // starting the new promptAsync stream — otherwise the fresh generation
+      // streams over dirty/unrestored files. This is deliberately sequential
+      // and non-best-effort.
+      const checkpoints = await desktop.checkpointList(activeSessionId);
+      const targetCheckpoint =
+        checkpoints.find((c) => c.messageId === anchorId) ??
+        checkpoints.find((c) => c.messageId === assistantMessageId);
+      if (!targetCheckpoint) {
+        throw new Error(
+          "No pre-task checkpoint found for this turn — refusing to regenerate over unrestored files.",
+        );
+      }
+      try {
+        await desktop.checkpointRestore({
+          checkpointId: targetCheckpoint.id,
+          sessionId: activeSessionId,
+          dryRun: false,
+          preserveUserEdits: !targetCheckpoint.fullSnapshot,
+        });
+      } catch (restoreError) {
+        throw new Error(
+          `Couldn't revert files before regenerating: ${
+            restoreError instanceof Error ? restoreError.message : String(restoreError)
+          }`,
+        );
       }
 
       // Truncate the conversation at the anchor: delete the prompt and

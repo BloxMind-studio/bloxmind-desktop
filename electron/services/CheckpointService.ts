@@ -206,6 +206,36 @@ function isGitRepo(workspace: string): Effect.Effect<boolean, CheckpointError> {
   );
 }
 
+/**
+ * Make sure heavy/derived directories are never staged by the blanket
+ * `git add -A` used for untracked-aware snapshots. Writes/extends the
+ * workspace `.gitignore`; best-effort — failures never block capture.
+ */
+async function ensureWorkspaceGitignoreImpl(root: string): Promise<void> {
+  const file = join(root, ".gitignore");
+  let existing = "";
+  try {
+    existing = await readFile(file, "utf8");
+  } catch {
+    existing = "";
+  }
+  const lines = new Set(existing.split(/\r?\n/).map((line) => line.trim()));
+  // `.git` is managed by git itself and must never appear in .gitignore.
+  const needed = [...SKIP_DIRS].filter((dir) => dir !== ".git");
+  const missing = needed.filter((dir) => !lines.has(dir) && !lines.has(`${dir}/`));
+  if (missing.length === 0) return;
+  const separator = existing === "" || existing.endsWith("\n") ? "" : "\n";
+  await mkdir(root, { recursive: true });
+  await writeFile(file, `${existing}${separator}${missing.join("\n")}\n`, "utf8");
+}
+
+function ensureWorkspaceGitignore(root: string): Effect.Effect<void> {
+  return Effect.tryPromise({
+    try: () => ensureWorkspaceGitignoreImpl(root),
+    catch: (cause) => new CheckpointError({ message: "Failed to update .gitignore", cause }),
+  }).pipe(Effect.catchAll(() => Effect.void));
+}
+
 // ── Index persistence ───────────────────────────────────────────────────
 
 function sessionIndexPath(storeRoot: string, sessionId: string): string {
@@ -375,20 +405,33 @@ function makeCapture(
         }
       }
 
-      // 2. Git-backed snapshot for tracked files. Untracked files are kept in
-      // the journal above; `git stash create` cannot safely include them.
+      // 2. Git-backed snapshot that INCLUDES untracked files. A bare
+      //    `git stash create` ignores untracked paths, so freshly generated
+      //    Luau scripts would be missing from the snapshot. Stage everything
+      //    first (`git add -A`), create the stash commit from the full
+      //    index+worktree state, then reset the index so capture never leaves
+      //    the user's staging area modified.
       const gitRef = yield* isGitRepo(options.workspace).pipe(
-        Effect.flatMap((isRepo) =>
-          isRepo
-            ? git(
-                ["stash", "create", `bloxmind:${randomBytes(6).toString("hex")}`],
-                options.workspace,
-              ).pipe(
-                Effect.map((out) => out.trim() || null),
-                Effect.catchAll(() => Effect.succeed<string | null>(null)),
-              )
-            : Effect.succeed<string | null>(null),
-        ),
+        Effect.flatMap((isRepo) => {
+          if (!isRepo) return Effect.succeed<string | null>(null);
+          return Effect.gen(function* () {
+            yield* ensureWorkspaceGitignore(options.workspace);
+            yield* git(["add", "-A", "--"], options.workspace).pipe(
+              Effect.catchAll(() => Effect.succeed("")),
+            );
+            const ref = yield* git(
+              ["stash", "create", `bloxmind:${randomBytes(6).toString("hex")}`],
+              options.workspace,
+            ).pipe(
+              Effect.map((out) => out.trim() || null),
+              Effect.catchAll(() => Effect.succeed<string | null>(null)),
+            );
+            yield* git(["reset", "--quiet"], options.workspace).pipe(
+              Effect.catchAll(() => Effect.succeed("")),
+            );
+            return ref;
+          });
+        }),
       );
 
       // 3. Persist index (DAG: parent = activeIndex).
@@ -601,20 +644,17 @@ function makeRestore(
         `[checkpoint] restored ${checkpoint.id} session=${decoded.sessionId} files=${scopedPaths.length}`,
       );
 
-      // ── Rojo live-sync awareness ──────────────────────────────────────
-      // The restored files live under the workspace (`src/` / `.luau`) and,
-      // because `rojo serve` watches that directory, the file reversion is
-      // picked up automatically. Verify Rojo is active & connected so the UI
-      // can tell the user whether the code was actually pushed to Studio.
-      //
-      // Poll for a short window after restore: Rojo's file watcher needs a
-      // brief moment to detect the reverted files and push them to Studio.
-      // A single instantaneous check could report "connected" before the
-      // sync actually happens, or miss a transient reconnection. Polling
-      // every 250ms for up to 2s gives the watcher time to react while
-      // keeping the restore feeling snappy.
+      // ── Rojo live-sync push ───────────────────────────────────────────
+      // The restored files live in the unified ~/BloxMind workspace that the
+      // global `rojo serve` watches. Touch default.project.json so the
+      // watcher re-scans and pushes the reverted tree into Roblox Studio
+      // immediately, then poll for a short window while Rojo detects the
+      // change and the plugin reconnects.
+      yield* RojoServerManagerTag.notifyRestored().pipe(
+        Effect.catchAll(() => Effect.succeed(null)),
+      );
       const ROJO_SYNC_POLL_INTERVAL_MS = 250;
-      const ROJO_SYNC_POLL_MAX_ATTEMPTS = 8; // 8 × 250ms = 2s max
+      const ROJO_SYNC_POLL_MAX_ATTEMPTS = 12; // 12 × 250ms = 3s max
       let rojoSynced = false;
       let rojoStatus: RojoStatus | null = null;
       for (let attempt = 0; attempt < ROJO_SYNC_POLL_MAX_ATTEMPTS; attempt++) {
