@@ -1,28 +1,31 @@
 /**
- * Real end-to-end tests for CheckpointService against temp git workspaces.
+ * Real end-to-end tests for CheckpointService against temp workspaces.
+ *
+ * Engine: pure local-folder snapshots — capture copies every workspace file
+ * byte-exact into checkpoints/sessions/{sessionId}/snapshot-{id}/ (no git,
+ * fully offline); restore copies them back / prunes post-capture additions;
+ * deleteSession rm -rf's the session folder.
  *
  * Covers:
- *   1. System-git backend: capture, list, restore (with CRLF normalization).
- *   2. Scoped capture: only modified/untracked files are tracked.
- *   3. Embedded isomorphic-git backend: snapshot + restore fallback.
- *   4. CRLF files: hash verification succeeds after autocrlf normalization.
- *   5. deleteSession: purges checkpoint storage and index.
+ *   1. Pre-task capture (paths: []) on clean AND dirty workspaces never
+ *      rejects, persists a badge-driving checkpoint, fullSnapshot=true.
+ *   2. Scoped capture with explicit paths tracks only those targets.
+ *   3. Full restore reverts agent-modified files and prunes agent-created
+ *      ones while untouched baseline/settings files survive byte-for-byte.
+ *   4. CRLF files round-trip byte-exact through the shadow copy.
+ *   5. deleteSession purges checkpoint storage and index.
  */
 import { execFileSync } from "node:child_process";
-import { mkdtemp, rm, writeFile, readFile, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect, Layer } from "effect";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 
 import {
   CheckpointServiceTag,
   makeCheckpointServiceLayer,
 } from "../../electron/services/CheckpointService";
-import {
-  forceEmbeddedGitBackend,
-  resetGitBackendCache,
-} from "../../electron/services/GitBackend";
 import { RojoServerManagerTag } from "../../electron/services/RojoServerManager";
 
 const tempDirs: string[] = [];
@@ -74,10 +77,6 @@ function makeLayer(storeRoot: string, workspace: string) {
 }
 
 describe("CheckpointService end-to-end", () => {
-  beforeEach(async () => {
-    resetGitBackendCache();
-  });
-
   it("system git: captures a scoped checkpoint and restore reverts tracked files", async () => {
     const workspace = await makeRepo();
     const storeRoot = await mkdtemp(join(tmpdir(), "bloxmind-cp-store-"));
@@ -99,8 +98,9 @@ describe("CheckpointService end-to-end", () => {
       }).pipe(Effect.provide(fullLayer)),
     );
 
-    expect(captureCp.gitRef).toBeTruthy();
-    // paths: [] = full pre-task snapshot (Option 3 semantics).
+    // Local-folder engine: no git ref needed anymore.
+    expect(captureCp.gitRef).toBeNull();
+    // paths: [] = full pre-task snapshot.
     expect(captureCp.fullSnapshot).toBe(true);
     expect(captureCp.paths).toHaveLength(1);
     expect(captureCp.paths[0].path).toBe("existing.lua");
@@ -163,10 +163,13 @@ describe("CheckpointService end-to-end", () => {
     );
 
     expect(captureCp.fullSnapshot).toBe(true);
-    // Even a clean tree must produce a restorable snapshot ref — this was the
-    // regression that left the badge/Restore button permanently hidden
-    // (`git stash create` yields no commit on a clean worktree).
-    expect(captureCp.gitRef).toBeTruthy();
+    expect(captureCp.gitRef).toBeNull();
+    // Local-folder engine: the byte-exact shadow copy MUST exist on disk
+    // inside the session-isolated store immediately after capture — this is
+    // what guarantees restore works offline regardless of any git state.
+    await expect(
+      stat(join(storeRoot, "sessions", sessionId, `snapshot-${captureCp.id}`)),
+    ).resolves.toBeTruthy();
 
     const listed = await Effect.runPromise(
       Effect.gen(function* () {
@@ -183,7 +186,7 @@ describe("CheckpointService end-to-end", () => {
     expect(await readFile(join(workspace, ".gitkeep"), "utf8")).toBe("");
   }, 30_000);
 
-  it("system git: scoped capture only tracks dirty files, not the whole workspace", async () => {
+  it("scoped capture backs up only targeted files and restores them exactly", async () => {
     const workspace = await makeRepoWithCommit();
     const storeRoot = await mkdtemp(join(tmpdir(), "bloxmind-cp-store-"));
     tempDirs.push(storeRoot);
@@ -197,43 +200,44 @@ describe("CheckpointService end-to-end", () => {
     const fullLayer = makeLayer(storeRoot, workspace);
     const sessionId = "ses_sys_scoped2";
 
-    // First capture after commit: getChangedFiles returns empty
+    // First explicit-path capture: only target.lua is backed up.
     const captureCp1 = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* CheckpointServiceTag;
         return yield* svc.capture({
           sessionId,
           messageId: "msg-1",
-          tool: "session.promptAsync",
-          paths: [],
+          tool: "agent.write",
+          paths: ["target.lua"],
         });
       }).pipe(Effect.provide(fullLayer)),
     );
-    expect(captureCp1.paths).toHaveLength(0);
+    expect(captureCp1.fullSnapshot).toBe(false);
+    expect(captureCp1.paths).toHaveLength(1);
+    expect(captureCp1.paths[0].path).toBe("target.lua");
 
-    // Modify ONLY target.lua
+    // Modify ONLY target.lua, then re-capture it — the shadow copy must hold
+    // this intermediate state.
     await writeFile(join(workspace, "target.lua"), "-- modified target", "utf8");
 
-    // Capture again — should track only target.lua
     const captureCp2 = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* CheckpointServiceTag;
         return yield* svc.capture({
           sessionId,
           messageId: "msg-2",
-          tool: "session.promptAsync",
-          paths: [],
+          tool: "agent.write",
+          paths: ["target.lua"],
         });
       }).pipe(Effect.provide(fullLayer)),
     );
     expect(captureCp2.paths).toHaveLength(1);
     expect(captureCp2.paths[0].path).toBe("target.lua");
 
-    // Modify target.lua AGAIN before restoring — this lets us verify the
-    // restore reverts to the pre-capture state ("-- modified target")
+    // Modify target.lua AGAIN before restoring — restore must revert to the
+    // second capture's pre-state ("-- modified target").
     await writeFile(join(workspace, "target.lua"), "-- double modified", "utf8");
 
-    // Restore the second capture
     await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* CheckpointServiceTag;
@@ -249,7 +253,8 @@ describe("CheckpointService end-to-end", () => {
     const restored = await readFile(join(workspace, "target.lua"), "utf8");
     expect(restored).toBe("-- modified target");
 
-    // Legacy files are untouched by the scoped restore
+    // Legacy files are untouched by the scoped restore — and because the
+    // checkpoint was task-scoped (not a full snapshot), nothing is pruned.
     expect(await readFile(join(workspace, "legacy1.lua"), "utf8")).toBe("-- old script 1");
     expect(await readFile(join(workspace, "legacy2.lua"), "utf8")).toBe("-- old script 2");
   }, 30_000);
@@ -282,12 +287,13 @@ describe("CheckpointService end-to-end", () => {
       }).pipe(Effect.provide(fullLayer)),
     );
 
-    // Untracked files that exist on disk are captured as "modify" (preContent
-    // stores the current text), not "create" — only missing files get preContent=null.
+    // Files existing at capture time are recorded as "modify"; their content
+    // lives byte-exact in the shadow folder, so the JSON journal stays lean
+    // (preContent=null) instead of mirroring text.
     const capturedEntry = captureCp.paths.find((p) => p.path === "new_file.lua");
     expect(capturedEntry).toBeDefined();
     expect(capturedEntry?.operation).toBe("modify");
-    expect(capturedEntry?.preContent).toBe("-- new file");
+    expect(capturedEntry?.preContent).toBeNull();
 
     // Restore — should revert new_file.lua to its pre-capture content (not delete it)
     await Effect.runPromise(
@@ -359,9 +365,7 @@ describe("CheckpointService end-to-end", () => {
     expect(normalized.trimEnd()).toBe("return {}");
   }, 30_000);
 
-  it("embedded git backend: snapshot creates detached commit, restore works", async () => {
-    forceEmbeddedGitBackend();
-
+  it("local-folder engine: capture works without any special git state, restore reverts", async () => {
     const workspace = await makeRepo();
     const storeRoot = await mkdtemp(join(tmpdir(), "bloxmind-cp-store-"));
     tempDirs.push(storeRoot);
@@ -382,8 +386,8 @@ describe("CheckpointService end-to-end", () => {
       }).pipe(Effect.provide(fullLayer)),
     );
 
-    expect(captureCp.gitRef).toBeTruthy();
-    // paths: [] = full pre-task snapshot even on the embedded backend.
+    // paths: [] = full pre-task snapshot — no git ref involved anywhere.
+    expect(captureCp.gitRef).toBeNull();
     expect(captureCp.fullSnapshot).toBe(true);
     expect(captureCp.paths).toHaveLength(1);
     expect(captureCp.paths[0].path).toBe("main.lua");
@@ -442,8 +446,8 @@ describe("CheckpointService end-to-end", () => {
       }).pipe(Effect.provide(fullLayer)),
     );
     expect(captureCp.fullSnapshot).toBe(true);
-    // Full-snapshot restores rely on the git tree diff — require a usable ref.
-    expect(captureCp.gitRef).toBeTruthy();
+    // Full-snapshot restores diff against the shadow folder — no ref required.
+    expect(captureCp.gitRef).toBeNull();
 
     // Simulated agent work during the turn: rewrite a tracked script and
     // create a brand-new generated file.
@@ -495,7 +499,10 @@ describe("CheckpointService end-to-end", () => {
       }).pipe(Effect.provide(fullLayer)),
     );
 
-    expect(captureCp.gitRef).toBeTruthy();
+    // Capture must have materialized this checkpoint's shadow folder on disk.
+    await expect(
+      stat(join(storeRoot, "sessions", sessionId, `snapshot-${captureCp.id}`)),
+    ).resolves.toBeTruthy();
 
     const listedBefore = await Effect.runPromise(
       Effect.gen(function* () {
