@@ -210,3 +210,70 @@ describe("useCheckpointHistory restoreLatestFileCheckpoint", () => {
     expect(fakeClient.session.prompt).not.toHaveBeenCalled();
   });
 });
+
+// ── Badge hydration ──────────────────────────────────────────────────────────
+
+describe("useCheckpointHistory badge hydration", () => {
+  it("hydrates cachedFsCheckpointCount > 0 from the persisted checkpoint list", async () => {
+    // Pre-task captures persist even on clean workspaces, so the badge and
+    // Restore button must appear as soon as the list resolves — both UI gates
+    // are `cachedFsCheckpointCount > 0`.
+    desktopMock.checkpointList.mockResolvedValue([makeCheckpoint()]);
+    const fakeClient = makeFakeClient();
+    const qc = makeQC([]);
+
+    const { result } = renderHook(() => useCheckpointHistory(SESSION_ID), {
+      wrapper: makeWrapper(qc, fakeClient),
+    });
+
+    // Flush the mount-time refreshCheckpoints() effect.
+    await act(async () => {});
+
+    expect(desktopMock.checkpointList).toHaveBeenCalledWith(SESSION_ID);
+    expect(result.current.fsCheckpointCount).toBe(1);
+    expect(result.current.cachedFsCheckpointCount).toBeGreaterThan(0);
+  });
+
+  it("keeps the hydrated cached count when a later list fetch fails", async () => {
+    desktopMock.checkpointList.mockResolvedValueOnce([makeCheckpoint()]);
+    const fakeClient = makeFakeClient();
+    const qc = makeQC([]);
+
+    const { result } = renderHook(() => useCheckpointHistory(SESSION_ID), {
+      wrapper: makeWrapper(qc, fakeClient),
+    });
+    await act(async () => {});
+    expect(result.current.cachedFsCheckpointCount).toBe(1);
+
+    // A transient IPC failure must never flicker the badge back to hidden.
+    desktopMock.checkpointList.mockRejectedValueOnce(new Error("ipc unavailable"));
+    await act(async () => {
+      await result.current.refreshCheckpoints();
+    });
+
+    expect(result.current.fsCheckpointCount).toBe(1);
+    expect(result.current.cachedFsCheckpointCount).toBe(1);
+  });
+
+  it("resets the cached badge count when switching to an empty session", async () => {
+    let sessionId = SESSION_ID;
+    desktopMock.checkpointList.mockResolvedValueOnce([makeCheckpoint()]);
+    const fakeClient = makeFakeClient();
+    const qc = makeQC([]);
+
+    const { result, rerender } = renderHook(() => useCheckpointHistory(sessionId), {
+      wrapper: makeWrapper(qc, fakeClient),
+    });
+    await act(async () => {});
+    expect(result.current.cachedFsCheckpointCount).toBe(1);
+
+    // Switch to a session whose storage was already purged (deleteSession):
+    // the stale value must clear so checkpoints never leak between chats.
+    sessionId = "s2-purged";
+    desktopMock.checkpointList.mockRejectedValue(new Error("no data"));
+    rerender();
+    await act(async () => {});
+
+    expect(result.current.cachedFsCheckpointCount).toBe(0);
+  });
+});
