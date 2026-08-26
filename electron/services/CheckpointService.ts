@@ -347,7 +347,11 @@ function makeCapture(
               new CheckpointError({ message: "Failed to enumerate workspace", cause }),
           })
         : decoded.paths.map(toPosixPath);
-      const fullSnapshot = false;
+      // A capture without explicit paths IS the full pre-task snapshot: the
+      // snapshot's gitRef reconstructs the entire workspace, so restore may
+      // diff-and-prune files the agent created afterwards. Explicit-path
+      // captures remain task-scoped (fullSnapshot stays false).
+      const fullSnapshot = isPreTaskSnapshot;
       for (const relPath of targetPaths) {
         const absPath = resolve(options.workspace, relPath);
         const contents = yield* Effect.tryPromise({
@@ -497,23 +501,29 @@ function restoreFromJournal(
 }
 
 /**
- * After an explicit full-workspace rollback, delete any file under the workspace
- * root that was NOT present in the captured checkpoint. Such files were created
- * by the agent during the turn (created/large/binary files a plain journal
- * restore leaves behind). Guaranteed-safe: only files outside SKIP_DIRS and
- * outside the snapshot's tracked set are touched, and only when the caller
+ * After an explicit full-workspace rollback, delete any file under the
+ * workspace root that was NOT present in the captured git snapshot. This is a
+ * precise diff between the snapshot tree (`gitRef`) and the current disk
+ * state: only agent-created post-capture files are removed, so unmodified
+ * baseline project files, settings/time values, and legacy committed files —
+ * which ARE in the snapshot — are never touched. Guaranteed-safe: only files
+ * outside SKIP_DIRS are candidates, and it runs solely when the caller
  * explicitly opted out of preserveUserEdits (a destructive, user-requested
  * rewind). Best-effort per file — a failure never aborts the whole restore.
  */
 function removeFilesCreatedAfterGitCheckpoint(
   workspace: string,
-  keepPaths: Set<string>,
+  gitRef: string,
 ): Effect.Effect<void, CheckpointError> {
   return Effect.tryPromise({
     try: async () => {
+      const backend = await resolveGitBackend();
+      const snapshotSet = new Set(
+        (await backend.listFiles(workspace, gitRef)).map((p) => toPosixPath(p)),
+      );
       const allFiles = await listWorkspaceFiles(workspace);
       for (const relPath of allFiles) {
-        if (keepPaths.has(relPath)) continue;
+        if (snapshotSet.has(relPath)) continue;
         const absPath = resolve(workspace, relPath);
         await rm(absPath, { force: true });
       }
@@ -619,12 +629,14 @@ function makeRestore(
         // without an untracked-file-aware snapshot, deleting them is unsafe.
       }
 
-      // Explicit rollback on a full-workspace snapshot: also remove files the
-      // agent created after capture (they weren't in the pre-state journal, so
-      // a plain restore leaves them behind and Rojo re-pushes them to Studio).
-      // Only for non-preserving restores (the user explicitly asked to rewind).
-      if (checkpoint.fullSnapshot && !decoded.preserveUserEdits) {
-        yield* removeFilesCreatedAfterGitCheckpoint(options.workspace, new Set(scopedPaths));
+      // Explicit rollback on a full-workspace snapshot: diff the current
+      // workspace against the captured git tree and remove files the agent
+      // created after the snapshot (they aren't in it, so a plain checkout
+      // leaves them behind and Rojo would re-push them to Studio).
+      // Only for non-preserving restores (the user explicitly asked to rewind),
+      // and only when the checkpoint carries a usable gitRef to diff against.
+      if (checkpoint.fullSnapshot && !decoded.preserveUserEdits && checkpoint.gitRef) {
+        yield* removeFilesCreatedAfterGitCheckpoint(options.workspace, checkpoint.gitRef);
       }
 
       // Atomicity: verify restored hashes match pre-state exactly. Entries
