@@ -53,7 +53,7 @@ import {
 } from "./services/SessionStore";
 import { makeStudioMcpBrokerLayer } from "./services/StudioMcpBroker";
 import { type SweepReport, sweepStaleProcesses } from "./services/staleProcessSweep";
-import { ensureSessionWorkspace, purgeLegacyRootWorkspace } from "./sessionWorkspace";
+import { ensureSessionWorkspace, purgeLegacyRootWorkspace, sessionWorkspaceDir } from "./sessionWorkspace";
 
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
 const defaultConfig: AppConfig = DEFAULT_APP_CONFIG;
@@ -611,6 +611,17 @@ const registerIpcHandlers = Effect.sync(() => {
   // renderer can point the session's location at it from the very start.
   ipcMain.handle(channels.prepareSessionWorkspace, (_event, sessionId: string) =>
     ensureSessionWorkspace(sessionId),
+  );
+  // Reveal the active session's isolated folder in the native file explorer so
+  // the user can inspect/edit the exact files Rojo is syncing.
+  ipcMain.handle(channels.openSessionWorkspace, (_event, sessionId: string) =>
+    Effect.runPromise(
+      Effect.tryPromise({
+        try: () => shell.openPath(sessionWorkspaceDir(sessionId)),
+        catch: (cause) =>
+          new DesktopMainError({ message: "Failed to open session workspace", cause }),
+      }),
+    ),
   );
   // ── Session transcript persistence ────────────────────────────────────
   // The engine does not flush conversations to disk in this setup, so the app

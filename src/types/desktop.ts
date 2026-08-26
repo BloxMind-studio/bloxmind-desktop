@@ -260,6 +260,7 @@ export interface DesktopApi {
   rojoBinaryPath(): Promise<string | null>;
   rojoCheckInstalled(): Promise<boolean>;
   prepareSessionWorkspace(sessionId: string): Promise<string>;
+  openSessionWorkspace(sessionId: string): Promise<void>;
   // ── Session transcript persistence ─────────────────────────────────────
   sessionStoreList(): Promise<StoredSessionSummary[]>;
   sessionStoreGet(id: string): Promise<StoredSession | null>;
