@@ -243,6 +243,10 @@ function ChatMessages() {
           })
           .catch((err: unknown) => {
             console.warn("Pre-execution checkpoint capture failed; undo may be unavailable:", err);
+            // Even if this capture rejected, a checkpoint from an earlier task
+            // may still exist on disk for this session — keep refreshing so a
+            // transient failure can never permanently hide the badge/button.
+            void checkpoint.refreshCheckpoints();
           });
       }, CHECKPOINT_CAPTURE_DEBOUNCE_MS);
     }
@@ -281,6 +285,7 @@ function ChatMessages() {
       })
       .catch((err: unknown) => {
         console.warn("Pre-execution checkpoint capture failed (message trigger):", err);
+        void checkpoint.refreshCheckpoints();
       });
   }, [activeSessionId, messageIds, captureCheckpoint, checkpoint.refreshCheckpoints, queryClient]);
 

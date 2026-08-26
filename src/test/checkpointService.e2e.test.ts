@@ -132,6 +132,52 @@ describe("CheckpointService end-to-end", () => {
     expect(restored).toBe("-- user code");
   }, 30_000);
 
+  it("pre-task capture on a clean workspace persists a checkpoint (badge shows) and leaves unmodified files untouched", async () => {
+    const workspace = await makeRepoWithCommit();
+    const storeRoot = await mkdtemp(join(tmpdir(), "bloxmind-cp-store-"));
+    tempDirs.push(storeRoot);
+    // Committed legacy/settings files — restore must NEVER modify these.
+    await writeFile(join(workspace, ".gitkeep"), "", "utf8");
+    await writeFile(join(workspace, "GameSettings.lua"), '{ "time": "day" }', "utf8");
+    git(workspace, ["add", ".gitkeep", "GameSettings.lua"]);
+    git(workspace, ["commit", "-m", "legacy and settings", "--no-verify"]);
+
+    const fullLayer = makeLayer(storeRoot, workspace);
+    const sessionId = "ses_pre_clean";
+    const legacyContent = '{ "time": "day" }';
+
+    // paths: [] pre-task capture on a clean tree must NOT reject, and it must
+    // persist a checkpoint so checkpoints.list() length > 0 → the badge and
+    // Restore button appear (both are gated on the list count, not fullSnapshot).
+    const captureCp = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* CheckpointServiceTag;
+        return yield* svc.capture({
+          sessionId,
+          messageId: "msg-1",
+          tool: "session.promptAsync",
+          paths: [],
+        });
+      }).pipe(Effect.provide(fullLayer)),
+    );
+
+    expect(captureCp.fullSnapshot).toBe(false);
+
+    const listed = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* CheckpointServiceTag;
+        return yield* svc.list(sessionId);
+      }).pipe(Effect.provide(fullLayer)),
+    );
+    // A persisted checkpoint drives fsCheckpointCount > 0 → badge/button.
+    expect(listed).toHaveLength(1);
+    expect(listed[0].id).toBe(captureCp.id);
+
+    // Pre-task snapshot itself leaves unmodified tracked/legacy files untouched.
+    expect(await readFile(join(workspace, "GameSettings.lua"), "utf8")).toBe(legacyContent);
+    expect(await readFile(join(workspace, ".gitkeep"), "utf8")).toBe("");
+  }, 30_000);
+
   it("system git: scoped capture only tracks dirty files, not the whole workspace", async () => {
     const workspace = await makeRepoWithCommit();
     const storeRoot = await mkdtemp(join(tmpdir(), "bloxmind-cp-store-"));
