@@ -31,6 +31,7 @@ export const channels = {
   rojoCheckInstalled: "rojo:check-installed",
   // ── Session workspaces ───────────────────────────────────────────────
   prepareSessionWorkspace: "session:prepare-workspace",
+  openSessionWorkspace: "session:open-workspace",
   // ── Session transcript persistence (app-side, survives engine restart) ──
   sessionStoreList: "session-store:list",
   sessionStoreGet: "session-store:get",

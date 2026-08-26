@@ -77,6 +77,8 @@ const api: DesktopApi = {
   // ── Session workspaces ────────────────────────────────────────────────
   prepareSessionWorkspace: (sessionId) =>
     ipcRenderer.invoke(channels.prepareSessionWorkspace, sessionId),
+  openSessionWorkspace: (sessionId) =>
+    ipcRenderer.invoke(channels.openSessionWorkspace, sessionId),
   // ── Session transcript persistence ─────────────────────────────────────
   sessionStoreList: () => ipcRenderer.invoke(channels.sessionStoreList),
   sessionStoreGet: (id) => ipcRenderer.invoke(channels.sessionStoreGet, id),

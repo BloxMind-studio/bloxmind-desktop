@@ -91,6 +91,7 @@ interface DesktopEffects {
   readonly rojoBinaryPath: () => Effect.Effect<string | null, DesktopError>;
   readonly rojoCheckInstalled: () => Effect.Effect<boolean, DesktopError>;
   readonly prepareSessionWorkspace: (sessionId: string) => Effect.Effect<string, DesktopError>;
+  readonly openSessionWorkspace: (sessionId: string) => Effect.Effect<void, DesktopError>;
   readonly sessionStoreList: () => Effect.Effect<StoredSessionSummary[], DesktopError>;
   readonly sessionStoreGet: (id: string) => Effect.Effect<StoredSession | null, DesktopError>;
   readonly sessionStoreSave: (session: StoredSession) => Effect.Effect<void, DesktopError>;
@@ -192,6 +193,8 @@ const browserEffects: DesktopEffects = {
   rojoCheckInstalled: () =>
     Effect.fail(new DesktopError({ message: "Rojo requires the desktop app." })),
   prepareSessionWorkspace: () =>
+    Effect.fail(new DesktopError({ message: "Session workspaces require the desktop app." })),
+  openSessionWorkspace: () =>
     Effect.fail(new DesktopError({ message: "Session workspaces require the desktop app." })),
   sessionStoreList: () => Effect.succeed([] as StoredSessionSummary[]),
   sessionStoreGet: () => Effect.succeed(null),
@@ -298,6 +301,8 @@ function makeBridgeEffects(api: DesktopApi): DesktopEffects {
       invoke("Failed to check Rojo installation", () => api.rojoCheckInstalled()),
     prepareSessionWorkspace: (sessionId) =>
       invoke("Failed to prepare session workspace", () => api.prepareSessionWorkspace(sessionId)),
+    openSessionWorkspace: (sessionId) =>
+      invoke("Failed to open session workspace", () => api.openSessionWorkspace(sessionId)),
     sessionStoreList: () => invoke("Failed to read saved sessions", () => api.sessionStoreList()),
     sessionStoreGet: (id) => invoke("Failed to read saved session", () => api.sessionStoreGet(id)),
     sessionStoreSave: (session) =>
@@ -362,6 +367,7 @@ export const desktop: DesktopApi = {
   rojoCheckInstalled: () => runPromise(desktopEffects.rojoCheckInstalled()),
   prepareSessionWorkspace: (sessionId) =>
     runPromise(desktopEffects.prepareSessionWorkspace(sessionId)),
+  openSessionWorkspace: (sessionId) => runPromise(desktopEffects.openSessionWorkspace(sessionId)),
   sessionStoreList: () => runPromise(desktopEffects.sessionStoreList()),
   sessionStoreGet: (id) => runPromise(desktopEffects.sessionStoreGet(id)),
   sessionStoreSave: (session) => runPromise(desktopEffects.sessionStoreSave(session)),
