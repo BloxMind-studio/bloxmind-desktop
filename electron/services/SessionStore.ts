@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { app } from "electron";
 
 import type { StoredSession, StoredSessionSummary } from "../../src/types/desktop";
+import { sessionWorkspaceDir } from "../sessionWorkspace";
 
 /**
  * App-side session transcript store.
@@ -204,6 +205,14 @@ export async function deleteSession(id: string): Promise<void> {
   // would otherwise be flushed by the next debounce timer / quit flush a
   // moment later, resurrecting the file and index entry we just deleted.
   pending.delete(id);
+  // Purge the session's isolated disk workspace (~/BloxMind/sessions/{id}) in
+  // addition to its transcript file. Best-effort: a missing or locked folder
+  // must not block index reconciliation / session cleanup.
+  try {
+    await rm(sessionWorkspaceDir(id), { recursive: true, force: true });
+  } catch {
+    // ignore — the transcript path below is still cleaned.
+  }
   await rm(sessionPath(id), { force: true }).catch(() => undefined);
   // Serialized with updateIndex so a concurrent flush can't re-add this
   // session's summary after we remove it (or drop ours via last-writer-wins).

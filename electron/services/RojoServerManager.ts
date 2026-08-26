@@ -6,8 +6,9 @@ import { join } from "node:path";
 import { Data, Effect, Layer } from "effect";
 
 import {
-  SESSION_PROJECT_JSON,
   PROJECT_SOURCE_DIRS as SESSION_PROJECT_SOURCE_DIRS,
+  SESSION_PROJECT_JSON,
+  sessionWorkspaceDir,
 } from "../sessionWorkspace";
 
 // ── Types ────────────────────────────────────────────────────────────────
@@ -33,8 +34,6 @@ export interface RojoLogEntry {
 
 export interface RojoServerManagerOptions {
   binDirectory: string;
-  /** Resolve the isolated workspace directory for a session. */
-  sessionWorkspaceDir?: (sessionId: string) => string;
 }
 
 export interface RojoServerManager {
@@ -505,32 +504,20 @@ function buildManager(options: RojoServerManagerOptions): RojoServerManager {
   const start = (workspace: string): Effect.Effect<RojoStatus, RojoError> =>
     spawnServer({ workspace, port: DEFAULT_ROJO_PORT, overwriteProject: false });
 
-  const startForSession = (_sessionId: string): Effect.Effect<RojoStatus, RojoError> =>
+  const startForSession = (sessionId: string): Effect.Effect<RojoStatus, RojoError> =>
     Effect.gen(function* () {
-      // Unified on ~/BloxMind (option 1): checkpoint + Rojo share the same
-      // workspace so restores are visible in Studio. Per-session kill+recreate
-      // is disabled to preserve file state and keep the client connected.
-      // The global Rojo server is started once at boot on ~/BloxMind; session
-      // switches no longer wipe the project.
-      if (runtime && runtime.child.exitCode === null) {
-        yield* refreshClientState();
-        return {
-          active: true,
-          port: runtime.port,
-          error: runtime.serverError,
-          workspace: runtime.workspace,
-          clientConnected: runtime.clientConnected,
-        };
-      }
-      // No active server — report inactive. The global server should be
-      // started via `rojo.start(~/BloxMind)` at app boot and stay alive.
-      return {
-        active: false,
-        port: null,
-        error: null,
-        workspace: null,
-        clientConnected: false,
-      };
+      // Resolve the session's isolated workspace directory and spawn a Rojo
+      // server bound to that session's default.project.json. We delegate to
+      // the same well-tested `spawnServer` path used by the unified toggle so
+      // all startup-port-binding and handler wiring behave identically. The
+      // project is always overwritten so a session never inherits stale tree
+      // references from a previous place.
+      const workspaceDir = sessionWorkspaceDir(sessionId);
+      return yield* spawnServer({
+        workspace: workspaceDir,
+        port: DEFAULT_ROJO_PORT,
+        overwriteProject: true,
+      });
     });
 
   const toggle = (workspace: string): Effect.Effect<RojoStatus, RojoError> =>
@@ -549,11 +536,14 @@ function buildManager(options: RojoServerManagerOptions): RojoServerManager {
       return yield* start(workspace);
     });
 
-  const toggleForSession = (_sessionId: string): Effect.Effect<RojoStatus, RojoError> =>
+  const toggleForSession = (sessionId: string): Effect.Effect<RojoStatus, RojoError> =>
     Effect.gen(function* () {
+      // If a server is currently running, toggle it off (don't leave stale
+      // processes racing on the port). Otherwise start against the session's
+      // isolated workspace.
       if (runtime && runtime.child.exitCode === null) {
         yield* Effect.promise(() => killExisting());
-        yield* Effect.logInfo("[rojo] toggled off");
+        yield* Effect.logInfo("[rojo] toggled off (session mode)");
         return {
           active: false,
           port: null,
@@ -562,16 +552,7 @@ function buildManager(options: RojoServerManagerOptions): RojoServerManager {
           clientConnected: false,
         };
       }
-      // In unified mode, toggling on does not spawn a per-session empty
-      // project (which would wipe ~/BloxMind). Report inactive and let the
-      // user toggle the global server.
-      return {
-        active: false,
-        port: null,
-        error: "Rojo is unified on ~/BloxMind — use the main Rojo toggle",
-        workspace: null,
-        clientConnected: false,
-      };
+      return yield* startForSession(sessionId);
     });
 
   return {
