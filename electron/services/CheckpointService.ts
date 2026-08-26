@@ -107,7 +107,13 @@ function readJsonFile<A>(
 }
 
 function hashContent(contents: string): string {
-  return createHash("sha256").update(contents).digest("hex");
+  // Normalize line endings to LF so hashes are consistent across platforms and
+  // git backends. System git with `core.autocrlf=true` (common on Windows)
+  // normalizes CRLF↔LF when staging/checking out, which would otherwise make
+  // the post-restore verification hash differ from the captured preHash even
+  // though the textual content is identical.
+  const normalized = contents.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  return createHash("sha256").update(normalized).digest("hex");
 }
 
 function readTextSafe(path: string): Promise<string | null> {
@@ -142,8 +148,9 @@ function validateWorkspacePaths(
   return Effect.void;
 }
 
-// Directories that must never be journaled into a full-workspace snapshot
-// (noise / derived artifacts only).
+// Directories and managed files that must never be journaled into a
+// full-workspace snapshot (noise / derived artifacts or files the app
+// itself rewrites on every launch, like AGENTS.md).
 const SKIP_DIRS = new Set([
   ".git",
   ".opencode", // tool cache (e.g. rg.exe binaries) — not journalable without git
@@ -155,6 +162,7 @@ const SKIP_DIRS = new Set([
   "build",
   "coverage",
 ]);
+const SKIP_FILES = new Set(["AGENTS.md"]);
 
 /** Recursively list every file in the workspace root (POSIX-relative). */
 function listWorkspaceFiles(root: string): Promise<string[]> {
@@ -172,12 +180,60 @@ function listWorkspaceFiles(root: string): Promise<string[]> {
         if (SKIP_DIRS.has(entry.name)) continue;
         await walk(full);
       } else if (entry.isFile()) {
+        if (SKIP_FILES.has(entry.name)) continue;
         results.push(toPosixPath(relative(root, full)));
       }
     }
   }
   return walk(root).then(() => results);
 }
+
+// ── Index persistence ───────────────────────────────────────────────────
+
+function sessionIndexPath(storeRoot: string, sessionId: string): string {
+  return join(storeRoot, "sessions", sanitize(sessionId), "checkpoints.json");
+}
+
+function sanitize(id: string): string {
+  return id.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+interface SessionIndex {
+  history: Checkpoint[];
+  activeIndex: number;
+}
+
+const SessionIndexSchema = Schema.mutable(
+  Schema.Struct({
+    history: Schema.Array(CheckpointSchema),
+    activeIndex: Schema.Number,
+  }),
+);
+
+const EMPTY_INDEX: SessionIndex = { history: [], activeIndex: -1 };
+
+function loadSessionIndex(storeRoot: string, sessionId: string) {
+  return readJsonFile(sessionIndexPath(storeRoot, sessionId), SessionIndexSchema, EMPTY_INDEX).pipe(
+    Effect.catchAll((error) => {
+      // Self-heal: indices written by older broken builds (empty journal,
+      // no git ref) are useless — drop them so fresh captures/restores work.
+      console.warn(`[checkpoint] ignoring invalid session index: ${error.message}`);
+      return Effect.succeed(EMPTY_INDEX);
+    }),
+    Effect.map((index) => ({
+      history: index.history.map((c) => ({
+        ...c,
+        fullSnapshot: c.fullSnapshot ?? false,
+      })),
+      activeIndex: index.activeIndex,
+    })),
+  );
+}
+
+// Serializes index writes to disk so concurrent capture/restore requests
+// never race on the same checkpoints.json (Windows `rename` fails with EPERM
+// when the destination is briefly locked by another write).
+const storeMutex = Effect.unsafeMakeSemaphore(1);
 
 // Per-session mutexes protect the read-modify-write cycle of capture/restore
 // so concurrent operations on the same session can't lose checkpoints.
@@ -321,8 +377,8 @@ function makeCapture(
             return null;
           }
         },
-        catch: () => null,
-      });
+        catch: (cause) => new CheckpointError({ message: "Failed to create git snapshot", cause }),
+      }).pipe(Effect.catchAll(() => Effect.succeed(null)));
       if (gitRef === null) {
         yield* Effect.logWarning(
           "[checkpoint] git snapshot unavailable (no system git and embedded backend failed); restore is journal-only",
@@ -371,6 +427,7 @@ function restoreFromJournal(
 ): Effect.Effect<void, CheckpointError> {
   return Effect.gen(function* () {
     for (const change of checkpoint.paths) {
+      if (SKIP_FILES.has(change.path) || toPosixPath(change.path) === "AGENTS.md") continue;
       const absPath = resolve(options.workspace, change.path);
       if (change.operation === "create") {
         yield* Effect.tryPromise({
@@ -472,7 +529,9 @@ function makeRestore(
           return { checkpoint: cp };
         }),
       );
-      const scopedPaths = checkpoint.paths.map((c) => toPosixPath(c.path));
+      const scopedPaths = checkpoint.paths
+        .map((c) => toPosixPath(c.path))
+        .filter((p) => !SKIP_FILES.has(p) && p !== "AGENTS.md");
       yield* validateWorkspacePaths(options.workspace, scopedPaths);
       // A checkpoint captured with no explicit paths (full pre-task snapshot)
       // restores tracked files from its gitRef, while journal data restores
@@ -545,7 +604,10 @@ function makeRestore(
 
       // Atomicity: verify restored hashes match pre-state exactly. Entries
       // that were left untouched (large binaries with no git ref) are skipped.
+      // Also skip managed files like AGENTS.md for backward compat with old
+      // checkpoints that included them — they are now excluded from snapshots.
       for (const change of checkpoint.paths) {
+        if (SKIP_FILES.has(change.path) || toPosixPath(change.path) === "AGENTS.md") continue;
         if (change.preContent === null && change.operation === "modify") continue;
         const absPath = resolve(options.workspace, change.path);
         const after = yield* Effect.tryPromise({
