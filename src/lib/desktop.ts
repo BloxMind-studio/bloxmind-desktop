@@ -2,18 +2,6 @@ import { Data, Effect, Schema } from "effect";
 import { ExplorerSnapshotSchema } from "@/lib/explorer";
 import { ProjectSkeletonSchema } from "@/lib/projectIndex";
 import {
-  type CaptureContext,
-  type Checkpoint,
-  type CheckpointRestoreInput,
-  type CheckpointRestoreResult,
-  CheckpointRestoreResultSchema,
-  CheckpointSchema,
-  type RestorePreview,
-  RestorePreviewSchema,
-  type ValidationResult,
-  ValidationResultSchema,
-} from "@/types/checkpoints";
-import {
   type AppConfig,
   AppConfigPatchSchema,
   AppConfigSchema,
@@ -89,18 +77,6 @@ interface DesktopEffects {
     programs: StudioTargetPrograms,
     targetKey: string,
   ) => Effect.Effect<StudioTargetSelection, DesktopError>;
-  readonly checkpointCapture: (context: CaptureContext) => Effect.Effect<Checkpoint, DesktopError>;
-  readonly checkpointRestore: (
-    input: CheckpointRestoreInput,
-  ) => Effect.Effect<CheckpointRestoreResult, DesktopError>;
-  readonly checkpointPreview: (
-    checkpointId: string,
-    sessionId: string,
-  ) => Effect.Effect<RestorePreview, DesktopError>;
-  readonly checkpointList: (
-    sessionId: string,
-  ) => Effect.Effect<readonly Checkpoint[], DesktopError>;
-  readonly checkpointValidate: () => Effect.Effect<ValidationResult, DesktopError>;
   readonly rojoStart: (workspace: string) => Effect.Effect<RojoStatus, DesktopError>;
   readonly rojoStartForSession: (sessionId: string) => Effect.Effect<RojoStatus, DesktopError>;
   readonly rojoStop: () => Effect.Effect<void, DesktopError>;
@@ -200,16 +176,6 @@ const browserEffects: DesktopEffects = {
     Effect.fail(
       new DesktopError({ message: "Studio targets are only available in the desktop app." }),
     ),
-  checkpointCapture: () =>
-    Effect.fail(new DesktopError({ message: "Checkpointing requires the desktop app." })),
-  checkpointRestore: () =>
-    Effect.fail(new DesktopError({ message: "Checkpointing requires the desktop app." })),
-  checkpointPreview: () =>
-    Effect.fail(new DesktopError({ message: "Checkpointing requires the desktop app." })),
-  checkpointList: () =>
-    Effect.fail(new DesktopError({ message: "Checkpointing requires the desktop app." })),
-  checkpointValidate: () =>
-    Effect.fail(new DesktopError({ message: "Checkpointing requires the desktop app." })),
   rojoStart: () => Effect.fail(new DesktopError({ message: "Rojo requires the desktop app." })),
   rojoStartForSession: () =>
     Effect.fail(new DesktopError({ message: "Rojo requires the desktop app." })),
@@ -316,26 +282,6 @@ function makeBridgeEffects(api: DesktopApi): DesktopEffects {
       invoke("Failed to select the Studio target", () =>
         api.selectStudioTarget(programs, targetKey),
       ).pipe(decodeBridgeValue("Studio target selection is invalid", StudioTargetSelectionSchema)),
-    checkpointCapture: (context) =>
-      invoke("Failed to capture checkpoint", () => api.checkpointCapture(context)).pipe(
-        decodeBridgeValue("Checkpoint output is invalid", CheckpointSchema),
-      ),
-    checkpointRestore: (input) =>
-      invoke("Failed to restore checkpoint", () => api.checkpointRestore(input)).pipe(
-        decodeBridgeValue("Checkpoint restore result is invalid", CheckpointRestoreResultSchema),
-      ),
-    checkpointPreview: (checkpointId, sessionId) =>
-      invoke("Failed to preview checkpoint", () =>
-        api.checkpointPreview(checkpointId, sessionId),
-      ).pipe(decodeBridgeValue("Checkpoint preview is invalid", RestorePreviewSchema)),
-    checkpointList: (sessionId) =>
-      invoke("Failed to list checkpoints", () => api.checkpointList(sessionId)).pipe(
-        decodeBridgeValue("Checkpoint list is invalid", Schema.Array(CheckpointSchema)),
-      ),
-    checkpointValidate: () =>
-      invoke("Failed to validate workspace", () => api.checkpointValidate()).pipe(
-        decodeBridgeValue("Validation result is invalid", ValidationResultSchema),
-      ),
     rojoStart: (workspace) => invoke("Failed to start Rojo", () => api.rojoStart(workspace)),
     rojoStartForSession: (sessionId) =>
       invoke("Failed to start Rojo for session", () => api.rojoStartForSession(sessionId)),
@@ -403,14 +349,6 @@ export const desktop: DesktopApi = {
   discoverStudioTargets: (programs) => runPromise(desktopEffects.discoverStudioTargets(programs)),
   selectStudioTarget: (programs, targetKey) =>
     runPromise(desktopEffects.selectStudioTarget(programs, targetKey)),
-  checkpointCapture: (context) => runPromise(desktopEffects.checkpointCapture(context)),
-  checkpointRestore: (input) => runPromise(desktopEffects.checkpointRestore(input)),
-  checkpointPreview: (checkpointId, sessionId) =>
-    runPromise(desktopEffects.checkpointPreview(checkpointId, sessionId)),
-  checkpointList: async (sessionId) => [
-    ...(await runPromise(desktopEffects.checkpointList(sessionId))),
-  ],
-  checkpointValidate: () => runPromise(desktopEffects.checkpointValidate()),
   rojoStart: (workspace) => runPromise(desktopEffects.rojoStart(workspace)),
   rojoStartForSession: (sessionId) => runPromise(desktopEffects.rojoStartForSession(sessionId)),
   rojoStop: () => runPromise(desktopEffects.rojoStop()),

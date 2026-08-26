@@ -7,14 +7,6 @@ import { autoUpdater } from "electron-updater";
 import { ExplorerProgramEnvelopeSchema, ExplorerSnapshotSchema } from "../src/lib/explorer";
 import { ProjectIndexProgramEnvelopeSchema, ProjectSkeletonSchema } from "../src/lib/projectIndex";
 import {
-  CaptureContextSchema,
-  CheckpointRestoreInputSchema,
-  CheckpointRestoreResultSchema,
-  CheckpointSchema,
-  RestorePreviewSchema,
-  ValidationResultSchema,
-} from "../src/types/checkpoints";
-import {
   type AppConfig,
   AppConfigPatchSchema,
   AppConfigSchema,
@@ -33,7 +25,6 @@ import { handleLastWindowClosed } from "./appLifecycle";
 import { channels } from "./channels";
 import { BLOXMIND_PROTOCOL } from "./licensingConfig";
 import { compareReleaseVersions, parseReleaseVersion } from "./releaseVersion";
-import { CheckpointServiceTag, makeCheckpointServiceLayer } from "./services/CheckpointService";
 import {
   GeneratedProgramRuntime,
   GeneratedProgramRuntimeLive,
@@ -95,31 +86,15 @@ const studioMcpBrokerLayer = makeStudioMcpBrokerLayer({
 const openCodeRuntime = ManagedRuntime.make(
   Layer.merge(
     Layer.merge(
-      Layer.merge(
-        makeOpenCodeLayer({
-          binaryCacheDirectory: join(app.getPath("userData"), "opencode"),
-          workspace: join(app.getPath("home"), "BloxMind"),
-          onStartupProgress: (progress: OpenCodeStartupProgress) => {
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send(channels.openCodeStartupProgress, progress);
-            }
-          },
-        }),
-        // The checkpoint service reads Rojo's live-sync status post-restore,
-        // so provide the Rojo server manager layer into it explicitly. Both
-        // are merged into the same managed runtime below.
-        makeCheckpointServiceLayer({
-          storeRoot: join(app.getPath("userData"), "checkpoints"),
-          workspace: join(app.getPath("home"), "BloxMind"),
-        }).pipe(
-          Layer.provide(
-            makeRojoServerManagerLayer({
-              binDirectory: join(app.getPath("userData"), "bin"),
-              sessionWorkspaceDir,
-            }),
-          ),
-        ),
-      ),
+      makeOpenCodeLayer({
+        binaryCacheDirectory: join(app.getPath("userData"), "opencode"),
+        workspace: join(app.getPath("home"), "BloxMind"),
+        onStartupProgress: (progress: OpenCodeStartupProgress) => {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send(channels.openCodeStartupProgress, progress);
+          }
+        },
+      }),
       Layer.merge(
         makeRojoServerManagerLayer({
           binDirectory: join(app.getPath("userData"), "bin"),
@@ -572,111 +547,6 @@ const registerIpcHandlers = Effect.sync(() => {
       Effect.sync(() => {
         app.relaunch();
         app.quit();
-      }),
-    ),
-  );
-  // ── Checkpoint system ──────────────────────────────────────────────
-  ipcMain.handle(channels.checkpointCapture, (_event, input: unknown) =>
-    openCodeRuntime.runPromise(
-      Effect.gen(function* () {
-        const context = yield* Schema.decodeUnknown(CaptureContextSchema)(input);
-        const service = yield* CheckpointServiceTag;
-        return yield* service.capture(context).pipe(
-          Effect.flatMap((checkpoint) =>
-            Schema.decodeUnknown(CheckpointSchema)(checkpoint).pipe(
-              Effect.mapError(
-                (cause) =>
-                  new DesktopMainError({
-                    message: "Checkpoint capture output is invalid",
-                    cause,
-                  }),
-              ),
-            ),
-          ),
-        );
-      }),
-    ),
-  );
-  ipcMain.handle(channels.checkpointRestore, (_event, input: unknown) =>
-    openCodeRuntime.runPromise(
-      Effect.gen(function* () {
-        const restoreInput = yield* Schema.decodeUnknown(CheckpointRestoreInputSchema)(input);
-        const service = yield* CheckpointServiceTag;
-        return yield* service.restore(restoreInput).pipe(
-          Effect.flatMap((result) =>
-            Schema.decodeUnknown(CheckpointRestoreResultSchema)(result).pipe(
-              Effect.mapError(
-                (cause) =>
-                  new DesktopMainError({
-                    message: "Checkpoint restore output is invalid",
-                    cause,
-                  }),
-              ),
-            ),
-          ),
-        );
-      }),
-    ),
-  );
-  ipcMain.handle(channels.checkpointPreview, (_event, checkpointId: string, sessionId: string) =>
-    openCodeRuntime.runPromise(
-      Effect.gen(function* () {
-        const service = yield* CheckpointServiceTag;
-        return yield* service.preview(checkpointId, sessionId).pipe(
-          Effect.flatMap((preview) =>
-            Schema.decodeUnknown(RestorePreviewSchema)(preview).pipe(
-              Effect.mapError(
-                (cause) =>
-                  new DesktopMainError({
-                    message: "Checkpoint preview output is invalid",
-                    cause,
-                  }),
-              ),
-            ),
-          ),
-        );
-      }),
-    ),
-  );
-  ipcMain.handle(channels.checkpointList, (_event, sessionId: string) =>
-    openCodeRuntime.runPromise(
-      Effect.gen(function* () {
-        const service = yield* CheckpointServiceTag;
-        const history = yield* service.list(sessionId);
-        return yield* Schema.decodeUnknown(Schema.Array(CheckpointSchema))(history).pipe(
-          Effect.mapError(
-            (cause) =>
-              new DesktopMainError({ message: "Checkpoint list output is invalid", cause }),
-          ),
-        );
-      }),
-    ),
-  );
-  ipcMain.handle(channels.checkpointValidate, () =>
-    openCodeRuntime.runPromise(
-      Effect.gen(function* () {
-        const service = yield* CheckpointServiceTag;
-        return yield* service.validate().pipe(
-          Effect.flatMap((result) =>
-            Schema.decodeUnknown(ValidationResultSchema)(result).pipe(
-              Effect.mapError(
-                (cause) =>
-                  new DesktopMainError({
-                    message: "Checkpoint validation output is invalid",
-                    cause,
-                  }),
-              ),
-            ),
-          ),
-        );
-      }),
-    ),
-  );
-  ipcMain.handle(channels.checkpointDeleteSession, (_event, sessionId: string) =>
-    openCodeRuntime.runPromise(
-      Effect.gen(function* () {
-        const service = yield* CheckpointServiceTag;
-        return yield* service.deleteSession(sessionId);
       }),
     ),
   );

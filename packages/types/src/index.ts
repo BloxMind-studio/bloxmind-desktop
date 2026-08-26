@@ -7,7 +7,6 @@
  * filesystem dependency on the Electron source tree.
  */
 
-export * from "./checkpoints";
 export * from "./generatedProgram";
 export * from "./studioTarget";
 export * from "./chat";

@@ -15,13 +15,6 @@ export const channels = {
   selectStudioTarget: "studio-target:select",
   compileProjectIndexProgram: "project-index:compile-program",
   invokeProjectIndexProgram: "project-index:invoke-program",
-  // ── Checkpoint system ──────────────────────────────────────────────
-  checkpointCapture: "checkpoint:capture",
-  checkpointRestore: "checkpoint:restore",
-  checkpointPreview: "checkpoint:preview",
-  checkpointList: "checkpoint:list",
-  checkpointValidate: "checkpoint:validate",
-  checkpointDeleteSession: "checkpoint:delete-session",
   // ── Rojo live-sync ─────────────────────────────────────────────────
   rojoStatus: "rojo:status",
   rojoToggle: "rojo:toggle",

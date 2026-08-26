@@ -1,16 +1,10 @@
 import type { Part } from "@opencode-ai/sdk/v2/client";
 import { memo, useCallback, useState } from "react";
-import {
-  type CheckpointHistory,
-  CheckpointStatusBadge,
-  RestoreCheckpointButton,
-} from "@/components/chat/CheckpointControls";
 import { ModelErrorCard } from "@/components/chat/ErrorViews";
 import { SmartPartsRenderer } from "@/components/chat/partViews";
 import { BloxMindThinking } from "@/components/chat/ThinkingIndicator";
 import { UserPartsView } from "@/components/chat/UserPartsView";
 import { WorkingIndicator } from "@/components/chat/WorkingIndicator";
-import { useRegenerateResponse } from "@/hooks/mutations/useRegenerateResponse";
 import { useRetryMessage } from "@/hooks/mutations/useRetryMessage";
 import { useMessage } from "@/hooks/useMessages";
 import { useSessionStatus } from "@/hooks/useSessionStatuses";
@@ -20,32 +14,20 @@ import { useActiveSession } from "@/providers/ActiveSessionProvider";
 
 export const MessageBubble = memo(function MessageBubble({
   messageId,
-  promptMessageId,
   showControls = false,
-  checkpoint,
-  showRestore = true,
   isLastIndex = false,
 }: {
   messageId: string;
-  /** The user prompt that started this task — checkpoints are keyed by it. */
-  promptMessageId?: string;
   showControls?: boolean;
-  checkpoint: CheckpointHistory;
-  showRestore?: boolean;
   isLastIndex?: boolean;
 }) {
   const msg = useMessage(messageId);
   const [copied, setCopied] = useState(false);
+  const retry = useRetryMessage();
   const { activeSessionId } = useActiveSession();
   const sessionStatus = useSessionStatus(activeSessionId);
-  const isBusy = sessionStatus?.type === "busy";
-  const regenerate = useRegenerateResponse();
-  const retry = useRetryMessage();
-
-  const handleRegenerate = useCallback(() => {
-    if (regenerate.isPending) return;
-    regenerate.mutate({ assistantMessageId: messageId });
-  }, [regenerate, messageId]);
+  // A turn is busy whenever its session status is anything but idle.
+  const isBusy = sessionStatus !== undefined && sessionStatus.type !== "idle";
 
   const handleRetry = useCallback(() => {
     if (retry.isPending) return;
@@ -121,69 +103,6 @@ export const MessageBubble = memo(function MessageBubble({
               )}
             {!isBusy && showControls && (
               <div className="flex select-none items-center justify-end gap-1 pt-1">
-                {checkpoint.canUndo && (
-                  <button
-                    type="button"
-                    onClick={checkpoint.undo}
-                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground/40 transition-colors hover:bg-hover/50"
-                    title="Undo last change"
-                  >
-                    <svg
-                      width="11"
-                      height="11"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <polyline points="1 4 1 10 7 10" />
-                      <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
-                    </svg>
-                    <span>Undo</span>
-                  </button>
-                )}
-                {checkpoint.canRedo && (
-                  <button
-                    type="button"
-                    onClick={checkpoint.redo}
-                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground/40 transition-colors hover:bg-hover/50"
-                    title="Redo last change"
-                  >
-                    <svg
-                      width="11"
-                      height="11"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <polyline points="23 4 23 10 17 10" />
-                      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-                    </svg>
-                    <span>Redo</span>
-                  </button>
-                )}
-                {/* Checkpoint badge: show if there's ever been a checkpoint (cached) */}
-                {checkpoint.cachedFsCheckpointCount > 0 && (
-                  <CheckpointStatusBadge checkpoint={checkpoint} />
-                )}
-                {/* Restore button: any completed task turn with a checkpoint —
-                    including the just-finished turn (isTaskIdle already hides
-                    it while the agent is still streaming). Targets the task's
-                    user prompt, which is the id checkpoints are captured with. */}
-                {showRestore && checkpoint.fsCheckpointCount > 0 && (
-                  <RestoreCheckpointButton
-                    checkpoint={checkpoint}
-                    isBusy={isBusy}
-                    messageId={promptMessageId ?? messageId}
-                  />
-                )}
                 {/* Retry button: shown on errored assistant messages. */}
                 {!isUser &&
                   "error" in msg.info &&
@@ -214,35 +133,6 @@ export const MessageBubble = memo(function MessageBubble({
                       <span>{retry.isPending ? "Retrying…" : "Retry"}</span>
                     </button>
                   )}
-                {/* Regenerate button: latest assistant message only. Once the
-                    re-run starts, the session turns busy and this whole
-                    toolbar hides, which doubles as the disabled state. */}
-                {!isUser && isLastIndex && (
-                  <button
-                    type="button"
-                    onClick={handleRegenerate}
-                    disabled={regenerate.isPending}
-                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground/40 transition-colors hover:bg-hover/50 disabled:pointer-events-none disabled:opacity-50"
-                    title="Regenerate this response"
-                  >
-                    <svg
-                      width="11"
-                      height="11"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <polyline points="23 4 23 10 17 10" />
-                      <polyline points="1 20 1 14 7 14" />
-                      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-                    </svg>
-                    <span>{regenerate.isPending ? "Regenerating…" : "Regenerate"}</span>
-                  </button>
-                )}
                 {/* Copy button: always visible on finished messages with text */}
                 {shouldShowCopyButton && (
                   <button

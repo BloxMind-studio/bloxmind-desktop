@@ -1,9 +1,8 @@
-import type { QuestionAnswer, SessionStatus } from "@opencode-ai/sdk/v2/client";
+import type { QuestionAnswer } from "@opencode-ai/sdk/v2/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDown } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { toast } from "sonner";
 import { ModelErrorCard, UsageLimitDialog } from "@/components/chat/ErrorViews";
 import { LightboxProvider } from "@/components/chat/Lightbox";
 import { MessageBubble } from "@/components/chat/MessageBubble";
@@ -13,8 +12,6 @@ import { TodoPanel } from "@/components/chat/TodoPanel";
 import { useAnswerQuestion, useRejectQuestion } from "@/hooks/mutations/useAnswerQuestion";
 import { useReplyPermission } from "@/hooks/mutations/useReplyPermission";
 import { useSendMessage } from "@/hooks/mutations/useSendMessage";
-import { useCheckpointHistory } from "@/hooks/useCheckpointHistory";
-import { useCheckpoints } from "@/hooks/useCheckpoints";
 import { useMessage, useMessageIds } from "@/hooks/useMessages";
 import { useActivePermission } from "@/hooks/usePermissions";
 import { useActiveQuestion } from "@/hooks/useQuestions";
@@ -27,10 +24,6 @@ import { getOpenCodeUsageAction } from "@/lib/usageLimit";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 
 // ── Main component ─────────────────────────────────────────────────────
-
-/** How long the agent must stay busy before a pre-execution checkpoint is
- * captured, so transient busy flicker doesn't spam full-workspace snapshots. */
-const CHECKPOINT_CAPTURE_DEBOUNCE_MS = 750;
 
 /** Show the jump-to-bottom button when the user has scrolled this far up. */
 const SCROLL_UP_THRESHOLD_PX = 220;
@@ -52,13 +45,6 @@ function ChatMessages() {
   const answerQuestion = useAnswerQuestion();
   const rejectQuestion = useRejectQuestion();
   const replyPermission = useReplyPermission();
-  // Extract the session status type early so we can pass it as a refresh
-  // trigger to useCheckpointHistory. This ensures the hook re-fetches the
-  // checkpoint list when the agent transitions between busy/idle (which is
-  // when checkpoints are captured/restored). Without this, the checkpoint
-  // badge and restore button would never appear after a capture.
-  const sessionStatusType = sessionStatus?.type;
-  const checkpoint = useCheckpointHistory(activeSessionId ?? undefined);
 
   // ── Continue handling for interrupted generations ──────────
   // When the agent is stopped (abort) or crashes, we persist an "interrupted" marker
@@ -173,196 +159,6 @@ function ChatMessages() {
     }, 10_000);
     return () => window.clearTimeout(timer);
   }, [lastMessage, activeSessionId, queryClient]);
-  const {
-    capture: captureCheckpoint,
-    validate: validateWorkspace,
-    list: listCheckpoints,
-    restore: restoreCheckpoint,
-  } = useCheckpoints();
-
-  // Pre-Execution Checkpoint: when the agent transitions to "busy"
-  // (it's about to modify files for the latest message), capture a full
-  // pre-task snapshot so auto-rollback always has a restore point.
-  //
-  // The capture is debounced: busy state can flicker rapidly (busy → idle →
-  // busy) within a single turn as the agent moves between tool calls, and a
-  // full-workspace snapshot on every transition would spam the filesystem and
-  // IPC. We only capture once the busy state has held stable for a short
-  // window, and never more than once per message.
-  const previousStatusRef = useRef<SessionStatus | undefined>(undefined);
-  const capturedForMessageRef = useRef<string | null>(null);
-  const captureDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    const cleanupDebounce = () => {
-      if (captureDebounceTimerRef.current !== null) {
-        clearTimeout(captureDebounceTimerRef.current);
-        captureDebounceTimerRef.current = null;
-      }
-    };
-    if (!activeSessionId) {
-      previousStatusRef.current = undefined;
-      capturedForMessageRef.current = null;
-      cleanupDebounce();
-      return;
-    }
-    const prev = previousStatusRef.current;
-    previousStatusRef.current = sessionStatus;
-    // Leaving busy cancels any in-flight debounce so a flicker never captures.
-    if (sessionStatusType !== "busy") {
-      cleanupDebounce();
-      return;
-    }
-    // Capture whenever the agent transitions into "busy" (from idle, error,
-    // or the very first message of a session), once per message. Empty paths
-    // → full-workspace journal snapshot (works with or without git).
-    if (prev?.type !== "busy") {
-      const lastId = messageIds[messageIds.length - 1];
-      if (!lastId || capturedForMessageRef.current === lastId) return;
-      // Wait for the busy state to hold before spending a snapshot.
-      cleanupDebounce();
-      captureDebounceTimerRef.current = setTimeout(() => {
-        captureDebounceTimerRef.current = null;
-        if (previousStatusRef.current?.type !== "busy") return;
-        // Skip if the user-message capture trigger (below) already snapshotted
-        // this turn.
-        if (capturedForMessageRef.current === lastId) return;
-        capturedForMessageRef.current = lastId;
-        void captureCheckpoint({
-          sessionId: activeSessionId,
-          messageId: lastId,
-          tool: "session.promptAsync",
-          paths: [],
-        })
-          .then(() => {
-            void checkpoint.refreshCheckpoints();
-            // Retry once after a short delay: the capture IPC may have
-            // resolved, but the file-system write can lag by ~1-2s on
-            // Windows. Without this retry the button would flicker and
-            // disappear when the stale empty list overwrites state.
-            setTimeout(() => void checkpoint.refreshCheckpoints(), 600);
-          })
-          .catch((err: unknown) => {
-            console.warn("Pre-execution checkpoint capture failed; undo may be unavailable:", err);
-            // Even if this capture rejected, a checkpoint from an earlier task
-            // may still exist on disk for this session — keep refreshing so a
-            // transient failure can never permanently hide the badge/button.
-            void checkpoint.refreshCheckpoints();
-          });
-      }, CHECKPOINT_CAPTURE_DEBOUNCE_MS);
-    }
-    return cleanupDebounce;
-  }, [
-    sessionStatusType,
-    activeSessionId,
-    messageIds,
-    captureCheckpoint,
-    sessionStatus,
-    checkpoint.refreshCheckpoints,
-  ]);
-
-  // Robust pre-task capture: snapshot the workspace the moment a NEW user
-  // prompt arrives, independent of the SSE busy-transition signal (which the
-  // engine is documented to drop). Guarantees a checkpoint exists for every
-  // task, so the badge + Restore/Regenerate always have a target. Guarded by
-  // the same capturedForMessageRef, so it never double-captures a turn.
-  useEffect(() => {
-    if (!activeSessionId) return;
-    if (messageIds.length === 0) return;
-    const lastId = messageIds[messageIds.length - 1];
-    if (!lastId || capturedForMessageRef.current === lastId) return;
-    const cache = queryClient.getQueryData<MessagesCache>(qk.messages(activeSessionId));
-    if (cache?.messagesById[lastId]?.info.role !== "user") return;
-    capturedForMessageRef.current = lastId;
-    void captureCheckpoint({
-      sessionId: activeSessionId,
-      messageId: lastId,
-      tool: "session.promptAsync",
-      paths: [],
-    })
-      .then(() => {
-        void checkpoint.refreshCheckpoints();
-        setTimeout(() => void checkpoint.refreshCheckpoints(), 600);
-      })
-      .catch((err: unknown) => {
-        console.warn("Pre-execution checkpoint capture failed (message trigger):", err);
-        void checkpoint.refreshCheckpoints();
-      });
-  }, [activeSessionId, messageIds, captureCheckpoint, checkpoint.refreshCheckpoints, queryClient]);
-
-  // Auto-save a permanent checkpoint whenever the agent finishes a task
-  useEffect(() => {
-    if (sessionStatus?.type === "idle" && messageIds.length > 0) {
-      // Debounce the save so we don't spam localStorage
-      const timeout = setTimeout(() => checkpoint.saveCheckpoint(), 300);
-      return () => clearTimeout(timeout);
-    }
-  }, [sessionStatus?.type, messageIds.length, checkpoint.saveCheckpoint]);
-
-  // Automatic Rollback (Validation Failure): when the agent finishes a task,
-  // run the validation pipeline. If it fails, restore the pre-execution file
-  // checkpoint so broken code never stays in the workspace.
-  useEffect(() => {
-    if (sessionStatus?.type !== "idle" || !activeSessionId) return;
-    if (messageIds.length === 0) return;
-    let cancelled = false;
-
-    const timer = setTimeout(() => {
-      void (async () => {
-        try {
-          const validation = await validateWorkspace();
-          if (cancelled) return;
-          if (validation.ok) return;
-
-          // Validation failed → find the latest FS checkpoint and restore it.
-          const fsList = await listCheckpoints(activeSessionId);
-          if (cancelled) return;
-          if (fsList.length === 0) {
-            toast.error(validation.logs.slice(0, 200), {
-              description: "Build failed, but no checkpoint exists to restore.",
-            });
-            return;
-          }
-          const latest = fsList[fsList.length - 1];
-          // Full-workspace pre-task snapshots can't safely preserve user
-          // edits — this is an explicit auto-rollback, so bypass preservation
-          // to avoid triggering the service's refusal guard (and a noisy IPC
-          // error log).
-          await restoreCheckpoint({
-            checkpointId: latest.id,
-            sessionId: activeSessionId,
-            dryRun: false,
-            preserveUserEdits: !latest.fullSnapshot,
-          });
-          if (cancelled) return;
-          toast.error("Revalidating workspace…", {
-            description:
-              validation.logs.length > 0
-                ? `Validation failed and files were restored to the last checkpoint. ${validation.logs.slice(0, 160)}`
-                : "Validation failed and files were restored to the last checkpoint.",
-          });
-          void queryClient.invalidateQueries({ queryKey: qk.messages(activeSessionId) });
-          void queryClient.invalidateQueries({ queryKey: qk.todos(activeSessionId) });
-        } catch (err) {
-          if (!cancelled) {
-            console.warn("Auto-validation failed to run:", err);
-          }
-        }
-      })();
-    }, 1500);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [
-    sessionStatus?.type,
-    activeSessionId,
-    messageIds.length,
-    queryClient,
-    listCheckpoints,
-    restoreCheckpoint,
-    validateWorkspace,
-  ]);
 
   // Determine the role of every message so we know where each task ends.
   const rolesByIndex = useMemo(() => {
@@ -374,33 +170,6 @@ function ChatMessages() {
     });
     return roles;
   }, [activeSessionId, messageIds, queryClient]);
-
-  // Map every assistant message to the user prompt that started its task.
-  // Checkpoints are captured with the PROMPT's messageId (busy-start), so the
-  // Restore button must target that id for per-task checkpoint lookup.
-  const anchorPromptByMessageId = useMemo(() => {
-    const map = new Map<string, string | null>();
-    let lastPrompt: string | null = null;
-    messageIds.forEach((id, index) => {
-      const role = rolesByIndex.get(index);
-      if (role === "user") {
-        lastPrompt = id;
-        map.set(id, id);
-      } else {
-        map.set(id, lastPrompt);
-      }
-    });
-    return map;
-  }, [messageIds, rolesByIndex]);
-
-  // Re-sync FS checkpoint state whenever the agent finishes a turn (or the
-  // session first reports idle). Covers checkpoints whose post-capture
-  // refresh raced the UI, restores after regenerate, and the initial load
-  // after an app restart.
-  useEffect(() => {
-    if (sessionStatusType !== "idle") return;
-    void checkpoint.refreshCheckpoints();
-  }, [sessionStatusType, checkpoint.refreshCheckpoints]);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -583,13 +352,6 @@ function ChatMessages() {
                 // actively working.
                 const isTaskIdle = sessionStatus?.type !== "busy";
 
-                // The `!isLastIndex` guard is intentionally omitted: the
-                // completed agent turn is always the last message, so excluding
-                // it would hide the restore button right after every task
-                // finishes. `isTaskIdle` already prevents the button from
-                // appearing while the agent is still streaming.
-                const showRestore = isLastOfTask && isTaskIdle;
-
                 return (
                   <div
                     key={msgId}
@@ -606,10 +368,7 @@ function ChatMessages() {
                     <div className="pb-4">
                       <MessageBubble
                         messageId={msgId}
-                        promptMessageId={anchorPromptByMessageId.get(msgId) ?? undefined}
                         showControls={isLastOfTask && isTaskIdle}
-                        checkpoint={checkpoint}
-                        showRestore={showRestore}
                         isLastIndex={isLastIndex}
                       />
                     </div>

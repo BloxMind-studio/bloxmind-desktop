@@ -1,14 +1,6 @@
 import { Schema } from "effect";
 import type { ExplorerProgramEnvelope, ExplorerSnapshot } from "../lib/explorer";
 import type { ProjectIndexProgramEnvelope, ProjectSkeleton } from "../lib/projectIndex";
-import type {
-  CaptureContext,
-  Checkpoint,
-  CheckpointRestoreInput,
-  CheckpointRestoreResult,
-  RestorePreview,
-  ValidationResult,
-} from "./checkpoints";
 import type { GeneratedProgramArtifact } from "./generatedProgram";
 import {
   type StudioTargetDiscovery,
@@ -256,11 +248,6 @@ export interface DesktopApi {
     programs: StudioTargetPrograms,
     targetKey: string,
   ): Promise<StudioTargetSelection>;
-  checkpointCapture(context: CaptureContext): Promise<Checkpoint>;
-  checkpointRestore(input: CheckpointRestoreInput): Promise<CheckpointRestoreResult>;
-  checkpointPreview(checkpointId: string, sessionId: string): Promise<RestorePreview>;
-  checkpointList(sessionId: string): Promise<Checkpoint[]>;
-  checkpointValidate(): Promise<ValidationResult>;
   rojoStart(workspace: string): Promise<RojoStatus>;
   rojoStartForSession(sessionId: string): Promise<RojoStatus>;
   rojoStop(): Promise<void>;

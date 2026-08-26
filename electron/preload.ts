@@ -31,13 +31,6 @@ const api: DesktopApi = {
   discoverStudioTargets: (programs) => ipcRenderer.invoke(channels.discoverStudioTargets, programs),
   selectStudioTarget: (programs, targetKey) =>
     ipcRenderer.invoke(channels.selectStudioTarget, programs, targetKey),
-  // ── Checkpoint system ──────────────────────────────────────────────
-  checkpointCapture: (context) => ipcRenderer.invoke(channels.checkpointCapture, context),
-  checkpointRestore: (input) => ipcRenderer.invoke(channels.checkpointRestore, input),
-  checkpointPreview: (checkpointId, sessionId) =>
-    ipcRenderer.invoke(channels.checkpointPreview, checkpointId, sessionId),
-  checkpointList: (sessionId) => ipcRenderer.invoke(channels.checkpointList, sessionId),
-  checkpointValidate: () => ipcRenderer.invoke(channels.checkpointValidate),
   // ── Rojo live-sync ────────────────────────────────────────────────
   rojoStart: (workspace) => ipcRenderer.invoke(channels.rojoStart, workspace),
   rojoStop: () => ipcRenderer.invoke(channels.rojoStop),

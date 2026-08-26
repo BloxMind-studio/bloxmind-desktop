@@ -43,8 +43,8 @@ export function ActiveSessionProvider({
   const { data: sessions } = useSessions();
 
   const syncRojoToSession = useCallback((_sessionID: string) => {
-    // Unified on ~/BloxMind (option 1): Rojo + checkpoint share the same
-    // workspace, so session switches no longer kill+recreate the server or
+    // Unified on ~/BloxMind (option 1): Rojo shares one workspace across all
+    // sessions, so session switches no longer kill+recreate the server or
     // wipe the project. No per-session Rojo switch is needed; the global
     // server started at boot stays alive and Studio stays connected.
     return;
@@ -62,7 +62,7 @@ export function ActiveSessionProvider({
 
       // Unified on ~/BloxMind: all sessions share the same workspace and Rojo
       // server, so no per-session isolation or Disconnect→Connect prompt is
-      // needed. The checkpoint system handles file history via git/journal.
+      // needed.
       if (!wasActive) {
         syncRojoToSession(sessionID);
       }
