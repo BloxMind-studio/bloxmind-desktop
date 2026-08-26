@@ -123,14 +123,17 @@ export function useCheckpointHistory(sessionId: string | undefined) {
   // race where a session-change-triggered fetch overwrites correct state
   // with a stale empty result while a capture is still being persisted.
   useEffect(() => {
+    // Reset ALL per-session file-system state on EVERY session switch so
+    // checkpoints (badge count, latest snapshot, restore marker) can never
+    // leak from one chat into another. refreshCheckpoints() below
+    // rehydrates immediately; the cached count's anti-flicker role only
+    // applies to refetches WITHIN a session.
+    setFsCheckpointCount(0);
+    setLatestFsCheckpoint(null);
+    setCachedFsCheckpointCount(0);
+    setRestoredCheckpointId(null);
     if (!sessionId) {
       setCheckpointCount(0);
-      setFsCheckpointCount(0);
-      // Clear the cached badge count too — otherwise a stale cached value
-      // would survive session switches and leak between conversations.
-      setCachedFsCheckpointCount(0);
-      setLatestFsCheckpoint(null);
-      setRestoredCheckpointId(null);
       return;
     }
     setCheckpointCount(getCheckpointsFromStorage(sessionId).length);
