@@ -53,7 +53,11 @@ import {
 } from "./services/SessionStore";
 import { makeStudioMcpBrokerLayer } from "./services/StudioMcpBroker";
 import { type SweepReport, sweepStaleProcesses } from "./services/staleProcessSweep";
-import { ensureSessionWorkspace, purgeLegacyRootWorkspace, sessionWorkspaceDir } from "./sessionWorkspace";
+import {
+  ensureSessionWorkspace,
+  purgeLegacyRootWorkspace,
+  sessionWorkspaceDir,
+} from "./sessionWorkspace";
 
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
 const defaultConfig: AppConfig = DEFAULT_APP_CONFIG;
