@@ -29,8 +29,8 @@ import {
   type ValidationResult,
   ValidationResultSchema,
 } from "../../src/types/checkpoints";
-import { RojoServerManagerTag, type RojoStatus } from "./RojoServerManager";
 import { resolveGitBackend } from "./GitBackend";
+import { RojoServerManagerTag, type RojoStatus } from "./RojoServerManager";
 
 const exec = promisify(execFile);
 
@@ -300,6 +300,72 @@ function persistSessionIndex(
 
 // ── Capture / restore core ──────────────────────────────────────────────
 
+/**
+ * Enumerate the files git reports as actually modified/staged/untracked.
+ * NEVER throws: if the git probe fails (e.g. the embedded backend on an
+ * unborn HEAD) it degrades to an empty set so the capture still persists —
+ * a rejected capture would leave the checkpoint list empty and permanently
+ * hide the UI badge and Restore button.
+ */
+async function enumerateChangedPaths(workspace: string): Promise<string[]> {
+  try {
+    const backend = await resolveGitBackend();
+    if (!(await backend.isGitRepo(workspace))) return [];
+    return (await backend.getChangedFiles(workspace))
+      .map(toPosixPath)
+      .filter((p) => !SKIP_FILES.has(p));
+  } catch {
+    return [];
+  }
+}
+
+/** Journal the pre-state of one path so it can be restored without a git ref. */
+function captureJournalChange(
+  workspace: string,
+  relPath: string,
+): Effect.Effect<FileChange, CheckpointError> {
+  return Effect.gen(function* () {
+    const absPath = resolve(workspace, relPath);
+    const contents = yield* Effect.tryPromise({
+      try: () => readTextSafe(absPath),
+      catch: (cause) => new CheckpointError({ message: `Failed to read ${relPath}`, cause }),
+    });
+    if (contents === null) {
+      // Path does not exist yet — restoring means deleting it.
+      return { path: relPath, operation: "create", preHash: hashContent(""), preContent: null };
+    }
+    return {
+      path: relPath,
+      operation: "modify",
+      preHash: hashContent(contents),
+      // Mirror raw content only for small files; large/binary content is
+      // reconstructed from the git snapshot instead.
+      preContent: Buffer.byteLength(contents, "utf8") <= MAX_JOURNAL_FILE_BYTES ? contents : null,
+    };
+  });
+}
+
+/**
+ * Create the git-backed workspace snapshot (system git preferred, embedded
+ * isomorphic-git fallback). Returns `null` — never throws — when no snapshot
+ * is possible, letting restore degrade to the journal safely.
+ */
+async function createGitSnapshotRef(workspace: string): Promise<string | null> {
+  try {
+    const backend = await resolveGitBackend();
+    if (!(await backend.isGitRepo(workspace))) return null;
+    try {
+      // Unborn HEAD: stash-based snapshots need a base commit to exist.
+      await backend.ensureBaseline(workspace);
+    } catch {
+      return null;
+    }
+    return await backend.snapshot(workspace, `bloxmind:${randomBytes(6).toString("hex")}`);
+  } catch {
+    return null;
+  }
+}
+
 function makeCapture(
   options: CheckpointServiceOptions,
 ): (context: CaptureContext) => Effect.Effect<Checkpoint, CheckpointError> {
@@ -314,100 +380,27 @@ function makeCapture(
       yield* validateWorkspacePaths(options.workspace, decoded.paths);
 
       // 1. Capture pre-state for every scoped path (journal fallback).
-      //    When no explicit paths are given, we capture ONLY the files that are
-      //    actually modified/created/untracked according to git — not the whole
-      //    workspace — so legacy files like .gitkeep and old session scripts are
-      //    never pulled into every checkpoint and never touched on restore.
-      //    Critically, the enumeration below NEVER throws: if the git probe
-      //    fails (e.g. embedded backend on an unborn HEAD), we degrade to an
-      //    empty set rather than rejecting the capture. A rejected capture would
-      //    persist no checkpoint, leaving the checkpoint list empty so the
-      //    badge + Restore button never appear.
+      //    A capture without explicit paths IS the full pre-task snapshot
+      //    (fullSnapshot=true): its gitRef reconstructs the entire workspace,
+      //    while the journal only mirrors the dirty set so legacy committed
+      //    files (.gitkeep, old scripts) are never pulled into checkpoints.
+      //    Explicit-path captures remain task-scoped (fullSnapshot=false).
       const isPreTaskSnapshot = decoded.paths.length === 0;
-      const changes: FileChange[] = [];
       const targetPaths = isPreTaskSnapshot
-        ? yield* Effect.tryPromise({
-            try: async () => {
-              try {
-                const backend = await resolveGitBackend();
-                if (await backend.isGitRepo(options.workspace)) {
-                  const changed = await backend.getChangedFiles(options.workspace);
-                  return changed
-                    .map(toPosixPath)
-                    .filter((p) => !SKIP_FILES.has(p) && p !== "AGENTS.md");
-                }
-              } catch {
-                // A git probe (e.g. embedded backend on an unborn HEAD) must
-                // never fail the capture — return nothing so the snapshot still
-                // persists and the UI badge/button are not left hidden.
-              }
-              return [];
-            },
-            catch: (cause) =>
-              new CheckpointError({ message: "Failed to enumerate workspace", cause }),
-          })
+        ? yield* Effect.promise(() => enumerateChangedPaths(options.workspace))
         : decoded.paths.map(toPosixPath);
-      // A capture without explicit paths IS the full pre-task snapshot: the
-      // snapshot's gitRef reconstructs the entire workspace, so restore may
-      // diff-and-prune files the agent created afterwards. Explicit-path
-      // captures remain task-scoped (fullSnapshot stays false).
       const fullSnapshot = isPreTaskSnapshot;
+      const changes: FileChange[] = [];
       for (const relPath of targetPaths) {
-        const absPath = resolve(options.workspace, relPath);
-        const contents = yield* Effect.tryPromise({
-          try: () => readTextSafe(absPath),
-          catch: (cause) => new CheckpointError({ message: `Failed to read ${relPath}`, cause }),
-        });
-        if (contents === null) {
-          changes.push({
-            path: relPath,
-            operation: "create",
-            preHash: hashContent(""),
-            preContent: null,
-          });
-        } else {
-          changes.push({
-            path: relPath,
-            operation: "modify",
-            preHash: hashContent(contents),
-            preContent:
-              Buffer.byteLength(contents, "utf8") <= MAX_JOURNAL_FILE_BYTES ? contents : null,
-          });
-        }
+        changes.push(yield* captureJournalChange(options.workspace, relPath));
       }
 
-      // 2. Git-backed snapshot (system git preferred, embedded isomorphic-git
-      //    fallback so clean machines with no `git` binary still get snapshots).
-      //    `git stash create` ignores untracked paths, so freshly generated Luau
-      //    scripts would be missing from the snapshot. Stage everything first
-      //    (`git add -A`), create the snapshot from the full index+worktree
-      //    state, then reset the index so capture never leaves the user's
-      //    staging area modified.
-      //
-      //    `git stash create` requires an existing commit (a "base" from which
-      //    to build a stash commit). A freshly git-initialized workspace has an
-      //    unborn HEAD, so the stash silently fails and gitRef ends up null —
-      //    which would degrade every restore to the incomplete journal. The
-      //    backend ensures a baseline commit exists first so snapshots work.
-      const gitRef = yield* Effect.tryPromise({
-        try: async () => {
-          const backend = await resolveGitBackend();
-          if (!(await backend.isGitRepo(options.workspace))) return null;
-          try {
-            await backend.ensureBaseline(options.workspace);
-          } catch {
-            // baseline failure → journal-only restore
-            return null;
-          }
-          const label = `bloxmind:${randomBytes(6).toString("hex")}`;
-          try {
-            return await backend.snapshot(options.workspace, label);
-          } catch {
-            return null;
-          }
-        },
-        catch: (cause) => new CheckpointError({ message: "Failed to create git snapshot", cause }),
-      }).pipe(Effect.catchAll(() => Effect.succeed(null)));
+      // 2. Git-backed snapshot covering the whole workspace (tracked AND
+      //    untracked files — staged first via `git add -A` inside the backend).
+      //    `git stash create` needs an existing base commit, which the backend
+      //    ensures; a clean worktree falls back to a dangling tree-commit so
+      //    pre-task captures always produce a restorable ref.
+      const gitRef = yield* Effect.promise(() => createGitSnapshotRef(options.workspace));
       if (gitRef === null) {
         yield* Effect.logWarning(
           "[checkpoint] git snapshot unavailable (no system git and embedded backend failed); restore is journal-only",
@@ -456,7 +449,7 @@ function restoreFromJournal(
 ): Effect.Effect<void, CheckpointError> {
   return Effect.gen(function* () {
     for (const change of checkpoint.paths) {
-      if (SKIP_FILES.has(change.path) || toPosixPath(change.path) === "AGENTS.md") continue;
+      if (SKIP_FILES.has(change.path)) continue;
       const absPath = resolve(options.workspace, change.path);
       if (change.operation === "create") {
         yield* Effect.tryPromise({
@@ -564,9 +557,7 @@ function makeRestore(
           return { checkpoint: cp };
         }),
       );
-      const scopedPaths = checkpoint.paths
-        .map((c) => toPosixPath(c.path))
-        .filter((p) => !SKIP_FILES.has(p) && p !== "AGENTS.md");
+      const scopedPaths = checkpoint.paths.map((c) => toPosixPath(c.path)).filter((p) => !SKIP_FILES.has(p));
       yield* validateWorkspacePaths(options.workspace, scopedPaths);
       // A checkpoint captured with no explicit paths (full pre-task snapshot)
       // restores tracked files from its gitRef, while journal data restores
@@ -596,14 +587,17 @@ function makeRestore(
         );
       }
 
-      if (checkpoint.gitRef) {
+      // Narrow once so the guarded gitRef flows through without casts.
+      const snapshotRef = checkpoint.gitRef;
+
+      if (snapshotRef) {
         // Restore tracked files from the snapshot, but never run `git clean`.
         // Uses the same backend the capture used (system git or embedded
         // isomorphic-git). Falls back to the journal on failure.
         yield* Effect.tryPromise({
           try: async () => {
             const backend = await resolveGitBackend();
-            await backend.restore(options.workspace, checkpoint.gitRef as string, restorePaths);
+            await backend.restore(options.workspace, snapshotRef, restorePaths);
             return undefined;
           },
           catch: (error) =>
@@ -625,26 +619,26 @@ function makeRestore(
         );
       } else {
         yield* restoreFromJournal(options, checkpoint);
-        // Files created after a full snapshot are intentionally left alone:
-        // without an untracked-file-aware snapshot, deleting them is unsafe.
+        // No gitRef → no diff base exists, so agent-created files cannot be
+        // identified safely and are left on disk; the prune step below is
+        // gitRef-gated for exactly this reason.
       }
 
       // Explicit rollback on a full-workspace snapshot: diff the current
       // workspace against the captured git tree and remove files the agent
       // created after the snapshot (they aren't in it, so a plain checkout
       // leaves them behind and Rojo would re-push them to Studio).
-      // Only for non-preserving restores (the user explicitly asked to rewind),
-      // and only when the checkpoint carries a usable gitRef to diff against.
-      if (checkpoint.fullSnapshot && !decoded.preserveUserEdits && checkpoint.gitRef) {
-        yield* removeFilesCreatedAfterGitCheckpoint(options.workspace, checkpoint.gitRef);
+      // Only for non-preserving restores (the user explicitly asked to rewind).
+      if (checkpoint.fullSnapshot && !decoded.preserveUserEdits && snapshotRef) {
+        yield* removeFilesCreatedAfterGitCheckpoint(options.workspace, snapshotRef);
       }
 
       // Atomicity: verify restored hashes match pre-state exactly. Entries
       // that were left untouched (large binaries with no git ref) are skipped.
-      // Also skip managed files like AGENTS.md for backward compat with old
-      // checkpoints that included them — they are now excluded from snapshots.
+      // Skip managed/legacy-excluded files (e.g. AGENTS.md) for backward compat
+      // with old checkpoints that included them — they are no longer captured.
       for (const change of checkpoint.paths) {
-        if (SKIP_FILES.has(change.path) || toPosixPath(change.path) === "AGENTS.md") continue;
+        if (SKIP_FILES.has(change.path)) continue;
         if (change.preContent === null && change.operation === "modify") continue;
         const absPath = resolve(options.workspace, change.path);
         const after = yield* Effect.tryPromise({
