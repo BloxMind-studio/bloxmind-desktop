@@ -128,9 +128,8 @@ const systemBackend: GitBackend = {
   },
 
   async getChangedFiles(workspace) {
-    // Combine unstaged, staged, and untracked files to get the actually
-    // modified set for a task-scoped checkpoint. This is the fix for the
-    // broad snapshot that was capturing legacy files like .gitkeep.
+    // Union of unstaged, staged, and untracked paths = the full dirty set,
+    // i.e. exactly the files a task-scoped checkpoint must track.
     const [unstaged, staged, untracked] = await Promise.all([
       runGit(workspace, ["diff", "--name-only"]).catch(() => ""),
       runGit(workspace, ["diff", "--cached", "--name-only"]).catch(() => ""),
@@ -139,8 +138,6 @@ const systemBackend: GitBackend = {
     const all = [...unstaged.split("\n"), ...staged.split("\n"), ...untracked.split("\n")]
       .map((s) => s.trim())
       .filter(Boolean);
-    // Also include any file that is staged as added but not yet committed?
-    // The above three already cover all dirty states. Deduplicate.
     return [...new Set(all)];
   },
 };
