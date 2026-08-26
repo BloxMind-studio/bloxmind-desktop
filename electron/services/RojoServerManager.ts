@@ -1,6 +1,6 @@
 import { type ChildProcessWithoutNullStreams, exec, spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { Data, Effect, Layer } from "effect";
@@ -46,13 +46,6 @@ export interface RojoServerManager {
   readonly toggleForSession: (sessionId: string) => Effect.Effect<RojoStatus, RojoError>;
   readonly getLogs: () => Effect.Effect<RojoLogEntry[], RojoError>;
   readonly onLog: (listener: (entry: RojoLogEntry) => void) => () => void;
-  /**
-   * Nudge the running server after a checkpoint restore: touch
-   * `default.project.json` so Rojo's file watcher re-scans the workspace and
-   * pushes the restored tree to Roblox Studio immediately, then re-check the
-   * client connection so callers can report live-sync state accurately.
-   */
-  readonly notifyRestored: () => Effect.Effect<RojoStatus, RojoError>;
 }
 
 export class RojoServerManagerTag extends Effect.Tag("@BloxMind/RojoServerManager")<
@@ -581,44 +574,6 @@ function buildManager(options: RojoServerManagerOptions): RojoServerManager {
       };
     });
 
-  const notifyRestored = (): Effect.Effect<RojoStatus, RojoError> =>
-    Effect.gen(function* () {
-      if (!runtime || runtime.child.exitCode !== null) {
-        return { active: false, port: null, error: null, workspace: null, clientConnected: false };
-      }
-      const current = runtime;
-      // Touch default.project.json (rewrite identical bytes) so Rojo's
-      // watcher re-scans the tree and re-pushes restored files to Studio.
-      yield* Effect.tryPromise({
-        try: async () => {
-          const projectFile = join(current.workspace, "default.project.json");
-          const contents = await readFile(projectFile, "utf8").catch(() => null);
-          if (contents !== null) {
-            await writeFile(projectFile, contents, "utf8");
-          } else {
-            await ensureProjectJson(current.workspace, false);
-          }
-        },
-        catch: (cause) =>
-          new RojoError({ message: "Failed to touch the project for Rojo resync", cause }),
-      }).pipe(
-        Effect.catchAll((error) =>
-          Effect.logWarning(`[rojo] resync touch failed: ${error.message}`),
-        ),
-      );
-      // Give the watcher a beat to detect the change and push, then refresh
-      // connection state so the caller gets an accurate handshake result.
-      yield* Effect.sleep("400 millis");
-      yield* refreshClientState();
-      return {
-        active: true,
-        port: current.port,
-        error: current.serverError,
-        workspace: current.workspace,
-        clientConnected: current.clientConnected,
-      };
-    });
-
   return {
     start,
     startForSession,
@@ -646,7 +601,6 @@ function buildManager(options: RojoServerManagerOptions): RojoServerManager {
       }),
     toggle,
     toggleForSession,
-    notifyRestored,
     getLogs: () => Effect.sync(() => (runtime ? [...runtime.logs] : [])),
     onLog: (listener: (entry: RojoLogEntry) => void) => {
       if (!runtime) return () => {};
