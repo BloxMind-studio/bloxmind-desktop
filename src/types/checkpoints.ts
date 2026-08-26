@@ -30,7 +30,7 @@ export const CheckpointSchema = Schema.mutable(
     kind: CheckpointKindSchema,
     tool: Schema.NullOr(Schema.String),
     paths: Schema.Array(FileChangeSchema),
-    gitRef: Schema.NullOr(Schema.String), // git stash create ref
+    gitRef: Schema.NullOr(Schema.String), // legacy field — null since the local-folder snapshot engine
     failureLog: Schema.NullOr(Schema.String),
     /** True when this checkpoint is a full-workspace snapshot (captured with no explicit paths). */
     fullSnapshot: Schema.Boolean,

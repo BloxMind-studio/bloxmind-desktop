@@ -11,6 +11,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
+import process from "node:process";
 import { promisify } from "node:util";
 
 import { Context, Data, Effect, Layer, Schema } from "effect";
@@ -29,7 +30,6 @@ import {
   type ValidationResult,
   ValidationResultSchema,
 } from "../../src/types/checkpoints";
-import { resolveGitBackend } from "./GitBackend";
 import { RojoServerManagerTag, type RojoStatus } from "./RojoServerManager";
 
 const exec = promisify(execFile);
@@ -37,8 +37,6 @@ const exec = promisify(execFile);
 /** Appended to the restore message when Rojo is active & connected to Studio. */
 const LIVE_SYNCED_MESSAGE =
   " ✓ Reverted to Checkpoint [ID]. Code live-synced to Roblox Studio via Rojo!";
-
-const MAX_JOURNAL_FILE_BYTES = 512 * 1024; // mirror raw content only for small files
 
 export class CheckpointError extends Data.TaggedError("CheckpointError")<{
   message: string;
@@ -301,68 +299,91 @@ function persistSessionIndex(
 // ── Capture / restore core ──────────────────────────────────────────────
 
 /**
- * Enumerate the files git reports as actually modified/staged/untracked.
- * NEVER throws: if the git probe fails (e.g. the embedded backend on an
- * unborn HEAD) it degrades to an empty set so the capture still persists —
- * a rejected capture would leave the checkpoint list empty and permanently
- * hide the UI badge and Restore button.
+ * On-disk backup directory for one checkpoint, inside the session-isolated
+ * store: `checkpoints/sessions/{sessionId}/snapshot-{checkpointId}/`. Each
+ * file in the workspace is copied here byte-exact at capture time.
  */
-async function enumerateChangedPaths(workspace: string): Promise<string[]> {
-  try {
-    const backend = await resolveGitBackend();
-    if (!(await backend.isGitRepo(workspace))) return [];
-    return (await backend.getChangedFiles(workspace))
-      .map(toPosixPath)
-      .filter((p) => !SKIP_FILES.has(p));
-  } catch {
-    return [];
-  }
+function sessionSnapshotDir(
+  storeRoot: string,
+  sessionId: string,
+  checkpointId: string,
+): string {
+  return join(storeRoot, "sessions", sanitize(sessionId), `snapshot-${checkpointId}`);
 }
 
-/** Journal the pre-state of one path so it can be restored without a git ref. */
-function captureJournalChange(
-  workspace: string,
-  relPath: string,
-): Effect.Effect<FileChange, CheckpointError> {
-  return Effect.gen(function* () {
-    const absPath = resolve(workspace, relPath);
-    const contents = yield* Effect.tryPromise({
-      try: () => readTextSafe(absPath),
-      catch: (cause) => new CheckpointError({ message: `Failed to read ${relPath}`, cause }),
-    });
-    if (contents === null) {
-      // Path does not exist yet — restoring means deleting it.
-      return { path: relPath, operation: "create", preHash: hashContent(""), preContent: null };
-    }
-    return {
-      path: relPath,
-      operation: "modify",
-      preHash: hashContent(contents),
-      // Mirror raw content only for small files; large/binary content is
-      // reconstructed from the git snapshot instead.
-      preContent: Buffer.byteLength(contents, "utf8") <= MAX_JOURNAL_FILE_BYTES ? contents : null,
-    };
-  });
+interface SnapshotOutcome {
+  changes: FileChange[];
+  backedUp: number;
 }
 
 /**
- * Create the git-backed workspace snapshot (system git preferred, embedded
- * isomorphic-git fallback). Returns `null` — never throws — when no snapshot
- * is possible, letting restore degrade to the journal safely.
+ * Capture metadata + byte-exact shadow copies of the given workspace files
+ * into `snapshotDir`. Plain filesystem operations only — no git diffing, no
+ * external tools, fully offline. Files that don't exist yet are recorded as
+ * future deletions ("create") with no backup copy. Per-file failures are
+ * skipped, and the caller additionally guards with a catch-all so capture
+ * can NEVER reject (a rejected capture would leave the checkpoint list empty
+ * and permanently hide the UI badge and Restore button).
  */
-async function createGitSnapshotRef(workspace: string): Promise<string | null> {
-  try {
-    const backend = await resolveGitBackend();
-    if (!(await backend.isGitRepo(workspace))) return null;
-    try {
-      // Unborn HEAD: stash-based snapshots need a base commit to exist.
-      await backend.ensureBaseline(workspace);
-    } catch {
-      return null;
-    }
-    return await backend.snapshot(workspace, `bloxmind:${randomBytes(6).toString("hex")}`);
-  } catch {
-    return null;
+async function captureFolderSnapshot(
+  workspace: string,
+  snapshotDir: string,
+  relPaths: readonly string[],
+): Promise<SnapshotOutcome> {
+  const changes: FileChange[] = [];
+  let backedUp = 0;
+  await mkdir(snapshotDir, { recursive: true });
+  for (const relPath of relPaths) {
+    if (SKIP_FILES.has(relPath)) continue;
+    const absPath = resolve(workspace, relPath);
+    const contents = await readTextSafe(absPath);
+    changes.push({
+      path: relPath,
+      operation: contents === null ? "create" : "modify",
+      preHash: hashContent(contents ?? ""),
+      // Content lives in the on-disk shadow copy — no need to mirror it
+      // in the JSON journal (works for binary/large files too).
+      preContent: null,
+    });
+    if (contents === null) continue;
+    const backupPath = join(snapshotDir, relPath);
+    await mkdir(dirname(backupPath), { recursive: true });
+    await copyFile(absPath, backupPath);
+    backedUp += 1;
+  }
+  return { changes, backedUp };
+}
+
+/** Copy every snapshotted file back onto the workspace disk. */
+async function restoreSnapshotFromFolder(
+  snapshotDir: string,
+  workspace: string,
+): Promise<void> {
+  const files = await listWorkspaceFiles(snapshotDir);
+  for (const relPath of files) {
+    const absPath = resolve(workspace, relPath);
+    await mkdir(dirname(absPath), { recursive: true });
+    await copyFile(join(snapshotDir, relPath), absPath);
+  }
+}
+
+/**
+ * After an explicit full-workspace rollback (`preserveUserEdits: false`),
+ * delete workspace files that are NOT present in the captured snapshot
+ * folder. This is the local-disk equivalent of a git-tree diff: only files
+ * the agent created AFTER the capture are pruned, while baseline project
+ * files, settings/time values, and legacy committed files — which ARE in the
+ * snapshot — are never touched. Best-effort per file.
+ */
+async function pruneFilesNotInSnapshot(
+  workspace: string,
+  snapshotDir: string,
+): Promise<void> {
+  const kept = new Set(await listWorkspaceFiles(snapshotDir));
+  const allFiles = await listWorkspaceFiles(workspace);
+  for (const relPath of allFiles) {
+    if (kept.has(relPath)) continue;
+    await rm(resolve(workspace, relPath), { force: true });
   }
 }
 
@@ -379,33 +400,35 @@ function makeCapture(
       const sessionId = decoded.sessionId;
       yield* validateWorkspacePaths(options.workspace, decoded.paths);
 
-      // 1. Capture pre-state for every scoped path (journal fallback).
-      //    A capture without explicit paths IS the full pre-task snapshot
-      //    (fullSnapshot=true): its gitRef reconstructs the entire workspace,
-      //    while the journal only mirrors the dirty set so legacy committed
-      //    files (.gitkeep, old scripts) are never pulled into checkpoints.
-      //    Explicit-path captures remain task-scoped (fullSnapshot=false).
+      // A capture without explicit paths IS the full pre-task snapshot
+      // (fullSnapshot=true): the ENTIRE workspace (minus skip-listed noise)
+      // is backed up into checkpoints/sessions/{sessionId}/snapshot-{id}/
+      // using plain filesystem copies. Explicit-path captures stay task-scoped
+      // (fullSnapshot=false) and back up only the targeted files.
+      //
+      // NEVER-FAIL contract: every step below degrades instead of rejecting,
+      // so an index entry is ALWAYS persisted → checkpoints.list() returns ≥1
+      // → cachedFsCheckpointCount hydrates > 0 → badge + Restore button show.
       const isPreTaskSnapshot = decoded.paths.length === 0;
-      const targetPaths = isPreTaskSnapshot
-        ? yield* Effect.promise(() => enumerateChangedPaths(options.workspace))
-        : decoded.paths.map(toPosixPath);
-      const fullSnapshot = isPreTaskSnapshot;
-      const changes: FileChange[] = [];
-      for (const relPath of targetPaths) {
-        changes.push(yield* captureJournalChange(options.workspace, relPath));
-      }
+      const scopedPaths = decoded.paths.map(toPosixPath).filter((p) => !SKIP_FILES.has(p));
+      const checkpointId = `cp_${randomBytes(8).toString("hex")}`;
+      const snapshotDir = sessionSnapshotDir(options.storeRoot, sessionId, checkpointId);
 
-      // 2. Git-backed snapshot covering the whole workspace (tracked AND
-      //    untracked files — staged first via `git add -A` inside the backend).
-      //    `git stash create` needs an existing base commit, which the backend
-      //    ensures; a clean worktree falls back to a dangling tree-commit so
-      //    pre-task captures always produce a restorable ref.
-      const gitRef = yield* Effect.promise(() => createGitSnapshotRef(options.workspace));
-      if (gitRef === null) {
-        yield* Effect.logWarning(
-          "[checkpoint] git snapshot unavailable (no system git and embedded backend failed); restore is journal-only",
-        );
-      }
+      // Pre-task captures back up the whole visible workspace; scoped ones
+      // only the targeted paths. Enumeration failure yields an empty set.
+      const filesToBackUp = isPreTaskSnapshot
+        ? yield* Effect.promise(() =>
+            listWorkspaceFiles(options.workspace).catch(() => [] as string[]),
+          )
+        : scopedPaths;
+
+      // Shadow-copy backup. Any unexpected error collapses to an empty
+      // outcome rather than failing the capture.
+      const { changes } = yield* Effect.promise(() =>
+        captureFolderSnapshot(options.workspace, snapshotDir, filesToBackUp).catch(
+          () => ({ changes: [] as FileChange[], backedUp: 0 }),
+        ),
+      );
 
       // 3. Persist index (DAG: parent = activeIndex).
       //    Locked per-session so concurrent captures can't read the same base
@@ -415,7 +438,7 @@ function makeCapture(
         Effect.gen(function* () {
           const index = yield* loadSessionIndex(options.storeRoot, sessionId);
           const cp: Checkpoint = {
-            id: `cp_${randomBytes(8).toString("hex")}`,
+            id: checkpointId,
             parentId: index.history[index.activeIndex]?.id ?? null,
             timestamp: Date.now(),
             sessionId,
@@ -423,9 +446,9 @@ function makeCapture(
             kind: "pre-exec",
             tool: decoded.tool,
             paths: changes,
-            gitRef,
+            gitRef: null, // legacy schema field — local-folder engine needs no ref
             failureLog: null,
-            fullSnapshot,
+            fullSnapshot: isPreTaskSnapshot,
           };
           const next = [...index.history, cp];
           yield* persistSessionIndex(options.storeRoot, sessionId, {
@@ -437,7 +460,7 @@ function makeCapture(
       );
 
       yield* Effect.logInfo(
-        `[checkpoint] captured ${checkpoint.id} session=${sessionId} paths=${changes.length} gitRef=${gitRef ?? "none"}`,
+        `[checkpoint] captured ${checkpoint.id} session=${sessionId} paths=${changes.length}`,
       );
       return checkpoint;
     });
@@ -457,8 +480,7 @@ function restoreFromJournal(
           catch: (cause) =>
             new CheckpointError({ message: `Failed to remove ${change.path}`, cause }),
         });
-      } else if (change.preContent !== null) {
-        yield* Effect.tryPromise({
+      } else if (change.preContent !== null) {        yield* Effect.tryPromise({
           try: async () => {
             await mkdir(dirname(absPath), { recursive: true });
             const temporary = `${absPath}.${process.pid}.restore.tmp`;
@@ -493,43 +515,6 @@ function restoreFromJournal(
   });
 }
 
-/**
- * After an explicit full-workspace rollback, delete any file under the
- * workspace root that was NOT present in the captured git snapshot. This is a
- * precise diff between the snapshot tree (`gitRef`) and the current disk
- * state: only agent-created post-capture files are removed, so unmodified
- * baseline project files, settings/time values, and legacy committed files —
- * which ARE in the snapshot — are never touched. Guaranteed-safe: only files
- * outside SKIP_DIRS are candidates, and it runs solely when the caller
- * explicitly opted out of preserveUserEdits (a destructive, user-requested
- * rewind). Best-effort per file — a failure never aborts the whole restore.
- */
-function removeFilesCreatedAfterGitCheckpoint(
-  workspace: string,
-  gitRef: string,
-): Effect.Effect<void, CheckpointError> {
-  return Effect.tryPromise({
-    try: async () => {
-      const backend = await resolveGitBackend();
-      const snapshotSet = new Set(
-        (await backend.listFiles(workspace, gitRef)).map((p) => toPosixPath(p)),
-      );
-      const allFiles = await listWorkspaceFiles(workspace);
-      for (const relPath of allFiles) {
-        if (snapshotSet.has(relPath)) continue;
-        const absPath = resolve(workspace, relPath);
-        await rm(absPath, { force: true });
-      }
-      return undefined;
-    },
-    catch: (cause) =>
-      new CheckpointError({
-        message: "Failed to remove post-checkpoint files during restore",
-        cause,
-      }),
-  });
-}
-
 function makeRestore(
   options: CheckpointServiceOptions,
 ): (
@@ -559,9 +544,9 @@ function makeRestore(
       );
       const scopedPaths = checkpoint.paths.map((c) => toPosixPath(c.path)).filter((p) => !SKIP_FILES.has(p));
       yield* validateWorkspacePaths(options.workspace, scopedPaths);
-      // A checkpoint captured with no explicit paths (full pre-task snapshot)
-      // restores tracked files from its gitRef, while journal data restores
-      // small/untracked files without deleting unrelated files.
+      // Local-folder snapshots have no notion of tracked-vs-untracked: a full
+      // pre-task checkpoint reports every backed-up file, scoped ones just
+      // their targets.
       const restorePaths = scopedPaths.length > 0 ? scopedPaths : ["."];
 
       if (decoded.dryRun) {
@@ -587,59 +572,80 @@ function makeRestore(
         );
       }
 
-      // Narrow once so the guarded gitRef flows through without casts.
-      const snapshotRef = checkpoint.gitRef;
+      // ── Local-folder restore engine ──────────────────────────────────────
+      // Files are reverted from this checkpoint's own byte-exact shadow
+      // copies inside checkpoints/sessions/{sessionId}/snapshot-{id}/ —
+      // plain filesystem operations, fully offline, independent of any Rojo
+      // connection or git HEAD state. Legacy checkpoints written without a
+      // shadow folder fall back to the embedded JSON journal.
+      const snapshotDir = sessionSnapshotDir(
+        options.storeRoot,
+        checkpoint.sessionId,
+        checkpoint.id,
+      );
+      const hasShadowCopy = yield* Effect.promise(() =>
+        access(join(snapshotDir, ".")).then(
+          () => true,
+          () => false,
+        ),
+      );
 
-      if (snapshotRef) {
-        // Restore tracked files from the snapshot, but never run `git clean`.
-        // Uses the same backend the capture used (system git or embedded
-        // isomorphic-git). Falls back to the journal on failure.
+      if (!hasShadowCopy) {
+        // Old-format checkpoint: revert from the JSON journal's mirrored
+        // contents. No shadow folder → no listing to diff against, so
+        // post-capture files are left on disk deliberately.
+        yield* restoreFromJournal(options, checkpoint);
+      } else if (checkpoint.fullSnapshot) {
+        // Full pre-task rollback: copy every snapshotted file back, then —
+        // only when the caller explicitly requested a destructive rewind —
+        // prune files created AFTER the capture (they are absent from the
+        // snapshot folder). Baseline project files, unchanged scripts, and
+        // environment/settings files ARE in the snapshot and stay untouched.
         yield* Effect.tryPromise({
           try: async () => {
-            const backend = await resolveGitBackend();
-            await backend.restore(options.workspace, snapshotRef, restorePaths);
+            await restoreSnapshotFromFolder(snapshotDir, options.workspace);
+            if (!decoded.preserveUserEdits) {
+              await pruneFilesNotInSnapshot(options.workspace, snapshotDir);
+            }
             return undefined;
           },
-          catch: (error) =>
-            new Error(
-              error instanceof Error ? error.message : String(error),
-            ),
-        }).pipe(
-          Effect.catchAll((error) =>
-            restoreFromJournal(options, checkpoint).pipe(
-              Effect.catchAll(() =>
-                Effect.fail(
-                  new CheckpointError({
-                    message: `Git restore failed (${error.message}) and journal fallback also failed`,
-                  }),
-                ),
-              ),
-            ),
-          ),
-        );
+          catch: (cause) =>
+            new CheckpointError({
+              message: "Failed to restore workspace from snapshot folder",
+              cause,
+            }),
+        });
       } else {
-        yield* restoreFromJournal(options, checkpoint);
-        // No gitRef → no diff base exists, so agent-created files cannot be
-        // identified safely and are left on disk; the prune step below is
-        // gitRef-gated for exactly this reason.
+        // Scoped task rollback: revert ONLY the targeted paths from their
+        // individual shadow copies. Backups recorded as future-deletions
+        // ("create") are removed from disk again.
+        yield* Effect.tryPromise({
+          try: async () => {
+            const shadowSet = new Set(await listWorkspaceFiles(snapshotDir));
+            for (const relPath of scopedPaths) {
+              const absPath = resolve(options.workspace, relPath);
+              if (shadowSet.has(relPath)) {
+                await mkdir(dirname(absPath), { recursive: true });
+                await copyFile(join(snapshotDir, relPath), absPath);
+              } else {
+                await rm(absPath, { force: true });
+              }
+            }
+            return undefined;
+          },
+          catch: (cause) =>
+            new CheckpointError({
+              message: "Failed to restore scoped files from snapshot folder",
+              cause,
+            }),
+        });
       }
 
-      // Explicit rollback on a full-workspace snapshot: diff the current
-      // workspace against the captured git tree and remove files the agent
-      // created after the snapshot (they aren't in it, so a plain checkout
-      // leaves them behind and Rojo would re-push them to Studio).
-      // Only for non-preserving restores (the user explicitly asked to rewind).
-      if (checkpoint.fullSnapshot && !decoded.preserveUserEdits && snapshotRef) {
-        yield* removeFilesCreatedAfterGitCheckpoint(options.workspace, snapshotRef);
-      }
-
-      // Atomicity: verify restored hashes match pre-state exactly. Entries
-      // that were left untouched (large binaries with no git ref) are skipped.
-      // Skip managed/legacy-excluded files (e.g. AGENTS.md) for backward compat
-      // with old checkpoints that included them — they are no longer captured.
+      // Atomicity: verify restored state matches pre-capture exactly.
+      // New-format checkpoints store bytes in the shadow folder, so compare
+      // disk against it; legacy journals are verified against preContent.
       for (const change of checkpoint.paths) {
         if (SKIP_FILES.has(change.path)) continue;
-        if (change.preContent === null && change.operation === "modify") continue;
         const absPath = resolve(options.workspace, change.path);
         const after = yield* Effect.tryPromise({
           try: () => readTextSafe(absPath),
@@ -654,7 +660,16 @@ function makeRestore(
               }),
             );
           }
-        } else if (after === null || hashContent(after) !== change.preHash) {
+          continue;
+        }
+        const expected =
+          change.preContent !== null
+            ? change.preContent
+            : hasShadowCopy
+              ? yield* Effect.promise(() => readTextSafe(join(snapshotDir, change.path)))
+              : null;
+        if (expected === null) continue; // nothing comparable (binary via journal)
+        if (after === null || hashContent(after) !== hashContent(expected)) {
           yield* Effect.fail(
             new CheckpointError({
               message: `Restore verification failed for ${change.path}: hash mismatch`,
