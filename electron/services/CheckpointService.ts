@@ -314,32 +314,39 @@ function makeCapture(
       yield* validateWorkspacePaths(options.workspace, decoded.paths);
 
       // 1. Capture pre-state for every scoped path (journal fallback).
-      //    When no paths are given, we capture ONLY the files that are actually
-      //    modified/created/untracked according to git — not the entire workspace.
-      //    This prevents legacy files like .gitkeep and old session scripts from
-      //    being pulled into every checkpoint and breaking restores.
-      const isFullSnapshotRequest = decoded.paths.length === 0;
+      //    When no explicit paths are given, we capture ONLY the files that are
+      //    actually modified/created/untracked according to git — not the whole
+      //    workspace — so legacy files like .gitkeep and old session scripts are
+      //    never pulled into every checkpoint and never touched on restore.
+      //    Critically, the enumeration below NEVER throws: if the git probe
+      //    fails (e.g. embedded backend on an unborn HEAD), we degrade to an
+      //    empty set rather than rejecting the capture. A rejected capture would
+      //    persist no checkpoint, leaving the checkpoint list empty so the
+      //    badge + Restore button never appear.
+      const isPreTaskSnapshot = decoded.paths.length === 0;
       const changes: FileChange[] = [];
-      const targetPaths = isFullSnapshotRequest
+      const targetPaths = isPreTaskSnapshot
         ? yield* Effect.tryPromise({
             try: async () => {
-              const backend = await resolveGitBackend();
-              if (await backend.isGitRepo(options.workspace)) {
-                const changed = await backend.getChangedFiles(options.workspace);
-                return changed
-                  .map(toPosixPath)
-                  .filter((p) => !SKIP_FILES.has(p) && p !== "AGENTS.md");
+              try {
+                const backend = await resolveGitBackend();
+                if (await backend.isGitRepo(options.workspace)) {
+                  const changed = await backend.getChangedFiles(options.workspace);
+                  return changed
+                    .map(toPosixPath)
+                    .filter((p) => !SKIP_FILES.has(p) && p !== "AGENTS.md");
+                }
+              } catch {
+                // A git probe (e.g. embedded backend on an unborn HEAD) must
+                // never fail the capture — return nothing so the snapshot still
+                // persists and the UI badge/button are not left hidden.
               }
-              // For non-git workspaces, don't do a broad snapshot; return empty
-              // so the checkpoint is scoped to nothing rather than all legacy files.
               return [];
             },
             catch: (cause) =>
               new CheckpointError({ message: "Failed to enumerate workspace", cause }),
           })
         : decoded.paths.map(toPosixPath);
-      // For the new scoped capture, never treat it as a full snapshot so
-      // restore only reverts the specific files, not the entire workspace.
       const fullSnapshot = false;
       for (const relPath of targetPaths) {
         const absPath = resolve(options.workspace, relPath);
