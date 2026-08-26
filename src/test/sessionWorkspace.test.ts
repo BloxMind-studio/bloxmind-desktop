@@ -14,8 +14,8 @@ vi.mock("electron", () => ({
 
 import {
   ensureSessionWorkspace,
-  purgeLegacyRootWorkspace,
   PROJECT_SOURCE_DIRS,
+  purgeLegacyRootWorkspace,
   type SESSION_PROJECT_JSON,
   sessionsRoot,
   sessionWorkspaceDir,

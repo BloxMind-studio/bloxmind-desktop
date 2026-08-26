@@ -6,8 +6,8 @@ import { join } from "node:path";
 import { Data, Effect, Layer } from "effect";
 
 import {
-  PROJECT_SOURCE_DIRS as SESSION_PROJECT_SOURCE_DIRS,
   SESSION_PROJECT_JSON,
+  PROJECT_SOURCE_DIRS as SESSION_PROJECT_SOURCE_DIRS,
   sessionWorkspaceDir,
 } from "../sessionWorkspace";
 

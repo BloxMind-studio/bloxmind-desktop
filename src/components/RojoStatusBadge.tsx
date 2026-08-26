@@ -1,7 +1,9 @@
-import { memo, useEffect, useState } from "react";
+import { Folder } from "lucide-react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { desktop } from "@/lib/desktop";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
+import { useSessions } from "@/hooks/useSessions";
 import type { RojoStatus } from "@/types/desktop";
 
 /**
@@ -16,6 +18,7 @@ function RojoStatusBadgeImpl() {
   const [status, setStatus] = useState<RojoStatus | null>(null);
   const [toggling, setToggling] = useState(false);
   const { activeSessionId } = useActiveSession();
+  const { data: sessions } = useSessions();
 
   useEffect(() => {
     let cancelled = false;
@@ -82,10 +85,10 @@ function RojoStatusBadgeImpl() {
 
   const hasError = !active && error !== null;
 
-  // The workspace reported by Rojo is the session folder (rojo serve runs with
-  // cwd = the session workspace). Derive the folder name for the indicator.
-  const sessionFolderName = activeSessionId ?? extractFolderName(status?.workspace ?? "");
-  const targetFileLabel = `sessions/${sessionFolderName}/default.project.json`;
+  // Prefer the human-readable session title (updates live via React Query
+  // invalidation on rename); fall back to the raw id.
+  const sessionTitle =
+    sessions?.find((s) => s.id === activeSessionId)?.title?.trim() || activeSessionId;
 
   return (
     <div className="inline-flex min-w-0 items-center gap-1">
@@ -132,52 +135,18 @@ function RojoStatusBadgeImpl() {
         )}
       </button>
 
-      {/* Session-isolation indicator: shows which session folder Rojo targets. */}
-      {activeSessionId && (
-        <span
-          className="inline-flex max-w-[180px] min-w-0 items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-[10px] text-muted-foreground"
-          title={`Syncing ${targetFileLabel} (open this session's folder with the folder icon)`}
-        >
-          <svg
-            width="9"
-            height="9"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-            className="shrink-0"
-          >
-            <path d="M4 20V10a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z" />
-          </svg>
-          <span className="truncate">{activeSessionId}</span>
-        </span>
-      )}
-
-      {/* Open the active session's folder in the OS file explorer. */}
+      {/* Unified session workspace badge: shows which isolated folder Rojo
+          targets; clicking reveals that folder in the OS file explorer. */}
       {activeSessionId && (
         <button
           type="button"
           onClick={handleOpenWorkspace}
-          className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground"
-          title={`Open this session's workspace folder (${targetFileLabel})`}
+          className="inline-flex max-w-[200px] min-w-0 shrink-0 items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-[10px] text-muted-foreground transition-all hover:bg-accent hover:text-accent-foreground hover:scale-[1.03] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+          title="Open session workspace folder"
           aria-label="Open session workspace folder"
         >
-          <svg
-            width="11"
-            height="11"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 1-3 3 3 3 0 0 1-3-3V6a1 1 0 0 1 2 0v12a1 1 0 0 0 2 0V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3" />
-          </svg>
+          <Folder size={10} className="shrink-0" aria-hidden="true" />
+          <span className="truncate">{sessionTitle}</span>
         </button>
       )}
 
@@ -209,11 +178,4 @@ function RojoStatusBadgeImpl() {
   );
 }
 
-/** Last path segment of an absolute path, or the path itself when it has no separator. */
-function extractFolderName(workspace: string): string {
-  const trimmed = workspace.replace(/[\\/]+$/, "");
-  const idx = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
-  return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
-}
-
-export const RojoStatusBadge = memo(RojoStatusBadgeImpl);
+export const RojoStatusBadge = RojoStatusBadgeImpl;
