@@ -1,9 +1,9 @@
 import { Folder } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { useSessions } from "@/hooks/useSessions";
 import { desktop } from "@/lib/desktop";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
-import { useSessions } from "@/hooks/useSessions";
 import type { RojoStatus } from "@/types/desktop";
 
 /**
