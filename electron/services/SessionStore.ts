@@ -205,6 +205,11 @@ export async function deleteSession(id: string): Promise<void> {
   // moment later, resurrecting the file and index entry we just deleted.
   pending.delete(id);
   await rm(sessionPath(id), { force: true }).catch(() => undefined);
+  // Also purge the session's isolated checkpoint storage (journal + git refs)
+  // so no checkpoint/index data lingers after deletion. Each session's
+  // checkpoints are already isolated at checkpoints/sessions/{sessionId}/
+  const checkpointDir = join(app.getPath("userData"), "checkpoints", "sessions", sanitize(id));
+  await rm(checkpointDir, { recursive: true, force: true }).catch(() => undefined);
   // Serialized with updateIndex so a concurrent flush can't re-add this
   // session's summary after we remove it (or drop ours via last-writer-wins).
   await withIndexLock(async () => {

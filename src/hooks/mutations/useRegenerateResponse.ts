@@ -129,10 +129,23 @@ export function useRegenerateResponse() {
       const checkpoints = await desktop.checkpointList(activeSessionId);
       const targetCheckpoint =
         checkpoints.find((c) => c.messageId === anchorId) ??
-        checkpoints.find((c) => c.messageId === assistantMessageId);
+        checkpoints.find((c) => c.messageId === assistantMessageId) ??
+        // Fallback: the exact message may no longer exist (a prior regenerate
+        // deleted it) or capture may have missed this turn. Refuse only when
+        // there is no pre-task snapshot at all — otherwise regenerate the most
+        // recent one so files are still reverted before the fresh stream.
+        checkpoints[checkpoints.length - 1];
       if (!targetCheckpoint) {
         throw new Error(
           "No pre-task checkpoint found for this turn — refusing to regenerate over unrestored files.",
+        );
+      }
+      if (
+        targetCheckpoint.messageId !== anchorId &&
+        targetCheckpoint.messageId !== assistantMessageId
+      ) {
+        console.warn(
+          "[regenerate] no exact pre-task checkpoint for this turn; falling back to latest snapshot",
         );
       }
       try {

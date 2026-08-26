@@ -672,6 +672,14 @@ const registerIpcHandlers = Effect.sync(() => {
       }),
     ),
   );
+  ipcMain.handle(channels.checkpointDeleteSession, (_event, sessionId: string) =>
+    openCodeRuntime.runPromise(
+      Effect.gen(function* () {
+        const service = yield* CheckpointServiceTag;
+        return yield* service.deleteSession(sessionId);
+      }),
+    ),
+  );
   // ── Rojo live-sync ────────────────────────────────────────────────
   ipcMain.handle(channels.rojoStart, (_event, workspace: string) =>
     openCodeRuntime.runPromise(
