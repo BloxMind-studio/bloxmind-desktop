@@ -21,6 +21,7 @@ export const channels = {
   checkpointPreview: "checkpoint:preview",
   checkpointList: "checkpoint:list",
   checkpointValidate: "checkpoint:validate",
+  checkpointDeleteSession: "checkpoint:delete-session",
   // ── Rojo live-sync ─────────────────────────────────────────────────
   rojoStatus: "rojo:status",
   rojoToggle: "rojo:toggle",

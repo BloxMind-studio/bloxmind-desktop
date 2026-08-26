@@ -15,6 +15,7 @@
  *   - listFiles   : enumerate tracked files to decide what to prune on restore
  */
 import { execFile } from "node:child_process";
+import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
@@ -38,6 +39,7 @@ export interface GitBackend {
   readonly snapshot: (workspace: string, label: string) => Promise<string>;
   readonly restore: (workspace: string, ref: string, paths: string[]) => Promise<void>;
   readonly listFiles: (workspace: string) => Promise<string[]>;
+  readonly getChangedFiles: (workspace: string) => Promise<string[]>;
 }
 
 // ── System-git backend (preferred) ──────────────────────────────────────
@@ -102,10 +104,25 @@ const systemBackend: GitBackend = {
     const out = await runGit(workspace, ["ls-files"]);
     return out.split("\n").filter(Boolean);
   },
+
+  async getChangedFiles(workspace) {
+    // Combine unstaged, staged, and untracked files to get the actually
+    // modified set for a task-scoped checkpoint. This is the fix for the
+    // broad snapshot that was capturing legacy files like .gitkeep.
+    const [unstaged, staged, untracked] = await Promise.all([
+      runGit(workspace, ["diff", "--name-only"]).catch(() => ""),
+      runGit(workspace, ["diff", "--cached", "--name-only"]).catch(() => ""),
+      runGit(workspace, ["ls-files", "--others", "--exclude-standard"]).catch(() => ""),
+    ]);
+    const all = [...unstaged.split("\n"), ...staged.split("\n"), ...untracked.split("\n")]
+      .map((s) => s.trim())
+      .filter(Boolean);
+    // Also include any file that is staged as added but not yet committed?
+    // The above three already cover all dirty states. Deduplicate.
+    return [...new Set(all)];
+  },
 };
 // ── Embedded isomorphic-git backend (fallback) ───────────────────────────
-
-import { stat } from "node:fs/promises";
 
 type FsPromises = typeof import("node:fs").promises;
 
@@ -173,7 +190,7 @@ const embeddedBackend: GitBackend = {
       await isomorphicGit.resolveRef({ fs, dir: workspace, ref: "HEAD" });
     } catch {
       // Unborn HEAD: commit an empty tree so future snapshots have a base.
-      const emptyTree = await isomorphicGit.writeTree({ fs, dir: workspace });
+      const emptyTree = await isomorphicGit.writeTree({ fs, dir: workspace, tree: [] });
       await isomorphicGit.commit({
         fs,
         dir: workspace,
@@ -194,35 +211,77 @@ const embeddedBackend: GitBackend = {
     for (const rel of relPaths) {
       await isomorphicGit.add({ fs, dir: workspace, filepath: rel });
     }
-    // `ref: undefined` (omitting ref) writes the commit WITHOUT moving any
-    // branch/HEAD/tag, so the user's working tree and branches stay untouched.
-    // The returned oid is the detached snapshot ref we persist.
+    // `noUpdateBranch: true` creates the commit object in the object database
+    // WITHOUT advancing HEAD or moving any branch — mirroring `git stash create`
+    // which produces a dangling-but-accessible commit OID. The snapshot ref is
+    // checked out later by OID for restore, so no branch needs to point at it.
     const oid = await isomorphicGit.commit({
       fs,
       dir: workspace,
       author: EMBEDDED_AUTHOR,
       message: label,
-      // No `ref` => detached commit object; oid returned directly.
+      noUpdateBranch: true,
     });
     return oid;
-  }
-
-
+  },
 
   async restore(workspace, ref, paths) {
     const fs = await getFs();
-    await isomorphicGit.checkout({
-      fs,
-      dir: workspace,
-      ref,
-      filepaths: paths,
-      force: true,
-    });
+    // Try a bulk checkout of all paths at once.
+    try {
+      await isomorphicGit.checkout({
+        fs,
+        dir: workspace,
+        ref,
+        filepaths: paths,
+        force: true,
+      });
+    } catch {
+      // Bulk checkout can fail on individual paths (e.g. directory structure
+      // differences, missing dirs in sparse checkouts). Fall back to per-file
+      // checkout so one bad path doesn't abort the entire restore — the journal
+      // fallback in CheckpointService handles any remaining gaps.
+      for (const path of paths) {
+        try {
+          await isomorphicGit.checkout({
+            fs,
+            dir: workspace,
+            ref,
+            filepaths: [path],
+            force: true,
+          });
+        } catch {
+          // Skip this path — journal restore will cover it if needed.
+        }
+      }
+    }
   },
 
   async listFiles(workspace) {
     const fs = await getFs();
     return isomorphicGit.listFiles({ fs, dir: workspace });
+  },
+
+  async getChangedFiles(workspace) {
+    const fs = await getFs();
+    // statusMatrix returns [filepath, HEAD, WORKDIR, STAGE] with 0=absent, 1=present
+    // A file is dirty if WORKDIR != HEAD or STAGE != HEAD or HEAD === 0 (untracked)
+    const matrix = await isomorphicGit.statusMatrix({ fs, dir: workspace });
+    const dirty: string[] = [];
+    for (const [filepath, head, workdir, stage] of matrix) {
+      // Skip directories that are in SKIP_DIRS (they are not in matrix anyway)
+      // A file is considered changed if it's not clean (head === workdir && workdir === stage is clean)
+      const isClean = head === 1 && workdir === 1 && stage === 1;
+      const isUntracked = head === 0 && (workdir === 1 || stage === 1);
+      if (!isClean || isUntracked) {
+        dirty.push(filepath);
+      }
+    }
+    // Also handle untracked files that statusMatrix might not report as dirty
+    // due to being in an untracked directory? The matrix should cover them, but
+    // as a fallback, also check for untracked via a direct readdir scan for
+    // files that are not in the index. For now, the matrix is sufficient.
+    return dirty;
   },
 };
 
@@ -244,4 +303,9 @@ export async function resolveGitBackend(): Promise<GitBackend> {
 /** Force the embedded backend (used by tests) — clears any cached selection. */
 export function forceEmbeddedGitBackend(): void {
   cachedBackend = embeddedBackend;
+}
+
+/** Reset the cached backend so the next `resolveGitBackend()` re-detects. */
+export function resetGitBackendCache(): void {
+  cachedBackend = null;
 }

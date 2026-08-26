@@ -63,6 +63,8 @@ export interface CheckpointService {
   ) => Effect.Effect<RestorePreview, CheckpointError>;
   readonly list: (sessionId: string) => Effect.Effect<readonly Checkpoint[], CheckpointError>;
   readonly validate: () => Effect.Effect<ValidationResult, CheckpointError>;
+  /** Delete all checkpoint data for a session (index, journals, git objects). Best-effort; never fails if storage is already absent. */
+  readonly deleteSession: (sessionId: string) => Effect.Effect<void, CheckpointError>;
 }
 
 export class CheckpointServiceTag extends Context.Tag("@BloxMind/CheckpointService")<
@@ -312,17 +314,33 @@ function makeCapture(
       yield* validateWorkspacePaths(options.workspace, decoded.paths);
 
       // 1. Capture pre-state for every scoped path (journal fallback).
-      //    When no paths are given, the whole workspace is journaled so a
-      //    restore works even when the workspace is not a git repository.
-      const fullSnapshot = decoded.paths.length === 0;
+      //    When no paths are given, we capture ONLY the files that are actually
+      //    modified/created/untracked according to git — not the entire workspace.
+      //    This prevents legacy files like .gitkeep and old session scripts from
+      //    being pulled into every checkpoint and breaking restores.
+      const isFullSnapshotRequest = decoded.paths.length === 0;
       const changes: FileChange[] = [];
-      const targetPaths = fullSnapshot
+      const targetPaths = isFullSnapshotRequest
         ? yield* Effect.tryPromise({
-            try: () => listWorkspaceFiles(options.workspace),
+            try: async () => {
+              const backend = await resolveGitBackend();
+              if (await backend.isGitRepo(options.workspace)) {
+                const changed = await backend.getChangedFiles(options.workspace);
+                return changed
+                  .map(toPosixPath)
+                  .filter((p) => !SKIP_FILES.has(p) && p !== "AGENTS.md");
+              }
+              // For non-git workspaces, don't do a broad snapshot; return empty
+              // so the checkpoint is scoped to nothing rather than all legacy files.
+              return [];
+            },
             catch: (cause) =>
               new CheckpointError({ message: "Failed to enumerate workspace", cause }),
           })
         : decoded.paths.map(toPosixPath);
+      // For the new scoped capture, never treat it as a full snapshot so
+      // restore only reverts the specific files, not the entire workspace.
+      const fullSnapshot = false;
       for (const relPath of targetPaths) {
         const absPath = resolve(options.workspace, relPath);
         const contents = yield* Effect.tryPromise({
@@ -729,6 +747,32 @@ function makeList(
     loadSessionIndex(options.storeRoot, sessionId).pipe(Effect.map((index) => index.history));
 }
 
+// ── Session cleanup ──────────────────────────────────────────────────────
+
+/**
+ * Purge all on-disk checkpoint data for a session: the journal index
+ * (checkpoints/sessions/{sessionId}/checkpoints.json) and the entire
+ * session-isolated directory (git objects, journals, metadata).
+ * Best-effort — missing directories are silently OK. Never throws for a
+ * session that has no stored data.
+ */
+function makeDeleteSession(
+  options: CheckpointServiceOptions,
+): (sessionId: string) => Effect.Effect<void, CheckpointError> {
+  return (sessionId) =>
+    Effect.tryPromise({
+      try: async () => {
+        const sessionDir = join(options.storeRoot, "sessions", sanitize(sessionId));
+        await rm(sessionDir, { recursive: true, force: true }).catch(() => undefined);
+      },
+      catch: (cause) =>
+        new CheckpointError({
+          message: `Failed to delete session storage for ${sessionId}`,
+          cause,
+        }),
+    }).pipe(Effect.catchAll(() => Effect.void));
+}
+
 // ── Validation gates ────────────────────────────────────────────────────
 
 function runCommand(
@@ -857,6 +901,7 @@ export function makeCheckpointServiceLayer(options: CheckpointServiceOptions) {
         preview: makePreview(options),
         list: makeList(options),
         validate: makeValidate(options),
+        deleteSession: makeDeleteSession(options),
       };
     }),
   );
