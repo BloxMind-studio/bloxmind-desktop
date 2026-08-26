@@ -38,7 +38,14 @@ export interface GitBackend {
   readonly ensureBaseline: (workspace: string) => Promise<void>;
   readonly snapshot: (workspace: string, label: string) => Promise<string>;
   readonly restore: (workspace: string, ref: string, paths: string[]) => Promise<void>;
-  readonly listFiles: (workspace: string) => Promise<string[]>;
+  /**
+   * List every file recorded in the repository.
+   * - Without `ref`: currently tracked/index files (legacy behaviour).
+   * - With `ref` (a commit-ish/OID, e.g. a dangling snapshot commit): every
+   *   file in THAT tree, used by CheckpointService's diff-based prune to
+   *   decide which on-disk files were created after the snapshot.
+   */
+  readonly listFiles: (workspace: string, ref?: string) => Promise<string[]>;
   readonly getChangedFiles: (workspace: string) => Promise<string[]>;
 }
 
@@ -90,9 +97,20 @@ const systemBackend: GitBackend = {
 
   async snapshot(workspace, label) {
     await runGit(workspace, ["add", "-A", "--"]);
-    const ref = (await runGit(workspace, ["stash", "create", label])).trim();
+    const stashRef = (await runGit(workspace, ["stash", "create", label]).catch(() => "")).trim();
     await runGit(workspace, ["reset", "--quiet"]).catch(() => "");
-    if (!ref) throw new GitBackendError("stash create produced no ref");
+    if (stashRef) return stashRef;
+    // `git stash create` produces NO commit on a completely clean worktree
+    // (nothing modified/staged). That must still yield a restorable snapshot —
+    // pre-task captures happen exactly when the tree is clean. Fall back to a
+    // dangling commit built from the current index tree (`write-tree` +
+    // `commit-tree -p HEAD`), mirroring the embedded backend's
+    // `noUpdateBranch` semantics: no branch is moved, HEAD untouched.
+    const tree = (await runGit(workspace, ["write-tree"])).trim();
+    const ref = (
+      await runGit(workspace, ["commit-tree", tree, "-p", "HEAD", "-m", label])
+    ).trim();
+    if (!ref) throw new GitBackendError("snapshot produced no ref");
     return ref;
   },
 
@@ -100,8 +118,12 @@ const systemBackend: GitBackend = {
     await runGit(workspace, ["checkout", ref, "--", ...paths]);
   },
 
-  async listFiles(workspace) {
-    const out = await runGit(workspace, ["ls-files"]);
+  async listFiles(workspace, ref?) {
+    if (!ref) {
+      const tracked = await runGit(workspace, ["ls-files"]);
+      return tracked.split("\n").filter(Boolean);
+    }
+    const out = await runGit(workspace, ["ls-tree", "-r", "--name-only", ref]);
     return out.split("\n").filter(Boolean);
   },
 
@@ -257,8 +279,13 @@ const embeddedBackend: GitBackend = {
     }
   },
 
-  async listFiles(workspace) {
+  async listFiles(workspace, ref?) {
     const fs = await getFs();
+    if (ref) {
+      // With a ref (a possibly-dangling snapshot commit OID), enumerate the
+      // files recorded in THAT tree instead of the index.
+      return isomorphicGit.listFiles({ fs, dir: workspace, ref });
+    }
     return isomorphicGit.listFiles({ fs, dir: workspace });
   },
 

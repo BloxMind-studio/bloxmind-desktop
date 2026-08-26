@@ -100,7 +100,8 @@ describe("CheckpointService end-to-end", () => {
     );
 
     expect(captureCp.gitRef).toBeTruthy();
-    expect(captureCp.fullSnapshot).toBe(false);
+    // paths: [] = full pre-task snapshot (Option 3 semantics).
+    expect(captureCp.fullSnapshot).toBe(true);
     expect(captureCp.paths).toHaveLength(1);
     expect(captureCp.paths[0].path).toBe("existing.lua");
 
@@ -146,9 +147,9 @@ describe("CheckpointService end-to-end", () => {
     const sessionId = "ses_pre_clean";
     const legacyContent = '{ "time": "day" }';
 
-    // paths: [] pre-task capture on a clean tree must NOT reject, and it must
-    // persist a checkpoint so checkpoints.list() length > 0 → the badge and
-    // Restore button appear (both are gated on the list count, not fullSnapshot).
+    // paths: [] pre-task capture on a clean tree must NOT reject, must flag
+    // itself as a full snapshot, and must persist a checkpoint so
+    // checkpoints.list() length > 0 → badge + Restore button appear.
     const captureCp = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* CheckpointServiceTag;
@@ -161,7 +162,11 @@ describe("CheckpointService end-to-end", () => {
       }).pipe(Effect.provide(fullLayer)),
     );
 
-    expect(captureCp.fullSnapshot).toBe(false);
+    expect(captureCp.fullSnapshot).toBe(true);
+    // Even a clean tree must produce a restorable snapshot ref — this was the
+    // regression that left the badge/Restore button permanently hidden
+    // (`git stash create` yields no commit on a clean worktree).
+    expect(captureCp.gitRef).toBeTruthy();
 
     const listed = await Effect.runPromise(
       Effect.gen(function* () {
@@ -281,8 +286,8 @@ describe("CheckpointService end-to-end", () => {
     // stores the current text), not "create" — only missing files get preContent=null.
     const capturedEntry = captureCp.paths.find((p) => p.path === "new_file.lua");
     expect(capturedEntry).toBeDefined();
-    expect(capturedEntry!.operation).toBe("modify");
-    expect(capturedEntry!.preContent).toBe("-- new file");
+    expect(capturedEntry?.operation).toBe("modify");
+    expect(capturedEntry?.preContent).toBe("-- new file");
 
     // Restore — should revert new_file.lua to its pre-capture content (not delete it)
     await Effect.runPromise(
@@ -378,7 +383,8 @@ describe("CheckpointService end-to-end", () => {
     );
 
     expect(captureCp.gitRef).toBeTruthy();
-    expect(captureCp.fullSnapshot).toBe(false);
+    // paths: [] = full pre-task snapshot even on the embedded backend.
+    expect(captureCp.fullSnapshot).toBe(true);
     expect(captureCp.paths).toHaveLength(1);
     expect(captureCp.paths[0].path).toBe("main.lua");
 
@@ -404,9 +410,68 @@ describe("CheckpointService end-to-end", () => {
     const restored = await readFile(join(workspace, "main.lua"), "utf8");
     expect(restored).toBe("return {}");
 
-    // With scoped captures, agent-created files outside the checkpoint are NOT
-    // pruned -- only tracked files are reverted.
-    expect(await fileExists(extraFile)).toBe(true);
+    // Full pre-task snapshot restore diffs disk against the snapshot tree:
+    // extra.lua was created by the agent AFTER capture, isn't in the snapshot,
+    // and is therefore pruned so Rojo never re-pushes stale generated files.
+    expect(await fileExists(extraFile)).toBe(false);
+  }, 30_000);
+
+  it("system git: full pre-task restore prunes agent-created files but keeps untouched project files", async () => {
+    const workspace = await makeRepoWithCommit();
+    const storeRoot = await mkdtemp(join(tmpdir(), "bloxmind-cp-store-"));
+    tempDirs.push(storeRoot);
+
+    // Baseline project state committed before the task begins.
+    await writeFile(join(workspace, "GameSettings.lua"), '{ "time": "day" }', "utf8");
+    await writeFile(join(workspace, "script.lua"), "-- base", "utf8");
+    git(workspace, ["add", "-A"]);
+    git(workspace, ["commit", "-m", "baseline project", "--no-verify"]);
+
+    const fullLayer = makeLayer(storeRoot, workspace);
+    const sessionId = "ses_full_prune";
+
+    const captureCp = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* CheckpointServiceTag;
+        return yield* svc.capture({
+          sessionId,
+          messageId: "msg-1",
+          tool: "session.promptAsync",
+          paths: [],
+        });
+      }).pipe(Effect.provide(fullLayer)),
+    );
+    expect(captureCp.fullSnapshot).toBe(true);
+    // Full-snapshot restores rely on the git tree diff — require a usable ref.
+    expect(captureCp.gitRef).toBeTruthy();
+
+    // Simulated agent work during the turn: rewrite a tracked script and
+    // create a brand-new generated file.
+    await writeFile(join(workspace, "script.lua"), "-- agent rewrite", "utf8");
+    const agentCreated = join(workspace, "generated_by_agent.lua");
+    await writeFile(agentCreated, "-- generated", "utf8");
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* CheckpointServiceTag;
+        return yield* svc.restore({
+          checkpointId: captureCp.id,
+          sessionId,
+          dryRun: false,
+          preserveUserEdits: false,
+        });
+      }).pipe(Effect.provide(fullLayer)),
+    );
+
+    // Modified file reverts to its pre-task content.
+    expect(await readFile(join(workspace, "script.lua"), "utf8")).toBe("-- base");
+    // Post-task created file is removed by the diff-based prune.
+    expect(await fileExists(agentCreated)).toBe(false);
+    // Untouched baseline files survive byte-for-byte — restore is strictly
+    // scoped to what changed after the snapshot.
+    expect(await readFile(join(workspace, "GameSettings.lua"), "utf8")).toBe(
+      '{ "time": "day" }',
+    );
   }, 30_000);
 
   it("deleteSession purges checkpoint storage and list returns empty", async () => {

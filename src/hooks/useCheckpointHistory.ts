@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useCheckpoints } from "@/hooks/useCheckpoints";
 import { qk } from "@/lib/queryKeys";
@@ -126,6 +126,9 @@ export function useCheckpointHistory(sessionId: string | undefined) {
     if (!sessionId) {
       setCheckpointCount(0);
       setFsCheckpointCount(0);
+      // Clear the cached badge count too — otherwise a stale cached value
+      // would survive session switches and leak between conversations.
+      setCachedFsCheckpointCount(0);
       setLatestFsCheckpoint(null);
       setRestoredCheckpointId(null);
       return;
@@ -133,11 +136,18 @@ export function useCheckpointHistory(sessionId: string | undefined) {
     setCheckpointCount(getCheckpointsFromStorage(sessionId).length);
   }, [sessionId]);
 
+  // Keep the latest checkpoints service in a ref so `refreshCheckpoints`
+  // stays referentially stable across re-renders (the service object is
+  // recreated per render, which previously forced the callback — and every
+  // effect depending on it — to be torn down and re-run on each render).
+  const checkpointsRef = useRef(checkpoints);
+  checkpointsRef.current = checkpoints;
+
   /** Re-fetch the checkpoint list from the main process and update state. */
   const refreshCheckpoints = useCallback(async () => {
     if (!sessionId) return;
     try {
-      const list = await checkpoints.list(sessionId);
+      const list = await checkpointsRef.current.list(sessionId);
       setFsCheckpointCount(list.length);
       if (list.length > 0) setCachedFsCheckpointCount(list.length);
       const latest = list.length > 0 ? list[list.length - 1] : null;
@@ -151,7 +161,7 @@ export function useCheckpointHistory(sessionId: string | undefined) {
     } catch {
       // Keep last-known counts on transient failures.
     }
-  }, [sessionId, checkpoints]);
+  }, [sessionId]);
 
   // Hydrate FS checkpoint state whenever the active session changes (and on
   // first mount). Without this, counts stay at their initial 0 after an app
