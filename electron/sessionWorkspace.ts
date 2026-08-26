@@ -1,17 +1,46 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { app } from "electron";
 
 // ── Per-session workspace isolation ─────────────────────────────────────
-// Each OpenCode session gets its own directory under the app's userData so
-// the OpenCode engine (and the Rojo server) operate on exactly one session's
-// files without leaking anything from earlier sessions (ForceR6,
-// CombatAnimations, etc.).
+// `~/BloxMind` is the absolute single source of truth for session workspaces.
+// Each OpenCode session gets its own directory under `~/BloxMind/sessions`,
+// so the OpenCode engine (and the Rojo server) operate on exactly one
+// session's files without leaking anything from earlier sessions
+// (ForceR6, CombatAnimations, etc.).
 
 /** Root directory holding one folder per session. */
 export function sessionsRoot(): string {
-  return join(app.getPath("userData"), "sessions");
+  return join(app.getPath("home"), "BloxMind", "sessions");
+}
+
+/** Reserved top-level entries in `~/BloxMind` that must survive the legacy purge. */
+const RESERVED_ROOT_ENTRIES = new Set(["sessions"]);
+
+/**
+ * Safely clean the unified app workspace root (`~/BloxMind`) on first launch /
+ * migration: removes every stale top-level entry that is NOT a session folder,
+ * while preserving `sessions/` and any engine-owned dot-directories
+ * (e.g. `.opencode`, `.cache`). Non-recursive, per-entry, so a corrupt or
+ * locked file can never abort the entire purge.
+ */
+export async function purgeLegacyRootWorkspace(): Promise<void> {
+  const root = join(app.getPath("home"), "BloxMind");
+  let entries: string[];
+  try {
+    entries = await readdir(root);
+  } catch {
+    return; // directory doesn't exist yet; nothing to purge
+  }
+  for (const entry of entries) {
+    if (RESERVED_ROOT_ENTRIES.has(entry) || entry.startsWith(".")) continue;
+    try {
+      await rm(join(root, entry), { recursive: true, force: true });
+    } catch {
+      // Best-effort: a locked or in-use file must not block startup.
+    }
+  }
 }
 
 /**
@@ -28,8 +57,11 @@ export function sessionWorkspaceDir(sessionId: string): string {
   return join(sessionsRoot(), sanitizeSessionId(sessionId));
 }
 
-/** Source folders referenced by the project tree ($path). */
-export const PROJECT_SOURCE_DIRS = ["src", "server", "client"] as const;
+// ── Source tree layout ───────────────────────────────────────────────────
+// Mirrors the unified project layout Rojo publishes, but lives inside each
+// session folder so every session starts with a clean source tree and a fresh
+// default.project.json — no stale references from earlier sessions.
+export const PROJECT_SOURCE_DIRS = ["src/server", "src/client", "src/shared"] as const;
 
 /** The Rojo project served per session. The tree is deliberately minimal so a
  * new session can never inherit legacy references from an earlier place. */
@@ -40,13 +72,13 @@ export const SESSION_PROJECT_JSON = {
     ReplicatedStorage: {
       $className: "ReplicatedStorage",
       BloxMind: {
-        $path: "src",
+        $path: "src/shared",
       },
     },
     ServerScriptService: {
       $className: "ServerScriptService",
       Server: {
-        $path: "server",
+        $path: "src/server",
       },
     },
     StarterPlayer: {
@@ -54,7 +86,7 @@ export const SESSION_PROJECT_JSON = {
       StarterPlayerScripts: {
         $className: "StarterPlayerScripts",
         Client: {
-          $path: "client",
+          $path: "src/client",
         },
       },
     },

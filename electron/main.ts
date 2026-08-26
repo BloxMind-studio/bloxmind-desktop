@@ -53,7 +53,7 @@ import {
 } from "./services/SessionStore";
 import { makeStudioMcpBrokerLayer } from "./services/StudioMcpBroker";
 import { type SweepReport, sweepStaleProcesses } from "./services/staleProcessSweep";
-import { ensureSessionWorkspace, sessionWorkspaceDir } from "./sessionWorkspace";
+import { ensureSessionWorkspace, purgeLegacyRootWorkspace } from "./sessionWorkspace";
 
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
 const defaultConfig: AppConfig = DEFAULT_APP_CONFIG;
@@ -98,7 +98,6 @@ const openCodeRuntime = ManagedRuntime.make(
       Layer.merge(
         makeRojoServerManagerLayer({
           binDirectory: join(app.getPath("userData"), "bin"),
-          sessionWorkspaceDir,
         }),
         makeRojoInstallerLayer({
           binDirectory: join(app.getPath("userData"), "bin"),
@@ -1005,25 +1004,40 @@ if (!hasSingleInstanceLock) {
         catch: (cause) =>
           new DesktopMainError({ message: "Failed to reconcile session index", cause }),
       }).pipe(Effect.catchAll(Effect.logWarning));
+      // Cleanly purge any legacy non-isolated files sitting in `~/BloxMind`
+      // before first use, so the session folder is the only live workspace.
+      yield* Effect.tryPromise({
+        try: () => purgeLegacyRootWorkspace(),
+        catch: (cause) =>
+          new DesktopMainError({ message: "Failed to purge legacy workspace", cause }),
+      }).pipe(Effect.catchAll(Effect.logWarning));
       yield* registerIpcHandlers;
       yield* Effect.sync(() => Menu.setApplicationMenu(null));
       yield* createWindow();
       yield* Effect.sync(() => {
         booted = true;
       });
-      // Auto-start the Rojo server against the BloxMind workspace so that
-      // Roblox Studio can connect immediately without manual setup.
-      // Defer slightly so the window loads first, then start `rojo serve`.
-      setTimeout(() => {
-        openCodeRuntime
-          .runPromise(
-            Effect.gen(function* () {
-              const rojo = yield* RojoServerManagerTag;
-              yield* rojo.start(join(app.getPath("home"), "BloxMind"));
-            }),
-          )
-          .catch(Effect.logWarning);
-      }, 500);
+      // Start the Rojo server scoped to the last-active session's isolated
+      // workspace (if any). On a fresh install there is no last-active session,
+      // so Rojo stays idle until the user selects or creates a session — the
+      // RojoStatusBadge will reflect "disconnected" in that case.
+      const lastActive = yield* Effect.tryPromise({
+        try: () => getLastActive(),
+        catch: (cause) =>
+          new DesktopMainError({ message: "Failed to read last-active session", cause }),
+      }).pipe(Effect.catchAll(() => Effect.succeed<string | null>(null)));
+      if (lastActive) {
+        setTimeout(() => {
+          openCodeRuntime
+            .runPromise(
+              Effect.gen(function* () {
+                const rojo = yield* RojoServerManagerTag;
+                yield* rojo.startForSession(lastActive);
+              }),
+            )
+            .catch(Effect.logWarning);
+        }, 500);
+      }
       yield* Effect.sync(() =>
         app.on("activate", () => {
           if (BrowserWindow.getAllWindows().length === 0) {
