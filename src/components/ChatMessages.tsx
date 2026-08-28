@@ -19,6 +19,7 @@ import { useSessionError } from "@/hooks/useSessionError";
 import { useSessionStatus } from "@/hooks/useSessionStatuses";
 import { useTodos } from "@/hooks/useTodos";
 import { qk } from "@/lib/queryKeys";
+import { isSilentContinueMessage, SILENT_CONTINUE_PROMPT } from "@/lib/silentContinue";
 import type { MessagesCache } from "@/lib/sseDispatch";
 import { getOpenCodeUsageAction } from "@/lib/usageLimit";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
@@ -86,9 +87,12 @@ function ChatMessages() {
       // ignore
     }
     setHasInterruptedFlag(false);
+    // Silent continuation: the prompt reaches the agent, but the renderer
+    // hides the marker user message (see isSilentContinueMessage) so no
+    // "Continue…" bubble ever appears in the visible stream.
     void sendMessageForContinue
       .mutateAsync({
-        text: "Continue generating from where you left off based on the previous code/plan.",
+        text: SILENT_CONTINUE_PROMPT,
       })
       .catch(() => undefined);
   }, [activeSessionId, isBusy, sendMessageForContinue]);
@@ -127,13 +131,18 @@ function ChatMessages() {
   // parts never do, so they render as "..." / "Thinking..." and the assistant
   // response never shows. The persisted store (`session.messages()`) stays
   // authoritative, so we poll it whenever there's an active session.
-  // We also poll a bit faster while the status says "busy" or "retry",
-  // and fall back to a slower poll otherwise (covers the case where the
-  // engine doesn't emit session.status events at all).
+  //
+  // IMPORTANT: this poll is now ONLY a part hydrator. It no longer decides
+  // when the "Thinking..." indicator or the Stop button flips — completion is
+  // driven by SSE `message.updated` -> `info.time.completed` (see
+  // MessageBubble), which updates the messages cache instantly. We keep a
+  // slightly faster cadence while "busy"/"retry" so streamed parts materialize
+  // promptly, and a slower one otherwise (also covers engines that emit no
+  // session.status events at all).
   useEffect(() => {
     if (!activeSessionId) return;
     const isActivelyGenerating = sessionStatus?.type === "busy" || sessionStatus?.type === "retry";
-    const POLL_MS = isActivelyGenerating ? 1200 : 3000;
+    const POLL_MS = isActivelyGenerating ? 1500 : 4000;
     const timer = window.setInterval(() => {
       void queryClient.invalidateQueries({
         queryKey: qk.messages(activeSessionId),
@@ -323,7 +332,13 @@ function ChatMessages() {
                 const isSystemNotification = cacheMsg?.parts?.some(
                   (p) => p.type === "text" && p.text.startsWith("[SYSTEM_NOTIFICATION"),
                 );
-                if (isSystemNotification) {
+                // Silent continuation prompts reach the agent but are never
+                // rendered — same hidden-in-feed treatment as system notes.
+                const isSilentContinue =
+                  !isSystemNotification &&
+                  cacheMsg !== undefined &&
+                  isSilentContinueMessage(cacheMsg);
+                if (isSystemNotification || isSilentContinue) {
                   return (
                     <div
                       key={msgId}
@@ -388,7 +403,7 @@ function ChatMessages() {
               {activePermission && (
                 <PermissionPrompt permission={activePermission} onReply={handleReplyPermission} />
               )}
-              <BusyThinkingIndicator status={sessionStatus} lastMessage={lastMessage} />
+               <BusyThinkingIndicator status={sessionStatus} />
               {showContinue && (
                 <div className="flex justify-center py-2">
                   <button

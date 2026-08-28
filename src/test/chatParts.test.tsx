@@ -6,17 +6,19 @@
  * Smoke + behavior coverage so regressions in part rendering are caught.
  */
 
-import type { PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2/client";
+import type { Part, PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2/client";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ModelErrorCard, UsageLimitDialog } from "@/components/chat/ErrorViews";
 import { InlineDisclosure } from "@/components/chat/InlineDisclosure";
 import { PermissionPrompt, QuestionPrompt } from "@/components/chat/Prompts";
+import { buildSteps, SmartPartsRenderer } from "@/components/chat/partViews";
+import { StepExecutionView } from "@/components/chat/StepExecutionView";
 import { BloxMindThinking, BusyThinkingIndicator } from "@/components/chat/ThinkingIndicator";
 import { TodoPanel } from "@/components/chat/TodoPanel";
 import type { ModelError } from "@/lib/modelError";
 import type { OpenCodeUsageAction } from "@/lib/usageLimit";
-import { makeAssistantMessage, makeTodo, makeUserMessage } from "@/test/fixtures";
+import { makeTodo } from "@/test/fixtures";
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -264,26 +266,246 @@ describe("ThinkingIndicator", () => {
     expect(screen.getByText("Thinking...")).toBeInTheDocument();
   });
 
-  it("BusyThinkingIndicator only shows while busy waiting on a user message", () => {
-    const lastMessage = { info: makeAssistantMessage(), parts: [] };
-
+  it("BusyThinkingIndicator shows whenever the session is busy", () => {
     // Not busy → nothing rendered.
     const { container, rerender } = render(
-      <BusyThinkingIndicator status={{ type: "idle" }} lastMessage={lastMessage} />,
+      <BusyThinkingIndicator status={{ type: "idle" }} />,
     );
     expect(container).toBeEmptyDOMElement();
 
-    // Busy but last message is assistant → nothing rendered.
-    rerender(<BusyThinkingIndicator status={{ type: "busy" }} lastMessage={lastMessage} />);
-    expect(container).toBeEmptyDOMElement();
-
-    // Busy and last message is user → indicator shown.
-    rerender(
-      <BusyThinkingIndicator
-        status={{ type: "busy" }}
-        lastMessage={{ info: makeUserMessage(), parts: [] }}
-      />,
-    );
+    // Busy → indicator shown regardless of message role.
+    rerender(<BusyThinkingIndicator status={{ type: "busy" }} />);
     expect(screen.getByText("Thinking...")).toBeInTheDocument();
   });
+});
+
+// ── SmartPartsRenderer — thinking block gating ──────────────────────────
+
+describe("buildSteps — step-based execution data model", () => {
+  const base = { sessionID: "s1", messageID: "m1" };
+
+  it("groups a tool call wrapped in step markers into one step", () => {
+    const parts = [
+      { id: "s1", type: "step-start", ...base },
+      { id: "r1", type: "reasoning", ...base, text: "Inspect the tree" },
+      { id: "t1", type: "tool", ...base, tool: "roblox-studio", state: { status: "completed" } },
+      {
+        id: "f1",
+        type: "step-finish",
+        ...base,
+        tokens: { input: 12, output: 34, reasoning: 0, cache: { read: 0, write: 0 } },
+      },
+    ] as unknown as Part[];
+
+    const steps = buildSteps(parts);
+    expect(steps).toHaveLength(1);
+    expect(steps[0].toolNames).toEqual(["roblox-studio"]);
+    expect(steps[0].reasoningText).toBe("Inspect the tree");
+    expect(steps[0].tokens).toEqual({ input: 12, output: 34 });
+  });
+
+  it("accumulates consecutive tool calls into sequential steps", () => {
+    const parts = [
+      { id: "s1", type: "step-start", ...base },
+      { id: "t1", type: "tool", ...base, tool: "bash", state: {} },
+      { id: "f1", type: "step-finish", ...base, tokens: { input: 1, output: 2 } },
+      { id: "s2", type: "step-start", ...base },
+      { id: "t2", type: "tool", ...base, tool: "read", state: {} },
+      { id: "f2", type: "step-finish", ...base, tokens: { input: 3, output: 4 } },
+    ] as unknown as Part[];
+
+    const steps = buildSteps(parts);
+    expect(steps.map((s) => s.toolNames)).toEqual([["bash"], ["read"]]);
+    expect(steps.map((s) => s.tokens)).toEqual([
+      { input: 1, output: 2 },
+      { input: 3, output: 4 },
+    ]);
+  });
+
+  it("creates a single implicit step when no step markers exist", () => {
+    const parts = [
+      { id: "t1", type: "tool", ...base, tool: "glob", state: {} },
+    ] as unknown as Part[];
+
+    const steps = buildSteps(parts);
+    expect(steps).toHaveLength(1);
+    expect(steps[0].toolNames).toEqual(["glob"]);
+  });
+
+  it("splits consecutive tool calls without step markers into sequential steps", () => {
+    const parts = [
+      { id: "t1", type: "tool", ...base, tool: "read", state: { status: "completed" } },
+      { id: "t2", type: "tool", ...base, tool: "edit", state: { status: "running" } },
+      { id: "t3", type: "tool", ...base, tool: "bash", state: { status: "running" } },
+    ] as unknown as Part[];
+
+    const steps = buildSteps(parts);
+    expect(steps).toHaveLength(3);
+    expect(steps.map((s) => s.toolNames)).toEqual([["read"], ["edit"], ["bash"]]);
+  });
+
+  it("splits alternating reasoning and tool calls into sequential steps", () => {
+    const parts = [
+      { id: "r1", type: "reasoning", ...base, text: "Let me check the files" },
+      { id: "t1", type: "tool", ...base, tool: "read", state: { status: "completed" } },
+      { id: "r2", type: "reasoning", ...base, text: "Now modifying the code" },
+      { id: "t2", type: "tool", ...base, tool: "edit", state: { status: "completed" } },
+    ] as unknown as Part[];
+
+    const steps = buildSteps(parts);
+    expect(steps).toHaveLength(2);
+    expect(steps[0].reasoningText).toBe("Let me check the files");
+    expect(steps[0].toolNames).toEqual(["read"]);
+    expect(steps[1].reasoningText).toBe("Now modifying the code");
+    expect(steps[1].toolNames).toEqual(["edit"]);
+  });
+
+  it("ignores text parts (they are the final answer, not steps)", () => {
+    const parts = [
+      { id: "s1", type: "step-start", ...base },
+      { id: "t1", type: "tool", ...base, tool: "bash", state: {} },
+      { id: "f1", type: "step-finish", ...base, tokens: { input: 1, output: 1 } },
+      { id: "txt", type: "text", ...base, text: "Done!" },
+    ] as unknown as Part[];
+
+    const steps = buildSteps(parts);
+    expect(steps).toHaveLength(1);
+    expect(steps[0].parts.some((p) => p.type === "text")).toBe(false);
+  });
+
+  it("keeps metric-only steps (no tool/reasoning) present but renders nothing via ThinkingBlock", () => {
+    const parts = [
+      { id: "s1", type: "step-start", ...base },
+      { id: "f1", type: "step-finish", ...base, tokens: { input: 7, output: 9 } },
+    ] as unknown as Part[];
+
+    const steps = buildSteps(parts);
+    expect(steps).toHaveLength(1);
+    // No tool, no readable reasoning -> ThinkingBlock's content gate drops it.
+    expect(steps[0].toolNames).toEqual([]);
+    expect(steps[0].reasoningText).toBeUndefined();
+  });
+});
+
+describe("SmartPartsRenderer — thinking block gating", () => {
+  const base = { sessionID: "s1", messageID: "m1" };
+
+  const stepMetricsOnly: Part[] = [
+    { id: "p1", type: "step-start", ...base },
+    {
+      id: "p2",
+      type: "step-finish",
+      ...base,
+      tokens: { input: 128, output: 340, reasoning: 0, cache: { read: 0, write: 0 } },
+    },
+  ] as unknown as Part[];
+
+  it("renders no Reasoning block when only step metrics exist (even with tokens)", () => {
+    const { container } = render(<SmartPartsRenderer parts={stepMetricsOnly} />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("renders the Reasoning block with token chips when real reasoning text exists", () => {
+    const parts = [
+      ...stepMetricsOnly,
+      { id: "p3", type: "reasoning", ...base, text: "Planning the zone flow" },
+    ] as unknown as Part[];
+    render(<SmartPartsRenderer parts={parts} />);
+
+    expect(screen.getByText("Reasoning")).toBeInTheDocument();
+    expect(screen.getByText("128 in")).toBeInTheDocument();
+    expect(screen.getByText("340 out")).toBeInTheDocument();
+  });
+
+  it("renders no Reasoning block for whitespace-only reasoning", () => {
+    const parts = [
+      { id: "p1", type: "reasoning", ...base, text: "   \n\t  " },
+    ] as unknown as Part[];
+    const { container } = render(<SmartPartsRenderer parts={parts} />);
+    expect(container).toBeEmptyDOMElement();
+  });
+describe("StepExecutionView", () => {
+  it("morphs thinking -> thought in place without remounting the step container", () => {
+    const tool: Part = {
+      id: "tool_1",
+      sessionID: "s1",
+      messageID: "msg_a",
+      type: "tool",
+      callID: "call_1",
+      tool: "bash",
+      state: {
+        status: "completed",
+        input: { command: "ls -la", description: "List source files" },
+        output: "total 0",
+        title: "ls -la",
+        metadata: {},
+        time: { start: 1, end: 2 },
+      },
+    };
+    const parts = [tool];
+
+    const { container, rerender } = render(<StepExecutionView parts={parts} isActive />);
+
+    // An active single step shows the animated spinner.
+    expect(screen.getByText("Thinking...")).toBeInTheDocument();
+    const containerBefore = container.querySelector<HTMLElement>(".mb-3");
+    expect(containerBefore).not.toBeNull();
+
+    // Turn settles -> the same step freezes into a collapsible Thought.
+    rerender(<StepExecutionView parts={parts} isActive={false} />);
+    expect(screen.queryByText("Thinking...")).not.toBeInTheDocument();
+    expect(screen.getByText("Thought")).toBeInTheDocument();
+
+    // The outer step container is the SAME DOM node across the transition —
+    // the block morphs in place instead of being torn down and re-mounted, so
+    // there is zero frame gap / flicker between Thinking and Thought.
+    const containerAfter = container.querySelector<HTMLElement>(".mb-3");
+    expect(containerAfter).toBe(containerBefore);
+  });
+
+  it("appends the next Thinking block below a frozen Thought for multi-step turns", () => {
+    const toolA: Part = {
+      id: "toolA",
+      sessionID: "s1",
+      messageID: "msg_a",
+      type: "tool",
+      callID: "callA",
+      tool: "bash",
+      state: {
+        status: "completed",
+        input: { command: "ls", description: "List files" },
+        output: "",
+        title: "ls",
+        metadata: {},
+        time: { start: 1, end: 2 },
+      },
+    };
+    const toolB: Part = {
+      id: "toolB",
+      sessionID: "s1",
+      messageID: "msg_a",
+      type: "tool",
+      callID: "callB",
+      tool: "webfetch",
+      state: {
+        status: "running",
+        input: { url: "https://example.com" },
+        time: { start: 1 },
+      },
+    };
+
+    const { rerender } = render(<StepExecutionView parts={[toolA, toolB]} isActive />);
+
+    // With two steps while active: step 1 is a frozen Thought, step 2 is Thinking.
+    expect(screen.getByText("Thought")).toBeInTheDocument();
+    expect(screen.getByText("Thinking...")).toBeInTheDocument();
+    expect(screen.getByText("bash")).toBeInTheDocument();
+
+    // Turn settles -> both freeze; Thinking disappears.
+    rerender(<StepExecutionView parts={[toolA, toolB]} isActive={false} />);
+    expect(screen.queryByText("Thinking...")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Thought").length).toBeGreaterThanOrEqual(1);
+  });
+});
+
 });

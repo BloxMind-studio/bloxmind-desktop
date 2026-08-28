@@ -17,23 +17,45 @@ const STALL_THRESHOLD_MS = 45_000;
 export function WorkingIndicator({
   parts,
   active,
+  startedAt: startedAtProp,
 }: {
   parts: readonly Part[] | undefined;
   active: boolean;
+  startedAt?: number | null;
 }) {
   const [now, setNow] = useState(() => Date.now());
-  const startedAt = useRef(Date.now());
-  const activity = latestActivity(parts);
+  const internalStartedAt = useRef<number | null>(null);
+
+  // Derive startedAt: prefer the externally-supplied global per-turn value.
+  // Fall back to an internal ref that is initialised exactly once on the
+  // first active transition so it survives remounts of individual blocks.
+  const startedAt =
+    startedAtProp !== undefined && startedAtProp !== null
+      ? startedAtProp
+      : internalStartedAt.current;
+
+  // Lazily initialise the internal start-time ref when we first become
+  // active.  Because `useRef` persists across renders, subsequent block
+  // remounts keep the same value and the timer never resets mid-turn.
+  if (active && internalStartedAt.current === null && startedAtProp === undefined) {
+    internalStartedAt.current = Date.now();
+  }
 
   useEffect(() => {
     if (!active) return;
+    if (internalStartedAt.current === null && startedAtProp === undefined) {
+      internalStartedAt.current = Date.now();
+      setNow(Date.now());
+    }
     const id = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(id);
-  }, [active]);
+  }, [active, startedAtProp]);
 
   if (!active) return null;
+  if (startedAt === null || startedAt === undefined) return null;
 
-  const elapsedMs = Math.max(0, now - startedAt.current);
+  const activity = latestActivity(parts);
+  const elapsedMs = Math.max(0, now - startedAt);
   const seconds = Math.floor(elapsedMs / 1000);
   const stamp = `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`;
   const stalled =

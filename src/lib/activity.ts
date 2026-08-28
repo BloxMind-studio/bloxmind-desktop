@@ -56,11 +56,25 @@ export function latestActivity(parts: readonly Part[] | undefined): {
   );
   if (reasoning) {
     const tail = reasoningTail(reasoning.text);
-    if (tail) return { line: tail, epoch: Date.now() };
+    if (tail) {
+      const epoch =
+        typeof (reasoning as unknown as { time?: { updated?: number; created?: number } }).time?.updated ===
+        "number"
+          ? (reasoning as unknown as { time: { updated: number } }).time.updated
+          : Date.now();
+      return { line: tail, epoch };
+    }
   }
 
   const tool = newest.find((p): p is Extract<Part, { type: "tool" }> => p.type === "tool");
-  if (tool) return { line: toolLabel(tool.tool), epoch: Date.now() };
+  if (tool) {
+    const epoch =
+      typeof (tool as unknown as { time?: { updated?: number; created?: number } }).time?.updated ===
+      "number"
+        ? (tool as unknown as { time: { updated: number } }).time.updated
+        : Date.now();
+    return { line: toolLabel(tool.tool), epoch };
+  }
 
   return { line: null, epoch: 0 };
 }

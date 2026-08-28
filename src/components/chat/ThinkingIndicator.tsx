@@ -1,6 +1,5 @@
 import type { SessionStatus } from "@opencode-ai/sdk/v2/client";
 import { memo } from "react";
-import type { MessageWithParts } from "@/types";
 
 // ── Inline BloxMind thinking indicator ────────────────────────────────────
 
@@ -64,11 +63,9 @@ export function BloxMindThinking({ label = "Thinking..." }: { label?: string }) 
 
 export const BusyThinkingIndicator = memo(function BusyThinkingIndicator({
   status,
-  lastMessage,
 }: {
   status: SessionStatus | undefined;
-  lastMessage: MessageWithParts | undefined;
 }) {
-  if (status?.type !== "busy" || !lastMessage || lastMessage.info.role !== "user") return null;
+  if (status?.type !== "busy") return null;
   return <BloxMindThinking />;
 });
