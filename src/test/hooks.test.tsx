@@ -8,7 +8,7 @@
 
 import type { Session, SessionStatus } from "@opencode-ai/sdk/v2/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { renderHook } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { useRef } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -316,5 +316,273 @@ describe("useIsBusy", () => {
     const { result } = renderHook(() => useIsBusy(null), { wrapper: makeWrapper(qc) });
 
     expect(result.current).toBe(false);
+  });
+
+  it("holds busy across a transient idle blip between agent steps", async () => {
+    vi.useFakeTimers();
+    try {
+      const qc = makeQC();
+      qc.setQueryData(qk.statuses, { s1: { type: "busy" } as SessionStatus });
+      const { result, rerender } = renderHook(() => useIsBusy("s1"), {
+        wrapper: makeWrapper(qc),
+      });
+      expect(result.current).toBe(true);
+
+      // Transient session.idle mid-loop (e.g. after a tool batch).
+      act(() => {
+        qc.setQueryData(qk.statuses, { s1: { type: "idle" } as SessionStatus });
+        rerender();
+      });
+      expect(result.current).toBe(true); // latched inside the confirm window
+
+      // Busy returns before the window elapses (next tool step starts).
+      act(() => {
+        qc.setQueryData(qk.statuses, { s1: { type: "busy" } as SessionStatus });
+        rerender();
+      });
+      expect(result.current).toBe(true);
+
+      // Sustained idle past the confirm window unlocks.
+      act(() => {
+        qc.setQueryData(qk.statuses, { s1: { type: "idle" } as SessionStatus });
+        rerender();
+      });
+      act(() => {
+        vi.advanceTimersByTime(2_100);
+      });
+      expect(result.current).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not latch for sessions that were never busy", () => {
+    const qc = makeQC();
+    qc.setQueryData(qk.statuses, { s1: { type: "idle" } as SessionStatus });
+
+    const { result } = renderHook(() => useIsBusy("s1"), { wrapper: makeWrapper(qc) });
+
+    expect(result.current).toBe(false);
+  });
+
+  it("clears the latch when switching to another session", () => {
+    const qc = makeQC();
+    qc.setQueryData(qk.statuses, {
+      s1: { type: "busy" } as SessionStatus,
+      s2: { type: "idle" } as SessionStatus,
+    });
+
+    const { result, rerender } = renderHook(({ id }) => useIsBusy(id), {
+      wrapper: makeWrapper(qc),
+      initialProps: { id: "s1" },
+    });
+    expect(result.current).toBe(true);
+
+    act(() => {
+      rerender({ id: "s2" });
+    });
+    // No latch bleed from s1's busy state into the idle s2.
+    expect(result.current).toBe(false);
+  });
+
+  it("keeps the Stop latch through an unknown/loading status blip", async () => {
+    vi.useFakeTimers();
+    try {
+      const qc = makeQC();
+      qc.setQueryData(qk.statuses, { s1: { type: "busy" } as SessionStatus });
+      const { result, rerender } = renderHook(() => useIsBusy("s1"), {
+        wrapper: makeWrapper(qc),
+      });
+      expect(result.current).toBe(true);
+
+      // A background refetch momentarily exposes no status data. This must
+      // NEVER unlock the latch — "unknown" is not evidence the agent stopped.
+      act(() => {
+        qc.removeQueries({ queryKey: qk.statuses });
+        rerender();
+      });
+      expect(result.current).toBe(true);
+
+      // Watchdog reconciles with a real idle; unlock only after it persists.
+      act(() => {
+        qc.setQueryData(qk.statuses, { s1: { type: "idle" } as SessionStatus });
+        rerender();
+      });
+      expect(result.current).toBe(true); // still inside the confirm window
+
+      act(() => {
+        vi.advanceTimersByTime(2_100);
+      });
+      expect(result.current).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("unlocks when the status stays unknown past the grace window", async () => {
+    vi.useFakeTimers();
+    try {
+      const qc = makeQC();
+      qc.setQueryData(qk.statuses, { s1: { type: "busy" } as SessionStatus });
+      const { result, rerender } = renderHook(() => useIsBusy("s1"), {
+        wrapper: makeWrapper(qc),
+      });
+      expect(result.current).toBe(true);
+
+      // The engine dropped the idle SSE event and the watchdog poll now omits
+      // the settled session from the status map entirely — the status stays
+      // undefined. The Stop button must NOT stay latched forever (grace 30s).
+      act(() => {
+        qc.removeQueries({ queryKey: qk.statuses });
+        rerender();
+      });
+      act(() => {
+        vi.advanceTimersByTime(29_900);
+      });
+      expect(result.current).toBe(true); // still inside the unknown grace
+
+      act(() => {
+        vi.advanceTimersByTime(200);
+      });
+      expect(result.current).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("re-latches when busy returns during the unknown grace window", async () => {
+    vi.useFakeTimers();
+    try {
+      const qc = makeQC();
+      qc.setQueryData(qk.statuses, { s1: { type: "busy" } as SessionStatus });
+      const { result, rerender } = renderHook(() => useIsBusy("s1"), {
+        wrapper: makeWrapper(qc),
+      });
+      expect(result.current).toBe(true);
+
+      // Status disappears (dropped events) but the agent is still running —
+      // the next busy observation must cancel the pending unlock.
+      act(() => {
+        qc.removeQueries({ queryKey: qk.statuses });
+        rerender();
+      });
+      act(() => {
+        qc.setQueryData(qk.statuses, { s1: { type: "busy" } as SessionStatus });
+        rerender();
+      });
+      act(() => {
+        vi.advanceTimersByTime(10_000);
+      });
+      expect(result.current).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("holds the latch while messages keep streaming during unknown status", async () => {
+    vi.useFakeTimers();
+    try {
+      const qc = makeQC();
+      qc.setQueryData(qk.statuses, { s1: { type: "busy" } as SessionStatus });
+      const { result, rerender } = renderHook(() => useIsBusy("s1"), {
+        wrapper: makeWrapper(qc),
+      });
+      expect(result.current).toBe(true);
+
+      // The engine drops status events mid-turn: the status disappears while
+      // the agent is still working. Message deltas keep arriving, and that
+      // activity must restart the unknown grace window (now 30s) so the Stop
+      // button never flips to Send mid-turn.
+      act(() => {
+        qc.removeQueries({ queryKey: qk.statuses });
+        rerender();
+      });
+
+      // Stream message updates across two grace windows (grace 30s).
+      act(() => {
+        vi.advanceTimersByTime(15_000);
+      });
+      act(() => {
+        qc.setQueryData<MessagesCache>(qk.messages("s1"), {
+          messageIds: ["m1"],
+          messagesById: {
+            m1: { info: makeAssistantMessage({ id: "m1" }), parts: [] },
+          },
+        });
+        rerender();
+      });
+      act(() => {
+        vi.advanceTimersByTime(15_000);
+      });
+      act(() => {
+        qc.setQueryData<MessagesCache>(qk.messages("s1"), {
+          messageIds: ["m1", "m2"],
+          messagesById: {
+            m1: { info: makeAssistantMessage({ id: "m1" }), parts: [] },
+            m2: { info: makeAssistantMessage({ id: "m2" }), parts: [] },
+          },
+        });
+        rerender();
+      });
+
+      // 30s have passed since the status vanished — at the grace boundary —
+      // but the stream only went quiet 15s ago. The latch must still hold.
+      act(() => {
+        vi.advanceTimersByTime(15_000);
+      });
+      expect(result.current).toBe(true);
+
+      // Once the stream has been quiet for a full grace window (30s), unlock.
+      act(() => {
+        vi.advanceTimersByTime(15_100);
+      });
+      expect(result.current).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("unlocks a full grace window after the last message activity during unknown status", async () => {
+    vi.useFakeTimers();
+    try {
+      const qc = makeQC();
+      qc.setQueryData(qk.statuses, { s1: { type: "busy" } as SessionStatus });
+      const { result, rerender } = renderHook(() => useIsBusy("s1"), {
+        wrapper: makeWrapper(qc),
+      });
+      expect(result.current).toBe(true);
+
+      act(() => {
+        qc.removeQueries({ queryKey: qk.statuses });
+        rerender();
+      });
+
+      // One late message part flushes 15s into the unknown window (grace 30s),
+      // then the stream settles. The unlock must happen a full grace window
+      // after the LAST activity, not after the status first vanished.
+      act(() => {
+        vi.advanceTimersByTime(15_000);
+      });
+      act(() => {
+        qc.setQueryData<MessagesCache>(qk.messages("s1"), {
+          messageIds: ["m1"],
+          messagesById: {
+            m1: { info: makeAssistantMessage({ id: "m1" }), parts: [] },
+          },
+        });
+        rerender();
+      });
+      act(() => {
+        vi.advanceTimersByTime(29_900);
+      });
+      expect(result.current).toBe(true); // restarted grace still running
+
+      act(() => {
+        vi.advanceTimersByTime(200);
+      });
+      expect(result.current).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -73,6 +73,26 @@ describe("OpenCode configuration", () => {
     expect(createOpenCodeConfig(broker).skills).toEqual({ paths: [".opencode/skills"] });
   });
 
+  it("registers the Roblox/BloxMind slash commands for the chat / picker", () => {
+    const commands = createOpenCodeConfig(broker).command;
+
+    expect(Object.keys(commands).sort()).toEqual(["mcp-setup", "roblox-script", "roblox-ui"]);
+    for (const definition of Object.values(commands)) {
+      expect(definition.agent).toBe("studio");
+      expect(definition.description.length).toBeGreaterThan(0);
+      // OpenCode's config schema requires `template` per command (validated at
+      // server startup — "Missing key command.<name>.template"); `prompt` is
+      // not a recognised field and made the whole config invalid.
+      expect(definition.template.length).toBeGreaterThan(0);
+      expect(definition).not.toHaveProperty("prompt");
+    }
+    // /mcp-setup hands the user the Studio MCP connection playbook; the script
+    // and UI commands point the agent at the matching Luau architecture rules.
+    expect(commands["mcp-setup"].template).toMatch(/mcp-setup/);
+    expect(commands["roblox-script"].template).toMatch(/roblox-script/);
+    expect(commands["roblox-ui"].template).toMatch(/roblox-ui/);
+  });
+
   it("keeps bash on ask so git or shell commands require in-app approval", () => {
     expect(createOpenCodeConfig(broker).permission.bash).toBe("ask");
     expect(createOpenCodeConfig(broker).agent.studio.tools.bash).toBe(true);

@@ -9,7 +9,10 @@ import { MessageBubble } from "@/components/chat/MessageBubble";
 import { PermissionPrompt, QuestionPrompt } from "@/components/chat/Prompts";
 import { BusyThinkingIndicator } from "@/components/chat/ThinkingIndicator";
 import { TodoPanel } from "@/components/chat/TodoPanel";
-import { useAnswerQuestion, useRejectQuestion } from "@/hooks/mutations/useAnswerQuestion";
+import {
+  useAnswerQuestion,
+  useRejectQuestion,
+} from "@/hooks/mutations/useAnswerQuestion";
 import { useReplyPermission } from "@/hooks/mutations/useReplyPermission";
 import { useSendMessage } from "@/hooks/mutations/useSendMessage";
 import { useMessage, useMessageIds } from "@/hooks/useMessages";
@@ -19,6 +22,11 @@ import { useSessionError } from "@/hooks/useSessionError";
 import { useSessionStatus } from "@/hooks/useSessionStatuses";
 import { useTodos } from "@/hooks/useTodos";
 import { qk } from "@/lib/queryKeys";
+import {
+  isSilentContinueInProgress,
+  isSilentContinueMessage,
+  SILENT_CONTINUE_PROMPT,
+} from "@/lib/silentContinue";
 import type { MessagesCache } from "@/lib/sseDispatch";
 import { getOpenCodeUsageAction } from "@/lib/usageLimit";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
@@ -35,7 +43,15 @@ function ChatMessages() {
   const { activeSessionId } = useActiveSession();
   const queryClient = useQueryClient();
   const sessionStatus = useSessionStatus(activeSessionId);
+  // "Definitely idle" distinguishes a settled turn (status === idle) from the
+  // transient windows where the status query briefly returns undefined during
+  // refetch/reconnect while the agent is still working. Only a definitely-idle
+  // session with an unfinished last message is treated as interrupted; a live
+  // turn or a transient status blip must never trigger the "you left while the
+  // agent was working" state.
   const isBusy = sessionStatus !== undefined && sessionStatus.type !== "idle";
+  const rawBusy = isBusy;
+  const statusIsIdle = sessionStatus?.type === "idle";
   const usageAction = getOpenCodeUsageAction(sessionStatus);
   const todos = useTodos();
   const activeQuestion = useActiveQuestion();
@@ -58,7 +74,9 @@ function ChatMessages() {
     }
     const check = () => {
       try {
-        const flag = localStorage.getItem(`BloxMind:interrupted:${activeSessionId}`);
+        const flag = localStorage.getItem(
+          `BloxMind:interrupted:${activeSessionId}`,
+        );
         setHasInterruptedFlag(!!flag);
       } catch {
         setHasInterruptedFlag(false);
@@ -76,49 +94,186 @@ function ChatMessages() {
     };
   }, [activeSessionId]);
   const isLastMessageAborted =
-    (lastMessage?.info as { error?: { name?: string } })?.error?.name === "MessageAbortedError";
-  const showContinue = !isBusy && !!activeSessionId && (hasInterruptedFlag || isLastMessageAborted);
+    (lastMessage?.info as { error?: { name?: string } })?.error?.name ===
+    "MessageAbortedError";
+  // Detect a turn that was abandoned by closing the app while the agent was
+  // still working. The engine process is killed with the app and never sends a
+  // status for the session again, so `sessionStatus`/`hasInterruptedFlag` may
+  // both be empty on reopen. The reliable signal is the message cache itself:
+  // the last assistant message never produced a final text answer and never
+  // errored → the turn was interrupted mid-flight.
+  const lastMessageHasFinalText = !!lastMessage?.parts.some(
+    (p): boolean =>
+      p.type === "text" &&
+      typeof (p as { text?: unknown }).text === "string" &&
+      (p as { text: string }).text.trim().length > 0,
+  );
+  const lastMessageIsCompleted =
+    !!(lastMessage?.info as { time?: { completed?: unknown } })?.time?.completed;
+  // ── Persistent last-known-state detection (close-mid-turn) ──────────────
+  // While the agent works we continuously persist `busy` for the session, and
+  // flip it to `idle` only when the engine explicitly reports an idle status.
+  // If the app is closed mid-turn, the marker survives as `busy` — even if the
+  // close-time `pagehide` hook never fires — so on reopen we can detect that
+  // the session was abandoned while working.
+  const [lastKnownBusy, setLastKnownBusy] = useState(false);
+  // The status query can transiently return `undefined` during refetches while
+  // the agent is actively working. Only trust the persisted `busy` marker once
+  // the status has stayed unknown for a settle window (i.e. a real reopen where
+  // the engine has no status for the session), never during a momentary blip.
+  const [statusUnknownSettled, setStatusUnknownSettled] = useState(false);
+  useEffect(() => {
+    if (sessionStatus !== undefined) {
+      setStatusUnknownSettled(false);
+      return;
+    }
+    const t = setTimeout(() => setStatusUnknownSettled(true), 2000);
+    return () => clearTimeout(t);
+  }, [sessionStatus]);
+  useEffect(() => {
+    if (!activeSessionId) {
+      setLastKnownBusy(false);
+      return;
+    }
+    const key = `BloxMind:lastKnownState:${activeSessionId}`;
+    if (rawBusy) {
+      // Agent is active (raw, not latched) → mark last known state as busy
+      // immediately. Using raw avoids holding "busy" for the 2s idle-confirm
+      // window after a natural completion, which would otherwise leave a stale
+      // busy marker that resurrects the interrupted banner on next reopen.
+      try {
+        localStorage.setItem(key, "busy");
+      } catch {
+        // ignore storage errors
+      }
+      return;
+    }
+    if (statusIsIdle) {
+      // Clean finish → mark as idle and release any stale busy marker.
+      try {
+        localStorage.setItem(key, "idle");
+      } catch {
+        // ignore storage errors
+      }
+      setLastKnownBusy(false);
+      return;
+    }
+    // Status unknown: only trust the persisted state after the settle window,
+    // so a transient refetch blip during a live turn can't read as a reopen.
+    if (!statusUnknownSettled) {
+      setLastKnownBusy(false);
+      return;
+    }
+    try {
+      setLastKnownBusy(localStorage.getItem(key) === "busy");
+    } catch {
+      setLastKnownBusy(false);
+    }
+  }, [activeSessionId, isBusy, statusIsIdle, statusUnknownSettled]);
+
+  // Strict Continue visibility: ONLY when explicitly interrupted
+  // (persisted `BloxMind:interrupted:*` flag) AND session is idle waiting.
+  // Do NOT trigger on normal completion (finalText / isComplete) alone.
+  // `lastKnownBusy` is retained only as a persistence fallback but does NOT
+  // drive UI on its own — the explicit flag is the single source of truth.
+  const isTaskInterrupted = hasInterruptedFlag;
+  const interrupted = !isBusy && isTaskInterrupted;
+  const showContinue = !!activeSessionId && interrupted;
   const handleContinue = useCallback(() => {
     if (!activeSessionId || isBusy) return;
     try {
       localStorage.removeItem(`BloxMind:interrupted:${activeSessionId}`);
+      // Release the persisted busy marker so the paused state clears even if
+      // the engine has no status for this session yet.
+      localStorage.setItem(`BloxMind:lastKnownState:${activeSessionId}`, "idle");
     } catch {
       // ignore
     }
     setHasInterruptedFlag(false);
+    setLastKnownBusy(false);
+    // Silent continuation: the prompt reaches the agent, but the renderer
+    // hides the marker user message (see isSilentContinueMessage) so no
+    // "Continue…" bubble ever appears in the visible stream.
     void sendMessageForContinue
       .mutateAsync({
-        text: "Continue generating from where you left off based on the previous code/plan.",
+        text: SILENT_CONTINUE_PROMPT,
       })
       .catch(() => undefined);
   }, [activeSessionId, isBusy, sendMessageForContinue]);
   // Clear the interrupted marker when a new generation starts or a fresh assistant
-  // message with final text arrives — the interruption is now resolved.
+  // message completes naturally (final text OR engine-reported completed time).
+  // This handles tool-only completions where `time.completed` is set without a
+  // final text part. `lastKnownBusy` is also cleared so stale "busy" does not
+  // resurrect the banner on the next normal task.
   useEffect(() => {
-    if (!hasInterruptedFlag || !activeSessionId) return;
+    if ((!hasInterruptedFlag && !lastKnownBusy) || !activeSessionId) return;
     if (isBusy) {
       try {
         localStorage.removeItem(`BloxMind:interrupted:${activeSessionId}`);
+        localStorage.setItem(`BloxMind:lastKnownState:${activeSessionId}`, "idle");
       } catch {
         // ignore
       }
       setHasInterruptedFlag(false);
+      setLastKnownBusy(false);
       return;
     }
-    if (lastMessage?.info.role === "assistant") {
-      const hasFinal = lastMessage.parts.some(
-        (p) => p.type === "text" && typeof p.text === "string" && p.text.trim().length > 0,
-      );
-      if (hasFinal && !isLastMessageAborted) {
+    if (lastMessage?.info.role === "assistant" && !isLastMessageAborted) {
+      const hasFinal = lastMessageHasFinalText || lastMessageIsCompleted;
+      if (hasFinal) {
         try {
           localStorage.removeItem(`BloxMind:interrupted:${activeSessionId}`);
+          localStorage.setItem(`BloxMind:lastKnownState:${activeSessionId}`, "idle");
         } catch {
           // ignore
         }
         setHasInterruptedFlag(false);
+        setLastKnownBusy(false);
       }
     }
-  }, [hasInterruptedFlag, activeSessionId, isBusy, lastMessage, isLastMessageAborted]);
+  }, [
+    hasInterruptedFlag,
+    lastKnownBusy,
+    activeSessionId,
+    isBusy,
+    lastMessage,
+    lastMessageHasFinalText,
+    lastMessageIsCompleted,
+    isLastMessageAborted,
+  ]);
+
+  // Requirement 2: Clean state reset on natural task completion.
+  // When the turn completes normally (idle + natural completion signal), explicitly
+  // clear any stale interrupted/shouldContinue flags so the Continue button and
+  // the "You left while the agent was working" block disappear forever for that
+  // completed prompt. Uses `time.completed` in addition to `hasFinalText` to
+  // cover tool-only completions. The `!isBusy` (idle/unknown) check ensures an
+  // actually-interrupted turn that never got an idle status (status remains
+  // undefined on reopen) keeps its flag until the user explicitly continues.
+  useEffect(() => {
+    if (!activeSessionId) return;
+    const naturallyCompleted = (lastMessageHasFinalText || lastMessageIsCompleted) && !isLastMessageAborted;
+    if (statusIsIdle && naturallyCompleted) {
+      const hasFlag = hasInterruptedFlag || lastKnownBusy;
+      if (!hasFlag) return;
+      try {
+        localStorage.removeItem(`BloxMind:interrupted:${activeSessionId}`);
+        localStorage.setItem(`BloxMind:lastKnownState:${activeSessionId}`, "idle");
+      } catch {
+        // ignore
+      }
+      setHasInterruptedFlag(false);
+      setLastKnownBusy(false);
+    }
+  }, [
+    activeSessionId,
+    statusIsIdle,
+    lastMessageHasFinalText,
+    lastMessageIsCompleted,
+    isLastMessageAborted,
+    hasInterruptedFlag,
+    lastKnownBusy,
+  ]);
 
   // ── Authoritative message sync while the agent is generating ──────────
   // The OpenCode engine (anomalyco/opencode >= 1.14.42) drops SyncEvent
@@ -127,13 +282,19 @@ function ChatMessages() {
   // parts never do, so they render as "..." / "Thinking..." and the assistant
   // response never shows. The persisted store (`session.messages()`) stays
   // authoritative, so we poll it whenever there's an active session.
-  // We also poll a bit faster while the status says "busy" or "retry",
-  // and fall back to a slower poll otherwise (covers the case where the
-  // engine doesn't emit session.status events at all).
+  //
+  // IMPORTANT: this poll is now ONLY a part hydrator. It no longer decides
+  // when the "Thinking..." indicator or the Stop button flips — completion is
+  // driven by SSE `message.updated` -> `info.time.completed` (see
+  // MessageBubble), which updates the messages cache instantly. We keep a
+  // slightly faster cadence while "busy"/"retry" so streamed parts materialize
+  // promptly, and a slower one otherwise (also covers engines that emit no
+  // session.status events at all).
   useEffect(() => {
     if (!activeSessionId) return;
-    const isActivelyGenerating = sessionStatus?.type === "busy" || sessionStatus?.type === "retry";
-    const POLL_MS = isActivelyGenerating ? 1200 : 3000;
+    const isActivelyGenerating =
+      sessionStatus?.type === "busy" || sessionStatus?.type === "retry";
+    const POLL_MS = isActivelyGenerating ? 1500 : 4000;
     const timer = window.setInterval(() => {
       void queryClient.invalidateQueries({
         queryKey: qk.messages(activeSessionId),
@@ -150,7 +311,8 @@ function ChatMessages() {
   // ── Fallback: if the last assistant message has been "Thinking..." for >10s
   // without getting any parts, force a refetch (covers dropped session.idle).
   useEffect(() => {
-    if (lastMessage?.info.role !== "assistant" || lastMessage.parts.length > 0) return;
+    if (lastMessage?.info.role !== "assistant" || lastMessage.parts.length > 0)
+      return;
     const timer = window.setTimeout(() => {
       void queryClient.invalidateQueries({
         queryKey: qk.messages(activeSessionId ?? ""),
@@ -163,7 +325,9 @@ function ChatMessages() {
   // Determine the role of every message so we know where each task ends.
   const rolesByIndex = useMemo(() => {
     if (!activeSessionId) return new Map<number, string>();
-    const cache = queryClient.getQueryData<MessagesCache>(qk.messages(activeSessionId));
+    const cache = queryClient.getQueryData<MessagesCache>(
+      qk.messages(activeSessionId),
+    );
     const roles = new Map<number, string>();
     messageIds.forEach((id, index) => {
       roles.set(index, cache?.messagesById[id]?.info.role ?? "");
@@ -180,7 +344,29 @@ function ChatMessages() {
   const virtualizer = useVirtualizer({
     count: messageIds.length,
     getScrollElement: () => containerRef.current,
-    estimateSize: () => 80,
+    estimateSize: (index) => {
+      const id = messageIds[index];
+      const cache = activeSessionId
+        ? queryClient.getQueryData<MessagesCache>(qk.messages(activeSessionId))
+        : undefined;
+      const msg = id ? cache?.messagesById[id] : undefined;
+      if (msg) {
+        const isSystem = msg.parts?.some(
+          (p) => p.type === "text" && p.text.startsWith("[SYSTEM_NOTIFICATION"),
+        );
+        if (isSystem) return 0;
+        if (isSilentContinueMessage(msg)) return 0;
+        if (isSilentContinueInProgress(msg)) {
+          const isEmptyShell = msg.parts.length === 0;
+          if (isEmptyShell) {
+            if (hasInterruptedFlag) return 0;
+          } else {
+            return 0;
+          }
+        }
+      }
+      return 80;
+    },
     overscan: 5,
   });
 
@@ -188,7 +374,8 @@ function ChatMessages() {
     const el = containerRef.current;
     if (!el) return;
     const currentScrollTop = el.scrollTop;
-    const distanceFromBottom = el.scrollHeight - currentScrollTop - el.clientHeight;
+    const distanceFromBottom =
+      el.scrollHeight - currentScrollTop - el.clientHeight;
 
     const isScrollingDown = currentScrollTop > lastScrollTop.current;
     // The user is actively scrolling up → block auto-scroll immediately so
@@ -217,14 +404,17 @@ function ChatMessages() {
     const observer = new MutationObserver((mutations) => {
       const onlyDisclosureChanges = mutations.every((mutation) => {
         const target =
-          mutation.target instanceof Element ? mutation.target : mutation.target.parentElement;
+          mutation.target instanceof Element
+            ? mutation.target
+            : mutation.target.parentElement;
         return target?.closest("[data-preserve-scroll]") !== null;
       });
       if (onlyDisclosureChanges) return;
       if (!shouldAutoScroll.current) {
         // New content landed while the user is scrolled up — make sure the
         // jump button reflects the current position.
-        const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+        const distanceFromBottom =
+          el.scrollHeight - el.scrollTop - el.clientHeight;
         setShowJumpToBottom(distanceFromBottom > SCROLL_UP_THRESHOLD_PX);
         return;
       }
@@ -235,7 +425,11 @@ function ChatMessages() {
         });
       }
     });
-    observer.observe(el, { childList: true, subtree: true, characterData: true });
+    observer.observe(el, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
     return () => {
       observer.disconnect();
       cancelAnimationFrame(rafId);
@@ -250,7 +444,8 @@ function ChatMessages() {
   }, [isBusy, todos, activeQuestion, activePermission]);
 
   const handleAnswer = useCallback(
-    (requestID: string, answers: QuestionAnswer[]) => answerQuestion.mutate({ requestID, answers }),
+    (requestID: string, answers: QuestionAnswer[]) =>
+      answerQuestion.mutate({ requestID, answers }),
     [answerQuestion],
   );
   const handleReject = useCallback(
@@ -272,17 +467,21 @@ function ChatMessages() {
               What would you like to build?
             </h2>
             <p className="mt-2 text-xs text-muted-foreground">
-              Ask me to create scripts, design game mechanics, or modify your Roblox Studio project.
+              Ask me to create scripts, design game mechanics, or modify your
+              Roblox Studio project.
             </p>
             <div className="mt-5 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-[10px] text-muted-foreground/80">
               <span className="inline-flex items-center gap-1.5">
-                <kbd className="kbd">Ctrl</kbd>+<kbd className="kbd">N</kbd> new session
+                <kbd className="kbd">Ctrl</kbd>+<kbd className="kbd">N</kbd> new
+                session
               </span>
               <span className="inline-flex items-center gap-1.5">
-                <kbd className="kbd">Ctrl</kbd>+<kbd className="kbd">E</kbd> explorer
+                <kbd className="kbd">Ctrl</kbd>+<kbd className="kbd">E</kbd>{" "}
+                explorer
               </span>
               <span className="inline-flex items-center gap-1.5">
-                <kbd className="kbd">Ctrl</kbd>+<kbd className="kbd">,</kbd> settings
+                <kbd className="kbd">Ctrl</kbd>+<kbd className="kbd">,</kbd>{" "}
+                settings
               </span>
             </div>
           </div>
@@ -317,13 +516,29 @@ function ChatMessages() {
                 // patches) from the visual feed. They remain in the session for
                 // the agent's context, but are never rendered as a message bubble.
                 const cacheMsg = activeSessionId
-                  ? queryClient.getQueryData<MessagesCache>(qk.messages(activeSessionId))
-                      ?.messagesById[msgId]
+                  ? queryClient.getQueryData<MessagesCache>(
+                      qk.messages(activeSessionId),
+                    )?.messagesById[msgId]
                   : undefined;
                 const isSystemNotification = cacheMsg?.parts?.some(
-                  (p) => p.type === "text" && p.text.startsWith("[SYSTEM_NOTIFICATION"),
+                  (p) =>
+                    p.type === "text" &&
+                    p.text.startsWith("[SYSTEM_NOTIFICATION"),
                 );
-                if (isSystemNotification) {
+                // Silent continuation prompts reach the agent but are never
+                // rendered as a visible bubble — same hidden-in-feed treatment
+                // as system notes. This also covers the streaming window where
+                // the continue-marker user message exists only as an empty shell
+                // (parts: []) or is mid-assembly via delta events: those must
+                // never produce a blank/empty bubble in the visible stream.
+                const isSilentContinue =
+                  !isSystemNotification &&
+                  cacheMsg !== undefined &&
+                  (isSilentContinueMessage(cacheMsg) ||
+                    isSilentContinueInProgress(cacheMsg) ||
+                    (cacheMsg.info.role === "user" &&
+                      cacheMsg.parts.length === 0));
+                if (isSystemNotification || isSilentContinue) {
                   return (
                     <div
                       key={msgId}
@@ -347,10 +562,10 @@ function ChatMessages() {
                 // when the user types and the role cache is briefly stale.
                 const isLastOfTask = isLastIndex || nextRole !== "assistant";
                 // Treat anything that isn't "busy" as idle so buttons persist
-                // during brief status refetches/polls where sessionStatus is
-                // momentarily undefined. Only hide controls when the agent is
-                // actively working.
-                const isTaskIdle = sessionStatus?.type !== "busy";
+                // Use latched busy so copy/retry controls don't flicker during
+                // transient idle/unknown blips. Only hide controls when the agent
+                // is actively working (latched).
+                const isTaskIdle = !isBusy;
 
                 return (
                   <div
@@ -370,6 +585,7 @@ function ChatMessages() {
                         messageId={msgId}
                         showControls={isLastOfTask && isTaskIdle}
                         isLastIndex={isLastIndex}
+                        interrupted={interrupted && isLastIndex}
                       />
                     </div>
                   </div>
@@ -386,9 +602,15 @@ function ChatMessages() {
                 />
               )}
               {activePermission && (
-                <PermissionPrompt permission={activePermission} onReply={handleReplyPermission} />
+                <PermissionPrompt
+                  permission={activePermission}
+                  onReply={handleReplyPermission}
+                />
               )}
-              <BusyThinkingIndicator status={sessionStatus} lastMessage={lastMessage} />
+              <BusyThinkingIndicator
+                status={sessionStatus}
+                lastMessage={lastMessage}
+              />
               {showContinue && (
                 <div className="flex justify-center py-2">
                   <button
@@ -422,7 +644,9 @@ function ChatMessages() {
                   action={usageAction}
                 />
               )}
-              {sessionError && !lastMessageHasError && <ModelErrorCard error={sessionError} />}
+              {sessionError && !lastMessageHasError && (
+                <ModelErrorCard error={sessionError} />
+              )}
             </div>
             <div ref={bottomRef} />
           </div>
@@ -444,3 +668,11 @@ function ChatMessages() {
 }
 
 export default ChatMessages;
+
+
+
+
+
+
+
+

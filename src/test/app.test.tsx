@@ -17,11 +17,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ThemeProvider } from "@/components/theme-provider";
 import { desktop } from "@/lib/desktop";
 import { qk } from "@/lib/queryKeys";
+import { SILENT_CONTINUE_PROMPT } from "@/lib/silentContinue";
 import { type MessagesCache, sseDispatch } from "@/lib/sseDispatch";
 import { ActiveSessionProvider } from "@/providers/ActiveSessionProvider";
 import { ExplorerReferenceProvider } from "@/providers/ExplorerReferenceProvider";
 import { OpenCodeClientContext } from "@/providers/OpenCodeClientProvider";
 import { PreferencesProvider } from "@/providers/PreferencesProvider";
+import { makeAssistantMessage, makeUserMessage } from "@/test/fixtures";
 
 // Mock react-virtual so all items render in jsdom (no viewport measurement)
 vi.mock("@tanstack/react-virtual", () => ({
@@ -798,7 +800,7 @@ describe("User journeys", () => {
     // While the agent is still generating we only show the "Thinking..."
     // placeholder — the reasoning/tool block stays hidden until the turn ends.
     await waitFor(() => {
-      expect(screen.getByText("Thinking...")).toBeInTheDocument();
+      expect(screen.getAllByText("Thinking...").length).toBeGreaterThanOrEqual(1);
     });
     expect(screen.queryByText("Thought")).not.toBeInTheDocument();
 
@@ -830,7 +832,7 @@ describe("User journeys", () => {
 
     // Still generating (no final text yet) — thinking block stays hidden.
     await waitFor(() => {
-      expect(screen.getByText("Thinking...")).toBeInTheDocument();
+      expect(screen.getAllByText("Thinking...").length).toBeGreaterThanOrEqual(1);
     });
     expect(screen.queryByText("Thought")).not.toBeInTheDocument();
 
@@ -855,6 +857,140 @@ describe("User journeys", () => {
       expect(screen.getByText("List source files")).toBeInTheDocument();
       expect(screen.getByText("$ ls -la src/")).toBeInTheDocument();
     });
+  });
+
+  it("walks a multi-step turn: Thinking holds across every step, then freezes into Thought blocks (v0.9.98 lifecycle)", async () => {
+    const session = makeSession("s1", "My Session");
+    const queryClient = createQueryClient();
+    const client = createClient({
+      get: vi.fn().mockResolvedValue({ data: session }),
+      messages: vi.fn().mockImplementation(() => {
+        const cache = queryClient.getQueryData<MessagesCache>(qk.messages("s1"));
+        const data = cache
+          ? cache.messageIds.map((id) => {
+              const m = cache.messagesById[id];
+              return { info: m.info, parts: m.parts };
+            })
+          : [];
+        return Promise.resolve({ data });
+      }),
+    });
+    seedReadyState(queryClient, { sessions: [session] });
+
+    queryClient.setQueryData<MessagesCache>(qk.messages("s1"), {
+      messageIds: [],
+      messagesById: {},
+    });
+    queryClient.setQueryData(qk.todos("s1"), []);
+    queryClient.setQueryData(qk.questions("s1"), null);
+    queryClient.setQueryData(qk.permissions("s1"), null);
+
+    render(<TestApp client={client} queryClient={queryClient} />);
+
+    await act(async () => {
+      fireEvent.click(await screen.findByText("My Session"));
+    });
+    await screen.findByRole("textbox", { name: "Message" });
+
+    const activeRef = { current: "s1" };
+    queryClient.setQueryData(qk.statuses, { s1: { type: "busy" } as never });
+
+    // Assistant message shell
+    act(() => {
+      sseDispatch(
+        queryClient,
+        {
+          type: "message.updated",
+          properties: {
+            info: {
+              id: "msg_a",
+              sessionID: "s1",
+              role: "assistant",
+              time: { created: Date.now(), updated: Date.now() },
+            },
+          },
+        } as never,
+        activeRef,
+      );
+    });
+
+    const emitPart = (part: unknown) => {
+      act(() => {
+        sseDispatch(
+          queryClient,
+          { type: "message.part.updated", properties: { part } } as never,
+          activeRef,
+        );
+      });
+    };
+
+    // Tool 1 starts: step-start, running tool.
+    emitPart({
+      id: "s1",
+      messageID: "msg_a",
+      sessionID: "s1",
+      type: "step-start",
+      time: { created: Date.now(), updated: Date.now() },
+    });
+    emitPart({
+      id: "t1",
+      messageID: "msg_a",
+      sessionID: "s1",
+      type: "tool",
+      tool: "roblox-studio",
+      state: { status: "running", input: { message: "search game tree" } },
+      time: { created: Date.now(), updated: Date.now() },
+    });
+
+    // v0.9.98 lifecycle: while the agent generates, the reasoning/tool parts
+    // are HIDDEN and only the animated "Thinking..." placeholder shows — for
+    // EVERY step, with no mid-stream Thought blocks (the two never coexist).
+    await waitFor(() => expect(screen.getAllByText("Thinking...").length).toBeGreaterThanOrEqual(1));
+    expect(screen.queryByText("Thought")).not.toBeInTheDocument();
+
+    // Tool 1 finishes (step-finish); tool 2 begins on a NEW step-start. The
+    // Thinking placeholder must persist continuously across the whole turn.
+    emitPart({
+      id: "sf1",
+      messageID: "msg_a",
+      sessionID: "s1",
+      type: "step-finish",
+      tokens: { input: 10, output: 20 },
+      time: { created: Date.now(), updated: Date.now() },
+    });
+    emitPart({
+      id: "s2",
+      messageID: "msg_a",
+      sessionID: "s1",
+      type: "step-start",
+      time: { created: Date.now(), updated: Date.now() },
+    });
+    emitPart({
+      id: "t2",
+      messageID: "msg_a",
+      sessionID: "s1",
+      type: "tool",
+      tool: "bash",
+      state: { status: "running", input: { command: "read src/main.lua" } },
+      time: { created: Date.now(), updated: Date.now() },
+    });
+
+    await waitFor(() => expect(screen.getAllByText("Thinking...").length).toBeGreaterThanOrEqual(1));
+    expect(screen.queryByText("Thought")).not.toBeInTheDocument();
+
+    // Turn settles: the Thinking placeholder disappears and ALL accumulated
+    // reasoning/tool activity freezes into the collapsible Thought block.
+    act(() => {
+      sseDispatch(
+        queryClient,
+        { type: "session.status", properties: { sessionID: "s1", status: { type: "idle" } } },
+        activeRef,
+      );
+    });
+    await waitFor(() => {
+      expect(screen.queryByText("Thinking...")).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("Thought")).toBeInTheDocument();
   });
 
   it("shows OpenCode's structured free-tier action while waiting to retry", async () => {
@@ -957,5 +1093,128 @@ describe("User journeys", () => {
     await waitFor(() => {
       expect(screen.getByText("New From CLI")).toBeInTheDocument();
     });
+  });
+
+  it("sends the continuation silently — no visible continue bubble in the stream", async () => {
+    const session = makeSession("s1", "My Session");
+    const client = createClient();
+    const qc = createQueryClient();
+    seedReadyState(qc, { sessions: [session] });
+
+    // Simulate crash/stop recovery: the interrupted marker drives the Continue
+    // button, and the engine has already persisted the silent continuation
+    // marker as a normal user message in the transcript.
+    window.localStorage.setItem("BloxMind:interrupted:s1", String(Date.now()));
+    qc.setQueryData<MessagesCache>(qk.messages("s1"), {
+      messageIds: ["u1"],
+      messagesById: {
+        u1: {
+          info: makeUserMessage({ id: "u1" }),
+          parts: [{ id: "up1", type: "text", text: SILENT_CONTINUE_PROMPT } as never],
+        },
+      },
+    });
+
+    render(<TestApp client={client} queryClient={qc} />);
+
+    fireEvent.click(await screen.findByText("My Session"));
+    await screen.findByRole("textbox", { name: "Message" });
+
+    // The marker message exists in the cache but must never render as a bubble.
+    expect(screen.queryByText(SILENT_CONTINUE_PROMPT)).not.toBeInTheDocument();
+
+    // Resuming fires the prompt to the agent…
+    fireEvent.click(screen.getByRole("button", { name: "Continue generation" }));
+    await waitFor(() => expect(client.session.promptAsync).toHaveBeenCalledOnce());
+    expect(client.session.promptAsync.mock.calls[0][0].parts[0].text).toBe(SILENT_CONTINUE_PROMPT);
+
+    // …and still nothing visible in the stream afterwards.
+    expect(screen.queryByText(SILENT_CONTINUE_PROMPT)).not.toBeInTheDocument();
+  });
+
+  it("shows the animated Thinking indicator while busy with no reasoning text (no empty Reasoning block, send disabled)", async () => {
+    const session = makeSession("s1", "My Session");
+    const client = createClient();
+    const qc = createQueryClient();
+    seedReadyState(qc, { sessions: [session] });
+
+    // Busy lifecycle (agent mid-run) where the in-flight assistant message has
+    // committed a step-start but no reasoning text yet. This must show the
+    // animated Thinking indicator — never an empty Reasoning collapsible —
+    // and keep the input locked (no Stop button; leaving mid-turn marks the
+    // session interrupted so Continue appears on the next launch).
+    qc.setQueryData(qk.statuses, { s1: { type: "busy" } as never });
+    qc.setQueryData<MessagesCache>(qk.messages("s1"), {
+      messageIds: ["m0", "m1"],
+      messagesById: {
+        m0: {
+          info: makeUserMessage({ id: "m0" }),
+          parts: [{ id: "p0", type: "text", text: "Build a part" } as never],
+        },
+        m1: {
+          info: makeAssistantMessage({ id: "m1" }),
+          parts: [{ id: "p1", type: "step-start", sessionID: "s1", messageID: "m1" } as never],
+        },
+      },
+    });
+
+    render(<TestApp client={client} queryClient={qc} />);
+
+    fireEvent.click(await screen.findByText("My Session"));
+    await screen.findByRole("textbox", { name: "Message" });
+
+    // Thinking animation is decoupled from the reasoning-text presence check.
+    expect(screen.getAllByText("Thinking...").length).toBeGreaterThan(0);
+    // No empty "Reasoning" shell for a steps-only in-flight message.
+    expect(screen.queryByText("Reasoning")).not.toBeInTheDocument();
+    // A normal active turn is NOT interrupted: no "you left" note and no
+    // Continue button while the agent is genuinely busy (regression for the
+    // false-positive that appeared after switching tabs during a task).
+    expect(screen.queryByText("You left while the agent was working")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Continue generation" })).not.toBeInTheDocument();
+    // The manual Stop action is gone while the agent works.
+    expect(screen.queryByTitle("Stop")).not.toBeInTheDocument();
+    // Send stays visible but disabled while the agent works.
+    expect(screen.getByTitle("Agent is working")).toBeDisabled();
+  });
+
+  it("replaces the live Thinking/Working strip with a paused note after reopening mid-turn", async () => {
+    const session = makeSession("s1", "My Session");
+    const client = createClient();
+    const qc = createQueryClient();
+    seedReadyState(qc, { sessions: [session] });
+
+    // Simulate reopening after closing the app mid-turn: the interrupted
+    // marker was persisted at close time, the restarted engine reports no
+    // status for the session at all, and the last assistant message never
+    // finished. The stale block must NOT show a live "Thinking..."/
+    // "Working for…" strip counting from 0m 0s.
+    window.localStorage.setItem("BloxMind:interrupted:s1", String(Date.now()));
+    qc.setQueryData<MessagesCache>(qk.messages("s1"), {
+      messageIds: ["m0", "m1"],
+      messagesById: {
+        m0: {
+          info: makeUserMessage({ id: "m0" }),
+          parts: [{ id: "p0", type: "text", text: "Build a part" } as never],
+        },
+        m1: {
+          info: makeAssistantMessage({ id: "m1" }),
+          parts: [{ id: "p1", type: "step-start", sessionID: "s1", messageID: "m1" } as never],
+        },
+      },
+    });
+
+    render(<TestApp client={client} queryClient={qc} />);
+
+    fireEvent.click(await screen.findByText("My Session"));
+    await screen.findByRole("textbox", { name: "Message" });
+
+    // No live indicators for the abandoned turn…
+    expect(screen.queryByText("Thinking...")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Working for/)).not.toBeInTheDocument();
+    // …just the static "left during the work" note…
+    expect(screen.getByText("You left while the agent was working")).toBeInTheDocument();
+    // …and the Continue button to resume.
+    expect(screen.getByRole("button", { name: "Continue generation" })).toBeInTheDocument();
   });
 });

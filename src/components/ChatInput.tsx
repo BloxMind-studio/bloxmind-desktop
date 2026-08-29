@@ -7,7 +7,6 @@ import { RojoStatusBadge } from "@/components/RojoStatusBadge";
 import { SetupRojoButton } from "@/components/SetupRojoButton";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Slider } from "@/components/ui/slider";
-import { useAbort } from "@/hooks/mutations/useAbort";
 import { useSendMessage } from "@/hooks/mutations/useSendMessage";
 import { useAgents } from "@/hooks/useAgents";
 import { useCommands } from "@/hooks/useCommands";
@@ -173,8 +172,15 @@ shadow-sm ${slideClass}`}
   );
 });
 
-// ── Send/Abort button ───────────────────────────────────────────────────
+// ── Send button ───────────────────────────────────────────────────
 
+/**
+ * Send button. While the agent is working the button stays visible but
+ * disabled — there is no manual Stop action. If the user leaves while a turn
+ * is running, the app marks the session interrupted on close and offers a
+ * "Continue" button on the next launch (see ChatMessages +
+ * OpenCodeClientProvider's close-time recovery).
+ */
 const SendButton = memo(function SendButton({
   text,
   hasAttachments,
@@ -186,63 +192,40 @@ const SendButton = memo(function SendButton({
   isBusy: boolean;
   onSend: () => void;
 }) {
-  const abort = useAbort();
-  const canSend = !isBusy;
-
   return (
-    <>
-      {isBusy ? (
-        <button
-          type="button"
-          onClick={() =>
-            abort.mutate(undefined, {
-              onError: (error) => {
-                toast.error("Couldn't stop the session", {
-                  description: error.message,
-                });
-              },
-            })
-          }
-          disabled={abort.isPending}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-red-500 text-white shadow-sm transition-colors hover:bg-red-600 disabled:opacity-50"
-          title="Stop"
-          aria-label="Stop generation"
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <rect x="4" y="4" width="16" height="16" rx="2" />
-          </svg>
-        </button>
-      ) : (
-        <button
-          type="button"
-          onClick={onSend}
-          disabled={(!text.trim() && !hasAttachments) || !canSend}
-          style={{ backgroundColor: "var(--accent)" }}
-          className="btn-primary flex h-8 w-8 shrink-0 items-center justify-center 
-rounded-xl text-background transition-colors hover:bg-hover/12 disabled:opacity-50"
-          title="Send"
-        >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <line x1="12" y1="19" x2="12" y2="5" />
-            <polyline points="5 12 12 5 19 12" />
-          </svg>
-        </button>
-      )}
-    </>
+    <button
+      type="button"
+      onClick={onSend}
+      disabled={(!text.trim() && !hasAttachments) || isBusy}
+      style={{ backgroundColor: "var(--accent)" }}
+      className="btn-primary flex h-8 w-8 shrink-0 items-center justify-center 
+rounded-xl text-background transition-colors hover:bg-hover/12 disabled:opacity-50 disabled:pointer-events-none"
+      title={isBusy ? "Agent is working" : "Send"}
+    >
+      <svg
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <line x1="12" y1="19" x2="12" y2="5" />
+        <polyline points="5 12 12 5 19 12" />
+      </svg>
+    </button>
   );
 });
 
-function ChatInput() {
+interface ChatInputProps {
+  /** Invoked when the user runs the /mcp-setup slash command (opens the native setup UI instead of prompting the agent). */
+  onOpenStudioSetup?: () => void;
+}
+
+function ChatInput({ onOpenStudioSetup }: ChatInputProps) {
   const { pendingReference, consumeReference, objects } = useExplorerReference();
   const allModels = useAllModels();
   const connectedProviders = useConnectedProviders();
@@ -561,6 +544,18 @@ function ChatInput() {
     const trimmed = editorText.trim();
     if (!trimmed && attachments.length === 0) return;
     if (isBusy) return;
+
+    // /mcp-setup opens the native Studio-setup UI directly — it is a UI
+    // command, not an agent prompt, so nothing is sent to the model.
+    if (/^\/mcp-setup\b/i.test(trimmed)) {
+      setText("");
+      setAttachments([]);
+      promptEditorRef.current?.clear();
+      failedSendRef.current = null;
+      onOpenStudioSetup?.();
+      return;
+    }
+
     const submittedText = editorText;
     const submittedAttachments = attachments;
     failedSendRef.current = {

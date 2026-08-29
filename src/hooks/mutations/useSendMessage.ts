@@ -1,12 +1,13 @@
-import type { SessionStatus } from "@opencode-ai/sdk/v2/client";
+import type { OpencodeClient, Session, SessionStatus } from "@opencode-ai/sdk/v2/client";
+import type { QueryClient } from "@tanstack/react-query";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import posthog from "posthog-js/dist/module.full.no-external.js";
-
 import {
   analyticsProperties,
   detailedAnalyticsProperties,
   errorAnalyticsProperties,
 } from "@/lib/analytics";
+import { desktop } from "@/lib/desktop";
 import { qk } from "@/lib/queryKeys";
 import { splitModelKey } from "@/lib/splitModelKey";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
@@ -32,6 +33,129 @@ interface SendMessageContext {
   sessionID: string;
   /** The session status before the mutation, used for rollback on error. */
   previousStatus: SessionStatus | undefined;
+}
+
+// ── Session auto-naming ─────────────────────────────────────────────────────
+
+/** Titles that mean "this session hasn't been named yet." */
+const DEFAULT_SESSION_TITLES = new Set(["New session", "Untitled session", "Untitled"]);
+
+/**
+ * Derive a short, human-readable session title from the user's first prompt.
+ *
+ * Heuristic (tuned for IDE-style input where a single line is the norm and
+ * multi-line pastes are common when attaching context):
+ *  - Use the first non-empty line.
+ *  - Drop surrounding whitespace, common leading tokens (e.g. `roblox`,
+ *    `build`, `fix`, `create`, `script`, `for`), and trailing shell-style
+ *    comments (` // ...`).
+ *  - Trim to 40 chars (the sidebar title is single-line and truncated
+ *    visually anyway), preserving whole words where possible.
+ *  - Strip a trailing ellipsis/period so the title reads cleanly.
+ */
+function deriveSessionTitle(text: string): string {
+  if (!text) return "New session";
+  const raw = text.split(/\r?\n/).find((l) => l.trim().length > 0) ?? text;
+  let title = raw.trim();
+  // Heuristic drop of leading action-word prefixes that inflate the title.
+  title = title.replace(
+    /^(roblox|build|fix|create|make|write|script|generate|edit|update|refactor|add|remove|delete|for\s+|to\s+|the\s+|a\s+|an\s+)/i,
+    "",
+  );
+  // Drop trailing inline comments (common in pasted prompts).
+  title = title.replace(/\s*\/\/.*$/, "");
+  title = title.trim();
+  if (!title) return "New session";
+  if (title.length > 40) {
+    title = title.slice(0, 40).trimEnd();
+    // Avoid leaving a dangling partial word.
+    const cut = title.lastIndexOf(" ");
+    if (cut > 20) title = title.slice(0, cut);
+    if (title.endsWith("…") || title.endsWith(".")) title = title.replace(/[….]+$/, "");
+  }
+  return title || "New session";
+}
+
+/** True when the cached session still holds a default/placeholder title. */
+function isDefaultTitle(title: string | undefined | null): boolean {
+  if (!title) return true;
+  return DEFAULT_SESSION_TITLES.has(title);
+}
+
+/** Empty local-message shell used when persisting only a title update. */
+const EMPTY_LOCAL_MESSAGES = {
+  messageIds: [] as string[],
+  messagesById: {} as Record<string, unknown>,
+};
+
+/**
+ * Rename a session from its first user prompt, if it still holds a default
+ * title. Server-side update is fired-and-forgotten (we optimistically apply the
+ * new title to the React Query cache immediately); any failure is logged and
+ * swallowed so it never disrupts the chat flow.
+ *
+ * The first non-empty text part of the outgoing message is used as the source
+ * of truth — images-only prompts are ignored (no sensible title can be derived).
+ */
+async function autoNameSessionFromFirstPrompt(
+  client: OpencodeClient,
+  queryClient: QueryClient,
+  sessionID: string | undefined,
+  variables: SendMessageInput,
+): Promise<void> {
+  if (!sessionID) return;
+
+  // Only act on the first text part of the message being sent.
+  const firstTextPart = variables.text;
+  if (typeof firstTextPart !== "string" || !firstTextPart.trim()) return;
+
+  // Read the cached session title *before* any rename to avoid re-running on
+  // every subsequent user message — this guard makes the effect first-prompt only.
+  const sessions = queryClient.getQueryData<Session[]>(qk.sessions);
+  const current = sessions?.find((s) => s.id === sessionID);
+
+  // Already has a real title (user-chosen or previously auto-named): skip.
+  if (!isDefaultTitle(current?.title)) return;
+
+  const newTitle = deriveSessionTitle(firstTextPart);
+  // Defensive: if derivation collapsed everything down to the fallback, and the
+  // session genuinely is still default, don't bother the server with a no-op.
+  if (isDefaultTitle(newTitle) && isDefaultTitle(current?.title)) return;
+
+  // Optimistically update the cache so the sidebar/titlebar flip instantly.
+  queryClient.setQueryData<Session[]>(qk.sessions, (prev) => {
+    if (!prev) return prev;
+    return prev.map((s) => (s.id === sessionID ? { ...s, title: newTitle } : s));
+  });
+
+  // Persist server-side + to the local transcript store. Both are best-effort.
+  try {
+    const res = await client.session.update({ sessionID, title: newTitle }, { throwOnError: true });
+    if (res.data) {
+      // Persist the new title to the local transcript store WITHOUT clobbering
+      // message history: read what's already on disk and merge. `stageSession`
+      // is last-writer-wins, so writing an empty shell here would race against
+      // useSessionPersistence and could briefly erase the first user message.
+      try {
+        const stored = await desktop.sessionStoreGet(sessionID);
+        void desktop
+          .sessionStoreSave({
+            id: sessionID,
+            title: newTitle,
+            createdAt: stored?.createdAt ?? Date.now(),
+            updatedAt: Date.now(),
+            messages: stored?.messages ?? EMPTY_LOCAL_MESSAGES,
+            metadata: stored?.metadata ?? { ...(current?.metadata ?? {}) },
+          })
+          .catch(() => undefined);
+      } catch {
+        // Local store unavailable — title still lives in the engine + cache.
+      }
+    }
+  } catch (error) {
+    // Renaming is a convenience; never let it surface to the user or block chat.
+    console.warn("[useSendMessage] auto-name session failed:", error);
+  }
 }
 
 // ── Hook ─────────────────────────────────────────────────────────────────
@@ -164,11 +288,21 @@ export function useSendMessage(options?: { onError?: (error: Error) => void }) {
       });
     },
 
-    onSuccess: (_data, _variables, context) => {
+    onSuccess: (_data, variables, context) => {
       // Ensure the user bubble appears even if the SSE `message.updated`
       // event is dropped or delayed: force a messages refetch for this session.
       if (context?.sessionID) {
         void queryClient.invalidateQueries({ queryKey: qk.messages(context.sessionID) });
+      }
+
+      // Auto-name a brand-new session whose first user prompt has just been
+      // accepted. The engine gives fresh sessions a generic title ("New
+      // session" / "Untitled"), so derive one from the prompt text and persist
+      // it server-side + to the local transcript store. This runs on the first
+      // send only (guarded by `isDefaultTitle`) and is best-effort: a failure
+      // here must never block the chat from proceeding.
+      if (client) {
+        void autoNameSessionFromFirstPrompt(client, queryClient, context?.sessionID, variables);
       }
     },
 

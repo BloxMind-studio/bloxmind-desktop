@@ -3,7 +3,10 @@ import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { KNIT_SKILL } from "../src/agent/skills/knitSkill";
+import { MCP_SETUP_SKILL } from "../src/agent/skills/mcpSetupSkill";
 import { PROFILE_SERVICE_SKILL } from "../src/agent/skills/profileServiceSkill";
+import { ROBLOX_SCRIPT_SKILL } from "../src/agent/skills/robloxScriptSkill";
+import { ROBLOX_UI_SKILL } from "../src/agent/skills/robloxUiSkill";
 
 /**
  * OpenCode-native agent skills shipped with the app. Each entry becomes a
@@ -695,6 +698,18 @@ export const AGENT_SKILLS: readonly AgentSkillFile[] = [
     relativePath: PROFILE_SERVICE_SKILL.relativePath,
     content: PROFILE_SERVICE_SKILL.content,
   },
+  {
+    relativePath: MCP_SETUP_SKILL.relativePath,
+    content: MCP_SETUP_SKILL.content,
+  },
+  {
+    relativePath: ROBLOX_SCRIPT_SKILL.relativePath,
+    content: ROBLOX_SCRIPT_SKILL.content,
+  },
+  {
+    relativePath: ROBLOX_UI_SKILL.relativePath,
+    content: ROBLOX_UI_SKILL.content,
+  },
 ];
 
 /**
@@ -747,13 +762,21 @@ const AGENTS_MD_BLOCK = `${AGENTS_MD_MARKER_BEGIN}
   before starting that kind of task. For any system built on a Roblox package,
   keep wally.toml and the default.project.json Packages mount in sync with the
   code you generate.
-- The Roblox Studio MCP also exposes assistant skills — use them alongside the
+- The Roblox Studio MCP also exposes assistant skills - use them alongside the
   playbooks: rbx-docs-search to verify an uncertain Roblox API before coding
   it, rbx-scene-analysis to understand an existing place before modifying it,
   rbx-unit-test to validate gameplay scripts you wrote, rbx-perf-profiling
   after large map builds or heavy rigs, rbx-device-simulator-lua for
   mobile/device constraints, and rbx-create-skill to capture a reusable
   workflow. Prefer the targeted playbook first, then reach for these.
+- BloxMind also ships interactive slash commands as skills: /mcp-setup
+  (connect Studio to the MCP server - Rojo plugin status, port, handshake),
+  /roblox-script (clean, type-safe Luau for src/client|server|shared), and
+  /roblox-ui (Roblox UI/UX guidance). When the user runs one of these, or asks
+  how to connect/configure/troubleshoot the Studio MCP (e.g. How do I setup
+  MCP?, or Studio won't connect), load the matching command skill and return
+  its step-by-step guide.
+
 ${AGENTS_MD_MARKER_END}`;
 
 /**
