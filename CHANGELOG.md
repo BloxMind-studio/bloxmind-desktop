@@ -5,6 +5,14 @@ All notable changes to BloxMind are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.99.9] - 2026-08-29
+
+### Fixed
+
+- Fixed update checking for the 0.99.x line (0.99.8 → 0.99.9): the updater now correctly compares `0.99.x` vs `0.9.x` numerically, respects `update-not-available`, and patch releases now show a visible `BloxMind 0.99.9 is available` toast plus background download instead of silent auto-install — `0.99.8` now correctly offers `0.99.9`.
+- Fixed the Continue flow gap (80px blank after Continue) by collapsing the hidden silent-continue marker in the virtualizer and the working-state latch (30s unknown grace) so `Thinking`/`Working for…` stays visible and Send stays disabled during long Studio calls.
+- Fixed `Continue` / `You left while the agent was working` appearing on every completed prompt: now strictly `hasInterruptedFlag` + latched idle, with natural `time.completed` + `finalText` clearing stale flags.
+
 ## [0.9.98] - 2026-08-22
 
 ### Added
@@ -339,7 +347,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - OpenCode downloads are restricted to official GitHub release assets and verified with SHA-256 digests before installation and on every cache reuse.
 - Electron runs with context isolation, renderer sandboxing, Node.js integration disabled, validated IPC payloads, and external navigation blocked.
 
-[Unreleased]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.9.9...HEAD
+[Unreleased]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.99.9...HEAD
+[0.99.9]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.9.99...v0.99.9
 [0.9.9]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.9.8...v0.9.9
 [0.9.8]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.9.5...v0.9.8
 [0.9.5]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.9.2...v0.9.5

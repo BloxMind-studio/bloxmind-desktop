@@ -115,15 +115,27 @@ describe("useUpdater", () => {
     expect(desktop.installUpdate).not.toHaveBeenCalled();
   });
 
-  it("auto-installs a strictly newer patch release without prompting", async () => {
+  it("shows update toast for a strictly newer patch release and starts background download (0.99.8 → 0.99.9)", async () => {
+    const toastSpy = toastCalls();
+    const desktop = await runUpdater({
+      current: "0.99.8",
+      update: { version: "0.99.9", body: null },
+    });
+
+    expect(toastSpy).toHaveBeenCalledTimes(1);
+    expect(desktop.installUpdate).toHaveBeenCalled();
+  });
+
+  it("auto-installs a strictly newer patch release without prompting (legacy 0.9.5 → 0.9.6)", async () => {
     const toastSpy = toastCalls();
     const desktop = await runUpdater({
       current: "0.9.5",
       update: { version: "0.9.6", body: null },
     });
 
-    expect(toastSpy).not.toHaveBeenCalled();
-    expect(desktop.installUpdate).toHaveBeenCalledTimes(1);
+    // Now also shows a toast (changed from silent) but still auto-installs
+    expect(toastSpy).toHaveBeenCalledTimes(1);
+    expect(desktop.installUpdate).toHaveBeenCalled();
   });
 
   it("does nothing when the update check reports nothing", async () => {

@@ -65,11 +65,35 @@ export function useUpdater(): void {
         const patch = isPatchOnly(current, next);
 
         if (patch) {
-          // Patch update — auto-install silently.
+          // Patch update — show toast and auto-install in background so the
+          // user actually sees the 0.99.8 → 0.99.9 bump (previously silent).
           console.debug(
-            `[updater] Auto-installing patch update ${currentVersion} → ${update.version}`,
+            `[updater] Patch update ${currentVersion} → ${update.version} — prompting + auto-install`,
           );
-          await desktop.installUpdate();
+          toast(`BloxMind ${update.version} is available`, {
+            className: "update-available-toast",
+            description: createElement(UpdateReleaseNotes, { body: update.body }),
+            duration: Number.POSITIVE_INFINITY,
+            action: {
+              label: "Install & Restart",
+              onClick: async () => {
+                const toastId = toast.loading("Installing update...");
+                try {
+                  await desktop.installUpdate();
+                } catch (err) {
+                  console.error("[updater] Failed to install update:", err);
+                  toast.dismiss(toastId);
+                  toast.error("Update failed", {
+                    description: err instanceof Error ? err.message : "Installation failed",
+                  });
+                }
+              },
+            },
+          });
+          // Best-effort background download — don't block the toast.
+          desktop.installUpdate().catch((err) => {
+            console.error("[updater] Background patch download failed:", err);
+          });
         } else {
           // Minor/major — show persistent toast requiring manual action.
           console.debug(`[updater] Prompting for update ${currentVersion} → ${update.version}`);

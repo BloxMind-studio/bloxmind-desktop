@@ -1,7 +1,7 @@
 {
   "name": "@bloxmind-studio/desktop",
   "private": true,
-  "version": "0.9.99",
+  "version": "0.99.9",
   "description": "AI-assisted Roblox development from a secure desktop app",
   "type": "module",
   "main": "dist-electron/main/main.js",
