@@ -19,21 +19,9 @@ import { QueryClient } from "@tanstack/react-query";
 import { Cause, Effect } from "effect";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { qk } from "@/lib/queryKeys";
-import {
-  type MessagesCache,
-  sseDispatch,
-  sseDispatchEffect,
-} from "@/lib/sseDispatch";
-import {
-  SILENT_CONTINUE_PROMPT,
-  isSilentContinueMessage,
-} from "@/lib/silentContinue";
-import {
-  makeAssistantMessage,
-  makeTextPart,
-  makeTodo,
-  makeUserMessage,
-} from "@/test/fixtures";
+import { isSilentContinueMessage, SILENT_CONTINUE_PROMPT } from "@/lib/silentContinue";
+import { type MessagesCache, sseDispatch, sseDispatchEffect } from "@/lib/sseDispatch";
+import { makeAssistantMessage, makeTextPart, makeTodo, makeUserMessage } from "@/test/fixtures";
 
 function makeQC() {
   return new QueryClient({
@@ -56,11 +44,7 @@ function makeSession(id: string, title: string): Session {
   };
 }
 
-function dispatch(
-  qc: QueryClient,
-  event: Partial<Event>,
-  activeSessionId: string | null = null,
-) {
+function dispatch(qc: QueryClient, event: Partial<Event>, activeSessionId: string | null = null) {
   sseDispatch(qc, event as Event, { current: activeSessionId });
 }
 
@@ -106,11 +90,7 @@ describe("sseDispatch", () => {
   it("rejects an invalid SSE envelope in the typed error channel", () => {
     const result = Effect.runSync(
       Effect.either(
-        sseDispatchEffect(
-          qc,
-          { type: "session.created", properties: null },
-          { current: null },
-        ),
+        sseDispatchEffect(qc, { type: "session.created", properties: null }, { current: null }),
       ),
     );
 
@@ -200,10 +180,7 @@ describe("sseDispatch", () => {
     });
 
     it("leaves non-matching sessions untouched", () => {
-      qc.setQueryData(qk.sessions, [
-        makeSession("s1", "One"),
-        makeSession("s2", "Two"),
-      ]);
+      qc.setQueryData(qk.sessions, [makeSession("s1", "One"), makeSession("s2", "Two")]);
 
       dispatch(qc, {
         type: "session.updated",
@@ -217,10 +194,7 @@ describe("sseDispatch", () => {
 
   describe("session.deleted", () => {
     it("removes the session from cache", () => {
-      qc.setQueryData(qk.sessions, [
-        makeSession("s1", "One"),
-        makeSession("s2", "Two"),
-      ]);
+      qc.setQueryData(qk.sessions, [makeSession("s1", "One"), makeSession("s2", "Two")]);
       qc.setQueryData(qk.statuses, {
         s1: { type: "idle" },
         s2: { type: "busy" },
@@ -281,9 +255,7 @@ describe("sseDispatch", () => {
         },
       });
 
-      const status = qc.getQueryData<Record<string, SessionStatus>>(
-        qk.statuses,
-      )?.s1;
+      const status = qc.getQueryData<Record<string, SessionStatus>>(qk.statuses)?.s1;
       expect(status).toMatchObject({
         type: "retry",
         action: { provider: "opencode", reason: "free_tier_limit" },
@@ -317,11 +289,7 @@ describe("sseDispatch", () => {
       qc.setQueryData(qk.statuses, { s1: { type: "busy" } as SessionStatus });
       qc.setQueryData(qk.messages("s1"), { messageIds: [], messagesById: {} });
 
-      dispatch(
-        qc,
-        { type: "session.idle", properties: { sessionID: "s1" } },
-        "s1",
-      );
+      dispatch(qc, { type: "session.idle", properties: { sessionID: "s1" } }, "s1");
 
       expect(qc.getQueryState(qk.messages("s1"))?.isInvalidated).toBe(true);
     });
@@ -330,11 +298,7 @@ describe("sseDispatch", () => {
       qc.setQueryData(qk.statuses, { s2: { type: "busy" } as SessionStatus });
       qc.setQueryData(qk.messages("s2"), { messageIds: [], messagesById: {} });
 
-      dispatch(
-        qc,
-        { type: "session.idle", properties: { sessionID: "s2" } },
-        "s1",
-      );
+      dispatch(qc, { type: "session.idle", properties: { sessionID: "s2" } }, "s1");
 
       expect(qc.getQueryState(qk.messages("s2"))?.isInvalidated).toBeFalsy();
     });
@@ -352,15 +316,9 @@ describe("sseDispatch", () => {
         },
       };
 
-      dispatch(
-        qc,
-        { type: "session.error", properties: { sessionID: "s1", error } },
-        "s1",
-      );
+      dispatch(qc, { type: "session.error", properties: { sessionID: "s1", error } }, "s1");
 
-      expect(
-        qc.getQueryData<Record<string, SessionStatus>>(qk.statuses)?.s1.type,
-      ).toBe("idle");
+      expect(qc.getQueryData<Record<string, SessionStatus>>(qk.statuses)?.s1.type).toBe("idle");
       expect(qc.getQueryData(qk.sessionError("s1"))).toEqual(error);
     });
 
@@ -385,11 +343,7 @@ describe("sseDispatch", () => {
     it("invalidates active-session messages so the compacted history is refreshed", () => {
       qc.setQueryData(qk.messages("s1"), { messageIds: [], messagesById: {} });
 
-      dispatch(
-        qc,
-        { type: "session.compacted", properties: { sessionID: "s1" } },
-        "s1",
-      );
+      dispatch(qc, { type: "session.compacted", properties: { sessionID: "s1" } }, "s1");
 
       expect(qc.getQueryState(qk.messages("s1"))?.isInvalidated).toBe(true);
     });
@@ -799,9 +753,7 @@ describe("sseDispatch", () => {
       });
 
       // Sanity: the partial message is recognized as in-progress
-      expect(isSilentContinueMessage(messagesCacheOf(qc).messagesById.a1)).toBe(
-        false,
-      );
+      expect(isSilentContinueMessage(messagesCacheOf(qc).messagesById.a1)).toBe(false);
 
       // Send deltas that complete the marker
       dispatch(

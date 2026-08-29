@@ -19,7 +19,7 @@ import type { MessageWithParts } from "@/types";
 /** Extract the concatenated text of a message's text parts (best effort). */
 function messageText(message: MessageWithParts): string {
   return message.parts
-    .map((part) => (part.type === "text" ? (part as { text?: string }).text ?? "" : ""))
+    .map((part) => (part.type === "text" ? ((part as { text?: string }).text ?? "") : ""))
     .join("");
 }
 
