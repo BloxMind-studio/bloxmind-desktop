@@ -16,17 +16,18 @@ export const MessageBubble = memo(function MessageBubble({
   messageId,
   showControls = false,
   isLastIndex = false,
+  interrupted: interruptedProp = false,
 }: {
   messageId: string;
   showControls?: boolean;
   isLastIndex?: boolean;
+  interrupted?: boolean;
 }) {
   const msg = useMessage(messageId);
   const [copied, setCopied] = useState(false);
   const retry = useRetryMessage();
   const { activeSessionId } = useActiveSession();
   const sessionStatus = useSessionStatus(activeSessionId);
-  // A turn is busy whenever its session status is anything but idle.
   const isBusy = sessionStatus !== undefined && sessionStatus.type !== "idle";
 
   const handleRetry = useCallback(() => {
@@ -61,7 +62,8 @@ export const MessageBubble = memo(function MessageBubble({
       p.type === "compaction",
   );
 
-  const shouldShowCopyButton = hasTextContent && !hasOnlyThinkingParts && !isUser;
+  const shouldShowCopyButton =
+    hasTextContent && !hasOnlyThinkingParts && !isUser;
 
   // The "Thinking..." placeholder should stay visible for as long as the agent
   // is still generating this assistant message — i.e. until it has produced a
@@ -69,19 +71,37 @@ export const MessageBubble = memo(function MessageBubble({
   // was wrong: the engine commits reasoning/tool parts mid-think, which cleared
   // the indicator even though the actual response wasn't ready yet.
   const hasFinalText = msg.parts.some(
-    (p) => p.type === "text" && typeof p.text === "string" && p.text.trim().length > 0,
+    (p) =>
+      p.type === "text" &&
+      typeof p.text === "string" &&
+      p.text.trim().length > 0,
   );
   const hasError =
-    "error" in msg.info && msg.info.error && msg.info.error.name !== "MessageAbortedError";
-  // A turn is "complete" once the agent produced a final text answer, errored,
-  // or the session reported idle. While it is still generating we only show the
-  // "Thinking..." placeholder and hide the reasoning/tool parts; after
-  // completion the reasoning block becomes readable — the two never coexist.
-  const isComplete = hasFinalText || hasError || sessionStatus?.type === "idle";
+    "error" in msg.info &&
+    msg.info.error &&
+    msg.info.error.name !== "MessageAbortedError";
+  const hasCompleted =
+    !!(msg.info as { time?: { completed?: unknown } })?.time?.completed;
+  // Strict interrupted check: only when the parent explicitly marks the
+  // session as interrupted (persisted flag). Do NOT derive interrupted from
+  // unfinished text — normal completions must never show the paused note or
+  // count as interrupted.
+  const interrupted = !isBusy && interruptedProp;
+  const isComplete =
+    hasFinalText || hasCompleted || hasError || sessionStatus?.type === "idle" || interrupted;
   const showThinking = !isUser && !isComplete && isLastIndex;
+  // Static note shown instead of the live indicators for the abandoned turn
+  // (the Continue button rendered below the feed resumes the agent).
+  // Requires no natural completion signal (final text OR completed time) —
+  // otherwise a tool-only natural completion would incorrectly show the
+  // "you left" block for one frame before the flag is cleared.
+  const showPausedNote =
+    !isUser && interrupted && isLastIndex && !hasFinalText && !hasCompleted && !hasError;
 
   return (
-    <div className={`animate-fade-in-up flex ${isUser ? "justify-end" : "justify-start"}`}>
+    <div
+      className={`animate-fade-in-up flex ${isUser ? "justify-end" : "justify-start"}`}
+    >
       <div
         className={`relative max-w-[85%] ${
           isUser
@@ -94,7 +114,19 @@ export const MessageBubble = memo(function MessageBubble({
         ) : (
           <div className="space-y-2">
             {showThinking && <BloxMindThinking />}
-            {showThinking && <WorkingIndicator parts={msg.parts} active={showThinking} />}
+            {showThinking && (
+              <WorkingIndicator parts={msg.parts} active={showThinking} />
+            )}
+            {showPausedNote && (
+              <div className="my-1 flex items-center gap-2 rounded-lg border border-border/60 bg-card/60 px-2.5 py-1.5 text-[12px] text-muted-foreground">
+                <span className="shrink-0 font-medium text-foreground/80">
+                  You left while the agent was working
+                </span>
+                <span className="min-w-0 flex-1 truncate text-[11px] italic text-muted-foreground/70">
+                  Press Continue to resume from where it stopped.
+                </span>
+              </div>
+            )}
             <SmartPartsRenderer parts={msg.parts} hideThinking={showThinking} />
             {"error" in msg.info &&
               msg.info.error &&
@@ -172,7 +204,14 @@ export const MessageBubble = memo(function MessageBubble({
                           strokeLinejoin="round"
                           aria-hidden="true"
                         >
-                          <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                          <rect
+                            x="9"
+                            y="9"
+                            width="13"
+                            height="13"
+                            rx="2"
+                            ry="2"
+                          />
                           <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
                         </svg>
                         <span>Copy</span>

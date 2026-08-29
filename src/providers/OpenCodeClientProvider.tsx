@@ -10,6 +10,7 @@ import { loadConfig } from "@/lib/config";
 import { desktop } from "@/lib/desktop";
 import { qk } from "@/lib/queryKeys";
 import { sseDispatch } from "@/lib/sseDispatch";
+import { latchedBusySessions } from "@/hooks/useSessionStatuses";
 import type { OpenCodeStartupProgress } from "@/types/desktop";
 
 export const SSE_RECONNECT_DELAY = 3_000;
@@ -490,6 +491,19 @@ export function OpenCodeClientProvider({
     };
   }, [ready, client, queryClient]);
 
+  // ── Leave-during-work recovery: persist interrupted markers for any session
+  // whose agent turn was still running when the app was closed, so the next
+  // launch offers the Continue button (see markBusySessionsInterrupted).
+  useEffect(() => {
+    const onPageHide = () => markBusySessionsInterrupted(queryClient);
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("beforeunload", onPageHide);
+    return () => {
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("beforeunload", onPageHide);
+    };
+  }, [queryClient]);
+
   const value = useMemo<OpenCodeClientContextValue>(
     () => ({ client, status, port, ready, initError, sseConnected, sseFailureCount }),
     [client, status, port, ready, initError, sseConnected, sseFailureCount],
@@ -518,6 +532,33 @@ export function OpenCodeClientProvider({
 // ── Pre-warm query cache with server state ──
 // Hooks have their own queryFn as fallback, but seeding the cache here
 // avoids extra round-trips on first render.
+
+/**
+ * Close-time recovery for "left while the agent was working".
+ *
+ * The engine process is killed with the app and does not persist session
+ * state, so on the next launch it can no longer report which turns were
+ * running — the server-side crash-recovery paths in `prefetchServerState`
+ * never fire for them. Instead, when the window unloads, mark every session
+ * that is still busy (per the status cache or the busy latch) as interrupted
+ * so the Continue button appears immediately after reopening (ChatMessages).
+ */
+export function markBusySessionsInterrupted(queryClient: QueryClient): void {
+  const candidates = new Set(latchedBusySessions);
+  const statuses = queryClient.getQueryData<Record<string, { type: string }>>(qk.statuses);
+  if (statuses) {
+    for (const [id, st] of Object.entries(statuses)) {
+      if (st.type !== "idle") candidates.add(id);
+    }
+  }
+  for (const id of candidates) {
+    try {
+      localStorage.setItem(`BloxMind:interrupted:${id}`, String(Date.now()));
+    } catch {
+      // ignore storage errors (e.g. private mode)
+    }
+  }
+}
 
 export async function prefetchServerState(client: OpencodeClient, queryClient: QueryClient) {
   const results = await Promise.allSettled([

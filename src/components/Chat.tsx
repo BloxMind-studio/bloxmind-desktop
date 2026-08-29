@@ -240,6 +240,11 @@ function Chat() {
     posthog.capture("$pageview", analyticsProperties("navigation", screenProperties));
   }, [appScreen]);
 
+  // Auto-open the setup wizard when the Studio MCP broker can't reach the
+  // engine. When the broker IS connected we must not block the chat — the
+  // wizard's "connected" flag below additionally requires a real discovered
+  // Studio window (list_roblox_studios), so a broker-only connection never
+  // claims success. Users can reopen the wizard any time via /mcp-setup.
   useEffect(() => {
     if (studioConnection.state === "waiting") setShowStudioSetup(true);
   }, [studioConnection.state]);
@@ -391,9 +396,21 @@ function Chat() {
         <ReconnectBanner sseConnected={sseConnected} consecutiveFailures={sseFailureCount} />
         {showStudioSetup || studioConnection.state === "waiting" ? (
           <StudioSetup
-            connected={studioConnection.state === "connected"}
-            checking={studioConnection.checking}
-            onCheck={() => studioConnection.checkAgain()}
+            // The broker's MCP registration alone can read "connected" even
+            // when no Roblox Studio window exists. When the StudioTargetProvider
+            // is mounted (the real app), only claim success if it has ALSO
+            // discovered a live Studio window via list_roblox_studios. Without
+            // the provider (tests/embedded), fall back to the MCP status.
+            connected={
+              studioConnection.state === "connected" && (studioTarget === null || hasStudioTarget)
+            }
+            checking={studioConnection.checking || (studioTarget?.refreshing ?? false)}
+            onCheck={() => {
+              studioConnection.checkAgain();
+              // Re-run real Studio discovery; the MCP status alone never
+              // changes, so without this "Check again" could not flip state.
+              void studioTarget?.discover();
+            }}
             onContinue={() => setShowStudioSetup(false)}
           />
         ) : studioConnection.state === "checking" ? (
@@ -546,7 +563,7 @@ function Chat() {
             </div>
 
             <ChatMessages />
-            <ChatInput />
+            <ChatInput onOpenStudioSetup={() => setShowStudioSetup(true)} />
           </>
         )}
 

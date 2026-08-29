@@ -50,6 +50,52 @@ describe("agent skill pack", () => {
     expect(names).toContain(".opencode/skills/roblox-knit/SKILL.md");
     expect(names).toContain(".opencode/skills/roblox-profile-service/SKILL.md");
   });
+  it("ships the /mcp-setup command skill and references session isolation", () => {
+    const skill = AGENT_SKILLS.find((s) => s.relativePath.endsWith("mcp-setup/SKILL.md"));
+    expect(skill).toBeDefined();
+    const content = skill?.content;
+    expect(content).toBeDefined();
+    expect(content).toContain("Enable Studio as MCP server");
+    expect(content).toContain("Manage MCP Servers");
+    expect(content).toContain("Assistant");
+    expect(content).toMatch(/roblox-studio/);
+    expect(content).toContain("Rojo.rbxm");
+    // New isolated-workspace standard, never the old shared root.
+    expect(content).toContain("~/BloxMind/sessions/{sessionId}/");
+    expect(content).not.toContain("~/BloxMind/\n");
+    // Trigger phrasing the agent should recognise.
+    expect(content).toMatch(/mcp-setup/);
+    expect(content).toMatch(/connect|setup|troubleshoot/i);
+    expect(content).toMatch(/port/);
+  });
+
+  it("ships the /roblox-script and /roblox-ui command skills", () => {
+    const script = AGENT_SKILLS.find((s) => s.relativePath.endsWith("roblox-script/SKILL.md"));
+    const ui = AGENT_SKILLS.find((s) => s.relativePath.endsWith("roblox-ui/SKILL.md"));
+    expect(script).toBeDefined();
+    expect(ui).toBeDefined();
+    expect(script?.content).toContain("StarterPlayerScripts");
+    expect(script?.content).toContain("ServerScriptService");
+    expect(script?.content).toContain("ReplicatedStorage");
+    expect(script?.content).toContain("Type-safe Luau");
+    expect(ui?.content).toContain("ScreenGui");
+    expect(ui?.content).toContain("UIScale");
+    expect(ui?.content).toMatch(/Roact|Fusion/);
+    expect(ui?.content).toContain("src/client");
+  });
+
+  it("registers all three slash commands as skills in AGENTS.md", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "bloxmind-skills-"));
+    tempDirectories.push(workspace);
+
+    await writeAgentsMarkdown(workspace);
+
+    const agentsMd = await readFile(join(workspace, "AGENTS.md"), "utf8");
+    expect(agentsMd).toContain("/mcp-setup");
+    expect(agentsMd).toContain("/roblox-script");
+    expect(agentsMd).toContain("/roblox-ui");
+    expect(agentsMd).toMatch(/how do i setup\s+mcp/i);
+  });
 
   it("satisfies OpenCode's frontmatter and naming contract", () => {
     for (const skill of AGENT_SKILLS) {

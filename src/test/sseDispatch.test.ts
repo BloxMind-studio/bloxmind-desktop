@@ -19,12 +19,27 @@ import { QueryClient } from "@tanstack/react-query";
 import { Cause, Effect } from "effect";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { qk } from "@/lib/queryKeys";
-import { type MessagesCache, sseDispatch, sseDispatchEffect } from "@/lib/sseDispatch";
-import { makeAssistantMessage, makeTextPart, makeTodo } from "@/test/fixtures";
+import {
+  type MessagesCache,
+  sseDispatch,
+  sseDispatchEffect,
+} from "@/lib/sseDispatch";
+import {
+  SILENT_CONTINUE_PROMPT,
+  isSilentContinueMessage,
+} from "@/lib/silentContinue";
+import {
+  makeAssistantMessage,
+  makeTextPart,
+  makeTodo,
+  makeUserMessage,
+} from "@/test/fixtures";
 
 function makeQC() {
   return new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: Infinity, staleTime: Infinity } },
+    defaultOptions: {
+      queries: { retry: false, gcTime: Infinity, staleTime: Infinity },
+    },
   });
 }
 
@@ -41,7 +56,11 @@ function makeSession(id: string, title: string): Session {
   };
 }
 
-function dispatch(qc: QueryClient, event: Partial<Event>, activeSessionId: string | null = null) {
+function dispatch(
+  qc: QueryClient,
+  event: Partial<Event>,
+  activeSessionId: string | null = null,
+) {
   sseDispatch(qc, event as Event, { current: activeSessionId });
 }
 
@@ -87,7 +106,11 @@ describe("sseDispatch", () => {
   it("rejects an invalid SSE envelope in the typed error channel", () => {
     const result = Effect.runSync(
       Effect.either(
-        sseDispatchEffect(qc, { type: "session.created", properties: null }, { current: null }),
+        sseDispatchEffect(
+          qc,
+          { type: "session.created", properties: null },
+          { current: null },
+        ),
       ),
     );
 
@@ -106,7 +129,10 @@ describe("sseDispatch", () => {
     const exit = Effect.runSyncExit(
       sseDispatchEffect(
         brokenClient,
-        { type: "session.created", properties: { info: makeSession("s1", "One") } },
+        {
+          type: "session.created",
+          properties: { info: makeSession("s1", "One") },
+        },
         { current: null },
       ),
     );
@@ -141,7 +167,10 @@ describe("sseDispatch", () => {
       const s1 = makeSession("s1", "One");
       qc.setQueryData(qk.sessions, [s1]);
 
-      dispatch(qc, { type: "session.created", properties: { sessionID: "s1", info: s1 } });
+      dispatch(qc, {
+        type: "session.created",
+        properties: { sessionID: "s1", info: s1 },
+      });
 
       expect(qc.getQueryData<Session[]>(qk.sessions)).toHaveLength(1);
     });
@@ -171,7 +200,10 @@ describe("sseDispatch", () => {
     });
 
     it("leaves non-matching sessions untouched", () => {
-      qc.setQueryData(qk.sessions, [makeSession("s1", "One"), makeSession("s2", "Two")]);
+      qc.setQueryData(qk.sessions, [
+        makeSession("s1", "One"),
+        makeSession("s2", "Two"),
+      ]);
 
       dispatch(qc, {
         type: "session.updated",
@@ -185,8 +217,14 @@ describe("sseDispatch", () => {
 
   describe("session.deleted", () => {
     it("removes the session from cache", () => {
-      qc.setQueryData(qk.sessions, [makeSession("s1", "One"), makeSession("s2", "Two")]);
-      qc.setQueryData(qk.statuses, { s1: { type: "idle" }, s2: { type: "busy" } });
+      qc.setQueryData(qk.sessions, [
+        makeSession("s1", "One"),
+        makeSession("s2", "Two"),
+      ]);
+      qc.setQueryData(qk.statuses, {
+        s1: { type: "idle" },
+        s2: { type: "busy" },
+      });
       qc.setQueryData(qk.messages("s1"), { messageIds: [], messagesById: {} });
       qc.setQueryData(qk.todos("s1"), []);
 
@@ -243,7 +281,9 @@ describe("sseDispatch", () => {
         },
       });
 
-      const status = qc.getQueryData<Record<string, SessionStatus>>(qk.statuses)?.s1;
+      const status = qc.getQueryData<Record<string, SessionStatus>>(
+        qk.statuses,
+      )?.s1;
       expect(status).toMatchObject({
         type: "retry",
         action: { provider: "opencode", reason: "free_tier_limit" },
@@ -277,7 +317,11 @@ describe("sseDispatch", () => {
       qc.setQueryData(qk.statuses, { s1: { type: "busy" } as SessionStatus });
       qc.setQueryData(qk.messages("s1"), { messageIds: [], messagesById: {} });
 
-      dispatch(qc, { type: "session.idle", properties: { sessionID: "s1" } }, "s1");
+      dispatch(
+        qc,
+        { type: "session.idle", properties: { sessionID: "s1" } },
+        "s1",
+      );
 
       expect(qc.getQueryState(qk.messages("s1"))?.isInvalidated).toBe(true);
     });
@@ -286,7 +330,11 @@ describe("sseDispatch", () => {
       qc.setQueryData(qk.statuses, { s2: { type: "busy" } as SessionStatus });
       qc.setQueryData(qk.messages("s2"), { messageIds: [], messagesById: {} });
 
-      dispatch(qc, { type: "session.idle", properties: { sessionID: "s2" } }, "s1");
+      dispatch(
+        qc,
+        { type: "session.idle", properties: { sessionID: "s2" } },
+        "s1",
+      );
 
       expect(qc.getQueryState(qk.messages("s2"))?.isInvalidated).toBeFalsy();
     });
@@ -304,9 +352,15 @@ describe("sseDispatch", () => {
         },
       };
 
-      dispatch(qc, { type: "session.error", properties: { sessionID: "s1", error } }, "s1");
+      dispatch(
+        qc,
+        { type: "session.error", properties: { sessionID: "s1", error } },
+        "s1",
+      );
 
-      expect(qc.getQueryData<Record<string, SessionStatus>>(qk.statuses)?.s1.type).toBe("idle");
+      expect(
+        qc.getQueryData<Record<string, SessionStatus>>(qk.statuses)?.s1.type,
+      ).toBe("idle");
       expect(qc.getQueryData(qk.sessionError("s1"))).toEqual(error);
     });
 
@@ -331,7 +385,11 @@ describe("sseDispatch", () => {
     it("invalidates active-session messages so the compacted history is refreshed", () => {
       qc.setQueryData(qk.messages("s1"), { messageIds: [], messagesById: {} });
 
-      dispatch(qc, { type: "session.compacted", properties: { sessionID: "s1" } }, "s1");
+      dispatch(
+        qc,
+        { type: "session.compacted", properties: { sessionID: "s1" } },
+        "s1",
+      );
 
       expect(qc.getQueryState(qk.messages("s1"))?.isInvalidated).toBe(true);
     });
@@ -385,7 +443,10 @@ describe("sseDispatch", () => {
     });
 
     it("adds a new message to the cache", () => {
-      qc.setQueryData<MessagesCache>(qk.messages("s1"), { messageIds: [], messagesById: {} });
+      qc.setQueryData<MessagesCache>(qk.messages("s1"), {
+        messageIds: [],
+        messagesById: {},
+      });
 
       dispatch(
         qc,
@@ -440,7 +501,10 @@ describe("sseDispatch", () => {
     });
 
     it("ignores messages for a different session", () => {
-      qc.setQueryData<MessagesCache>(qk.messages("s1"), { messageIds: [], messagesById: {} });
+      qc.setQueryData<MessagesCache>(qk.messages("s1"), {
+        messageIds: [],
+        messagesById: {},
+      });
 
       dispatch(
         qc,
@@ -480,7 +544,9 @@ describe("sseDispatch", () => {
     it("appends a new part to an existing message", () => {
       qc.setQueryData<MessagesCache>(qk.messages("s1"), {
         messageIds: ["m1"],
-        messagesById: { m1: { info: makeAssistantMessage({ id: "m1" }), parts: [] } },
+        messagesById: {
+          m1: { info: makeAssistantMessage({ id: "m1" }), parts: [] },
+        },
       });
 
       dispatch(
@@ -599,7 +665,9 @@ describe("sseDispatch", () => {
     it("ignores delta when part is not found", () => {
       qc.setQueryData<MessagesCache>(qk.messages("s1"), {
         messageIds: ["m1"],
-        messagesById: { m1: { info: makeAssistantMessage({ id: "m1" }), parts: [] } },
+        messagesById: {
+          m1: { info: makeAssistantMessage({ id: "m1" }), parts: [] },
+        },
       });
 
       dispatch(
@@ -634,7 +702,10 @@ describe("sseDispatch", () => {
 
       dispatch(
         qc,
-        { type: "message.removed", properties: { sessionID: "s1", messageID: "m1" } },
+        {
+          type: "message.removed",
+          properties: { sessionID: "s1", messageID: "m1" },
+        },
         "s1",
       );
 
@@ -671,6 +742,89 @@ describe("sseDispatch", () => {
     });
   });
 
+  // ── Silent-continue purge ────────────────────────────────────────────
+
+  describe("silent-continue message purge", () => {
+    it("purges a silent-continue user message when its marker part arrives", () => {
+      qc.setQueryData<MessagesCache>(qk.messages("s1"), {
+        messageIds: ["a1", "m1"],
+        messagesById: {
+          a1: {
+            info: makeUserMessage({ id: "a1" }),
+            parts: [], // empty shell before the marker text part arrives
+          },
+          m1: {
+            info: makeAssistantMessage({ id: "m1" }),
+            parts: [makeTextPart({ id: "p1", text: "done" })],
+          },
+        },
+      });
+
+      dispatch(
+        qc,
+        {
+          type: "message.part.updated",
+          properties: {
+            sessionID: "s1",
+            part: makeTextPart({
+              id: "marker-p1",
+              messageID: "a1", // must match the message in the cache
+              text: SILENT_CONTINUE_PROMPT,
+            }),
+            time: 0,
+          },
+        },
+        "s1",
+      );
+
+      const cache = messagesCacheOf(qc);
+      expect(cache.messageIds).toEqual(["m1"]);
+      expect(cache.messagesById.a1).toBeUndefined();
+    });
+
+    it("purges a silently-continuing user message as deltas complete its marker text", () => {
+      const prefix = SILENT_CONTINUE_PROMPT.slice(0, 10); // "Continue g"
+      qc.setQueryData<MessagesCache>(qk.messages("s1"), {
+        messageIds: ["a1", "m1"],
+        messagesById: {
+          a1: {
+            info: makeUserMessage({ id: "a1" }),
+            parts: [makeTextPart({ id: "marker-p1", text: prefix })],
+          },
+          m1: {
+            info: makeAssistantMessage({ id: "m1" }),
+            parts: [],
+          },
+        },
+      });
+
+      // Sanity: the partial message is recognized as in-progress
+      expect(isSilentContinueMessage(messagesCacheOf(qc).messagesById.a1)).toBe(
+        false,
+      );
+
+      // Send deltas that complete the marker
+      dispatch(
+        qc,
+        {
+          type: "message.part.delta",
+          properties: {
+            sessionID: "s1",
+            messageID: "a1",
+            partID: "marker-p1",
+            field: "text",
+            delta: SILENT_CONTINUE_PROMPT.slice(prefix.length),
+          },
+        },
+        "s1",
+      );
+
+      const cache = messagesCacheOf(qc);
+      expect(cache.messageIds).toEqual(["m1"]);
+      expect(cache.messagesById.a1).toBeUndefined();
+    });
+  });
+
   // ── Todo events ────────────────────────────────────────────────────
 
   describe("todo.updated", () => {
@@ -680,7 +834,10 @@ describe("sseDispatch", () => {
 
       dispatch(
         qc,
-        { type: "todo.updated", properties: { sessionID: "s1", todos: newTodos } },
+        {
+          type: "todo.updated",
+          properties: { sessionID: "s1", todos: newTodos },
+        },
         "s1",
       );
 
@@ -692,7 +849,10 @@ describe("sseDispatch", () => {
 
       dispatch(
         qc,
-        { type: "todo.updated", properties: { sessionID: "s2", todos: [makeTodo()] } },
+        {
+          type: "todo.updated",
+          properties: { sessionID: "s2", todos: [makeTodo()] },
+        },
         "s1",
       );
 

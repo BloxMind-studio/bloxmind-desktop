@@ -677,6 +677,28 @@ code, pre, kbd, samp {
   font-weight: 600;
   font-size: 12.5px;
   padding: 6px 14px;
+}
+
+/* ── Studio setup: animated cursor ─────────────────────────────── */
+.studio-screenshot {
+  position: relative;
+}
+.studio-screenshot-cursor {
+  position: absolute;
+  will-change: transform;
+  animation: studio-cursor-click 3.2s ease-in-out infinite;
+}
+@keyframes studio-cursor-click {
+  0%   { transform: scale(1) rotate(0deg); opacity: 0.9; }
+  5%   { opacity: 1; }
+  25%  { transform: scale(0.78) scaleX(1.15) rotate(-3deg); }
+  50%  { transform: scale(1) rotate(0deg); }
+  55%  { opacity: 1; }
+  75%  { transform: scale(0.78) scaleX(1.15) rotate(3deg); }
+}
+
+/* Toast action button hover */
+[data-sonner-toaster] [data-sonner-toast] [data-button]:hover {
   border-radius: 7px;
   background: var(--primary);
   color: var(--primary-foreground);

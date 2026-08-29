@@ -422,7 +422,8 @@ const RobloxInstanceCard = memo(function RobloxInstanceCard({
           )}
 
           {/* ── Reasoning accordion ──────────────────────────────────── */}
-          {reasoning && (
+          {/* Strict trim guard so empty/whitespace reasoning can't render an empty section */}
+          {reasoning?.trim() && (
             <div className="border-t border-border/30 px-2.5 py-1">
               <button
                 type="button"

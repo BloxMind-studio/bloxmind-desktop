@@ -134,6 +134,34 @@ export function createOpenCodeConfig(broker: { url: string; token: string }) {
     skills: {
       paths: [".opencode/skills"],
     },
+    // Slash commands surfaced in the chat "/" picker (client.command.list(),
+    // source: "command"). Each one inserts its marker into the prompt; the
+    // agent then loads the matching app-shipped skill and walks the user
+    // through it. Registered here (not just as SKILL.md files) so they appear
+    // deterministically without depending on server skill discovery timing.
+    command: {
+      "mcp-setup": {
+        description:
+          "Connect Roblox Studio to BloxMind's MCP server - step-by-step guide (Rojo plugin, port, handshake).",
+        agent: "studio",
+        template:
+          "The user wants to connect or troubleshoot the Roblox Studio MCP link. Load the mcp-setup skill and walk them through its step-by-step connection guide (enable Studio as MCP server, verify the broker/port, Rojo plugin status). Use ~/BloxMind/sessions/{sessionId}/ for all work.",
+      },
+      "roblox-script": {
+        description:
+          "Generate a clean, type-safe Luau script/system for src/client, src/server, or src/shared.",
+        agent: "studio",
+        template:
+          "The user wants a Roblox script or system. Load the roblox-script skill and generate clean, type-safe Luau mapped to the correct tree (src/client to StarterPlayerScripts, src/server to ServerScriptService, src/shared to ReplicatedStorage) in ~/BloxMind/sessions/{sessionId}/.",
+      },
+      "roblox-ui": {
+        description:
+          "Build Roblox UI - responsive ScreenGui layout or programmatic Roact/Fusion components.",
+        agent: "studio",
+        template:
+          "The user wants Roblox UI (menu, HUD, dashboard, or screen). Load the roblox-ui skill and build a responsive, performant UI (standard ScreenGui or Roact/Fusion-style components) under src/client in ~/BloxMind/sessions/{sessionId}/.",
+      },
+    },
     agent: {
       studio: {
         mode: "primary",

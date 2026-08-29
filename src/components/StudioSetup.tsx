@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
+import { toast } from "sonner";
 
 import findMcpImage from "@/assets/studio-setup/find-mcp.jpg";
 import flipSwitchImage from "@/assets/studio-setup/flip-switch.jpg";
@@ -11,24 +13,32 @@ const STEPS = [
     description: "Open any place in Roblox Studio.",
     image: openPlaceImage,
     alt: "The Baseplate template on the Roblox Studio home screen",
+    cursorX: 360,
+    cursorY: 320,
   },
   {
     title: "Assistant",
     description: "Click Assistant in the top-right corner.",
     image: openAssistantImage,
     alt: "An open Roblox Studio place with the Assistant button in the top-right corner",
+    cursorX: 780,
+    cursorY: 180,
   },
   {
     title: "Manage MCP Servers",
     description: "Open the ••• menu, then click Manage MCP Servers.",
     image: findMcpImage,
     alt: "The Roblox Studio Assistant menu with Manage MCP Servers selected",
+    cursorX: 220,
+    cursorY: 400,
   },
   {
     title: "Enable Studio as MCP server",
     description: "Turn on Enable Studio as MCP server.",
     image: flipSwitchImage,
     alt: "Roblox Studio Assistant Settings with Enable Studio as MCP server turned on",
+    cursorX: 420,
+    cursorY: 240,
   },
 ] as const;
 
@@ -113,7 +123,13 @@ function StudioSetup({ connected, checking, onCheck, onContinue }: StudioSetupPr
             </div>
           </div>
 
-          <StudioScreenshot step={stepIndex} image={step.image} alt={step.alt} />
+          <StudioScreenshot
+            step={stepIndex}
+            image={step.image}
+            alt={step.alt}
+            cursorX={step.cursorX}
+            cursorY={step.cursorY}
+          />
 
           <div className="flex items-center justify-between gap-4 border-t px-5 py-3.5">
             <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
@@ -183,13 +199,59 @@ function StudioSetup({ connected, checking, onCheck, onContinue }: StudioSetupPr
   );
 }
 
-function StudioScreenshot({ step, image, alt }: { step: number; image: string; alt: string }) {
+function StudioScreenshot({
+  step,
+  image,
+  alt,
+  cursorX,
+  cursorY,
+}: {
+  step: number;
+  image: string;
+  alt: string;
+  cursorX: number;
+  cursorY: number;
+}) {
+  const isDev = import.meta.env.DEV;
+  const screenshotRef = useRef<HTMLDivElement | null>(null);
+
+  // Dev-only calibration: click anywhere on the screenshot to copy the exact
+  // cursorX/cursorY for this step to the clipboard, ready to paste into STEPS.
+  // Attached via ref/addEventListener so production keeps zero interactive
+  // surface on the static screenshot.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const node = screenshotRef.current;
+    if (!node) return;
+    const onClick = (event: MouseEvent) => {
+      const rect = node.getBoundingClientRect();
+      const x = Math.round(event.clientX - rect.left);
+      const y = Math.round(event.clientY - rect.top);
+      const snippet = `cursorX: ${x},\n    cursorY: ${y},`;
+      navigator.clipboard
+        ?.writeText(snippet)
+        .then(() => toast.success(`Step ${step + 1}: copied ${x}, ${y} — paste into STEPS`))
+        .catch(() => toast.info(`Step ${step + 1} cursor: ${x}, ${y}`));
+    };
+    node.addEventListener("click", onClick);
+    return () => node.removeEventListener("click", onClick);
+  }, [step]);
+
   return (
-    <div className={`studio-screenshot studio-screenshot--${step}`}>
+    <div
+      ref={screenshotRef}
+      className={`studio-screenshot studio-screenshot--${step}${isDev ? " cursor-crosshair" : ""}`}
+      title={isDev ? "Click to copy the cursor hotspot coordinates" : undefined}
+    >
       <div key={image} className="studio-screenshot-camera">
         <img src={image} alt={alt} />
       </div>
-      <span key={`cursor-${image}`} className="studio-screenshot-cursor" aria-hidden="true">
+      <span
+        key={`cursor-${step}`}
+        className="studio-screenshot-cursor"
+        style={{ left: cursorX, top: cursorY }}
+        aria-hidden="true"
+      >
         <i />
         <svg width="22" height="26" viewBox="0 0 22 26" fill="none" aria-hidden="true">
           <path

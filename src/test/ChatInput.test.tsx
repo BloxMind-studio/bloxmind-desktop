@@ -2,7 +2,7 @@
  * Component tests for ChatInput.
  *
  * Tests message submission, image attachment validation,
- * model selection, and send/abort button states.
+ * model selection, and send button states.
  */
 
 import type { Session, SessionStatus } from "@opencode-ai/sdk/v2/client";
@@ -124,11 +124,13 @@ function TestChatInput({
   queryClient,
   sessionId = "s1",
   clientStatus = "ready",
+  onOpenStudioSetup,
 }: {
   client: ReturnType<typeof createClient>;
   queryClient: QueryClient;
   sessionId?: string;
   clientStatus?: string;
+  onOpenStudioSetup?: () => void;
 }) {
   const activeSessionIdRef = useRef<string | null>(sessionId);
   useEffect(() => {
@@ -161,7 +163,7 @@ function TestChatInput({
           >
             <PreferencesProvider>
               <ExplorerReferenceProvider>
-                <ChatInput />
+                <ChatInput onOpenStudioSetup={onOpenStudioSetup} />
                 <Toaster />
               </ExplorerReferenceProvider>
             </PreferencesProvider>
@@ -206,6 +208,56 @@ describe("ChatInput", () => {
     const args = client.session.promptAsync.mock.calls[0][0];
     expect(args.parts[0].text).toBe("Build a game");
     expect(args.sessionID).toBe("s1");
+  });
+
+  it("opens the native setup UI on /mcp-setup instead of prompting the agent", async () => {
+    const client = createClient();
+    const qc = createQueryClient();
+    const onOpenStudioSetup = vi.fn();
+
+    render(
+      <TestChatInput client={client} queryClient={qc} onOpenStudioSetup={onOpenStudioSetup} />,
+    );
+
+    const textarea = await screen.findByRole("textbox", { name: "Message" });
+
+    await act(async () => {
+      fireEvent.input(textarea, { target: { textContent: "/mcp-setup" } });
+    });
+
+    const sendBtn = screen.getByTitle("Send");
+    await act(async () => {
+      fireEvent.click(sendBtn);
+    });
+
+    // The command must open the UI and never reach the model.
+    expect(onOpenStudioSetup).toHaveBeenCalledTimes(1);
+    expect(client.session.promptAsync).not.toHaveBeenCalled();
+    // Input is cleared after the command runs.
+    expect(screen.getByRole("textbox", { name: "Message" }).textContent).toBe("");
+  });
+
+  it("never sends /mcp-setup to the agent even when no setup handler is wired", async () => {
+    const client = createClient();
+    const qc = createQueryClient();
+
+    render(<TestChatInput client={client} queryClient={qc} />);
+
+    const textarea = await screen.findByRole("textbox", { name: "Message" });
+
+    await act(async () => {
+      fireEvent.input(textarea, { target: { textContent: "/mcp-setup" } });
+    });
+
+    const sendBtn = screen.getByTitle("Send");
+    await act(async () => {
+      fireEvent.click(sendBtn);
+    });
+
+    // The command is a UI-only action: without a wired handler it is a safe
+    // no-op, but it must still never reach the model.
+    expect(client.session.promptAsync).not.toHaveBeenCalled();
+    expect(screen.getByRole("textbox", { name: "Message" }).textContent).toBe("");
   });
 
   it("sends message on Enter key (without Shift)", async () => {
@@ -346,7 +398,7 @@ describe("ChatInput", () => {
     expect(client.session.promptAsync).not.toHaveBeenCalled();
   });
 
-  it("shows Stop button when session is busy", async () => {
+  it("disables the Send button while the session is busy (no Stop button)", async () => {
     const client = createClient();
     const qc = createQueryClient();
 
@@ -357,30 +409,15 @@ describe("ChatInput", () => {
       qc.setQueryData(qk.statuses, { s1: { type: "busy" } as SessionStatus });
     });
 
+    // The manual Stop action is gone: no Stop button may exist while the
+    // agent works. Leaving mid-turn marks the session interrupted and the
+    // Continue button appears on the next launch instead.
     await waitFor(() => {
-      expect(screen.getByTitle("Stop")).toBeInTheDocument();
+      expect(screen.queryByTitle("Stop")).not.toBeInTheDocument();
     });
-  });
-
-  it("marks a successfully aborted session idle without refetching", async () => {
-    const client = createClient();
-    const qc = createQueryClient();
-
-    render(<TestChatInput client={client} queryClient={qc} />);
-
-    act(() => {
-      qc.setQueryData(qk.statuses, { s1: { type: "busy" } as SessionStatus });
-    });
-
-    const stopButton = await screen.findByTitle("Stop");
-    await act(async () => {
-      fireEvent.click(stopButton);
-    });
-
-    await waitFor(() => {
-      expect(qc.getQueryData<Record<string, SessionStatus>>(qk.statuses)?.s1.type).toBe("idle");
-    });
-    expect(client.session.abort).toHaveBeenCalledWith({ sessionID: "s1" }, { throwOnError: true });
+    const sendButton = screen.getByTitle("Agent is working") as HTMLButtonElement;
+    expect(sendButton).toBeDisabled();
+    expect(client.session.abort).not.toHaveBeenCalled();
   });
 
   it("does not send when session is busy", async () => {
