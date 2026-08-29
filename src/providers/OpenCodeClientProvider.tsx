@@ -4,13 +4,13 @@ import posthog from "posthog-js/dist/module.full.no-external.js";
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import LoadingScreen, { type StartupProgress } from "@/components/LoadingScreen";
+import { latchedBusySessions } from "@/hooks/useSessionStatuses";
 import { captureDetailedAnalytics } from "@/lib/analytics";
 import { resolveDesktopEndpoint } from "@/lib/apiConfig";
 import { loadConfig } from "@/lib/config";
 import { desktop } from "@/lib/desktop";
 import { qk } from "@/lib/queryKeys";
 import { sseDispatch } from "@/lib/sseDispatch";
-import { latchedBusySessions } from "@/hooks/useSessionStatuses";
 import type { OpenCodeStartupProgress } from "@/types/desktop";
 
 export const SSE_RECONNECT_DELAY = 3_000;

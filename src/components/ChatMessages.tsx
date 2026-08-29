@@ -9,10 +9,7 @@ import { MessageBubble } from "@/components/chat/MessageBubble";
 import { PermissionPrompt, QuestionPrompt } from "@/components/chat/Prompts";
 import { BusyThinkingIndicator } from "@/components/chat/ThinkingIndicator";
 import { TodoPanel } from "@/components/chat/TodoPanel";
-import {
-  useAnswerQuestion,
-  useRejectQuestion,
-} from "@/hooks/mutations/useAnswerQuestion";
+import { useAnswerQuestion, useRejectQuestion } from "@/hooks/mutations/useAnswerQuestion";
 import { useReplyPermission } from "@/hooks/mutations/useReplyPermission";
 import { useSendMessage } from "@/hooks/mutations/useSendMessage";
 import { useMessage, useMessageIds } from "@/hooks/useMessages";
@@ -74,9 +71,7 @@ function ChatMessages() {
     }
     const check = () => {
       try {
-        const flag = localStorage.getItem(
-          `BloxMind:interrupted:${activeSessionId}`,
-        );
+        const flag = localStorage.getItem(`BloxMind:interrupted:${activeSessionId}`);
         setHasInterruptedFlag(!!flag);
       } catch {
         setHasInterruptedFlag(false);
@@ -94,8 +89,7 @@ function ChatMessages() {
     };
   }, [activeSessionId]);
   const isLastMessageAborted =
-    (lastMessage?.info as { error?: { name?: string } })?.error?.name ===
-    "MessageAbortedError";
+    (lastMessage?.info as { error?: { name?: string } })?.error?.name === "MessageAbortedError";
   // Detect a turn that was abandoned by closing the app while the agent was
   // still working. The engine process is killed with the app and never sends a
   // status for the session again, so `sessionStatus`/`hasInterruptedFlag` may
@@ -108,8 +102,8 @@ function ChatMessages() {
       typeof (p as { text?: unknown }).text === "string" &&
       (p as { text: string }).text.trim().length > 0,
   );
-  const lastMessageIsCompleted =
-    !!(lastMessage?.info as { time?: { completed?: unknown } })?.time?.completed;
+  const lastMessageIsCompleted = !!(lastMessage?.info as { time?: { completed?: unknown } })?.time
+    ?.completed;
   // ── Persistent last-known-state detection (close-mid-turn) ──────────────
   // While the agent works we continuously persist `busy` for the session, and
   // flip it to `idle` only when the engine explicitly reports an idle status.
@@ -169,7 +163,7 @@ function ChatMessages() {
     } catch {
       setLastKnownBusy(false);
     }
-  }, [activeSessionId, isBusy, statusIsIdle, statusUnknownSettled]);
+  }, [activeSessionId, rawBusy, statusIsIdle, statusUnknownSettled]);
 
   // Strict Continue visibility: ONLY when explicitly interrupted
   // (persisted `BloxMind:interrupted:*` flag) AND session is idle waiting.
@@ -252,7 +246,8 @@ function ChatMessages() {
   // undefined on reopen) keeps its flag until the user explicitly continues.
   useEffect(() => {
     if (!activeSessionId) return;
-    const naturallyCompleted = (lastMessageHasFinalText || lastMessageIsCompleted) && !isLastMessageAborted;
+    const naturallyCompleted =
+      (lastMessageHasFinalText || lastMessageIsCompleted) && !isLastMessageAborted;
     if (statusIsIdle && naturallyCompleted) {
       const hasFlag = hasInterruptedFlag || lastKnownBusy;
       if (!hasFlag) return;
@@ -292,8 +287,7 @@ function ChatMessages() {
   // session.status events at all).
   useEffect(() => {
     if (!activeSessionId) return;
-    const isActivelyGenerating =
-      sessionStatus?.type === "busy" || sessionStatus?.type === "retry";
+    const isActivelyGenerating = sessionStatus?.type === "busy" || sessionStatus?.type === "retry";
     const POLL_MS = isActivelyGenerating ? 1500 : 4000;
     const timer = window.setInterval(() => {
       void queryClient.invalidateQueries({
@@ -311,8 +305,7 @@ function ChatMessages() {
   // ── Fallback: if the last assistant message has been "Thinking..." for >10s
   // without getting any parts, force a refetch (covers dropped session.idle).
   useEffect(() => {
-    if (lastMessage?.info.role !== "assistant" || lastMessage.parts.length > 0)
-      return;
+    if (lastMessage?.info.role !== "assistant" || lastMessage.parts.length > 0) return;
     const timer = window.setTimeout(() => {
       void queryClient.invalidateQueries({
         queryKey: qk.messages(activeSessionId ?? ""),
@@ -325,9 +318,7 @@ function ChatMessages() {
   // Determine the role of every message so we know where each task ends.
   const rolesByIndex = useMemo(() => {
     if (!activeSessionId) return new Map<number, string>();
-    const cache = queryClient.getQueryData<MessagesCache>(
-      qk.messages(activeSessionId),
-    );
+    const cache = queryClient.getQueryData<MessagesCache>(qk.messages(activeSessionId));
     const roles = new Map<number, string>();
     messageIds.forEach((id, index) => {
       roles.set(index, cache?.messagesById[id]?.info.role ?? "");
@@ -374,8 +365,7 @@ function ChatMessages() {
     const el = containerRef.current;
     if (!el) return;
     const currentScrollTop = el.scrollTop;
-    const distanceFromBottom =
-      el.scrollHeight - currentScrollTop - el.clientHeight;
+    const distanceFromBottom = el.scrollHeight - currentScrollTop - el.clientHeight;
 
     const isScrollingDown = currentScrollTop > lastScrollTop.current;
     // The user is actively scrolling up → block auto-scroll immediately so
@@ -404,17 +394,14 @@ function ChatMessages() {
     const observer = new MutationObserver((mutations) => {
       const onlyDisclosureChanges = mutations.every((mutation) => {
         const target =
-          mutation.target instanceof Element
-            ? mutation.target
-            : mutation.target.parentElement;
+          mutation.target instanceof Element ? mutation.target : mutation.target.parentElement;
         return target?.closest("[data-preserve-scroll]") !== null;
       });
       if (onlyDisclosureChanges) return;
       if (!shouldAutoScroll.current) {
         // New content landed while the user is scrolled up — make sure the
         // jump button reflects the current position.
-        const distanceFromBottom =
-          el.scrollHeight - el.scrollTop - el.clientHeight;
+        const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
         setShowJumpToBottom(distanceFromBottom > SCROLL_UP_THRESHOLD_PX);
         return;
       }
@@ -444,8 +431,7 @@ function ChatMessages() {
   }, [isBusy, todos, activeQuestion, activePermission]);
 
   const handleAnswer = useCallback(
-    (requestID: string, answers: QuestionAnswer[]) =>
-      answerQuestion.mutate({ requestID, answers }),
+    (requestID: string, answers: QuestionAnswer[]) => answerQuestion.mutate({ requestID, answers }),
     [answerQuestion],
   );
   const handleReject = useCallback(
@@ -467,21 +453,17 @@ function ChatMessages() {
               What would you like to build?
             </h2>
             <p className="mt-2 text-xs text-muted-foreground">
-              Ask me to create scripts, design game mechanics, or modify your
-              Roblox Studio project.
+              Ask me to create scripts, design game mechanics, or modify your Roblox Studio project.
             </p>
             <div className="mt-5 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-[10px] text-muted-foreground/80">
               <span className="inline-flex items-center gap-1.5">
-                <kbd className="kbd">Ctrl</kbd>+<kbd className="kbd">N</kbd> new
-                session
+                <kbd className="kbd">Ctrl</kbd>+<kbd className="kbd">N</kbd> new session
               </span>
               <span className="inline-flex items-center gap-1.5">
-                <kbd className="kbd">Ctrl</kbd>+<kbd className="kbd">E</kbd>{" "}
-                explorer
+                <kbd className="kbd">Ctrl</kbd>+<kbd className="kbd">E</kbd> explorer
               </span>
               <span className="inline-flex items-center gap-1.5">
-                <kbd className="kbd">Ctrl</kbd>+<kbd className="kbd">,</kbd>{" "}
-                settings
+                <kbd className="kbd">Ctrl</kbd>+<kbd className="kbd">,</kbd> settings
               </span>
             </div>
           </div>
@@ -516,14 +498,11 @@ function ChatMessages() {
                 // patches) from the visual feed. They remain in the session for
                 // the agent's context, but are never rendered as a message bubble.
                 const cacheMsg = activeSessionId
-                  ? queryClient.getQueryData<MessagesCache>(
-                      qk.messages(activeSessionId),
-                    )?.messagesById[msgId]
+                  ? queryClient.getQueryData<MessagesCache>(qk.messages(activeSessionId))
+                      ?.messagesById[msgId]
                   : undefined;
                 const isSystemNotification = cacheMsg?.parts?.some(
-                  (p) =>
-                    p.type === "text" &&
-                    p.text.startsWith("[SYSTEM_NOTIFICATION"),
+                  (p) => p.type === "text" && p.text.startsWith("[SYSTEM_NOTIFICATION"),
                 );
                 // Silent continuation prompts reach the agent but are never
                 // rendered as a visible bubble — same hidden-in-feed treatment
@@ -536,8 +515,7 @@ function ChatMessages() {
                   cacheMsg !== undefined &&
                   (isSilentContinueMessage(cacheMsg) ||
                     isSilentContinueInProgress(cacheMsg) ||
-                    (cacheMsg.info.role === "user" &&
-                      cacheMsg.parts.length === 0));
+                    (cacheMsg.info.role === "user" && cacheMsg.parts.length === 0));
                 if (isSystemNotification || isSilentContinue) {
                   return (
                     <div
@@ -602,15 +580,9 @@ function ChatMessages() {
                 />
               )}
               {activePermission && (
-                <PermissionPrompt
-                  permission={activePermission}
-                  onReply={handleReplyPermission}
-                />
+                <PermissionPrompt permission={activePermission} onReply={handleReplyPermission} />
               )}
-              <BusyThinkingIndicator
-                status={sessionStatus}
-                lastMessage={lastMessage}
-              />
+              <BusyThinkingIndicator status={sessionStatus} lastMessage={lastMessage} />
               {showContinue && (
                 <div className="flex justify-center py-2">
                   <button
@@ -644,9 +616,7 @@ function ChatMessages() {
                   action={usageAction}
                 />
               )}
-              {sessionError && !lastMessageHasError && (
-                <ModelErrorCard error={sessionError} />
-              )}
+              {sessionError && !lastMessageHasError && <ModelErrorCard error={sessionError} />}
             </div>
             <div ref={bottomRef} />
           </div>
@@ -668,11 +638,3 @@ function ChatMessages() {
 }
 
 export default ChatMessages;
-
-
-
-
-
-
-
-

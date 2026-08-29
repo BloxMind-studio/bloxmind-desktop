@@ -58,8 +58,8 @@ export function latestActivity(parts: readonly Part[] | undefined): {
     const tail = reasoningTail(reasoning.text);
     if (tail) {
       const epoch =
-        typeof (reasoning as unknown as { time?: { updated?: number; created?: number } }).time?.updated ===
-        "number"
+        typeof (reasoning as unknown as { time?: { updated?: number; created?: number } }).time
+          ?.updated === "number"
           ? (reasoning as unknown as { time: { updated: number } }).time.updated
           : Date.now();
       return { line: tail, epoch };
@@ -69,8 +69,8 @@ export function latestActivity(parts: readonly Part[] | undefined): {
   const tool = newest.find((p): p is Extract<Part, { type: "tool" }> => p.type === "tool");
   if (tool) {
     const epoch =
-      typeof (tool as unknown as { time?: { updated?: number; created?: number } }).time?.updated ===
-      "number"
+      typeof (tool as unknown as { time?: { updated?: number; created?: number } }).time
+        ?.updated === "number"
         ? (tool as unknown as { time: { updated: number } }).time.updated
         : Date.now();
     return { line: toolLabel(tool.tool), epoch };

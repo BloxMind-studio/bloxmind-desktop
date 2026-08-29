@@ -88,10 +88,7 @@ function useMessagesActivity(sessionId: string | null): MessagesCache | undefine
         }
       });
     },
-    () =>
-      sessionId
-        ? queryClient.getQueryData<MessagesCache>(qk.messages(sessionId))
-        : undefined,
+    () => (sessionId ? queryClient.getQueryData<MessagesCache>(qk.messages(sessionId)) : undefined),
     () => undefined,
   );
 }

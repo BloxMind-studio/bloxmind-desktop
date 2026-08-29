@@ -945,7 +945,9 @@ describe("User journeys", () => {
     // v0.9.98 lifecycle: while the agent generates, the reasoning/tool parts
     // are HIDDEN and only the animated "Thinking..." placeholder shows — for
     // EVERY step, with no mid-stream Thought blocks (the two never coexist).
-    await waitFor(() => expect(screen.getAllByText("Thinking...").length).toBeGreaterThanOrEqual(1));
+    await waitFor(() =>
+      expect(screen.getAllByText("Thinking...").length).toBeGreaterThanOrEqual(1),
+    );
     expect(screen.queryByText("Thought")).not.toBeInTheDocument();
 
     // Tool 1 finishes (step-finish); tool 2 begins on a NEW step-start. The
@@ -975,7 +977,9 @@ describe("User journeys", () => {
       time: { created: Date.now(), updated: Date.now() },
     });
 
-    await waitFor(() => expect(screen.getAllByText("Thinking...").length).toBeGreaterThanOrEqual(1));
+    await waitFor(() =>
+      expect(screen.getAllByText("Thinking...").length).toBeGreaterThanOrEqual(1),
+    );
     expect(screen.queryByText("Thought")).not.toBeInTheDocument();
 
     // Turn settles: the Thinking placeholder disappears and ALL accumulated

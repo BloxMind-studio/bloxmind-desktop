@@ -62,8 +62,7 @@ export const MessageBubble = memo(function MessageBubble({
       p.type === "compaction",
   );
 
-  const shouldShowCopyButton =
-    hasTextContent && !hasOnlyThinkingParts && !isUser;
+  const shouldShowCopyButton = hasTextContent && !hasOnlyThinkingParts && !isUser;
 
   // The "Thinking..." placeholder should stay visible for as long as the agent
   // is still generating this assistant message — i.e. until it has produced a
@@ -71,17 +70,11 @@ export const MessageBubble = memo(function MessageBubble({
   // was wrong: the engine commits reasoning/tool parts mid-think, which cleared
   // the indicator even though the actual response wasn't ready yet.
   const hasFinalText = msg.parts.some(
-    (p) =>
-      p.type === "text" &&
-      typeof p.text === "string" &&
-      p.text.trim().length > 0,
+    (p) => p.type === "text" && typeof p.text === "string" && p.text.trim().length > 0,
   );
   const hasError =
-    "error" in msg.info &&
-    msg.info.error &&
-    msg.info.error.name !== "MessageAbortedError";
-  const hasCompleted =
-    !!(msg.info as { time?: { completed?: unknown } })?.time?.completed;
+    "error" in msg.info && msg.info.error && msg.info.error.name !== "MessageAbortedError";
+  const hasCompleted = !!(msg.info as { time?: { completed?: unknown } })?.time?.completed;
   // Strict interrupted check: only when the parent explicitly marks the
   // session as interrupted (persisted flag). Do NOT derive interrupted from
   // unfinished text — normal completions must never show the paused note or
@@ -99,9 +92,7 @@ export const MessageBubble = memo(function MessageBubble({
     !isUser && interrupted && isLastIndex && !hasFinalText && !hasCompleted && !hasError;
 
   return (
-    <div
-      className={`animate-fade-in-up flex ${isUser ? "justify-end" : "justify-start"}`}
-    >
+    <div className={`animate-fade-in-up flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div
         className={`relative max-w-[85%] ${
           isUser
@@ -114,9 +105,7 @@ export const MessageBubble = memo(function MessageBubble({
         ) : (
           <div className="space-y-2">
             {showThinking && <BloxMindThinking />}
-            {showThinking && (
-              <WorkingIndicator parts={msg.parts} active={showThinking} />
-            )}
+            {showThinking && <WorkingIndicator parts={msg.parts} active={showThinking} />}
             {showPausedNote && (
               <div className="my-1 flex items-center gap-2 rounded-lg border border-border/60 bg-card/60 px-2.5 py-1.5 text-[12px] text-muted-foreground">
                 <span className="shrink-0 font-medium text-foreground/80">
@@ -204,14 +193,7 @@ export const MessageBubble = memo(function MessageBubble({
                           strokeLinejoin="round"
                           aria-hidden="true"
                         >
-                          <rect
-                            x="9"
-                            y="9"
-                            width="13"
-                            height="13"
-                            rx="2"
-                            ry="2"
-                          />
+                          <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
                           <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
                         </svg>
                         <span>Copy</span>
