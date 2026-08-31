@@ -18,6 +18,12 @@ import {
   type GeneratedProgramResult,
   GeneratedProgramResultSchema,
 } from "../../src/types/generatedProgram";
+import {
+  RobloxApiValidationError,
+  validateGeneratedProgramSource,
+  validateLuauSource,
+  validateMcpToolCall,
+} from "../../src/lib/robloxApiValidator";
 import { StudioMcpBroker } from "./StudioMcpBroker";
 
 type CallTool = (name: string, args: Record<string, unknown>) => Promise<CallToolResult>;
@@ -216,7 +222,13 @@ function makeWorkerExecutor(timeoutMs: number = WORKER_TIMEOUT_MS): ProgramExecu
 
 export interface GeneratedProgramRuntimeOptions {
   executor?: ProgramExecutor;
+  /** Skip Roblox API validation (useful for tests that use non-Roblox callTools). */
+  skipValidation?: boolean;
+  /** If true, auto-correct fixable Luau issues before validation. */
+  autoCorrect?: boolean;
 }
+
+export const VALIDATION_PHASE: GeneratedProgramFailurePhase = "compile";
 
 export function startGeneratedProgramRuntime(
   callTool: CallTool,
@@ -233,6 +245,37 @@ export function startGeneratedProgramRuntime(
     if (cached) return cached;
     if (/\b(?:import|export)\b/u.test(envelope.source)) {
       throw new Error("Generated programs must be import-free");
+    }
+    // ── API Validation Layer: validate Luau / Roblox API usage before compiling ──
+    if (!options.skipValidation) {
+      const validation = validateGeneratedProgramSource(envelope.source);
+      // Also validate any direct Enum/Instance usage in the envelope source
+      const luauDirect = validateLuauSource(envelope.source);
+      const combinedIssues = [...validation.issues, ...luauDirect.issues];
+      // De-duplicate
+      const seen = new Set<string>();
+      const deduped = combinedIssues.filter((iss) => {
+        const key2 = `${iss.type}:${iss.message}:${iss.line}`;
+        if (seen.has(key2)) return false;
+        seen.add(key2);
+        return true;
+      });
+      if (deduped.length > 0) {
+        // Check if it's just the program wrapper using Enum/Instance as part of callTool payload construction
+        // We only block if the issues are clearly Roblox API hallucinations (invalid enum/class/forbidden)
+        const blockable = deduped.filter(
+          (iss) =>
+            iss.type === "invalid-enum" ||
+            iss.type === "invalid-enum-item" ||
+            iss.type === "invalid-class" ||
+            iss.type === "forbidden-class" ||
+            iss.type === "forbidden-property" ||
+            iss.type === "invalid-property",
+        );
+        if (blockable.length > 0) {
+          throw new RobloxApiValidationError(blockable);
+        }
+      }
     }
     const compiledSource = transform(envelope.source, { transforms: ["typescript"] }).code;
     const artifact = await Schema.decodeUnknownPromise(GeneratedProgramArtifactSchema)({
@@ -266,6 +309,25 @@ export function startGeneratedProgramRuntime(
           compiledSources.set(invocation.artifact.cacheKey, compiledSource);
         }
         const guardedCallTool: CallTool = async (name, args) => {
+          // ── Pre-execution API guardrail: validate any Luau payload before it hits Studio ──
+          if (!options.skipValidation) {
+            const preCheck = validateMcpToolCall(name, args);
+            if (!preCheck.valid) {
+              const blockable = preCheck.issues.filter(
+                (iss) =>
+                  iss.type === "invalid-enum" ||
+                  iss.type === "invalid-enum-item" ||
+                  iss.type === "invalid-class" ||
+                  iss.type === "forbidden-class" ||
+                  iss.type === "forbidden-property" ||
+                  iss.type === "invalid-property" ||
+                  iss.type === "invalid-service",
+              );
+              if (blockable.length > 0) {
+                throw new RobloxApiValidationError(blockable);
+              }
+            }
+          }
           try {
             return await callTool(name, args);
           } catch (cause) {

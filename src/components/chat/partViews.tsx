@@ -447,8 +447,30 @@ const ThinkingBlock = memo(function ThinkingBlock({ parts }: { parts: Part[] }) 
 
   if (!hasTools && !hasReasoning && !hasSteps) return null;
 
+  const handleCopyAll = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const texts = parts
+      .map((p) => {
+        if (p.type === "reasoning" && "text" in p) return String((p as { text: string }).text);
+        if (p.type === "tool" && "state" in p) {
+          const s = (p as Extract<Part, { type: "tool" }>).state as { error?: unknown; output?: unknown; title?: string };
+          if (s.error) return String(s.error);
+          if (s.output) return typeof s.output === "string" ? s.output : JSON.stringify(s.output, null, 2);
+          if (s.title) return String(s.title);
+        }
+        return "";
+      })
+      .filter(Boolean)
+      .join("\n\n");
+    if (texts) {
+      navigator.clipboard.writeText(texts).catch(() => {});
+      // dynamic import to avoid cycle
+      import("sonner").then(({ toast }) => toast.success("Thought copied", { duration: 1500 }));
+    }
+  };
+
   return (
-    <div className="mb-3 animate-fade-in">
+    <div className="mb-3 animate-fade-in select-text" onContextMenu={handleCopyAll} title="Right-click to copy thought">
       <button
         type="button"
         onClick={() => setIsOpen((open) => !open)}
@@ -496,7 +518,7 @@ const ThinkingBlock = memo(function ThinkingBlock({ parts }: { parts: Part[] }) 
         </span>
       </button>
       {isOpen && (
-        <div className="mt-2 space-y-2 border-l-2 border-selected/30 pl-4 animate-fade-in-up">
+        <div className="mt-2 space-y-2 border-l-2 border-selected/30 pl-4 animate-fade-in-up select-text" onContextMenu={(e) => e.stopPropagation()}>
           {parts.map((part) => {
             switch (part.type) {
               case "reasoning":

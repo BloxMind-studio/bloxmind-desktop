@@ -16,6 +16,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { Context, Data, Effect, Layer } from "effect";
 
+import { validateMcpToolCall } from "../../src/lib/robloxApiValidator";
 import { studioMcpCommand } from "../opencodeConfig";
 
 const LOOPBACK = "127.0.0.1";
@@ -106,6 +107,31 @@ class SdkStudioMcpUpstream implements StudioMcpUpstream {
 
   async callTool(name: string, args: Record<string, unknown>): Promise<CallToolResult> {
     const startedAt = performance.now();
+    // ── API Validation Layer: intercept invalid Luau before it reaches Studio ──
+    const preCheck = validateMcpToolCall(name, args);
+    if (!preCheck.valid) {
+      const blockable = preCheck.issues.filter(
+        (iss) =>
+          iss.type === "invalid-enum" ||
+          iss.type === "invalid-enum-item" ||
+          iss.type === "invalid-class" ||
+          iss.type === "forbidden-class" ||
+          iss.type === "forbidden-property" ||
+          iss.type === "invalid-property" ||
+          iss.type === "invalid-service" ||
+          iss.type === "invalid-material-as-parttype",
+      );
+      if (blockable.length > 0) {
+        const detail = blockable
+          .map((iss) => `- [${iss.type}] Line ${iss.line ?? "?"}: ${iss.message}${iss.suggestion ? ` Suggestion: ${iss.suggestion}` : ""}`)
+          .join("\n");
+        process.stderr.write(`[studio-mcp] blocked ${name}: API validation failed\n${detail}\n`);
+        return {
+          content: [{ type: "text", text: `Roblox API validation failed — blocked before execution:\n${detail}\n\nFix the code to use only valid Roblox API members from the official dump.` }],
+          isError: true,
+        };
+      }
+    }
     process.stderr.write(`[studio-mcp] call ${name}\n`);
     const result = await this.client.callTool({ name, arguments: args }, CallToolResultSchema);
     const parsed = CallToolResultSchema.parse(result);
@@ -187,9 +213,33 @@ export async function startStudioMcpBroker(upstream: StudioMcpUpstream): Promise
       { capabilities: { tools: { listChanged: true } } },
     );
     server.setRequestHandler(ListToolsRequestSchema, () => upstream.listTools());
-    server.setRequestHandler(CallToolRequestSchema, (request) =>
-      upstream.callTool(request.params.name, request.params.arguments ?? {}),
-    );
+    server.setRequestHandler(CallToolRequestSchema, async (request) => {
+      const args = (request.params.arguments ?? {}) as Record<string, unknown>;
+      const preCheck = validateMcpToolCall(request.params.name, args);
+      if (!preCheck.valid) {
+        const blockable = preCheck.issues.filter(
+          (iss) =>
+            iss.type === "invalid-enum" ||
+            iss.type === "invalid-enum-item" ||
+            iss.type === "invalid-class" ||
+            iss.type === "forbidden-class" ||
+            iss.type === "forbidden-property" ||
+            iss.type === "invalid-property" ||
+            iss.type === "invalid-service",
+        );
+        if (blockable.length > 0) {
+          const detail = blockable
+            .map((iss) => `- [${iss.type}] Line ${iss.line ?? "?"}: ${iss.message}${iss.suggestion ? ` Suggestion: ${iss.suggestion}` : ""}`)
+            .join("\n");
+          process.stderr.write(`[studio-mcp] broker blocked ${request.params.name}: validation failed\n${detail}\n`);
+          return {
+            content: [{ type: "text", text: `Roblox API validation failed — blocked before execution:\n${detail}` }],
+            isError: true,
+          };
+        }
+      }
+      return upstream.callTool(request.params.name, args);
+    });
     const transport: StreamableHTTPServerTransport = new StreamableHTTPServerTransport({
       sessionIdGenerator: randomUUID,
       onsessioninitialized: (sessionId): void => {
@@ -257,7 +307,26 @@ export async function startStudioMcpBroker(upstream: StudioMcpUpstream): Promise
     info: { url: basePath, token },
     callTool: (name, args) =>
       Effect.tryPromise({
-        try: () => upstream.callTool(name, args),
+        try: async () => {
+          const preCheck = validateMcpToolCall(name, args);
+          if (!preCheck.valid) {
+            const blockable = preCheck.issues.filter(
+              (iss) =>
+                iss.type === "invalid-enum" ||
+                iss.type === "invalid-enum-item" ||
+                iss.type === "invalid-class" ||
+                iss.type === "forbidden-class" ||
+                iss.type === "forbidden-property" ||
+                iss.type === "invalid-property" ||
+                iss.type === "invalid-service",
+            );
+            if (blockable.length > 0) {
+              const detail = blockable.map((iss) => iss.message).join("; ");
+              throw new Error(`Roblox API validation failed: ${detail}`);
+            }
+          }
+          return await upstream.callTool(name, args);
+        },
         catch: (cause) => new StudioMcpBrokerError({ message: "Studio MCP call failed", cause }),
       }),
     close: async () => {
