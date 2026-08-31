@@ -85,6 +85,11 @@ const api: DesktopApi = {
   sessionStoreDelete: (id) => ipcRenderer.invoke(channels.sessionStoreDelete, id),
   sessionStoreSetLastActive: (id) => ipcRenderer.invoke(channels.sessionStoreSetLastActive, id),
   sessionStoreGetLastActive: () => ipcRenderer.invoke(channels.sessionStoreGetLastActive),
+  // ── Project Memory ───────────────────────────────────────────────────
+  memorySearch: (query: string, k?: number) => ipcRenderer.invoke(channels.memorySearch, query, k),
+  memoryStats: () => ipcRenderer.invoke(channels.memoryStats),
+  memoryReindex: () => ipcRenderer.invoke(channels.memoryReindex),
+  memoryUpsert: (path: string, source: string) => ipcRenderer.invoke(channels.memoryUpsert, path, source),
   // ── Window controls ─────────────────────────────────────────────────
   windowMinimize: () => ipcRenderer.invoke(channels.windowMinimize),
   windowMaximizeToggle: () => ipcRenderer.invoke(channels.windowMaximizeToggle),

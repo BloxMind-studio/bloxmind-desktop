@@ -48,6 +48,50 @@ and play the returned ID. This works without uploading assets.
 4. Verify in Studio: load the animation on the active rig and watch it, then
    iterate timing — do not report success without a playback check.
 
+## Mandatory Implementation Rules (STRICT — do not skip)
+
+These three rules are mandatory for every animation you generate — violation is a build failure.
+
+1. **Auto-Set Animation Priority to Action (MANDATORY):**
+   - Always set \`seq.Priority = Enum.AnimationPriority.Action\` immediately after creating the \`KeyframeSequence\`, before adding any \`Keyframe\`/\`Pose\` children. This ensures the custom animation overrides default \`Idle\`/\`Walking\` tracks. Never leave Priority at default (\`Core\`) or \`Idle\`.
+   - Example:
+     \`\`\`lua
+     local seq = Instance.new("KeyframeSequence")
+     seq.Name = "MyAction"
+     seq.Priority = Enum.AnimationPriority.Action
+     seq.Loop = false
+     \`\`\`
+
+2. **Generate Standard Studio Preview Script (MANDATORY):**
+   - Automatically inject a client-side test script as a \`LocalScript\` in \`StarterPlayer.StarterPlayerScripts\` (or \`StarterPlayerScripts\`) that loads the \`KeyframeSequence\` via \`KeyframeSequenceProvider:RegisterKeyframeSequence()\` and plays it on the local character for instant Studio preview. The script **must** explicitly use \`Humanoid:WaitForChild("Animator"):LoadAnimation()\` and \`track:Play()\` — do not use deprecated \`Humanoid:LoadAnimation\`.
+   - Template to inject (adapt AssetId variable name to your builder):
+     \`\`\`lua
+     -- LocalScript in StarterPlayerScripts — auto-generated preview for R6/R15
+     local Players = game:GetService("Players")
+     local player = Players.LocalPlayer
+     local character = player.Character or player.CharacterAdded:Wait()
+     local humanoid = character:WaitForChild("Humanoid")
+     local animator = humanoid:WaitForChild("Animator")
+     local ksp = game:GetService("KeyframeSequenceProvider")
+     -- Assume 'seq' is the KeyframeSequence you just built (or require the builder module)
+     local ok, animId = pcall(function() return ksp:RegisterKeyframeSequence(seq) end)
+     if ok and animId then
+         local anim = Instance.new("Animation")
+         anim.AnimationId = animId
+         local track = animator:LoadAnimation(anim)
+         track.Priority = Enum.AnimationPriority.Action
+         track.Looped = false
+         track:Play()
+     end
+     \`\`\`
+   - Verify: Play in Studio, check that the LocalScript runs and the character visibly plays the custom animation on top of idle.
+
+3. **Rig Target Awareness — R6 / R15 Check (MANDATORY):**
+   - Before authoring poses, confirm the target rig: \`humanoid.RigType == Enum.HumanoidRigType.R6\` vs \`R15\`. Bone/Pose node naming **must** explicitly match that rig:
+     - **R6:** Use \`Torso\`, \`Left Shoulder\` / \`Right Shoulder\`, \`Left Hip\` / \`Right Hip\`, \`Neck\` (Torso→Head), \`RootJoint\` (HumanoidRootPart→Torso). Example: \`Pose.Name = "Right Shoulder"\` for R6 right arm.
+     - **R15:** Use \`UpperTorso\`, \`LowerTorso\`, \`RightShoulder\` / \`LeftShoulder\`, \`Right Hip\` / \`Left Hip\` with exact casing (\`UpperTorso\`, \`RightShoulder\`), \`Neck\`, \`Waist\`, \`Root\`. Example: \`Pose.Name = "RightShoulder"\` for R15 right arm.
+   - Never mix: a Pose named \`"Right Shoulder"\` (with space) on an R15 rig does nothing, and \`"RightShoulder"\` (no space) on R6 does nothing. Tip: see the practical *How to animate an R6 character in Roblox Studio* video for joint setup — replicate its joint naming before exporting.
+
 ## R15 motor map (pose names must match Motor6D names)
 
 - Root: \`Root\` (HumanoidRootFrame → LowerTorso) — root motion only if intended
@@ -148,9 +192,12 @@ stacking complexity.
 
 ## Quality checklist (run before reporting)
 
+- [ ] \`KeyframeSequence.Priority == Enum.AnimationPriority.Action\` (overrides idle/walking)
+- [ ] Preview \`LocalScript\` exists in \`StarterPlayerScripts\` and runs \`KeyframeSequenceProvider:RegisterKeyframeSequence()\` → \`Humanoid:WaitForChild("Animator"):LoadAnimation()\` → \`track:Play()\` (verified in Play mode)
+- [ ] Bone/Pose names match target rig explicitly (R6: \`Torso\`, \`Right Shoulder\` with space; R15: \`UpperTorso\`, \`RightShoulder\` no space) — see R6 video for joint setup
 - [ ] Registered sequence returns a valid ID and plays on the target rig
 - [ ] Rig type matches the character (R15 sequence on R15, R6 on R6); if
-      dual-rig was requested, both variants play correctly
+       dual-rig was requested, both variants play correctly
 - [ ] No floating feet, no limbs clipping the torso
 - [ ] Anticipation + impact + recovery present in every attack
 - [ ] Loops are seamless (no pop at wrap)
@@ -380,12 +427,18 @@ build strictly from it:
 \`\`\`json
 {
   "grid_size": 4,
-  "map_bounds": { "x": 200, "z": 200 },
+  "map_bounds": { "x": 500, "z": 500 },
   "lighting": {
     "lighting_mode": "runtime (shape via Lighting clock/brightness - see Phase 5)",
     "time_of_day": "00:00:00",
     "atmosphere_density": 0.45,
     "fog_color": "#120024"
+  },
+  "zones": {
+    "RoadZones": [{ "center": [0, 0], "width": 16, "axis": "X", "length": 500 }],
+    "SidewalkZones": [{ "center": [0, 10], "width": 4, "axis": "X" }],
+    "GreenZones": [{ "bounds": { "xMin": -240, "xMax": -20, "zMin": -240, "zMax": -20 }, "material": "Grass" }],
+    "BuildingPlots": [{ "center": [40, 40], "size": [30, 30], "clearance": 8 }]
   },
   "structures": [
     { "type": "Wall_Basic", "position": [0, 0, 0], "rotation": 0 },
@@ -401,6 +454,7 @@ build strictly from it:
 - \`grid_size\` is the snap unit for all x/z positions (2 or 4 studs). Every
   coordinate must be a multiple of it — this prevents Z-fighting overlaps and
   gaps between adjacent modules.
+- \`zones\` is **mandatory for cities**: Define explicit coordinate zones **before** any placement — \`RoadZones\` (center + width + axis), \`SidewalkZones\` (offset from road edge), \`GreenZones\` (bounds + material Grass/Dirt/Sand for yards/parks/nature strips), \`BuildingPlots\` (center + size + clearance). All placements MUST reference these zones — never random scatter.
 - Key by \`type\` from the modular kit (below) and place via exact CFrame
   using \`position\`/\`rotation\`; never hand-placed drifting dimensions.
 - Keep this blueprint in the session context so later phases (lighting,
@@ -474,6 +528,94 @@ To ensure deterministic map architecture and prevent missing folder runtime erro
 
 3. **No Lazy Merging:**
    - Separate structural workspace scaffolding from detailed geometry building if combining them risks skipping hierarchy setup.
+
+### 🏙️ CITY GENERATION STANDARDS (Realistic City Mode) — STRICT
+
+Every city must look complete, varied, and lived-in — never a tiny green patch on a dark baseplate, never a flat gray sheet. Violating any sub-rule is a build failure.
+
+1. **Full Ground Coverage First — Mandatory Roblox Smooth Terrain (Phase 0.5 — non-negotiable, QUALITY OVER SPEED):**
+   - We care about quality, visual polish, and accuracy, NOT speed. Do NOT rush to generate quick flat Part blocks to finish fast — take all extra steps to build a high-fidelity terrain.
+   - Before any road or building, create a single continuous **Smooth Terrain** base that spans the *entire* \`map_bounds\` (e.g. 500×500 or 1000×1000). You **MUST** use \`workspace.Terrain:FillBlock()\` or \`workspace.Terrain:FillRegion()\` with realistic materials (\`Enum.Material.Grass\`, \`Dirt\`, \`Sand\`, \`Asphalt\`) — **NEVER** create flat primitive \`Part\` blocks for the main ground cover (that looks like a flat green sheet of paper and is forbidden). Always add \`workspace.Terrain.Decoration = true\` in the setup script so Roblox renders realistic 3D grass blades on Grass terrain (\`terrain.Decoration = true\` is verified, not \`TerrainDecoration\`). This is Pass 0.5 — no roads/props until the Smooth Terrain foundation exists and is verified. See Terrain Variety rule for layering.
+
+2. **Terrain Variety & Color — NO PLAIN GRAY BASE (MANDATORY):**
+   - The city ground must NOT be a solid gray sheet. After the base foundation, layer materials by function: **Asphalt ONLY for roads** (road surface), **Concrete for sidewalks/curbs** (raised 1.5 studs, 3–4 wide, Stone grey), and **mix Grass / Dirt / Sand / LeafyGrass** into zones for yards, parks, medians, and nature strips. Example zoning: downtown blocks → Asphalt roads + Concrete sidewalks, residential yards → Grass/LeafyGrass, park → Grass + Sand paths, industrial → Concrete + Dirt. Verify in Explorer that at least 3 distinct ground materials exist; if the whole city is one gray Part, you have failed.
+
+3. **Realistic Roads & Infrastructure:**
+   - Roads are NOT flat gray Parts with decals. Each road segment must include: a central asphalt road Part (Material Asphalt or Concrete, 12–20 studs wide) + *raised concrete sidewalks* on **both** sides (1.5 studs higher, 3–4 studs wide, Material Concrete, Color Stone grey) + continuous curb. At every 30–40 studs along *every* street, place a street light post: \`Instance.new("Model")\` with pole Part (Metal, anchored) + \`PointLight\` or \`SpotLight\` (Brightness 2, Shadows true, Range 30) + optional \`SurfaceLight\` for cone — verified with \`.Enabled = true\`. Lights must be anchored, spaced regularly, and wired to survive Streaming. Prefer toolbox-imported lamp models when available (see Mesh rule).
+
+4. **MANDATORY Toolbox Search & Building Packs — Search First, No Floating Cubes (QUALITY OVER SPEED):**
+   - Do NOT rush to generate quick basic Part primitives to finish fast — visual excellence and real Toolbox/Terrain usage are the primary metrics. Take all extra steps to build high-fidelity.
+   - **Before generating ANY city script**, you MUST call the Studio MCP toolbox/search tool for core assets using these **exact, quality-tested keywords** (toolbox results are keyword-sensitive — generic terms return park lanterns and boxy primitives):
+      - **Street Lighting (CRITICAL — do NOT use park lanterns):** \`Modern Street Light Pole\` or \`Highway Light\` or \`Tall Street Lamp\` — never \`small lamp\` / \`park lantern\`. Small lanterns are 4-stud park lights that look absurd on highways.
+        \`\`\`lua
+        -- MANDATORY first step for city lighting — wait for results before building
+        local streetLamps = callTool("search_toolbox", { query = "Modern Street Light Pole", limit = 5 })
+        if not streetLamps or #streetLamps == 0 then streetLamps = callTool("search_toolbox", { query = "Tall Street Lamp", limit = 5 }) end
+        if not streetLamps or #streetLamps == 0 then streetLamps = callTool("search_toolbox", { query = "Highway Light", limit = 5 }) end
+        -- or: game:GetService("InsertService"):LoadAsset(assetId)
+        \`\`\`
+      - **Buildings (CRITICAL — no floating cubes / no separated box stacks):** \`Building Pack\` or \`City Skyscraper Model\` or \`Modular Building Mesh\` — MANDATORY for any skyscraper/high-rise. **Stop creating floating, separated box stacks** for skyscrapers (stacked Parts with gaps, floating in air). Import **full completed building Models** and snap their bases **directly to the ground** using \`GetBoundingBox()\` + \`PivotTo()\` on ground Y (see Ground Snap rule). Never leave buildings floating.
+      - **Roads:** \`Road System\` or \`Asphalt Road Pack\` or \`Road Intersection Mesh\` — import modular road meshes for main avenues to avoid hollow/gray square cutouts at intersections. Align Parts seamlessly with raised concrete sidewalks (see Roads rule).
+      - **Trees/Props:** \`realistic tree\` / \`Tree Pack\` — prefer MeshPart trees over primitive spheres.
+   - If search returns a usable model/MeshPart/SpecialMesh (has MeshId/TextureId or is a Model containing MeshParts), **import and clone it** — do NOT rebuild the same shape from primitive gray Parts. Only when search yields zero suitable results may you fall back to manual Part construction, and even then use \`MeshPart\`/ \`SpecialMesh\` patterns below. Log which assets were imported vs. fallback-built in your phase report. Quality and accuracy matter more than speed.
+
+5. **Visual Quality — No Blocky Cities:**
+   - Always prefer \`MeshPart\` and \`SpecialMesh\` (FileMesh) for trees, props, lamps, building facades to avoid blocky placeholders. For procedural fallback trees, use the multi-species pattern from this skill; for buildings, use at least 1 MeshPart per facade (window frames, cornices) or a SpecialMesh scale. Set \`MeshPart.CollisionFidelity = Enum.CollisionFidelity.Box\` where needed and keep \`Anchored = true\`.
+
+6. **Precision Alignment & Grid Spacing — No Clipping or Sinking (MANDATORY, ZERO TOLERANCE):**
+   - **Zero Floating or Underground Models — Ground Snap (required for EVERY Model/MeshPart/tree/building):** Calculate exact ground Y using \`workspace:Raycast()\` and bounding box heights (\`GetBoundingBox()\`) so every asset sits **flush** on the terrain surface — never floating in mid-air, never buried underground.
+      \`\`\`lua
+      local function placeModelAt(model: Model, targetPos: Vector3)
+          local _, size = model:GetBoundingBox()
+          local halfY = size.Y / 2
+          local params = RaycastParams.new()
+          params.FilterType = Enum.RaycastFilterType.Include
+          params.FilterDescendantsInstances = {workspace.Terrain, workspace:FindFirstChild("Map")}
+          local origin = Vector3.new(targetPos.X, 250, targetPos.Z)
+          local result = workspace:Raycast(origin, Vector3.new(0, -500, 0), params)
+          local groundY = result and result.Position.Y or targetPos.Y
+          model:PivotTo(CFrame.new(targetPos.X, groundY + halfY, targetPos.Z))
+      end
+      \`\`\`
+   - Apply this to street lamps, trees, building facades, and cars. For single Parts, use \`part.Size.Y/2\` offset similarly. Verify after placement by checking \`model:GetBoundingBox()\` bottom Y ≈ groundY.
+   - **Smooth Road Intersections & Modular Roads:** If a toolbox \`Road System\` / \`Asphalt Road Pack\` / \`Road Intersection Mesh\` was imported, use its intersection mesh for every 4-way crossing. If generating roads manually, extend the asphalt Parts seamlessly through the intersection so it is fully filled with Asphalt — never leave a 4×4 empty/gray square cutout, never overlap curb borders over the intersection. Verify in Explorer that the intersection Part (or mesh) is centered, anchored, and at the same Y as the road (sidewalk curbs stop at the intersection edge, they do not cut across it).
+   - **Neat Vegetation — Grid Alignment (No Random Placement):** Trees must never block roads or spawn randomly on sidewalks. Align trees **neatly inside dedicated grass zones** (\`Grass\`/\`LeafyGrass\`/\`Dirt\` parcels, parks, nature strips) or lined up along nature strips with **fixed grid spacing (every 18–24 studs)** — never random scatter, never on Asphalt/Concrete. Props (benches, hydrants) follow the same zone rule. Check the blueprint grid before placing: if a tree's grid cell is Asphalt/Concrete, skip it and move to the next green cell.
+   - **Grid spacing & Clipping Prevention:** Enforce minimum clearances on the blueprint grid: buildings ≥8 studs from road edge, trees ≥6 studs from buildings/walls, no two models overlapping their bounding boxes. Validate spacing before placement; if a placement would clip, shift to the next free grid cell. This prevents walls clipping roads and trees sinking into pavement. Take your time to verify — do not rush this step.
+
+### 📐 SPATIAL GRID & EXPLICIT ROAD OFFSETS (No Random Spacing) — STRICT
+
+Trees & buildings spawning inside roads is a build failure. You must use a mathematical grid, not random scatter.
+
+1. **Define Blueprint Zones First:** Before placing anything, emit \`zones\` in the blueprint with explicit coordinate zones: \`RoadZones\` (center line + width + axis), \`SidewalkZones\` (derived from RoadZones + half-width + half-sidewalk-width), \`GreenZones\` (Grass/Dirt/Sand bounds for yards, parks, nature strips), and \`BuildingPlots\` (center + footprint size + clearance). Every later placement MUST reference a zone — never pick a random X/Z without a zone check (\`if zone.contains(pos) then place\`).
+
+2. **Calculate Positions Relative to Roads (Mandatory Formula):** Place buildings and trees using mathematical offsets based on the road center and width — never absolute random numbers. For a road centered at \`Center_X\` with width \`W\`, a building plot center **MUST** be placed at:
+   \`\`\`lua
+   local buildingX = Center_X + (W / 2) + (BuildingWidth / 2) + Clearance -- Clearance ≥8 studs
+   local buildingZ = Center_Z + (W / 2) + (BuildingDepth / 2) + Clearance
+   -- Example: Road center 0, W=16, Building 30 wide, Clearance 8 → buildingX = 0 + 8 + 15 + 8 = 31
+   \`\`\`
+   Validate: if \`buildingX\` falls inside \`RoadZones\` or \`SidewalkZones\`, reject and recalculate. Log the formula used in your phase report.
+
+3. **Tree Spacing — GreenZones Only:** Trees **MUST** only spawn inside \`GreenZones\` or nature strips offset **at least 2 studs away from the outer edge of the sidewalk**. Compute sidewalk outer edge as \`SidewalkCenter ± (SidewalkWidth/2)\`, then tree position = \`outerEdge + 2 + (TreeCanopyRadius)\`. Never place a tree on Asphalt/Concrete, never on SidewalkZones, never with distance <2 from sidewalk. Fixed spacing 18–24 studs along the strip, not random.
+
+### 🚦 SMART INTERSECTION NODE HANDLING (No Curb Blocking) — STRICT
+
+Curb walls blocking intersections (continuous sidewalks straight through a crossing, creating a closed square wall) is a build failure.
+
+1. **Intersection Clear Zones:** Calculate **all** road crossing coordinates \`Intersection_X, Intersection_Z\` from \`RoadZones\` intersections (X-axis road × Z-axis road). For each crossing, define a clear boundary box:
+   \`\`\`lua
+   local clearW = Width_Road1 + (Sidewalk_Width * 2) + 2 -- +2 studs buffer
+   local clearH = Width_Road2 + (Sidewalk_Width * 2) + 2
+   local clearZone = Region3.new(
+       Vector3.new(Intersection_X - clearW/2, -1, Intersection_Z - clearH/2),
+       Vector3.new(Intersection_X + clearW/2,  5, Intersection_Z + clearH/2)
+   )
+   \`\`\`
+   No building/tree may be placed inside this box, and no curb may remain inside it.
+
+2. **Segmented Sidewalks (MANDATORY):** Break sidewalks into **separate segments that stop at the edge of an intersection clear zone and resume on the other side**. **NEVER** draw a single continuous sidewalk Part through a crossing. Implement as 4 segments per intersection (north/south/east/west), each ending at \`Intersection_X ± clearW/2\` or \`Intersection_Z ± clearH/2\`. Verify in Explorer that the intersection center contains ONLY Asphalt/Road mesh, no Concrete curb wall.
+
+3. **CSG Subtraction / Toolbox Packs (Preferred):** If you built roads/sidewalks as continuous Parts and they overlap the clear zone, apply \`game:GetService("GeometryService"):SubtractAsync(sidewalkPart, {intersectionVolumePart})\` to cut out the overlap (returns an array — use \`result[1]\`), or **prioritize** toolbox assets \`Crossroad Intersection\` / \`Road Intersection Pack\` / \`Intersection Road Mesh\` which already have correct gaps. Log which method was used (toolbox vs CSG) in your report.
 
 ### 🏔️ ORGANIC PROCEDURAL TERRAIN RULES
 

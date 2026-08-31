@@ -268,6 +268,11 @@ export interface DesktopApi {
   sessionStoreDelete(id: string): Promise<void>;
   sessionStoreSetLastActive(id: string | null): Promise<void>;
   sessionStoreGetLastActive(): Promise<string | null>;
+  // ── Project Memory (vector DB + KG) ─────────────────────────────────────
+  memorySearch(query: string, k?: number): Promise<{ injected: string; hits: Array<{ path: string; score: number }> }>;
+  memoryStats(): Promise<{ documentCount: number; chunkCount: number; lastIndexedAt: number | null }>;
+  memoryReindex(): Promise<{ indexed: number; skipped: number }>;
+  memoryUpsert(path: string, source: string): Promise<void>;
   windowMinimize(): Promise<void>;
   windowMaximizeToggle(): Promise<void>;
   windowClose(): Promise<void>;

@@ -58,6 +58,8 @@ import {
   purgeLegacyRootWorkspace,
   sessionWorkspaceDir,
 } from "./sessionWorkspace";
+import { createVectorStore } from "../src/lib/memory/vectorStore";
+import { getEmbedder } from "../src/lib/memory/embedder";
 
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
 const defaultConfig: AppConfig = DEFAULT_APP_CONFIG;
@@ -655,6 +657,49 @@ const registerIpcHandlers = Effect.sync(() => {
     setLastActive(id),
   );
   ipcMain.handle(channels.sessionStoreGetLastActive, () => getLastActive());
+  // ── Project Memory (vector DB + KG) ─────────────────────────────────
+  // Lazy singleton vector store for the active workspace (home/BloxMind).
+  // Uses sqlite-vec when native is available, else JSON fallback at .bloxmind/memory.json.
+  let memoryStorePromise: Promise<import("../src/lib/memory/vectorStore").VectorStore> | null = null;
+  function getMemoryStore() {
+    if (!memoryStorePromise) {
+      const workspace = join(app.getPath("home"), "BloxMind");
+      memoryStorePromise = createVectorStore({ workspace }).catch(() => createVectorStore({ workspace, forceMemory: true }));
+    }
+    return memoryStorePromise;
+  }
+  ipcMain.handle(channels.memorySearch, async (_event, query: string, k?: number) => {
+    const store = await getMemoryStore();
+    const embedder = await getEmbedder();
+    const emb = await embedder.embedOne(query);
+    const results = await store.query(emb, k ?? 6);
+    const injected = results.length > 0 ? `Relevant memory for "${query}":\n` + results.map((r, i) => `[${i + 1}] ${r.document.path} (${r.document.className}) score=${r.score.toFixed(3)}\n${r.chunk.content.slice(0, 600)}`).join("\n\n") : "";
+    return { injected, hits: results.map((r) => ({ path: r.document.path, score: r.score })) };
+  });
+  ipcMain.handle(channels.memoryStats, async () => {
+    const store = await getMemoryStore();
+    const s = await store.getStats();
+    return { ...s, lastIndexedAt: null as number | null };
+  });
+  ipcMain.handle(channels.memoryReindex, async () => {
+    // Full reindex is triggered via MCP; here we just report stats.
+    // A real reindex calls ProjectMemoryIndexer.scanProjectTree via the broker.
+    const store = await getMemoryStore();
+    const s = await store.getStats();
+    return { indexed: s.documentCount, skipped: 0 };
+  });
+  ipcMain.handle(channels.memoryUpsert, async (_event, path: string, source: string) => {
+    const store = await getMemoryStore();
+    const { chunkDocument: chunkDoc } = await import("../src/lib/memory/chunker");
+    const embedder = await getEmbedder();
+    const docId = path; // use path as id for simple upsert
+    const chunksRaw = chunkDoc({ documentId: docId, path, content: source });
+    const embs = await embedder.embed(chunksRaw.map((c) => c.content));
+    const stored = chunksRaw.map((c, i) => ({ id: c.id, documentId: docId, chunkIndex: c.chunkIndex, content: c.content, tokenCount: c.tokenCount, embedding: Array.from(embs[i]) }));
+    const { createHash } = await import("node:crypto");
+    const doc = { id: docId, path, displayPath: path, className: "ModuleScript", parentPath: path.split(".").slice(0, -1).join("."), sourceHash: createHash("sha256").update(source).digest("hex").slice(0, 16), sourceLength: source.length, updatedAt: Date.now(), chunkCount: stored.length, rawSource: source, hierarchy: [], dependencies: [] };
+    await store.upsertDocument(doc as unknown as import("../src/lib/memory/vectorStore").StoredDocument, stored as unknown as import("../src/lib/memory/vectorStore").StoredChunk[]);
+  });
   // ── Licensing & Roblox auth ─────────────────────────────────────────
   ipcMain.handle(channels.authLogin, () => licenseService.loginWithRoblox());
   ipcMain.handle(channels.authLogout, () => licenseService.logout());

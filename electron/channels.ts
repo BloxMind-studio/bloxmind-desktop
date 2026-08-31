@@ -46,6 +46,11 @@ export const channels = {
   authLogout: "auth:logout",
   authStatus: "auth:status",
   authStatusChanged: "auth:status-changed",
+  // ── Project Memory (vector DB + Knowledge Graph) ──────────────────────
+  memorySearch: "memory:search",
+  memoryStats: "memory:stats",
+  memoryReindex: "memory:reindex",
+  memoryUpsert: "memory:upsert",
   // ── Window controls ─────────────────────────────────────────────────
   windowMinimize: "window:minimize",
   windowMaximizeToggle: "window:maximize-toggle",

@@ -98,6 +98,10 @@ interface DesktopEffects {
   readonly sessionStoreDelete: (id: string) => Effect.Effect<void, DesktopError>;
   readonly sessionStoreSetLastActive: (id: string | null) => Effect.Effect<void, DesktopError>;
   readonly sessionStoreGetLastActive: () => Effect.Effect<string | null, DesktopError>;
+  readonly memorySearch: (query: string, k?: number) => Effect.Effect<{ injected: string; hits: Array<{ path: string; score: number }> }, DesktopError>;
+  readonly memoryStats: () => Effect.Effect<{ documentCount: number; chunkCount: number; lastIndexedAt: number | null }, DesktopError>;
+  readonly memoryReindex: () => Effect.Effect<{ indexed: number; skipped: number }, DesktopError>;
+  readonly memoryUpsert: (path: string, source: string) => Effect.Effect<void, DesktopError>;
   readonly windowMinimize: () => Effect.Effect<void, DesktopError>;
   readonly windowMaximizeToggle: () => Effect.Effect<void, DesktopError>;
   readonly windowClose: () => Effect.Effect<void, DesktopError>;
@@ -202,6 +206,10 @@ const browserEffects: DesktopEffects = {
   sessionStoreDelete: () => Effect.void,
   sessionStoreSetLastActive: () => Effect.void,
   sessionStoreGetLastActive: () => Effect.succeed(null),
+  memorySearch: () => Effect.succeed({ injected: "", hits: [] }),
+  memoryStats: () => Effect.succeed({ documentCount: 0, chunkCount: 0, lastIndexedAt: null }),
+  memoryReindex: () => Effect.succeed({ indexed: 0, skipped: 0 }),
+  memoryUpsert: () => Effect.void,
   windowMinimize: () =>
     Effect.fail(new DesktopError({ message: "Window control requires the desktop app." })),
   windowMaximizeToggle: () =>
@@ -313,6 +321,10 @@ function makeBridgeEffects(api: DesktopApi): DesktopEffects {
       invoke("Failed to remember the active session", () => api.sessionStoreSetLastActive(id)),
     sessionStoreGetLastActive: () =>
       invoke("Failed to read the last active session", () => api.sessionStoreGetLastActive()),
+    memorySearch: (query, k) => invoke("Failed to search memory", () => api.memorySearch(query, k)),
+    memoryStats: () => invoke("Failed to get memory stats", () => api.memoryStats()),
+    memoryReindex: () => invoke("Failed to reindex memory", () => api.memoryReindex()),
+    memoryUpsert: (path, source) => invoke("Failed to upsert memory", () => api.memoryUpsert(path, source)),
     windowMinimize: () => invoke("Failed to minimize the window", () => api.windowMinimize()),
     windowMaximizeToggle: () =>
       invoke("Failed to toggle the window maximized state", () => api.windowMaximizeToggle()),
@@ -374,6 +386,10 @@ export const desktop: DesktopApi = {
   sessionStoreDelete: (id) => runPromise(desktopEffects.sessionStoreDelete(id)),
   sessionStoreSetLastActive: (id) => runPromise(desktopEffects.sessionStoreSetLastActive(id)),
   sessionStoreGetLastActive: () => runPromise(desktopEffects.sessionStoreGetLastActive()),
+  memorySearch: (query, k) => runPromise(desktopEffects.memorySearch(query, k)),
+  memoryStats: () => runPromise(desktopEffects.memoryStats()),
+  memoryReindex: () => runPromise(desktopEffects.memoryReindex()),
+  memoryUpsert: (path, source) => runPromise(desktopEffects.memoryUpsert(path, source)),
   windowMinimize: () => runPromise(desktopEffects.windowMinimize()),
   windowMaximizeToggle: () => runPromise(desktopEffects.windowMaximizeToggle()),
   windowClose: () => runPromise(desktopEffects.windowClose()),

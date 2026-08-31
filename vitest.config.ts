@@ -13,5 +13,13 @@ export default defineConfig({
     environmentOptions: { jsdom: { url: "http://localhost/" } },
     setupFiles: ["./src/test/setup.ts"],
     include: ["src/test/**/*.test.{ts,tsx}"],
+    deps: {
+      inline: [/better-sqlite3/, /sqlite-vec/, /@huggingface\/transformers/],
+    },
+    server: {
+      deps: {
+        external: [/better-sqlite3/, /sqlite-vec/, /@huggingface\/transformers/],
+      },
+    },
   },
 });
