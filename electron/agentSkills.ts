@@ -62,29 +62,54 @@ These three rules are mandatory for every animation you generate — violation i
      seq.Loop = false
      \`\`\`
 
-2. **Generate Standard Studio Preview Script (MANDATORY):**
-   - Automatically inject a client-side test script as a \`LocalScript\` in \`StarterPlayer.StarterPlayerScripts\` (or \`StarterPlayerScripts\`) that loads the \`KeyframeSequence\` via \`KeyframeSequenceProvider:RegisterKeyframeSequence()\` and plays it on the local character for instant Studio preview. The script **must** explicitly use \`Humanoid:WaitForChild("Animator"):LoadAnimation()\` and \`track:Play()\` — do not use deprecated \`Humanoid:LoadAnimation\`.
-   - Template to inject (adapt AssetId variable name to your builder):
+2. **Generate Standard Studio Preview Script (MANDATORY — without this the animation appears "not working"):**
+   - Automatically inject a client-side test script as a \`LocalScript\` in \`StarterPlayer.StarterPlayerScripts\` (path \`src/client\` → \`StarterPlayerScripts\` via Rojo) that loads the \`KeyframeSequence\` via \`KeyframeSequenceProvider:RegisterKeyframeSequence()\` and plays it on the local character for instant Studio preview. The script **must** explicitly use \`Humanoid:WaitForChild("Animator"):LoadAnimation()\` and \`track:Play()\` — do not use deprecated \`Humanoid:LoadAnimation\`. It must handle both initial spawn AND respawn, ensure \`Animator\` exists, and set \`Priority\` on BOTH seq and track.
+   - **Why animations appear broken:** Most "not working" reports are: Priority left at \`Core\`/\`Idle\` (idle overrides it), preview LocalScript never created or placed in \`ServerScriptService\` (server cannot play character animations), \`seq\` variable undefined in preview (forgot to \`require\` builder), or \`Pose.Name\` mismatched rig (R6 \`Right Shoulder\` vs R15 \`RightShoulder\`) — this preview script fixes all four.
+   - Template to inject (update \`ReplicatedShared/Animations/MyActionBuilder\` path to your actual builder ModuleScript):
      \`\`\`lua
-     -- LocalScript in StarterPlayerScripts — auto-generated preview for R6/R15
+     -- LocalScript in StarterPlayerScripts — auto-generated preview for R6/R15 (handles respawn)
      local Players = game:GetService("Players")
+     local ReplicatedStorage = game:GetService("ReplicatedStorage")
      local player = Players.LocalPlayer
-     local character = player.Character or player.CharacterAdded:Wait()
-     local humanoid = character:WaitForChild("Humanoid")
-     local animator = humanoid:WaitForChild("Animator")
      local ksp = game:GetService("KeyframeSequenceProvider")
-     -- Assume 'seq' is the KeyframeSequence you just built (or require the builder module)
-     local ok, animId = pcall(function() return ksp:RegisterKeyframeSequence(seq) end)
-     if ok and animId then
+
+     -- 1. Require the builder you just created (MUST return a KeyframeSequence)
+     local Builder = require(ReplicatedStorage:WaitForChild("ReplicatedShared"):WaitForChild("Animations"):WaitForChild("MyActionBuilder"))
+     local seq = Builder.Build() -- Build() must return Instance.new("KeyframeSequence") with Priority already set
+     seq.Priority = Enum.AnimationPriority.Action -- double-ensure override
+     seq.Loop = seq.Loop -- keep as authored
+
+     local function playOnCharacter(character)
+         local humanoid = character:WaitForChild("Humanoid")
+         -- Animator is auto-created by Roblox, but may not exist instantly after spawn
+         local animator = humanoid:FindFirstChild("Animator") or humanoid:WaitForChild("Animator", 5)
+         if not animator then
+             animator = Instance.new("Animator")
+             animator.Parent = humanoid
+         end
+         -- Debug: print rig so you know which Pose set is active
+         print("[Preview] RigType:", humanoid.RigType, "isR15:", humanoid.RigType == Enum.HumanoidRigType.R15)
+         local ok, animId = pcall(function() return ksp:RegisterKeyframeSequence(seq) end)
+         if not ok or not animId then
+             warn("[Preview] RegisterKeyframeSequence failed:", animId)
+             return
+         end
          local anim = Instance.new("Animation")
          anim.AnimationId = animId
          local track = animator:LoadAnimation(anim)
          track.Priority = Enum.AnimationPriority.Action
-         track.Looped = false
+         track.Looped = seq.Loop
          track:Play()
+         print("[Preview] Playing", animId, "Priority:", track.Priority)
      end
-     \`\`\`
-   - Verify: Play in Studio, check that the LocalScript runs and the character visibly plays the custom animation on top of idle.
+
+     if player.Character then
+         task.defer(playOnCharacter, player.Character)
+     end
+     player.CharacterAdded:Connect(playOnCharacter)
+      \`\`\`
+   - **Placement check:** The \`LocalScript\` MUST be under \`StarterPlayer.StarterPlayerScripts\` (Rojo: \`src/client/*.client.lua\` → \`StarterPlayerScripts\`). If you placed it in \`ServerScriptService\` or \`ReplicatedStorage\`, it will never run on the client and the animation will appear broken.
+   - Verify: Play in Studio (F5), check Output for \`[Preview] Playing\` and that the character visibly plays the custom animation on top of idle. If not, check Output for \`RegisterKeyframeSequence failed\` and dump joints via the Debugging snippet below.
 
 3. **Rig Target Awareness — R6 / R15 Check (MANDATORY):**
    - Before authoring poses, confirm the target rig: \`humanoid.RigType == Enum.HumanoidRigType.R6\` vs \`R15\`. Bone/Pose node naming **must** explicitly match that rig:
