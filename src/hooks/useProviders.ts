@@ -1,0 +1,83 @@
+import type {
+  ProviderAuthMethod,
+  ProviderAuthResponse,
+  ProviderListResponse,
+} from "@opencode-ai/sdk/v2/client";
+import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
+
+import { providerDisplayName } from "@/lib/providerAuth";
+import { qk } from "@/lib/queryKeys";
+import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
+import type { ModelInfo, ProviderInfo } from "@/types";
+
+type ProvidersData = ProviderListResponse & {
+  authMethods?: Record<string, ProviderAuthMethod[]>;
+};
+
+function useProvidersQuery() {
+  const { client } = useOpenCodeClient();
+
+  return useQuery<ProvidersData>({
+    queryKey: qk.providers,
+    queryFn: async () => {
+      if (!client) throw new Error("No client");
+      const [provRes, authRes] = await Promise.all([
+        client.provider.list({}, { throwOnError: true }),
+        client.provider
+          .auth({}, { throwOnError: true })
+          .catch(() => ({ data: undefined as ProviderAuthResponse | undefined })),
+      ]);
+      if (!provRes.data) throw new Error("No provider data");
+      if (authRes.data) {
+        return { ...provRes.data, authMethods: authRes.data };
+      }
+      return provRes.data;
+    },
+    enabled: !!client,
+  });
+}
+
+export function useAllProviders(): ProviderInfo[] {
+  const { data } = useProvidersQuery();
+  return useMemo(
+    () => data?.all.map((p) => ({ id: p.id, name: p.name, env: p.env, source: p.source })) ?? [],
+    [data],
+  );
+}
+
+/** OpenCode's provider list as it comes, with each model's full details. */
+export function useProviderList(): ProviderListResponse | undefined {
+  return useProvidersQuery().data;
+}
+
+export function useConnectedProviders(): string[] {
+  const { data } = useProvidersQuery();
+  return useMemo(() => data?.connected ?? [], [data]);
+}
+
+export function useAllModels(): ModelInfo[] {
+  const { data } = useProvidersQuery();
+  return useMemo(() => {
+    if (!data?.all) return [];
+    const models: ModelInfo[] = [];
+    for (const provider of data.all) {
+      for (const model of Object.values(provider.models)) {
+        models.push({
+          id: model.id,
+          name: model.name,
+          providerId: provider.id,
+          providerName: providerDisplayName(provider),
+          status: model.status,
+          variants: model.variants,
+        });
+      }
+    }
+    return models;
+  }, [data]);
+}
+
+export function useAuthMethods(): Record<string, ProviderAuthMethod[]> {
+  const { data } = useProvidersQuery();
+  return data?.authMethods ?? {};
+}

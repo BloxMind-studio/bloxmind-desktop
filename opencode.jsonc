@@ -1,0 +1,17 @@
+// BloxMind desktop — developer-facing OpenCode CLI config.
+// This file configures the OpenCode CLI for developers working *on this repo*.
+// It is NOT the product's agent configuration: the shipped agent config is
+// generated at runtime by electron/opencodeConfig.ts. Multi-repo release
+// routing lives in scripts/git-workflow.mjs and must never be baked into the
+// agent a BloxMind user talks to.
+{
+  "$schema": "https://opencode.ai/config.json",
+  "agent": {
+    "studio": {
+      "description": "Roblox Studio development assistant"
+    }
+  },
+  "skills": {
+    "paths": [".opencode/skills"]
+  }
+}

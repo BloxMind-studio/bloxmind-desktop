@@ -1,0 +1,38 @@
+appId: ai.BloxMind.desktop
+productName: BloxMind
+directories:
+  output: "release"
+  buildResources: "build"
+files:
+  - "dist/**/*"
+  - "dist-electron/**/*"
+  - "package.json"
+npmRebuild: false
+asar: true
+mac:
+  category: public.app-category.developer-tools
+  icon: electron/icons/icon.icns
+  # Signing identity is auto-detected: a "Developer ID Application" cert in the
+  # keychain, or CSC_LINK / CSC_KEY_PASSWORD in CI. When no identity is
+  # available the build is produced unsigned instead of silently forced unsigned.
+  hardenedRuntime: true
+  artifactName: BloxMind-${version}-mac-${arch}.${ext}
+  target:
+    - dmg
+    - zip
+win:
+  icon: electron/icons/icon.ico
+  artifactName: BloxMind-Setup-${version}.${ext}
+  target:
+    - nsis
+linux:
+  category: Development
+  icon: electron/icons/icon.png
+  artifactName: BloxMind-${version}-linux-amd64.${ext}
+  target:
+    - deb
+publish:
+  provider: github
+  owner: BloxMind-studio
+  repo: bloxmind-desktop
+  vPrefixedTagName: true
