@@ -26,6 +26,9 @@ Repeat for `bloxmind-core-engine` and `bloxmind-mcp-server`.
 > and `bloxmind-mcp-server` contain their extracted services with imports
 > re-wired to be self-contained; both pass `pnpm typecheck`.
 >
-> The core engine vendors the MCP/Rojo modules it orchestrates under
-> `src/deps/` (they live primarily in the `bloxmind-mcp-server` repo) — keep
-> those two in sync if you change the shared MCP layer.
+> Studio access is exclusively through the Studio MCP bridge (Roblox's
+> official in-Studio MCP) — never local file syncing.
+>
+> The core engine vendors the shared Studio MCP bridge modules it orchestrates
+> under `src/deps/` (they live primarily in the `bloxmind-mcp-server` repo) —
+> keep the two repositories in step if you change the shared MCP layer.

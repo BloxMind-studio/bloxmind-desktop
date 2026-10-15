@@ -25,7 +25,7 @@ import {
 } from "../src/types/studioTarget";
 import { handleLastWindowClosed } from "./appLifecycle";
 import { createMainErrorReporter } from "./errorReporter";
-import { findInstructionFiles } from "./instructionFiles";
+import { findInstructionFiles, stripLegacyManagedBlock } from "./instructionFiles";
 import { channels } from "./channels";
 import { makeOpenCodeLayer, OpenCode } from "./services/OpenCode";
 import {
@@ -322,9 +322,15 @@ const registerIpcHandlers = Effect.sync(() => {
   ipcMain.handle(channels.getVersion, () => runMain(Effect.sync(() => app.getVersion())));
   ipcMain.handle(channels.getInstructionFiles, () =>
     findInstructionFiles({
-      workspace: join(app.getPath("home"), "BloxBot"),
+      workspace: join(app.getPath("home"), "BloxMind"),
       // OpenCode runs with XDG_CONFIG_HOME inside the workspace (see services/OpenCode.ts).
-      globalConfigDirectory: join(app.getPath("home"), "BloxBot", ".opencode", "config", "opencode"),
+      globalConfigDirectory: join(
+        app.getPath("home"),
+        "BloxMind",
+        ".opencode",
+        "config",
+        "opencode",
+      ),
       home: app.getPath("home"),
     }),
   );
@@ -745,6 +751,13 @@ if (!hasSingleInstanceLock) {
         try: () => app.whenReady(),
         catch: (cause) => new DesktopMainError({ message: "Electron failed to become ready", cause }),
       });
+      // Older builds wrote a managed conventions block (with retired Rojo
+      // live-sync rules) into the workspace AGENTS.md. Strip any leftover
+      // before OpenCode starts so it never reaches the model again.
+      // Best-effort: a failed cleanup only means the stale block lingers.
+      yield* Effect.promise(() =>
+        stripLegacyManagedBlock(join(app.getPath("home"), "BloxMind")).catch(() => false),
+      );
       // The cached copy is ready before the window asks for it; the download
       // happens in the background and applies from the next time a program loads.
       yield* Effect.promise(() => bloxbotProgramStore.load());

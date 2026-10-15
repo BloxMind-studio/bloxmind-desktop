@@ -1,4 +1,4 @@
-import { access, readFile } from "node:fs/promises";
+import { access, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 
 import type { InstructionFile } from "../src/types/desktop";
@@ -84,4 +84,38 @@ export async function findInstructionFiles(options: {
     }),
   );
   return files.filter((file) => file.content.length > 0);
+}
+
+const MANAGED_BLOCK_BEGIN = "<!-- bloxmind-managed:begin -->";
+const MANAGED_BLOCK_END = "<!-- bloxmind-managed:end -->";
+
+/**
+ * Removes the legacy BloxMind-managed conventions block from a workspace
+ * AGENTS.md. Older builds wrote that block — including now-retired Rojo
+ * live-sync and default.project.json rules — into the file, and OpenCode
+ * loads the workspace AGENTS.md into every session, so a leftover copy keeps
+ * steering the model toward Rojo. User-authored content around the markers is
+ * preserved; a file that holds only the generated heading and block is
+ * deleted. Returns whether anything changed.
+ */
+export async function stripLegacyManagedBlock(workspace: string): Promise<boolean> {
+  const target = join(workspace, "AGENTS.md");
+  const content = await readFile(target, "utf8").catch(() => null);
+  if (content === null) return false;
+
+  const begin = content.indexOf(MANAGED_BLOCK_BEGIN);
+  const end = content.indexOf(MANAGED_BLOCK_END);
+  if (begin === -1 || end <= begin) return false;
+
+  const remainder = `${content.slice(0, begin)}${content.slice(end + MANAGED_BLOCK_END.length)}`
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  if (remainder === "" || remainder === "# BloxMind Project") {
+    await rm(target, { force: true });
+    return true;
+  }
+
+  await writeFile(target, `${remainder}\n`, "utf8");
+  return true;
 }

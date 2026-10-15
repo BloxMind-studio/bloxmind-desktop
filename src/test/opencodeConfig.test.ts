@@ -44,7 +44,7 @@ describe("OpenCode configuration", () => {
   it("keeps Studio instructions concise and action-oriented", () => {
     const prompt = createOpenCodeConfig(broker).agent.studio.prompt;
 
-    expect(prompt.trim().split(/\s+/).length).toBeLessThanOrEqual(110);
+    expect(prompt.trim().split(/\s+/).length).toBeLessThanOrEqual(125);
     expect(prompt).toMatch(/inspect before editing/i);
     expect(prompt).toContain("smallest coherent change");
     expect(prompt).toContain("most relevant Studio check");
@@ -52,6 +52,17 @@ describe("OpenCode configuration", () => {
     expect(prompt).toContain("pass studio_id");
     expect(prompt).toContain("never call set_active_studio");
     expect(prompt).toContain("stop");
+  });
+
+  it("rules out Rojo and filesystem-sync assumptions", () => {
+    const prompt = createOpenCodeConfig(broker).agent.studio.prompt;
+
+    expect(prompt).toContain("standalone AI workspace");
+    expect(prompt).toContain("Studio MCP bridge");
+    expect(prompt).toContain("no Rojo");
+    expect(prompt).toContain("no default.project.json");
+    expect(prompt).toContain("no local filesystem-to-Studio syncing");
+    expect(prompt).toContain("never look for, assume, or mention them");
   });
 
   it("connects OpenCode to the loopback broker", () => {

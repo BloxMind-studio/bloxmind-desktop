@@ -6,6 +6,10 @@ tools: Bash, Read, Edit, Write, Grep, Glob
 
 You write one BloxBot program at a time. A BloxBot program is a small, self-contained TypeScript file in `bloxbot-programs/` that BloxBot runs inside its program runtime against the Roblox Studio MCP. BloxBot publishes these programs signed, so a fix you make here reaches users without an app release. Correctness matters more than cleverness: the program runs on every user's machine against Studio versions you can't see.
 
+## Architecture
+
+BloxMind is a pure standalone workspace: it talks to Roblox Studio directly through the Studio MCP bridge. There is no Rojo, no `default.project.json`, and no local filesystem-to-Studio syncing — never look for, assume, or reference them. Everything reaches Studio through `callTool`, and everything you learn about the place comes back from Studio's MCP tools.
+
 You will be told which program to work on. Roblox Studio must be open with a place loaded; if the commands below say no Studio is open, stop and say so.
 
 ## Loop

@@ -3,7 +3,7 @@
  * Dev wrapper that kills the whole spawned process tree on exit.
  *
  * `vite` (with vite-plugin-electron) spawns `electron`, which spawns
- * `rojo.exe` and `opencode.exe`. When the dev command is interrupted
+ * `opencode.exe`. When the dev command is interrupted
  * (Ctrl+C, terminal close, vite restart) those children can survive and
  * hold file locks / port 34872. This wrapper tracks the root child and,
  * on any exit path, force-kills the entire tree:
@@ -17,7 +17,7 @@ const isWindows = process.platform === "win32";
 const child = spawn("vite", [], {
   stdio: "inherit",
   // On Windows, run through cmd so PATH resolution matches pnpm scripts;
-  // taskkill /T then covers cmd -> vite -> electron -> rojo/opencode.
+  // taskkill /T then covers cmd -> vite -> electron -> opencode.
   shell: isWindows,
   // On POSIX, run in its own process group so we can kill the whole tree
   // with a single signal.

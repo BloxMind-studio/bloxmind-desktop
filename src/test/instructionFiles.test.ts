@@ -1,9 +1,10 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { findInstructionFiles } from "../../electron/instructionFiles";
+import { findInstructionFiles, stripLegacyManagedBlock } from "../../electron/instructionFiles";
 
 let root: string;
 
@@ -38,5 +39,46 @@ describe("instruction files", () => {
       { path: "~/BloxBot/AGENTS.md", scope: "project", chars: 15, content: "workspace rules" },
       { path: "~/AGENTS.md", scope: "project", chars: 10, content: "home rules" },
     ]);
+  });
+});
+
+describe("legacy managed AGENTS.md block", () => {
+  it("deletes a file that holds only the generated heading and managed block", async () => {
+    root = await mkdtemp(join(tmpdir(), "bloxbot-instructions-"));
+    const workspace = join(root, "home", "BloxMind");
+    await mkdir(workspace, { recursive: true });
+    await writeFile(
+      join(workspace, "AGENTS.md"),
+      "# BloxMind Project\n\n<!-- bloxmind-managed:begin -->\nRojo live-sync rules\n<!-- bloxmind-managed:end -->\n",
+    );
+
+    await expect(stripLegacyManagedBlock(workspace)).resolves.toBe(true);
+    expect(existsSync(join(workspace, "AGENTS.md"))).toBe(false);
+  });
+
+  it("keeps user-authored content around the managed block", async () => {
+    root = await mkdtemp(join(tmpdir(), "bloxbot-instructions-"));
+    const workspace = join(root, "home", "BloxMind");
+    await mkdir(workspace, { recursive: true });
+    await writeFile(
+      join(workspace, "AGENTS.md"),
+      "# My rules\n\nKeep code tidy.\n\n<!-- bloxmind-managed:begin -->\nstale rules\n<!-- bloxmind-managed:end -->\n",
+    );
+
+    await expect(stripLegacyManagedBlock(workspace)).resolves.toBe(true);
+    expect(await readFile(join(workspace, "AGENTS.md"), "utf8")).toBe(
+      "# My rules\n\nKeep code tidy.\n",
+    );
+  });
+
+  it("leaves files without the managed markers untouched", async () => {
+    root = await mkdtemp(join(tmpdir(), "bloxbot-instructions-"));
+    const workspace = join(root, "home", "BloxMind");
+    await mkdir(workspace, { recursive: true });
+    await writeFile(join(workspace, "AGENTS.md"), "# My rules\n");
+
+    await expect(stripLegacyManagedBlock(workspace)).resolves.toBe(false);
+    expect(await readFile(join(workspace, "AGENTS.md"), "utf8")).toBe("# My rules\n");
+    await expect(stripLegacyManagedBlock(join(workspace, "missing"))).resolves.toBe(false);
   });
 });
