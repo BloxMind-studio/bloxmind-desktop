@@ -70,6 +70,9 @@ export function useAllModels(): ModelInfo[] {
           providerName: providerDisplayName(provider),
           status: model.status,
           variants: model.variants,
+          limit: model.limit,
+          capabilities: model.capabilities,
+          family: model.family,
         });
       }
     }

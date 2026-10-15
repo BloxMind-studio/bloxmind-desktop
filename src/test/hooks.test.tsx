@@ -185,6 +185,41 @@ describe("useAllModels", () => {
     expect(result.current[1].status).toBe("beta");
     expect(result.current[2].providerId).toBe("openai");
   });
+
+  it("exposes each model's reported limits and capabilities", () => {
+    const qc = makeQC();
+    qc.setQueryData(qk.providers, {
+      all: [
+        {
+          id: "deepseek",
+          name: "DeepSeek",
+          env: [],
+          models: {
+            "deepseek-v4.1-flash": {
+              id: "deepseek-v4.1-flash",
+              name: "DeepSeek V4.1 Flash",
+              limit: { context: 200_000, output: 65_536 },
+              capabilities: {
+                reasoning: true,
+                attachment: true,
+                input: { text: true, image: true, audio: false, video: false, pdf: false },
+              },
+            },
+          },
+        },
+      ],
+      connected: ["deepseek"],
+    });
+
+    const { result } = renderHook(() => useAllModels(), { wrapper: makeWrapper(qc) });
+
+    expect(result.current[0]).toMatchObject({
+      id: "deepseek-v4.1-flash",
+      providerId: "deepseek",
+      limit: { context: 200_000, output: 65_536 },
+      capabilities: { reasoning: true, attachment: true },
+    });
+  });
 });
 
 describe("useAuthMethods", () => {

@@ -8,7 +8,9 @@ import {
   type BloxBotProgramManifest,
   type BloxBotProgramName,
   buildBloxBotProgramManifest,
+  isBloxBotProgramContract,
   isBloxBotProgramToolAllowed,
+  knownBloxBotProgramTools,
   serializeBloxBotProgramManifest,
   usableBloxBotPrograms,
 } from "@/lib/bloxbotProgramManifest";
@@ -105,6 +107,27 @@ describe("studio program manifest", () => {
     expect(isBloxBotProgramToolAllowed("something-else", "list_roblox_studios", readOnly)).toBe(
       false,
     );
+  });
+
+  it("lets the project index program read the place tree and scripts", () => {
+    expect(isBloxBotProgramToolAllowed("project-index", "search_game_tree")).toBe(true);
+    expect(isBloxBotProgramToolAllowed("project-index", "read_script")).toBe(true);
+    // Still read-only: it may not mutate the place or reach the network.
+    expect(
+      isBloxBotProgramToolAllowed("project-index", "execute_luau", {
+        readOnlyHint: false,
+        destructiveHint: true,
+        openWorldHint: true,
+      }),
+    ).toBe(false);
+    expect(
+      isBloxBotProgramToolAllowed("project-index", "http_get", {
+        readOnlyHint: true,
+        openWorldHint: true,
+      }),
+    ).toBe(false);
+    expect(isBloxBotProgramContract("project-index")).toBe(true);
+    expect(knownBloxBotProgramTools("project-index")).toEqual(["search_game_tree", "read_script"]);
   });
 
   it("ships a manifest.json that matches bloxbot-programs/ (run `pnpm bloxbot-programs build`)", async () => {

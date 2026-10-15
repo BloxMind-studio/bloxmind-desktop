@@ -16,10 +16,10 @@ import {
 } from "../../src/types/generatedProgram";
 import {
   allowedBloxBotProgramTools,
-  BLOXBOT_PROGRAM_TOOLS,
-  type BloxBotProgramName,
+  isBloxBotProgramContract,
   isKnownBloxBotProgramTool,
   isReadOnlyStudioTool,
+  knownBloxBotProgramTools,
   type StudioToolAnnotations,
   studioToolName,
 } from "../../src/lib/bloxbotProgramManifest";
@@ -63,7 +63,7 @@ export interface GeneratedProgramRuntimeService {
    * that the allow rule accepts, or the program's known tools when Studio
    * lists none.
    */
-  readonly allowedTools: (program: BloxBotProgramName) => Effect.Effect<string[]>;
+  readonly allowedTools: (program: string) => Effect.Effect<string[]>;
 }
 
 export class GeneratedProgramRuntime extends Context.Tag("@BloxMind/GeneratedProgramRuntime")<
@@ -180,7 +180,7 @@ export function startGeneratedProgramRuntime(
         const listed = await listTools().catch(() => []);
         return listed.length > 0
           ? allowedBloxBotProgramTools(program, listed).map((tool) => tool.name)
-          : [...BLOXBOT_PROGRAM_TOOLS[program]];
+          : [...knownBloxBotProgramTools(program)];
       }),
     compile: (envelope) =>
       Effect.tryPromise({
@@ -224,7 +224,7 @@ export function startGeneratedProgramRuntime(
           // Programs may only read from Studio, whoever wrote them.
           const allowed =
             isKnownBloxBotProgramTool(contractName, name) ||
-            (contractName in BLOXBOT_PROGRAM_TOOLS &&
+            (isBloxBotProgramContract(contractName) &&
               isReadOnlyStudioTool((await describeTool(name))?.annotations));
           if (!allowed) {
             throw new ToolContractError(`${contractName} programs may not call ${requestedName}`);

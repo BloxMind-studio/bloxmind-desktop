@@ -11,6 +11,7 @@ import { useAgents } from "@/hooks/useAgents";
 import { useCommands } from "@/hooks/useCommands";
 import { useAllModels, useConnectedProviders } from "@/hooks/useProviders";
 import { useIsBusy } from "@/hooks/useSessionStatuses";
+import { findModelInfo, formatTokens, modelSpecs, reasoningLabel } from "@/lib/modelSpecs";
 import { splitModelKey } from "@/lib/splitModelKey";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { useExplorerReference } from "@/providers/ExplorerReferenceProvider";
@@ -301,6 +302,7 @@ function ChatInput() {
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [showAgentPicker, setShowAgentPicker] = useState(false);
   const [modelSearch, setModelSearch] = useState("");
+  const [hoveredModel, setHoveredModel] = useState<ModelInfo | null>(null);
   const [rejectShake, setRejectShake] = useState(false);
   const promptEditorRef = useRef<PromptEditorHandle>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -516,6 +518,12 @@ function ChatInput() {
     return entries;
   }, [allModels, connectedProviders, hiddenModels, modelSearch]);
 
+  // The model under the pointer in the picker, falling back to the selected
+  // one, so the spec HUD always has something to show.
+  const hudModel = hoveredModel ?? findModelInfo(selectedModel ?? undefined, allModels) ?? null;
+  const hudSpecs = modelSpecs(hudModel);
+  const hudContext = formatTokens(hudSpecs?.contextWindow);
+
   const visibleAgents = useMemo(
     () => agents.filter((a) => !a.hidden && (a.mode === "primary" || a.mode === "all")),
     [agents],
@@ -550,6 +558,7 @@ function ChatInput() {
     setSelectedModel(fullId);
     setShowModelPicker(false);
     setModelSearch("");
+    setHoveredModel(null);
   }
 
   const modelDisplay = selectedModel
@@ -579,6 +588,8 @@ function ChatInput() {
             <button
               key={fullId}
               onClick={() => handleModelClick(model)}
+              onMouseEnter={() => setHoveredModel(model)}
+              onFocus={() => setHoveredModel(model)}
               className={`flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs transition-colors ${isSelected ? "bg-accent font-medium text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}
             >
               <span className="truncate">{model.name}</span>
@@ -600,6 +611,7 @@ function ChatInput() {
               setShowAgentPicker(false);
               if (showModelPicker) {
                 setModelSearch("");
+                setHoveredModel(null);
               }
             }}
             className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
@@ -671,11 +683,48 @@ function ChatInput() {
                   )}
                 </div>
               </div>
-              <div className="flex-1 overflow-y-auto p-1">
+              <div
+                className="flex-1 overflow-y-auto p-1"
+                onMouseLeave={() => setHoveredModel(null)}
+              >
                 {modelsByProvider.map(([id, group]) => renderProviderGroup(id, group))}
                 {modelsByProvider.length === 0 && (
                   <div className="px-2 py-3 text-center text-xs text-muted-foreground">
                     No models matching "{modelSearch}"
+                  </div>
+                )}
+              </div>
+              {/* Spec HUD: the hovered model's metadata, or the selected one's. */}
+              <div className="shrink-0 border-t px-2 py-1.5">
+                {hudSpecs ? (
+                  <>
+                    <div className="flex items-center gap-1.5">
+                      <span className="truncate text-[11px] font-medium text-foreground">
+                        {hudSpecs.model}
+                      </span>
+                      <ModelStatusBadge status={hudModel?.status} />
+                    </div>
+                    <div className="truncate text-[10px] text-muted-foreground">
+                      {hudSpecs.provider}
+                    </div>
+                    <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-[10px]">
+                      <dt className="text-muted-foreground/70">Inputs</dt>
+                      <dd className="truncate capitalize text-muted-foreground">
+                        {hudSpecs.inputs.join(", ")}
+                      </dd>
+                      <dt className="text-muted-foreground/70">Reasoning</dt>
+                      <dd className="text-muted-foreground">
+                        {reasoningLabel(hudSpecs.reasoning)}
+                      </dd>
+                      <dt className="text-muted-foreground/70">Context</dt>
+                      <dd className="text-muted-foreground">
+                        {hudContext ? `${hudContext} tokens` : "Unknown"}
+                      </dd>
+                    </dl>
+                  </>
+                ) : (
+                  <div className="text-[10px] text-muted-foreground">
+                    Select a model to see its specs.
                   </div>
                 )}
               </div>

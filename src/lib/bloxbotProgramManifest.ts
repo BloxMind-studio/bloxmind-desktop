@@ -60,6 +60,26 @@ export const BLOXBOT_PROGRAM_TOOLS: Record<BloxBotProgramName, readonly string[]
   "studio-target-selection": ["list_roblox_studios"],
 };
 
+/**
+ * The project-index contract. Its programs are compiled by the app itself
+ * (the built-in indexer, or one the AI generates) rather than published
+ * through the manifest, so it is not part of {@link BLOXBOT_PROGRAM_CONTRACTS}.
+ */
+export const PROJECT_INDEX_PROGRAM_NAME = "project-index";
+
+/** Studio MCP tools the project index program reads the place with. */
+export const PROJECT_INDEX_PROGRAM_TOOLS: readonly string[] = ["search_game_tree", "read_script"];
+
+/**
+ * Every contract the app knows, with the tools it is known to use. A contract
+ * outside this map gets no tools at all; each one here may additionally call
+ * any tool Studio itself marks read-only (see isBloxBotProgramToolAllowed).
+ */
+const PROGRAM_TOOLS: Record<string, readonly string[]> = {
+  ...BLOXBOT_PROGRAM_TOOLS,
+  [PROJECT_INDEX_PROGRAM_NAME]: PROJECT_INDEX_PROGRAM_TOOLS,
+};
+
 export const BloxBotProgramManifestSchema = Schema.Struct({
   format: Schema.Literal(BLOXBOT_PROGRAM_MANIFEST_FORMAT),
   /** Increases with every published change; the app never goes back to a lower one. */
@@ -128,12 +148,19 @@ export interface StudioToolAnnotations {
   openWorldHint?: boolean;
 }
 
+/** Whether the app recognizes this program contract at all. */
+export function isBloxBotProgramContract(contractName: string): boolean {
+  return contractName in PROGRAM_TOOLS;
+}
+
+/** The tools a known contract may call without asking Studio for annotations. */
+export function knownBloxBotProgramTools(contractName: string): readonly string[] {
+  return PROGRAM_TOOLS[contractName] ?? [];
+}
+
 /** Whether a program may call a tool without asking Studio for its annotations. */
 export function isKnownBloxBotProgramTool(contractName: string, toolName: string): boolean {
-  return (
-    contractName in BLOXBOT_PROGRAM_TOOLS &&
-    BLOXBOT_PROGRAM_TOOLS[contractName as BloxBotProgramName].includes(toolName)
-  );
+  return knownBloxBotProgramTools(contractName).includes(toolName);
 }
 
 /**
@@ -155,7 +182,7 @@ export function isBloxBotProgramToolAllowed(
   toolName: string,
   annotations?: StudioToolAnnotations,
 ): boolean {
-  if (!(contractName in BLOXBOT_PROGRAM_TOOLS)) return false;
+  if (!isBloxBotProgramContract(contractName)) return false;
   return isKnownBloxBotProgramTool(contractName, toolName) || isReadOnlyStudioTool(annotations);
 }
 
@@ -180,6 +207,6 @@ export function studioToolName(name: string): string {
  */
 export function allowedBloxBotProgramTools<
   T extends { name: string; annotations?: StudioToolAnnotations },
->(program: BloxBotProgramName, tools: readonly T[]): T[] {
+>(program: string, tools: readonly T[]): T[] {
   return tools.filter((tool) => isBloxBotProgramToolAllowed(program, tool.name, tool.annotations));
 }

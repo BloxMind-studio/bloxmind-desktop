@@ -94,7 +94,18 @@ function seedState(qc: QueryClient, session: Session) {
         id: "anthropic",
         name: "Anthropic",
         env: [],
-        models: { "claude-3.5-sonnet": { id: "claude-3.5-sonnet", name: "Claude 3.5 Sonnet" } },
+        models: {
+          "claude-3.5-sonnet": {
+            id: "claude-3.5-sonnet",
+            name: "Claude 3.5 Sonnet",
+            limit: { context: 200_000, output: 64_000 },
+            capabilities: {
+              reasoning: true,
+              attachment: true,
+              input: { text: true, image: true, audio: false, video: false, pdf: false },
+            },
+          },
+        },
       },
     ],
     connected: ["anthropic"],
@@ -410,6 +421,24 @@ describe("ChatInput", () => {
     await waitFor(() => {
       expect(screen.getByText("claude-3.5-sonnet")).toBeInTheDocument();
     });
+  });
+
+  it("shows the selected model's spec HUD in the picker", async () => {
+    const client = createClient();
+    const qc = createQueryClient();
+
+    render(<TestChatInput client={client} queryClient={qc} />);
+
+    const trigger = await screen.findByText("claude-3.5-sonnet");
+    await act(async () => {
+      fireEvent.click(trigger);
+    });
+
+    // With no row hovered, the HUD falls back to the selected model.
+    expect(await screen.findByText("Inputs")).toBeInTheDocument();
+    expect(screen.getByText("Inputs").nextElementSibling).toHaveTextContent("text, image");
+    expect(screen.getByText("Reasoning").nextElementSibling).toHaveTextContent("Allows reasoning");
+    expect(screen.getByText("Context").nextElementSibling).toHaveTextContent("200,000 tokens");
   });
 
   it("attaches an image to the submitted message", async () => {

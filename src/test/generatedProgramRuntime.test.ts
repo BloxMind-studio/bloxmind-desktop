@@ -178,6 +178,38 @@ describe("GeneratedProgramRuntime", () => {
     expect(callTool).not.toHaveBeenCalled();
   });
 
+  it("lets a project-index program call search_game_tree and read_script", async () => {
+    const callTool = vi.fn().mockResolvedValue({ content: [] });
+    const runtime = startGeneratedProgramRuntime(callTool);
+    const artifact = await Effect.runPromise(
+      runtime.compile({
+        version: 1,
+        contract: {
+          name: "project-index",
+          version: "1",
+          inputSchemaVersion: "project-index-input-v1",
+          outputSchemaVersion: "project-index-skeleton-v1",
+        },
+        source: `async function run({ callTool }) {
+          await callTool("search_game_tree", { max_depth: 10, head_limit: 100000 });
+          await callTool("roblox-studio_read_script", { script_path: "game.Workspace.Main" });
+          return { modules: [] };
+        }`,
+      }),
+    );
+
+    await expect(
+      Effect.runPromise(runtime.invoke({ artifact, input: null })),
+    ).resolves.toMatchObject({ value: { modules: [] } });
+    expect(callTool).toHaveBeenNthCalledWith(1, "search_game_tree", {
+      max_depth: 10,
+      head_limit: 100000,
+    });
+    expect(callTool).toHaveBeenNthCalledWith(2, "read_script", {
+      script_path: "game.Workspace.Main",
+    });
+  });
+
   it("restores a compiled function from a persisted artifact", async () => {
     const firstRuntime = startGeneratedProgramRuntime(vi.fn());
     const artifact = await Effect.runPromise(
