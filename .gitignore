@@ -47,3 +47,7 @@ Thumbs.db
 
 # Tooling artifacts
 .kilocode/
+.opencode/
+staged-release/
+test-results/
+playwright-report/

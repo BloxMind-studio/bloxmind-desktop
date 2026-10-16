@@ -234,6 +234,9 @@ const SendButton = memo(function SendButton({
 
 function ChatInput() {
   const { pendingReference, consumeReference, objects } = useExplorerReference();
+  // PromptEditor rebuilds its object search index whenever the array identity
+  // changes; spreading inline on every render defeated that memoization.
+  const editorObjects = useMemo(() => [...objects], [objects]);
   const allModels = useAllModels();
   const connectedProviders = useConnectedProviders();
   const agents = useAgents();
@@ -846,7 +849,7 @@ function ChatInput() {
           <PromptEditor
             ref={promptEditorRef}
             commands={commands}
-            objects={[...objects]}
+            objects={editorObjects}
             onChange={setText}
             onSubmit={handleSubmit}
             onPaste={(e) => {

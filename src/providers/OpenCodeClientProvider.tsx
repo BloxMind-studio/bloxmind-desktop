@@ -403,12 +403,23 @@ export function OpenCodeClientProvider({
     }
 
     async function subscribe() {
+      // A stream is already active. The reconnect timer must not start a
+      // second, overlapping loop; the active loop reschedules on exit.
+      if (streamAbortController) return;
+      if (!client) return;
+      // A fresh per-stream abort controller lets the heartbeat kill a stuck
+      // stream without killing the outer reconnect loop. Passing its signal
+      // to the SDK is what actually unblocks a dead connection: without it
+      // the for-await loop could hang forever and every heartbeat tick would
+      // pile another subscribe loop on top of the stuck one.
+      const streamController = new AbortController();
+      streamAbortController = streamController;
       try {
-        if (!client) return;
-        // Create a fresh per-stream abort controller so the heartbeat can
-        // kill a stuck stream without killing the outer reconnect loop.
-        streamAbortController = new AbortController();
-        const sseResult = await client.event.subscribe({}, { throwOnError: true });
+        const sseResult = await client.event.subscribe(
+          {},
+          { throwOnError: true, signal: streamController.signal },
+        );
+        if (streamAbortController !== streamController) return;
         if (!sseResult?.stream) {
           consecutiveFailures++;
           if (consecutiveFailures >= SSE_FAILURE_THRESHOLD) showReconnectToast();
@@ -416,12 +427,13 @@ export function OpenCodeClientProvider({
           return;
         }
         await reconcileServerState(queryClient, activeSessionIdRef.current);
+        if (streamAbortController !== streamController) return;
         consecutiveFailures = 0;
         dismissReconnectToast();
         startHeartbeat();
 
         for await (const event of sseResult.stream) {
-          if (abortController.signal.aborted || streamAbortController.signal.aborted) break;
+          if (abortController.signal.aborted || streamController.signal.aborted) break;
           lastEventTime = Date.now();
           sseDispatch(queryClient, event, activeSessionIdRef, (usage) => {
             captureDetailedAnalytics(posthog, "model_usage", usage);
@@ -433,22 +445,28 @@ export function OpenCodeClientProvider({
           }
         }
 
-        stopHeartbeat();
-        streamAbortController = null;
-
-        if (!abortController.signal.aborted) {
+        // The stream ended on its own (server or network closed it). A
+        // deliberate abort — unmount (outer controller) or heartbeat (stream
+        // controller) — is already handled by whoever aborted it, so only the
+        // surprise case counts a failure and reschedules.
+        if (!abortController.signal.aborted && !streamController.signal.aborted) {
           consecutiveFailures++;
           if (consecutiveFailures >= SSE_FAILURE_THRESHOLD) showReconnectToast();
           scheduleReconnect();
         }
       } catch (err) {
-        stopHeartbeat();
-        streamAbortController = null;
-        if (!abortController.signal.aborted) {
+        if (!abortController.signal.aborted && !streamController.signal.aborted) {
           console.error("SSE stream error:", err);
           consecutiveFailures++;
           if (consecutiveFailures >= SSE_FAILURE_THRESHOLD) showReconnectToast();
           scheduleReconnect();
+        }
+      } finally {
+        // Only tear down the shared heartbeat when this loop still owns the
+        // current stream; a stale loop must not kill a newer one's stream.
+        if (streamAbortController === streamController) {
+          stopHeartbeat();
+          streamAbortController = null;
         }
       }
     }

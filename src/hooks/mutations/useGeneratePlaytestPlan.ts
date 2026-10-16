@@ -52,7 +52,7 @@ export function useGeneratePlaytestPlan() {
         {
           title: "Playtest plan (temporary)",
           agent: selectedAgent ?? undefined,
-          metadata: { bloxbotHidden: true, purpose: "playtest-plan" },
+          metadata: { BloxMindHidden: true, purpose: "playtest-plan" },
           permission: ASK_ALL_PERMISSIONS,
         },
         { throwOnError: true },

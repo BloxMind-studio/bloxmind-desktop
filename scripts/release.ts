@@ -170,7 +170,9 @@ async function publish(releaseDirectory: string): Promise<void> {
     );
 
     command("gh", ["release", "edit", tag, "--draft=false", "--latest"]);
-    process.stdout.write(`Published ${tag} with exactly seven verified assets.\n`);
+    process.stdout.write(
+      `Published ${tag} with exactly ${releaseAssetNames(version).length} verified assets.\n`,
+    );
   } finally {
     await rm(temporaryDirectory, { recursive: true, force: true });
   }

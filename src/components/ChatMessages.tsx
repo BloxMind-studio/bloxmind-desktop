@@ -2034,6 +2034,11 @@ function ChatMessages() {
   // pre-task snapshot so auto-rollback always has a restore point.
   const previousStatusRef = useRef<SessionStatus | undefined>(undefined);
   const capturedForMessageRef = useRef<string | null>(null);
+  // Session whose most recent busy→idle transition still needs validation.
+  // Set when a task goes busy, consumed by the auto-rollback effect. Without
+  // this, validation ran on every idle render — including app start and
+  // session switches — and could silently roll back unrelated work.
+  const armedSessionRef = useRef<string | null>(null);
   useEffect(() => {
     if (!activeSessionId) {
       previousStatusRef.current = undefined;
@@ -2049,6 +2054,9 @@ function ChatMessages() {
       const lastId = messageIds[messageIds.length - 1];
       if (!lastId || capturedForMessageRef.current === lastId) return;
       capturedForMessageRef.current = lastId;
+      // A turn is actually running in this session: arm auto-validation for
+      // the upcoming idle transition.
+      armedSessionRef.current = activeSessionId;
       void captureCheckpoint({
         sessionId: activeSessionId,
         messageId: lastId,
@@ -2078,11 +2086,19 @@ function ChatMessages() {
   // checkpoint so broken code never stays in the workspace.
   useEffect(() => {
     if (sessionStatus?.type !== "idle" || !activeSessionId) return;
+    // Validate only after a task actually ran in THIS session (armed on the
+    // busy transition above). Idle at app start or after switching sessions
+    // never validates, so a stale workspace can't be silently rolled back.
+    if (armedSessionRef.current !== activeSessionId) return;
     if (messageIds.length === 0) return;
     let cancelled = false;
 
     const timer = setTimeout(() => {
       void (async () => {
+        // Consume the arm once the debounce elapses so the same finished
+        // turn isn't validated again on subsequent idle renders.
+        if (armedSessionRef.current !== activeSessionId) return;
+        armedSessionRef.current = null;
         try {
           const validation = await validateWorkspace();
           if (cancelled) return;

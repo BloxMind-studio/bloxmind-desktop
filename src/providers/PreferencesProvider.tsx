@@ -109,6 +109,9 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [hiddenModels, setHiddenModels] = useState<Set<string>>(new Set());
   const [detailedAnalyticsEnabled, setDetailedAnalyticsEnabledState] = useState(false);
   const detailedAnalyticsEnabledRef = useRef(false);
+  // Whether the persisted default variant has been applied this session; a
+  // later config refetch must not reset a variant the user has since picked.
+  const variantRestoredRef = useRef(false);
   // UI customization
   const [accentColor, setAccentColorState] = useState<AccentColor>("blue");
   const [layoutDensity, setLayoutDensityState] = useState<LayoutDensity>("comfortable");
@@ -221,9 +224,15 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     ) {
       setSelectedModelState(configData.lastModel);
     }
-    // Restore the persisted default variant (reasoning effort).
-    if (configData.defaultVariant) {
-      setSelectedVariantState(configData.defaultVariant);
+    // Restore the persisted default variant (reasoning effort) once per
+    // session. Re-applying it on every config refetch would clobber a variant
+    // the user picked after the initial load (e.g. right after a model switch
+    // triggers a config patch + refetch).
+    if (!variantRestoredRef.current) {
+      variantRestoredRef.current = true;
+      if (configData.defaultVariant) {
+        setSelectedVariantState(configData.defaultVariant);
+      }
     }
   }, [configData, connectedProviders, selectedModel]);
   // Auto-select first agent

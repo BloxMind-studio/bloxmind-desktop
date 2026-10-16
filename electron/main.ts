@@ -521,6 +521,10 @@ const registerIpcHandlers = Effect.sync(() => {
     ),
   );
   // ── Checkpoint system ──────────────────────────────────────────────
+  // Checkpoint IPC arguments cross a trust boundary; validate them before
+  // they reach the service (which additionally sanitizes them into paths).
+  const SessionIdSchema = Schema.String.pipe(Schema.minLength(1), Schema.maxLength(256));
+  const CheckpointIdSchema = Schema.String.pipe(Schema.minLength(1), Schema.maxLength(256));
   ipcMain.handle(channels.checkpointCapture, (_event, input: unknown) =>
     openCodeRuntime.runPromise(
       Effect.gen(function* () {
@@ -557,11 +561,13 @@ const registerIpcHandlers = Effect.sync(() => {
       }),
     ),
   );
-  ipcMain.handle(channels.checkpointPreview, (_event, checkpointId: string, sessionId: string) =>
+  ipcMain.handle(channels.checkpointPreview, (_event, checkpointId: unknown, sessionId: unknown) =>
     openCodeRuntime.runPromise(
       Effect.gen(function* () {
+        const id = yield* Schema.decodeUnknown(CheckpointIdSchema)(checkpointId);
+        const sid = yield* Schema.decodeUnknown(SessionIdSchema)(sessionId);
         const service = yield* CheckpointServiceTag;
-        return yield* service.preview(checkpointId, sessionId).pipe(
+        return yield* service.preview(id, sid).pipe(
           Effect.flatMap((preview) =>
             Schema.decodeUnknown(RestorePreviewSchema)(preview).pipe(
               Effect.mapError(
@@ -574,11 +580,12 @@ const registerIpcHandlers = Effect.sync(() => {
       }),
     ),
   );
-  ipcMain.handle(channels.checkpointList, (_event, sessionId: string) =>
+  ipcMain.handle(channels.checkpointList, (_event, sessionId: unknown) =>
     openCodeRuntime.runPromise(
       Effect.gen(function* () {
+        const sid = yield* Schema.decodeUnknown(SessionIdSchema)(sessionId);
         const service = yield* CheckpointServiceTag;
-        const history = yield* service.list(sessionId);
+        const history = yield* service.list(sid);
         return yield* Schema.decodeUnknown(Schema.Array(CheckpointSchema))(history).pipe(
           Effect.mapError(
             (cause) => new DesktopMainError({ message: "Checkpoint list output is invalid", cause }),

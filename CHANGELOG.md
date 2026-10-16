@@ -16,6 +16,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Stopping the agent mid-turn no longer leaves a frozen "Thinking…" indicator or leftover reasoning and tool rows on screen. The thinking indicator only shows while the agent is actually working, and a stopped turn that produced no text leaves nothing behind.
 - The automatic checkpoint badge and "Restore files" action no longer appear while the agent is still working, including while it is retrying a request.
 - Checkpoint marks only appear for checkpoints captured during the current session. After restarting the app, previously captured checkpoints are no longer offered for restore.
+- Build validation now runs the tools installed in the project itself and skips checks the project doesn't have. Previously the validator could fail to start on Windows, report a "build failure", and silently roll the agent's changes back.
+- Validation only runs after a task actually finishes in the current chat. Starting the app or switching chats no longer risks silently restoring files you didn't ask for.
+- Capturing a checkpoint skips files it can't read instead of recording them as missing, so restoring a checkpoint can no longer delete a file that was never backed up.
+- Restoring files no longer starts an extra model turn; the assistant is updated silently instead.
+- The temporary connection-check and playtest-planner chats no longer appear in the chat list.
+- Switching models no longer resets your reasoning-effort choice back to the saved default.
 
 ## [0.13.8] - 2026-10-16
 

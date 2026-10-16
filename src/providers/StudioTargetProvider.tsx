@@ -82,16 +82,18 @@ export function StudioTargetProvider({ children }: { children: ReactNode }) {
   const generationRef = useRef<Promise<StudioTargetPrograms> | null>(null);
   const targetsBySessionRef = useRef<Record<string, StudioTarget>>({});
   const configLoadedRef = useRef(false);
+  // Latest active session id; in-flight discoveries compare against this so a
+  // discovery that started for a previous session can't apply its result
+  // (selection, analytics, remembered target) to the one now on screen.
+  const activeSessionIdRef = useRef<string | null>(activeSessionId);
+  activeSessionIdRef.current = activeSessionId;
 
-  const rememberTarget = useCallback(
-    async (target: StudioTarget) => {
-      if (!activeSessionId) return;
-      const next = { ...targetsBySessionRef.current, [activeSessionId]: target };
-      targetsBySessionRef.current = next;
-      await desktop.patchConfig({ studioTargetsBySession: next });
-    },
-    [activeSessionId],
-  );
+  const rememberTarget = useCallback(async (target: StudioTarget, sessionId: string | null) => {
+    if (!sessionId) return;
+    const next = { ...targetsBySessionRef.current, [sessionId]: target };
+    targetsBySessionRef.current = next;
+    await desktop.patchConfig({ studioTargetsBySession: next });
+  }, []);
 
   const generatePrograms = useCallback(async () => {
     if (generationRef.current) return generationRef.current;
@@ -183,12 +185,23 @@ export function StudioTargetProvider({ children }: { children: ReactNode }) {
   );
 
   const applyDiscovery = useCallback(
-    async (programs: StudioTargetPrograms, operation: number) => {
+    async (
+      programs: StudioTargetPrograms,
+      operation: number,
+      discoverySessionId: string | null,
+    ) => {
+      const stale = () =>
+        operation !== operationRef.current || activeSessionIdRef.current !== discoverySessionId;
       const result = await desktop.discoverStudioTargets(programs);
-      if (operation !== operationRef.current) return;
+      if (stale()) {
+        setSelectingKey(null);
+        return;
+      }
       targetsRef.current = result.targets;
       setTargets(result.targets);
-      const remembered = activeSessionId ? targetsBySessionRef.current[activeSessionId] : undefined;
+      const remembered = discoverySessionId
+        ? targetsBySessionRef.current[discoverySessionId]
+        : undefined;
       const placeMatches = remembered?.placeId
         ? result.targets.filter((target) => target.placeId === remembered.placeId)
         : [];
@@ -213,10 +226,13 @@ export function StudioTargetProvider({ children }: { children: ReactNode }) {
       if (nextSelected && result.selectedKey !== nextSelected.key) {
         setSelectingKey(nextSelected.key);
         const selection = await desktop.selectStudioTarget(programs, nextSelected.key);
-        if (operation !== operationRef.current) return;
+        if (stale()) {
+          setSelectingKey(null);
+          return;
+        }
         if (!selection.verified) throw new Error("Target verification failed");
         nextSelected = selection.selected;
-        await rememberTarget(nextSelected);
+        await rememberTarget(nextSelected, discoverySessionId);
         setSelectingKey(null);
       }
       if (!nextSelected && result.targets.length === 1) {
@@ -224,10 +240,13 @@ export function StudioTargetProvider({ children }: { children: ReactNode }) {
         setSelectingKey(onlyTarget.key);
         posthog.capture("studio_target_selected", analyticsProperties("studio_target"));
         const selection = await desktop.selectStudioTarget(programs, onlyTarget.key);
-        if (operation !== operationRef.current) return;
+        if (stale()) {
+          setSelectingKey(null);
+          return;
+        }
         if (!selection.verified) throw new Error("Target verification failed");
         nextSelected = selection.selected;
-        await rememberTarget(nextSelected);
+        await rememberTarget(nextSelected, discoverySessionId);
         posthog.capture(
           "studio_target_verification_succeeded",
           analyticsProperties("studio_target", {
@@ -253,7 +272,7 @@ export function StudioTargetProvider({ children }: { children: ReactNode }) {
         }),
       );
     },
-    [activeSessionId, rememberTarget],
+    [rememberTarget],
   );
 
   const discover = useCallback(
@@ -261,17 +280,22 @@ export function StudioTargetProvider({ children }: { children: ReactNode }) {
       if (discoveryRef.current) return discoveryRef.current;
       const discovery = (async () => {
         const operation = ++operationRef.current;
+        // The session this discovery is for; results are discarded if the
+        // user switches sessions before it completes.
+        const discoverySessionId = activeSessionId;
         if (showLoading && targetsRef.current.length === 0) setStatus("loading");
         else setRefreshing(true);
         setError(null);
         try {
-          await withProgramFallbacks((programs) => applyDiscovery(programs, operation));
+          await withProgramFallbacks((programs) =>
+            applyDiscovery(programs, operation, discoverySessionId),
+          );
         } catch {
           if (operation !== operationRef.current) return;
           try {
             programsRef.current = null;
             const regenerated = await generatePrograms();
-            await applyDiscovery(regenerated, operation);
+            await applyDiscovery(regenerated, operation, discoverySessionId);
           } catch (repairError) {
             if (operation !== operationRef.current) return;
             setStatus(targetsRef.current.length > 0 ? "ready" : "error");
@@ -293,12 +317,13 @@ export function StudioTargetProvider({ children }: { children: ReactNode }) {
       discoveryRef.current = discovery;
       return discovery;
     },
-    [applyDiscovery, generatePrograms, withProgramFallbacks],
+    [activeSessionId, applyDiscovery, generatePrograms, withProgramFallbacks],
   );
 
   const select = useCallback(
     async (target: StudioTarget) => {
       const operation = ++operationRef.current;
+      const sessionIdAtStart = activeSessionId;
       setSelectingKey(target.key);
       setError(null);
       posthog.capture(
@@ -318,9 +343,11 @@ export function StudioTargetProvider({ children }: { children: ReactNode }) {
           programsRef.current = null;
           result = await attempt(await generatePrograms());
         }
-        if (operation !== operationRef.current) return;
+        if (operation !== operationRef.current || activeSessionIdRef.current !== sessionIdAtStart) {
+          return;
+        }
         setSelected(result.selected);
-        await rememberTarget(result.selected);
+        await rememberTarget(result.selected, sessionIdAtStart);
         setTargets((current) =>
           current.some((item) => item.key === result.selected.key)
             ? current
@@ -344,7 +371,7 @@ export function StudioTargetProvider({ children }: { children: ReactNode }) {
         if (operation === operationRef.current) setSelectingKey(null);
       }
     },
-    [generatePrograms, rememberTarget, withProgramFallbacks],
+    [activeSessionId, generatePrograms, rememberTarget, withProgramFallbacks],
   );
 
   // AI traces attach the Studio place the prompt was routed to.
@@ -366,16 +393,25 @@ export function StudioTargetProvider({ children }: { children: ReactNode }) {
       setSelected(null);
       return;
     }
+    let cancelled = false;
     const loadAndDiscover = async () => {
       if (!configLoadedRef.current) {
         const config = await desktop.loadConfig();
+        // Another session switch happened while the config was loading; its
+        // own effect run will (re)apply the correct remembered target.
+        if (cancelled) return;
         targetsBySessionRef.current = config.studioTargetsBySession ?? {};
         configLoadedRef.current = true;
       }
       setSelected(targetsBySessionRef.current[activeSessionId] ?? null);
+      // Any selection spinner belonged to the previous session.
+      setSelectingKey(null);
       await discover(false);
     };
     void loadAndDiscover();
+    return () => {
+      cancelled = true;
+    };
   }, [activeSessionId, client, discover]);
 
   useEffect(() => {

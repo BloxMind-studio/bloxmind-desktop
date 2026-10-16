@@ -159,7 +159,7 @@ describe("PlaytestPanel", () => {
     // StructuredOutput tool, and OpenCode's free tier rejects tool-less requests.
     const created = client.session.create.mock.calls[0][0];
     expect(created.permission).toEqual([{ permission: "*", pattern: "*", action: "ask" }]);
-    expect(created.metadata).toMatchObject({ bloxbotHidden: true });
+    expect(created.metadata).toMatchObject({ BloxMindHidden: true });
     expect(client.permission.reply).toHaveBeenCalledWith({
       requestID: "planner-ask",
       reply: "reject",

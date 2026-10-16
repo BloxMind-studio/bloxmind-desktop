@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useCheckpoints } from "@/hooks/useCheckpoints";
 import { qk } from "@/lib/queryKeys";
@@ -112,6 +112,10 @@ export function useCheckpointHistory(sessionId: string | undefined) {
           try {
             await client.session.prompt({
               sessionID: sessionId,
+              // Context-only notification: it must update the agent's view of
+              // the codebase without starting a new turn (no assistant reply,
+              // no tokens burned, no accidental file edits).
+              noReply: true,
               parts: [
                 {
                   type: "text",
@@ -147,13 +151,16 @@ export function useCheckpointHistory(sessionId: string | undefined) {
     [sessionId, checkpoints, queryClient, client],
   );
 
-  return {
-    liveCheckpoints,
-    recordCapturedCheckpoint,
-    restoreLatestFileCheckpoint,
-    fsCheckpointCount: liveCheckpoints.length,
-    latestFsCheckpoint:
-      liveCheckpoints.length > 0 ? liveCheckpoints[liveCheckpoints.length - 1] : null,
-    restoredMessageId,
-  };
+  return useMemo(
+    () => ({
+      liveCheckpoints,
+      recordCapturedCheckpoint,
+      restoreLatestFileCheckpoint,
+      fsCheckpointCount: liveCheckpoints.length,
+      latestFsCheckpoint:
+        liveCheckpoints.length > 0 ? liveCheckpoints[liveCheckpoints.length - 1] : null,
+      restoredMessageId,
+    }),
+    [liveCheckpoints, recordCapturedCheckpoint, restoreLatestFileCheckpoint, restoredMessageId],
+  );
 }

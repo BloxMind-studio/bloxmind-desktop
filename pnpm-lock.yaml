@@ -11,9 +11,6 @@ importers:
       '@lexical/react':
         specifier: ^0.48.0
         version: 0.48.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(typescript@7.0.2)(yjs@13.6.31)
-      '@lexical/utils':
-        specifier: ^0.48.0
-        version: 0.48.0(typescript@7.0.2)
       '@modelcontextprotocol/sdk':
         specifier: 1.26.0
         version: 1.26.0(supports-color@7.2.0)(zod@3.25.76)

@@ -104,7 +104,7 @@ function Chat() {
   const { data: allSessions } = useSessions();
   const studioConnection = useStudioConnection();
   const studioTarget = useStudioTargetOptional();
-  const hasStudioTarget = studioTarget?.selected !== null && studioTarget?.status === "ready";
+  const hasStudioTarget = Boolean(studioTarget?.selected) && studioTarget?.status === "ready";
 
   // Get active session title from the sessions list
   const activeSessionTitle = allSessions?.find((s) => s.id === activeSessionId)?.title ?? null;

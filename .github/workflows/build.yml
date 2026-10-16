@@ -68,6 +68,13 @@ jobs:
           pnpm test
           echo "Tests completed successfully"
 
+      - name: Lint
+        working-directory: repo
+        run: |
+          echo "Starting lint..."
+          pnpm lint
+          echo "Lint completed successfully"
+
       - name: Type-check
         working-directory: repo
         run: |
@@ -197,6 +204,7 @@ jobs:
       - name: Verify Windows signatures
         if: env.SIGN_WINDOWS == 'true'
         shell: pwsh
+        working-directory: repo
         run: |
           $files = @(Get-ChildItem -Path release -Filter 'BloxMind-Setup-*.exe' -File)
           $files += Get-Item -Path 'release/win-unpacked/BloxMind.exe'

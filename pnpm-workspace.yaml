@@ -8,4 +8,3 @@ allowBuilds:
 minimumReleaseAgeExclude:
   - react-dom@19.3.1
   - react@19.3.1
-  - effect@4.0.5

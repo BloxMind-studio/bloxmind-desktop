@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Schema } from "effect";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 
 import { BUILTIN_PROJECT_INDEX_PROGRAM } from "@/lib/builtinProjectPrograms";
 import { desktop } from "@/lib/desktop";
@@ -40,11 +40,14 @@ export function useProjectIndex(): {
   const { client, ready } = useOpenCodeClient();
   const studioTarget = useStudioTargetOptional();
   const queryClient = useQueryClient();
-  const hasStudioTarget = studioTarget?.selected !== null && studioTarget?.status === "ready";
+  const hasStudioTarget = Boolean(studioTarget?.selected) && studioTarget?.status === "ready";
 
   // Per-target query key so switching Studio targets re-indexes.
   const targetKey = studioTarget?.selected?.key;
-  const projectIndexKey = targetKey ? [...qk.projectIndex, targetKey] : qk.projectIndex;
+  const projectIndexKey = useMemo(
+    () => (targetKey ? [...qk.projectIndex, targetKey] : qk.projectIndex),
+    [targetKey],
+  );
 
   const { data, isLoading, error } = useQuery<ProjectSkeleton | null>({
     queryKey: projectIndexKey,
@@ -102,9 +105,12 @@ export function useProjectIndexProgram(): {
   const { client, ready } = useOpenCodeClient();
   const studioTarget = useStudioTargetOptional();
   const targetKey = studioTarget?.selected?.key;
-  const hasStudioTarget = studioTarget?.selected !== null && studioTarget?.status === "ready";
+  const hasStudioTarget = Boolean(studioTarget?.selected) && studioTarget?.status === "ready";
 
-  const programKey = targetKey ? [...qk.projectIndexProgram, targetKey] : qk.projectIndexProgram;
+  const programKey = useMemo(
+    () => (targetKey ? [...qk.projectIndexProgram, targetKey] : qk.projectIndexProgram),
+    [targetKey],
+  );
 
   const { data, isLoading } = useQuery<ProjectIndexProgramEnvelope | null>({
     queryKey: programKey,

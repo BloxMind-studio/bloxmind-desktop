@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { exec, execFile } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import {
   access,
@@ -30,7 +30,8 @@ import {
   ValidationResultSchema,
 } from "../../src/types/checkpoints";
 
-const exec = promisify(execFile);
+const execFileAsync = promisify(execFile);
+const execShellAsync = promisify(exec);
 
 const MAX_JOURNAL_FILE_BYTES = 512 * 1024; // mirror raw content only for small files
 
@@ -112,7 +113,14 @@ function hashContent(contents: string): string {
 function readTextSafe(path: string): Promise<string | null> {
   return readFile(path, "utf8").then(
     (contents) => contents,
-    () => null,
+    (cause) => {
+      // Only a genuinely missing file counts as "absent". Any other error
+      // (permissions, locked file, EISDIR) must surface: treating it as
+      // "missing" during capture journaled a phantom "create" entry, and a
+      // later restore would happily delete the real file.
+      if (isMissingFile(cause)) return null;
+      throw cause;
+    },
   );
 }
 
@@ -183,7 +191,7 @@ function listWorkspaceFiles(root: string): Promise<string[]> {
 function git(args: string[], cwd: string): Effect.Effect<string, CheckpointError> {
   return Effect.tryPromise({
     try: async () => {
-      const result = await exec("git", args, {
+      const result = await execFileAsync("git", args, {
         cwd,
         windowsHide: true,
         maxBuffer: 64 * 1024 * 1024,
@@ -243,9 +251,12 @@ function loadSessionIndex(storeRoot: string, sessionId: string) {
   );
 }
 
-// Serializes index writes per session so concurrent capture/restore requests
-// never race on the same checkpoints.json (Windows `rename` fails with EPERM
-// when the destination is briefly locked by another write).
+// Serializes whole index operations per session (load → modify → persist) so
+// concurrent capture/restore requests never race on the same checkpoints.json
+// (e.g. a restore writing back a stale history would drop a checkpoint that a
+// concurrent capture just appended). Note: this mutex must wrap operations,
+// not individual writes — acquiring it inside writeJsonAtomic while a caller
+// already holds it would deadlock.
 const storeMutex = Effect.unsafeMakeSemaphore(1);
 
 async function writeJsonAtomicImpl(file: string, value: unknown): Promise<void> {
@@ -275,7 +286,7 @@ function writeJsonAtomic(file: string, value: unknown): Effect.Effect<void, Chec
   return Effect.tryPromise({
     try: () => writeJsonAtomicImpl(file, value),
     catch: (cause) => new CheckpointError({ message: `Failed to write ${file}`, cause }),
-  }).pipe(storeMutex.withPermits(1));
+  });
 }
 
 function persistSessionIndex(
@@ -322,7 +333,17 @@ function makeCapture(
         const contents = yield* Effect.tryPromise({
           try: () => readTextSafe(absPath),
           catch: (cause) => new CheckpointError({ message: `Failed to read ${relPath}`, cause }),
-        });
+        }).pipe(
+          // A file that can't be read right now (locked by Studio, permissions,
+          // special file) is left out of the journal instead of failing the
+          // whole capture — and it is never journaled as a phantom "create",
+          // which a later restore would have to interpret as "delete it".
+          Effect.catchAll((error) => {
+            console.warn(`[checkpoint] skipping unreadable file ${relPath}: ${error.message}`);
+            return Effect.succeed<string | null | undefined>(undefined);
+          }),
+        );
+        if (contents === undefined) continue;
         if (contents === null) {
           changes.push({
             path: relPath,
@@ -361,26 +382,34 @@ function makeCapture(
         ),
       );
 
-      // 3. Persist index (DAG: parent = activeIndex)
-      const index = yield* loadSessionIndex(options.storeRoot, sessionId);
-      const checkpoint: Checkpoint = {
-        id: `cp_${randomBytes(8).toString("hex")}`,
-        parentId: index.history[index.activeIndex]?.id ?? null,
-        timestamp: Date.now(),
-        sessionId,
-        messageId: decoded.messageId,
-        kind: "pre-exec",
-        tool: decoded.tool,
-        paths: changes,
-        gitRef,
-        failureLog: null,
-        fullSnapshot,
-      };
-      const next = [...index.history, checkpoint];
-      yield* persistSessionIndex(options.storeRoot, sessionId, {
-        history: next,
-        activeIndex: next.length - 1,
-      });
+      // 3. Persist index (DAG: parent = activeIndex). The load-modify-persist
+      //    cycle runs under the store mutex so a concurrent restore can't
+      //    write the history back from a stale copy and silently drop this
+      //    checkpoint.
+      const checkpoint = yield* storeMutex.withPermits(1)(
+        Effect.gen(function* () {
+          const index = yield* loadSessionIndex(options.storeRoot, sessionId);
+          const captured: Checkpoint = {
+            id: `cp_${randomBytes(8).toString("hex")}`,
+            parentId: index.history[index.activeIndex]?.id ?? null,
+            timestamp: Date.now(),
+            sessionId,
+            messageId: decoded.messageId,
+            kind: "pre-exec",
+            tool: decoded.tool,
+            paths: changes,
+            gitRef,
+            failureLog: null,
+            fullSnapshot,
+          };
+          const next = [...index.history, captured];
+          yield* persistSessionIndex(options.storeRoot, sessionId, {
+            history: next,
+            activeIndex: next.length - 1,
+          });
+          return captured;
+        }),
+      );
 
       yield* Effect.logInfo(
         `[checkpoint] captured ${checkpoint.id} session=${sessionId} paths=${changes.length} gitRef=${gitRef ?? "none"}`,
@@ -437,11 +466,11 @@ function restoreFromJournal(
   });
 }
 
-function makeRestore(
+function restoreImpl(
   options: CheckpointServiceOptions,
-): (input: CheckpointRestoreInput) => Effect.Effect<CheckpointRestoreResult, CheckpointError> {
-  return (input) =>
-    Effect.gen(function* () {
+  input: CheckpointRestoreInput,
+): Effect.Effect<CheckpointRestoreResult, CheckpointError> {
+  return Effect.gen(function* () {
       const decoded = yield* Schema.decodeUnknown(CheckpointRestoreInputSchema)(input).pipe(
         Effect.mapError(
           (cause) => new CheckpointError({ message: "Invalid restore input", cause }),
@@ -555,53 +584,83 @@ function makeRestore(
     });
 }
 
+function makeRestore(
+  options: CheckpointServiceOptions,
+): (input: CheckpointRestoreInput) => Effect.Effect<CheckpointRestoreResult, CheckpointError> {
+  return (input) =>
+    // The whole restore body runs under the store mutex, serialized with
+    // captures and other restores: it ends by writing the history back from
+    // the index it loaded, so an interleaved capture's checkpoint would
+    // otherwise be silently lost.
+    storeMutex.withPermits(1)(restoreImpl(options, input));
+}
+
 function makePreview(
   options: CheckpointServiceOptions,
 ): (checkpointId: string, sessionId: string) => Effect.Effect<RestorePreview, CheckpointError> {
   return (checkpointId, sessionId) =>
-    Effect.gen(function* () {
-      const index = yield* loadSessionIndex(options.storeRoot, sessionId);
-      const checkpoint = index.history.find((c) => c.id === checkpointId);
-      if (!checkpoint) {
-        return yield* Effect.fail(new CheckpointError({ message: `No checkpoint ${checkpointId}` }));
-      }
-      yield* validateWorkspacePaths(options.workspace, checkpoint.paths.map((c) => c.path));
-      const segments = checkpoint.paths.map((c) => ({ path: c.path, operation: c.operation }));
-      return yield* Schema.decodeUnknown(RestorePreviewSchema)({
-        segments,
-        restoredId: checkpoint.id,
-        message: checkpoint.fullSnapshot
-          ? `Entire workspace snapshot — ${checkpoint.paths.length} file(s) tracked`
-          : `${checkpoint.paths.length} file(s) will be restored`,
-      }).pipe(
-        Effect.mapError((cause) => new CheckpointError({ message: "Invalid preview", cause })),
-      );
-    });
+    // Read under the mutex so a preview never races a concurrent write's
+    // non-atomic Windows fallback path (temp-file copy) and sees a partial file.
+    storeMutex.withPermits(1)(
+      Effect.gen(function* () {
+        const index = yield* loadSessionIndex(options.storeRoot, sessionId);
+        const checkpoint = index.history.find((c) => c.id === checkpointId);
+        if (!checkpoint) {
+          return yield* Effect.fail(
+            new CheckpointError({ message: `No checkpoint ${checkpointId}` }),
+          );
+        }
+        yield* validateWorkspacePaths(options.workspace, checkpoint.paths.map((c) => c.path));
+        const segments = checkpoint.paths.map((c) => ({ path: c.path, operation: c.operation }));
+        return yield* Schema.decodeUnknown(RestorePreviewSchema)({
+          segments,
+          restoredId: checkpoint.id,
+          message: checkpoint.fullSnapshot
+            ? `Entire workspace snapshot — ${checkpoint.paths.length} file(s) tracked`
+            : `${checkpoint.paths.length} file(s) will be restored`,
+        }).pipe(
+          Effect.mapError((cause) => new CheckpointError({ message: "Invalid preview", cause })),
+        );
+      }),
+    );
 }
 
 function makeList(
   options: CheckpointServiceOptions,
 ): (sessionId: string) => Effect.Effect<readonly Checkpoint[], CheckpointError> {
   return (sessionId) =>
-    loadSessionIndex(options.storeRoot, sessionId).pipe(Effect.map((index) => index.history));
+    storeMutex.withPermits(1)(
+      loadSessionIndex(options.storeRoot, sessionId).pipe(Effect.map((index) => index.history)),
+    );
 }
 
 // ── Validation gates ────────────────────────────────────────────────────
 
+function quoteForShell(value: string): string {
+  return process.platform === "win32" ? `"${value}"` : `'${value.replace(/'/g, "'\\''")}'`;
+}
+
 function runCommand(
-  command: string,
+  bin: string,
   args: string[],
   cwd: string,
   timeoutMs: number,
 ): Effect.Effect<string, CheckpointError> {
   return Effect.tryPromise({
     try: async () => {
-      const result = await exec(command, args, {
+      const options = {
         cwd,
         windowsHide: true,
         timeout: timeoutMs,
         maxBuffer: 64 * 1024 * 1024,
-      });
+      };
+      // Windows `.cmd` shims cannot be spawned directly (Node ≥ 20.12 refuses
+      // without a shell), so go through cmd.exe with a quoted path. POSIX
+      // shims are executable scripts and run fine via execFile with no shell.
+      const result =
+        process.platform === "win32"
+          ? await execShellAsync(`${quoteForShell(bin)} ${args.join(" ")}`, options)
+          : await execFileAsync(bin, args, options);
       return `${result.stdout}\n${result.stderr}`.trim();
     },
     catch: (cause) =>
@@ -615,6 +674,56 @@ function runCommand(
         cause,
       }),
   });
+}
+
+/** Resolve a tool from the workspace's own node_modules/.bin, or null. */
+function findLocalBin(
+  workspace: string,
+  name: string,
+): Effect.Effect<string | null, CheckpointError> {
+  const bin = join(
+    workspace,
+    "node_modules",
+    ".bin",
+    process.platform === "win32" ? `${name}.cmd` : name,
+  );
+  return Effect.tryPromise({
+    try: async () => {
+      try {
+        await access(bin);
+        return bin;
+      } catch {
+        return null;
+      }
+    },
+    catch: (cause) => new CheckpointError({ message: `Failed to probe ${name}`, cause }),
+  });
+}
+
+const SKIPPABLE_SPAWN_CODES = new Set(["ENOENT", "EINVAL"]);
+
+/**
+ * Run one validation gate. A failure to even spawn the tool (rare race after
+ * the existence probe) is infrastructure, not a build failure, so it is
+ * skipped — otherwise a broken toolchain would silently roll back work.
+ */
+function runGate(
+  bin: string,
+  args: string[],
+  cwd: string,
+  timeoutMs: number,
+): Effect.Effect<{ ok: boolean; log: string }, CheckpointError> {
+  return runCommand(bin, args, cwd, timeoutMs).pipe(
+    Effect.map((log) => ({ ok: true, log })),
+    Effect.catchAll((error) => {
+      const code = (error.cause as NodeJS.ErrnoException | undefined)?.code;
+      if (code !== undefined && SKIPPABLE_SPAWN_CODES.has(code)) {
+        console.warn(`[checkpoint] validation tool unavailable (${code}); gate skipped`);
+        return Effect.succeed({ ok: true, log: "" });
+      }
+      return Effect.succeed({ ok: false, log: error.message });
+    }),
+  );
 }
 
 const isNodeProject = (workspace: string): Effect.Effect<boolean, CheckpointError> =>
@@ -649,16 +758,20 @@ const makeValidate =
         );
       }
 
-      // Fast gate: quick blocking syntax/AST check (< 1s).
-      const fastGate = yield* runCommand(
-        "npx",
-        ["biome", "check", "--only=syntax", "."],
-        options.workspace,
-        15_000,
-      ).pipe(
-        Effect.map((log) => ({ ok: true, log })),
-        Effect.catchAll((error) => Effect.succeed({ ok: false, log: error.message })),
-      );
+      // Gates run the workspace's own locally-installed tools from
+      // node_modules/.bin — never `npx`. npx cannot be spawned reliably from
+      // Electron on Windows (ENOENT), runs against arbitrary user workspaces,
+      // and can reach the network; every such failure previously read as
+      // "build failed" and silently rolled the agent's work back. A tool that
+      // isn't installed locally is simply not a gate this workspace runs, so
+      // it is skipped rather than failed.
+      const biomeBin = yield* findLocalBin(options.workspace, "biome");
+      const tscBin = yield* findLocalBin(options.workspace, "tsc");
+      const vitestBin = yield* findLocalBin(options.workspace, "vitest");
+
+      const fastGate = biomeBin
+        ? yield* runGate(biomeBin, ["check", "--only=syntax", "."], options.workspace, 15_000)
+        : { ok: true, log: "" };
 
       if (!fastGate.ok) {
         return yield* Schema.decodeUnknown(ValidationResultSchema)({
@@ -672,19 +785,13 @@ const makeValidate =
       }
 
       // Full gate: type-check + unit tests (2–15s, run sequentially).
-      const fullGate = yield* Effect.all(
-        [
-          runCommand("npx", ["tsc", "--noEmit"], options.workspace, 120_000).pipe(
-            Effect.map(() => ({ ok: true, log: "" })),
-            Effect.catchAll((error) => Effect.succeed({ ok: false, log: error.message })),
-          ),
-          runCommand("npx", ["vitest", "run"], options.workspace, 120_000).pipe(
-            Effect.map(() => ({ ok: true, log: "" })),
-            Effect.catchAll((error) => Effect.succeed({ ok: false, log: error.message })),
-          ),
-        ],
-        { concurrency: 1 },
-      );
+      const fullGate: { ok: boolean; log: string }[] = [];
+      if (tscBin) {
+        fullGate.push(yield* runGate(tscBin, ["--noEmit"], options.workspace, 120_000));
+      }
+      if (vitestBin) {
+        fullGate.push(yield* runGate(vitestBin, ["run"], options.workspace, 120_000));
+      }
 
       return yield* Schema.decodeUnknown(ValidationResultSchema)({
         ok: fastGate.ok && fullGate.every((r) => r.ok),

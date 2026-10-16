@@ -24,7 +24,7 @@ The AI connects to Roblox Studio through its official built-in MCP server. When 
 
 ## Installation
 
-Download the installer for your platform from the [releases page](https://github.com/YUouriii/app-BloxMind-ai/releases/latest):
+Download the installer for your platform from the [releases page](https://github.com/BloxMind-studio/bloxmind-desktop/releases/latest):
 
 | Platform | File |
 |----------|------|
