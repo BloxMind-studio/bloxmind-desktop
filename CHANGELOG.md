@@ -7,6 +7,18 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.13.8] - 2026-10-16
+
+### Added
+
+- Hovering a model in the model picker now shows its specs: provider, the inputs it accepts, whether it supports reasoning, and its context window.
+
+### Fixed
+
+- The Studio assistant is standalone: it reads and writes the open place only through Studio's MCP tools, never a local sync tool or a `default.project.json`. Leftover live-sync instructions from older versions are removed from your workspace when the app starts.
+- The Explorer's project index works again instead of failing with "project-index programs may not call search_game_tree".
+- Model context limits are read from the model provider instead of guessed, so the context usage indicator and the model picker show the right window.
+
 ## [0.13.7] - 2026-10-01
 
 ### Changed
@@ -290,7 +302,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - OpenCode downloads are restricted to official GitHub release assets and verified with SHA-256 digests before installation and on every cache reuse.
 - Electron runs with context isolation, renderer sandboxing, Node.js integration disabled, validated IPC payloads, and external navigation blocked.
 
-[Unreleased]: https://github.com/paralov/app-bloxbot-ai/compare/v0.13.7...HEAD
+[Unreleased]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.13.8...HEAD
+[0.13.8]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.13.7...v0.13.8
 [0.13.7]: https://github.com/paralov/app-bloxbot-ai/compare/v0.13.6...v0.13.7
 [0.13.6]: https://github.com/paralov/app-bloxbot-ai/compare/v0.13.5...v0.13.6
 [0.13.5]: https://github.com/paralov/app-bloxbot-ai/compare/v0.13.4...v0.13.5
