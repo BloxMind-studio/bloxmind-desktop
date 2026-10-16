@@ -1,3 +1,8 @@
+# Check every text file out with LF on all platforms: the Windows CI runners
+# normalize line endings on checkout otherwise, and the formatter then flags
+# every file. Binary files are left alone by text=auto.
+* text=auto eol=lf
+
 # BloxBot programs are signed and compared byte for byte, so they must have the
 # same line endings on every platform (Windows checkouts would otherwise use CRLF).
 bloxbot-programs/** text eol=lf
