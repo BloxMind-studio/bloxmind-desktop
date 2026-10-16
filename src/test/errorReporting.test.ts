@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, type Mock, vi } from "vitest";
 import {
   createErrorDeduper,
   describeError,
@@ -216,11 +216,14 @@ describe("errorFromMainReport", () => {
   });
 });
 
-function fakeTarget(): MainErrorTarget & { send: ReturnType<typeof vi.fn>; destroy(): void } {
+function fakeTarget(): Omit<MainErrorTarget, "send"> & {
+  send: Mock<MainErrorTarget["send"]>;
+  destroy(): void;
+} {
   let destroyed = false;
   const listeners: Array<() => void> = [];
   return {
-    send: vi.fn(),
+    send: vi.fn<MainErrorTarget["send"]>(),
     isDestroyed: () => destroyed,
     once: (_event, listener) => listeners.push(listener),
     destroy() {

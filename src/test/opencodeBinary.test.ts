@@ -21,6 +21,7 @@ import {
   getOpenCodeAssetSpec,
   MIN_FREE_BYTES,
   type OpenCodeBinaryOptions,
+  type OpenCodeInstallFileSystem,
   selectCompatibleRelease,
 } from "../../electron/services/OpenCodeBinary";
 import type { PinnedOpenCodeRelease } from "../../electron/services/openCodePinnedRelease";
@@ -610,7 +611,7 @@ describe("OpenCode installs that Windows blocks", () => {
   it("retries when the new executable is briefly locked while it's inspected", async () => {
     const extractArchive = writeExecutable(EXE);
     const stat = vi
-      .fn(realStat)
+      .fn<OpenCodeInstallFileSystem["stat"]>(realStat)
       .mockRejectedValueOnce(errno("EBUSY", "EBUSY: resource busy or locked"));
     const { result } = await installOnWindows({ extractArchive, fileSystem: { stat } });
 
@@ -644,7 +645,7 @@ describe("OpenCode installs that Windows blocks", () => {
   it("retries when the executable vanishes right after extraction", async () => {
     const extractArchive = writeExecutable(EXE);
     const stat = vi
-      .fn(realStat)
+      .fn<OpenCodeInstallFileSystem["stat"]>(realStat)
       .mockImplementationOnce(realStat)
       .mockRejectedValueOnce(errno("ENOENT", "ENOENT: no such file or directory"));
     const { result } = await installOnWindows({ extractArchive, fileSystem: { stat } });

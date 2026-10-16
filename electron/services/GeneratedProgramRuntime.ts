@@ -25,7 +25,7 @@ import {
 } from "../../src/lib/bloxbotProgramManifest";
 import { StudioMcpBroker } from "./StudioMcpBroker";
 
-type CallTool = (name: string, args: Record<string, unknown>) => Promise<CallToolResult>;
+export type CallTool = (name: string, args: Record<string, unknown>) => Promise<CallToolResult>;
 /** Studio's annotations for a tool, or undefined when Studio doesn't list it. */
 export type DescribeTool = (
   name: string,

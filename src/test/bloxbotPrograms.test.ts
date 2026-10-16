@@ -69,12 +69,18 @@ describe("studio program manifest", () => {
     const manifest = buildBloxBotProgramManifest(sources(), 2);
     const discovery = manifest.programs["studio-target-discovery"];
     if (!discovery) throw new Error("missing discovery");
-    manifest.programs["studio-target-discovery"] = {
-      ...discovery,
-      contract: { ...discovery.contract, version: "2" },
+    const altered: BloxBotProgramManifest = {
+      ...manifest,
+      programs: {
+        ...manifest.programs,
+        "studio-target-discovery": {
+          ...discovery,
+          contract: { ...discovery.contract, version: "2" },
+        },
+      },
     };
 
-    const usable = usableBloxBotPrograms(manifest);
+    const usable = usableBloxBotPrograms(altered);
 
     expect(Object.keys(usable).sort()).toEqual(["explorer-snapshot", "studio-target-selection"]);
   });
@@ -317,8 +323,13 @@ describe("resolveBloxBotPrograms", () => {
     );
     const explorer = newer.programs["explorer-snapshot"];
     if (!explorer) throw new Error("missing explorer");
-    newer.programs["explorer-snapshot"] = { ...explorer, source: "x".repeat(100_001) };
-    getBloxBotPrograms.mockResolvedValue(newer);
+    getBloxBotPrograms.mockResolvedValue({
+      ...newer,
+      programs: {
+        ...newer.programs,
+        "explorer-snapshot": { ...explorer, source: "x".repeat(100_001) },
+      },
+    });
 
     const { resolved } = await resolve();
 
@@ -334,11 +345,16 @@ describe("resolveBloxBotPrograms", () => {
     );
     const explorer = newer.programs["explorer-snapshot"];
     if (!explorer) throw new Error("missing explorer");
-    newer.programs["explorer-snapshot"] = {
-      ...explorer,
-      contract: { ...explorer.contract, version: "2" },
-    };
-    getBloxBotPrograms.mockResolvedValue(newer);
+    getBloxBotPrograms.mockResolvedValue({
+      ...newer,
+      programs: {
+        ...newer.programs,
+        "explorer-snapshot": {
+          ...explorer,
+          contract: { ...explorer.contract, version: "2" },
+        },
+      },
+    });
 
     const { resolved } = await resolve();
 

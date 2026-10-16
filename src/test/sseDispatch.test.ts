@@ -28,14 +28,17 @@ function makeQC() {
 function makeSession(id: string, title: string): Session {
   return {
     id,
+    slug: id,
+    projectID: "project",
+    directory: "C:/project",
     title,
     time: { created: Date.now(), updated: Date.now() },
-    version: 1,
+    version: "1",
     parentID: "",
   } as Session;
 }
 
-function dispatch(qc: QueryClient, event: Partial<Event>, activeSessionId: string | null = null) {
+function dispatch(qc: QueryClient, event: unknown, activeSessionId: string | null = null) {
   sseDispatch(qc, event as Event, { current: activeSessionId });
 }
 

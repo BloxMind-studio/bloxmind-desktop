@@ -44,9 +44,12 @@ vi.mock("@tanstack/react-virtual", () => ({
 function makeSession(id: string, title: string, createdAt = Date.now()): Session {
   return {
     id,
+    slug: id,
+    projectID: "project",
+    directory: "C:/project",
     title,
     time: { created: createdAt, updated: createdAt },
-    version: 1,
+    version: "1",
     parentID: "",
   } as Session;
 }
@@ -213,6 +216,19 @@ function seedReadyState(
     theme: "system",
     detailedAnalytics: opts.detailedAnalytics ?? "disabled",
     analyticsNoticeVersion: opts.analyticsNoticeVersion ?? 2,
+    accentColor: "blue",
+    layoutDensity: "comfortable",
+    fontSize: 1,
+    soundEffects: true,
+    temperature: 0.7,
+    maxTokens: 4_096,
+    systemPrompt: "",
+    customApiEndpoint: null,
+    autoScroll: true,
+    enterToSend: true,
+    notificationsEnabled: true,
+    sseReconnectDelay: 3_000,
+    sseHeartbeatTimeout: 30_000,
   });
 }
 

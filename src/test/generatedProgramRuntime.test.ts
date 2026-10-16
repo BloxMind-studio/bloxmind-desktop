@@ -6,6 +6,7 @@ import {
 } from "@/lib/builtinBloxBotPrograms";
 import { ExplorerSnapshotSchema } from "@/lib/explorer";
 import {
+  type CallTool,
   GeneratedProgramRuntimeError,
   startGeneratedProgramRuntime,
 } from "../../electron/services/GeneratedProgramRuntime";
@@ -376,7 +377,7 @@ describe("GeneratedProgramRuntime", () => {
     },
   ];
 
-  async function runExplorer(callTool: ReturnType<typeof vi.fn>) {
+  async function runExplorer(callTool: CallTool) {
     const runtime = startGeneratedProgramRuntime(callTool);
     const artifact = await Effect.runPromise(runtime.compile(BUILTIN_EXPLORER_PROGRAM));
     const result = await Effect.runPromise(
@@ -386,7 +387,7 @@ describe("GeneratedProgramRuntime", () => {
   }
 
   it("reads Studio's tree when a truncation note comes before the JSON", async () => {
-    const callTool = vi.fn().mockResolvedValue({
+    const callTool = vi.fn<CallTool>().mockResolvedValue({
       content: [
         {
           type: "text",
@@ -404,10 +405,10 @@ describe("GeneratedProgramRuntime", () => {
 
   it("falls back to the server data model when Studio rejects Edit during a playtest", async () => {
     const callTool = vi
-      .fn()
+      .fn<CallTool>()
       .mockResolvedValueOnce({
         isError: true,
-        content: [{ type: "text", text: "Edit datamodel is not available while playing" }],
+        content: [{ type: "text", text: "Edit datamodel is not available in Play mode" }],
       })
       .mockResolvedValueOnce({ content: [{ type: "text", text: JSON.stringify(studioTree) }] });
 

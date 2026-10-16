@@ -31,9 +31,12 @@ function makeSession(
 ): Session {
   return {
     id,
+    slug: id,
+    projectID: "project",
+    directory: "C:/project",
     title,
     time: { created: createdAt, updated: createdAt, archived },
-    version: 1,
+    version: "1",
     parentID: "",
   } as Session;
 }

@@ -5,14 +5,6 @@ import { memo, useMemo, useState } from "react";
 interface RobloxInstanceCardProps {
   /** Raw JSON output string from the inspect_instance tool. */
   output: string;
-  /** Optional reasoning text to show in a muted accordion. */
-  reasoning?: string;
-  /** Token stats to display as a footer badge. */
-  tokens?: {
-    input: number;
-    output: number;
-    cacheRead?: number;
-  };
 }
 
 interface ParsedInstance {
@@ -238,16 +230,9 @@ function parseInspectOutput(output: string): ParsedInstance | null {
  * - **Smart color swatches** — auto-detects RGB float values and shows
  *   a visual color preview dot.
  * - **Key properties view** — compact table of essential properties.
- * - **Reasoning accordion** — muted gray "Thinking" section.
- * - **Token badge** — small unobtrusive footer with token stats.
  */
-const RobloxInstanceCard = memo(function RobloxInstanceCard({
-  output,
-  reasoning,
-  tokens,
-}: RobloxInstanceCardProps) {
+const RobloxInstanceCard = memo(function RobloxInstanceCard({ output }: RobloxInstanceCardProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [isReasoningOpen, setIsReasoningOpen] = useState(false);
 
   const instance = useMemo(() => parseInspectOutput(output), [output]);
 
@@ -415,48 +400,6 @@ const RobloxInstanceCard = memo(function RobloxInstanceCard({
                 </table>
               </div>
             </details>
-          )}
-
-          {/* ── Reasoning accordion ──────────────────────────────────── */}
-          {reasoning && (
-            <div className="border-t border-border/30 px-2.5 py-1">
-              <button
-                type="button"
-                onClick={() => setIsReasoningOpen(!isReasoningOpen)}
-                className="flex w-full items-center gap-1 text-[10px] text-muted-foreground/50 transition-colors hover:text-muted-foreground/80"
-              >
-                <svg
-                  width="8"
-                  height="8"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className={`shrink-0 transition-transform duration-150 ${isReasoningOpen ? "rotate-90" : ""}`}
-                >
-                  <polyline points="9 18 15 12 9 6" />
-                </svg>
-                <span>Thinking</span>
-              </button>
-              {isReasoningOpen && (
-                <div className="mt-1 whitespace-pre-wrap break-words pl-3 text-[10px] leading-relaxed text-muted-foreground/60">
-                  {reasoning}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── Token badge footer ───────────────────────────────────── */}
-          {tokens && (
-            <div className="flex items-center justify-end gap-2 border-t border-border/20 px-2.5 py-1 text-[9px] text-muted-foreground/40">
-              <span>{tokens.input.toLocaleString()} in</span>
-              <span>{tokens.output.toLocaleString()} out</span>
-              {tokens.cacheRead !== undefined && tokens.cacheRead > 0 && (
-                <span>{tokens.cacheRead.toLocaleString()} cached</span>
-              )}
-            </div>
           )}
         </div>
       )}

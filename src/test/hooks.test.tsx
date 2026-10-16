@@ -36,9 +36,12 @@ function makeQC() {
 function makeSession(id: string, title: string): Session {
   return {
     id,
+    slug: id,
+    projectID: "project",
+    directory: "C:/project",
     title,
     time: { created: Date.now(), updated: Date.now() },
-    version: 1,
+    version: "1",
     parentID: "",
   } as Session;
 }

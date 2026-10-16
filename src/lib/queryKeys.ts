@@ -14,5 +14,4 @@ export const qk = {
   studioConnection: ["studio-connection"] as const,
   studioMcpStatus: ["studio-mcp-status"] as const,
   projectIndex: ["project-index"] as const,
-  projectIndexProgram: ["project-index", "program"] as const,
 };

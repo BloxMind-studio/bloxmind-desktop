@@ -25,9 +25,12 @@ import { PreferencesProvider } from "@/providers/PreferencesProvider";
 function makeSession(id: string, title: string): Session {
   return {
     id,
+    slug: id,
+    projectID: "project",
+    directory: "C:/project",
     title,
     time: { created: Date.now(), updated: Date.now() },
-    version: 1,
+    version: "1",
     parentID: "",
   } as Session;
 }
@@ -117,6 +120,19 @@ function seedState(qc: QueryClient, session: Session) {
     theme: "system",
     detailedAnalytics: "disabled",
     analyticsNoticeVersion: 2,
+    accentColor: "blue",
+    layoutDensity: "comfortable",
+    fontSize: 1,
+    soundEffects: true,
+    temperature: 0.7,
+    maxTokens: 4_096,
+    systemPrompt: "",
+    customApiEndpoint: null,
+    autoScroll: true,
+    enterToSend: true,
+    notificationsEnabled: true,
+    sseReconnectDelay: 3_000,
+    sseHeartbeatTimeout: 30_000,
   });
   qc.setQueryData<MessagesCache>(qk.messages(session.id), { messageIds: [], messagesById: {} });
   qc.setQueryData(qk.todos(session.id), []);

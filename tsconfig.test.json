@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node", "vite/client"]
+  },
+  "include": [
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
+    "src/test/**/*",
+    "src/__mocks__/**/*",
+    "src/vite-env.d.ts",
+    "src/types/**/*.d.ts",
+    "e2e/**/*",
+    "vitest.config.ts",
+    "playwright.config.ts"
+  ],
+  "exclude": []
+}

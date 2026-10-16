@@ -27,6 +27,9 @@ const MAX_TEXT_LENGTH = 32_000;
 const MAX_CONVERSATION_CHARS = 400_000;
 const MAX_PATCH_LENGTH = 4_000;
 const MAX_TRACKED_MESSAGES = 2_000;
+// Session id → parent/title lookups are small but unbounded over a long run;
+// cap them like the message map.
+const MAX_TRACKED_SESSIONS = 1_000;
 const STUDIO_MCP_PREFIX = "roblox-studio_";
 // Snapshot loads (history, tools, instruction files) hold back a turn's events
 // until they settle, but never longer than this.
@@ -416,8 +419,8 @@ export class AiTracer {
       case "session.created":
       case "session.updated": {
         const { info } = event.properties;
-        if (info.parentID) this.sessionParents.set(info.id, info.parentID);
-        if (info.title) this.sessionTitles.set(info.id, info.title);
+        if (info.parentID) this.rememberSession(this.sessionParents, info.id, info.parentID);
+        if (info.title) this.rememberSession(this.sessionTitles, info.id, info.title);
         break;
       }
       case "message.updated":
@@ -494,6 +497,15 @@ export class AiTracer {
       case "question.rejected":
         this.resolvePending(event.properties.requestID, "dismissed");
         break;
+    }
+  }
+
+  /** Sets a cap-evicted entry in a session lookup map (oldest entry first). */
+  private rememberSession(map: Map<string, string>, key: string, value: string): void {
+    map.set(key, value);
+    if (map.size > MAX_TRACKED_SESSIONS) {
+      const oldest = map.keys().next().value;
+      if (oldest !== undefined) map.delete(oldest);
     }
   }
 
