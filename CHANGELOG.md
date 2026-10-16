@@ -11,6 +11,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - BloxMind now ships a Roblox game development skill — Luau helper modules, project templates and reference guides — that the Studio assistant loads on demand while you work.
 
+### Fixed
+
+- Stopping the agent mid-turn no longer leaves a frozen "Thinking…" indicator or leftover reasoning and tool rows on screen. The thinking indicator only shows while the agent is actually working, and a stopped turn that produced no text leaves nothing behind.
+- The automatic checkpoint badge and "Restore files" action no longer appear while the agent is still working, including while it is retrying a request.
+- Checkpoint marks only appear for checkpoints captured during the current session. After restarting the app, previously captured checkpoints are no longer offered for restore.
+
 ## [0.13.8] - 2026-10-16
 
 ### Added

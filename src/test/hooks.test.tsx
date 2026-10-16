@@ -19,7 +19,7 @@ import {
   useAuthMethods,
   useConnectedProviders,
 } from "@/hooks/useProviders";
-import { useIsBusy, useSessionStatuses } from "@/hooks/useSessionStatuses";
+import { isSessionWorking, useIsBusy, useSessionStatuses } from "@/hooks/useSessionStatuses";
 import { useSessions } from "@/hooks/useSessions";
 import { qk } from "@/lib/queryKeys";
 import type { MessagesCache } from "@/lib/sseDispatch";
@@ -347,5 +347,24 @@ describe("useIsBusy", () => {
     const { result } = renderHook(() => useIsBusy(null), { wrapper: makeWrapper(qc) });
 
     expect(result.current).toBe(false);
+  });
+});
+
+describe("isSessionWorking", () => {
+  it("treats busy and retry as working", () => {
+    expect(isSessionWorking({ type: "busy" } as SessionStatus)).toBe(true);
+    expect(
+      isSessionWorking({
+        type: "retry",
+        attempt: 1,
+        message: "retrying",
+        next: Date.now() + 1000,
+      } as SessionStatus),
+    ).toBe(true);
+  });
+
+  it("treats idle and undefined as not working", () => {
+    expect(isSessionWorking({ type: "idle" } as SessionStatus)).toBe(false);
+    expect(isSessionWorking(undefined)).toBe(false);
   });
 });

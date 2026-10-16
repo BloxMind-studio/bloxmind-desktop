@@ -25,9 +25,18 @@ export function useSessionStatuses() {
   });
 }
 
-export function useIsBusy(sessionId: string | null): boolean {
-  const status = useSessionStatus(sessionId);
+/**
+ * True while the session is actively working on a turn. Any non-idle status
+ * counts as working — not just "busy" — so transient states like "retry"
+ * never get mistaken for idle (which would reveal message controls and
+ * checkpoint actions in the middle of the agent's work).
+ */
+export function isSessionWorking(status: SessionStatus | undefined): boolean {
   return status !== undefined && status.type !== "idle";
+}
+
+export function useIsBusy(sessionId: string | null): boolean {
+  return isSessionWorking(useSessionStatus(sessionId));
 }
 
 export function useSessionStatus(sessionId: string | null): SessionStatus | undefined {

@@ -72,7 +72,7 @@ import { useMessage, useMessageIds } from "@/hooks/useMessages";
 import { useActivePermission } from "@/hooks/usePermissions";
 import { useActiveQuestion } from "@/hooks/useQuestions";
 import { useSessionError } from "@/hooks/useSessionError";
-import { useSessionStatus } from "@/hooks/useSessionStatuses";
+import { isSessionWorking, useSessionStatus } from "@/hooks/useSessionStatuses";
 import { useTodos } from "@/hooks/useTodos";
 import { type ModelError, presentModelError } from "@/lib/modelError";
 import { qk } from "@/lib/queryKeys";
@@ -1427,7 +1427,13 @@ const ThinkingBlock = memo(function ThinkingBlock({ parts }: { parts: Part[] }) 
 
 // ── Smart part renderer: groups thinking parts, renders text outside ────
 
-const SmartPartsRenderer = memo(function SmartPartsRenderer({ parts }: { parts: Part[] }) {
+const SmartPartsRenderer = memo(function SmartPartsRenderer({
+  parts,
+  hideThinking = false,
+}: {
+  parts: Part[];
+  hideThinking?: boolean;
+}) {
   const thinkingParts: Part[] = [];
   const textParts: Part[] = [];
 
@@ -1442,6 +1448,11 @@ const SmartPartsRenderer = memo(function SmartPartsRenderer({ parts }: { parts: 
       part.type === "retry" ||
       part.type === "compaction"
     ) {
+      // When a stopped turn produced no text there is nothing durable to
+      // frame the thinking parts, so they are skipped entirely and the raw
+      // in-flight clues (reasoning, half-finished tool spinners) disappear
+      // instead of freezing on screen.
+      if (hideThinking) continue;
       thinkingParts.push(part);
     }
   }
@@ -1684,8 +1695,9 @@ function RestoreCheckpointButton({
   isBusy: boolean;
   messageId: string;
 }) {
-  // Use the cached count so the button doesn't disappear during refetches.
-  if (checkpoint.cachedFsCheckpointCount === 0) return null;
+  // Only offer a restore when a checkpoint captured during this app run
+  // still exists in RAM — never for checkpoints from a previous run.
+  if (checkpoint.fsCheckpointCount === 0) return null;
 
   // Only the specific message/task that was restored shows "Restored".
   // All other tasks show "Restore files" regardless of restore state.
@@ -1751,8 +1763,9 @@ function CheckpointStatusBadge({
   checkpoint: ReturnType<typeof useCheckpointHistory>;
 }) {
   const [open, setOpen] = useState(false);
-  // Use the cached count so the badge persists across re-fetches.
-  if (checkpoint.cachedFsCheckpointCount === 0) return null;
+  // Only surface the badge while a checkpoint captured during this app run
+  // lives in RAM; nothing persists across restarts.
+  if (checkpoint.fsCheckpointCount === 0) return null;
   const latest = checkpoint.latestFsCheckpoint;
   if (!latest) return null;
 
@@ -1845,7 +1858,7 @@ const MessageBubble = memo(function MessageBubble({
   const [copied, setCopied] = useState(false);
   const { activeSessionId } = useActiveSession();
   const sessionStatus = useSessionStatus(activeSessionId);
-  const isBusy = sessionStatus?.type === "busy";
+  const isBusy = isSessionWorking(sessionStatus);
 
   const handleCopy = useCallback(() => {
     if (!msg) return;
@@ -1864,6 +1877,21 @@ const MessageBubble = memo(function MessageBubble({
 
   const isUser = msg.info.role === "user";
   const hasTextContent = msg.parts.some((p) => p.type === "text");
+  const hasFinalText = msg.parts.some((p) => p.type === "text" && p.text.trim().length > 0);
+  const hasCompleted = Boolean((msg.info as { time?: { completed?: unknown } }).time?.completed);
+  const hasToolActivity = msg.parts.some((p) => p.type === "tool");
+  const aborted = "error" in msg.info && msg.info.error?.name === "MessageAbortedError";
+  // A stopped turn that never produced text must leave nothing frozen behind:
+  // hide its leftover thinking parts (reasoning, half-finished tool spinners)
+  // once the session is no longer working. Completed turns keep their thinking
+  // history, and turns paused on a question keep them because the question
+  // rides on a tool part.
+  const hideThinking =
+    !isUser &&
+    !hasFinalText &&
+    !hasCompleted &&
+    !isSessionWorking(sessionStatus) &&
+    (aborted || !hasToolActivity);
   const hasOnlyThinkingParts = msg.parts.every(
     (p) =>
       p.type === "reasoning" ||
@@ -1885,63 +1913,18 @@ const MessageBubble = memo(function MessageBubble({
           <UserPartsView parts={msg.parts} />
         ) : (
           <div className="space-y-2">
-            {msg.parts.length === 0 && <BloxMindThinking />}
-            <SmartPartsRenderer parts={msg.parts} />
-            {"error" in msg.info &&
-              msg.info.error &&
-              msg.info.error.name !== "MessageAbortedError" && (
-                <ModelErrorCard error={msg.info.error} />
-              )}
+            {isLastIndex &&
+              !aborted &&
+              isSessionWorking(sessionStatus) &&
+              msg.parts.length === 0 && <BloxMindThinking />}
+            <SmartPartsRenderer parts={msg.parts} hideThinking={hideThinking} />
+            {"error" in msg.info && msg.info.error && !aborted && (
+              <ModelErrorCard error={msg.info.error} />
+            )}
             {!isBusy && showControls && (
               <div className="flex select-none items-center justify-end gap-1 pt-1">
-                {checkpoint.canUndo && (
-                  <button
-                    type="button"
-                    onClick={checkpoint.undo}
-                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground/40 transition-all duration-200 hover:scale-105 hover:text-muted-foreground hover:bg-accent/50 active:scale-95"
-                    title="Undo last change"
-                  >
-                    <svg
-                      width="11"
-                      height="11"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <polyline points="1 4 1 10 7 10" />
-                      <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
-                    </svg>
-                    <span>Undo</span>
-                  </button>
-                )}
-                {checkpoint.canRedo && (
-                  <button
-                    type="button"
-                    onClick={checkpoint.redo}
-                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground/40 transition-all duration-200 hover:scale-105 hover:text-muted-foreground hover:bg-accent/50 active:scale-95"
-                    title="Redo last change"
-                  >
-                    <svg
-                      width="11"
-                      height="11"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <polyline points="23 4 23 10 17 10" />
-                      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-                    </svg>
-                    <span>Redo</span>
-                  </button>
-                )}
-                {/* Checkpoint badge: show if there's ever been a checkpoint (cached) */}
-                {checkpoint.cachedFsCheckpointCount > 0 && (
+                {/* Checkpoint badge: RAM-only — shown once a checkpoint captured this run exists */}
+                {checkpoint.fsCheckpointCount > 0 && (
                   <CheckpointStatusBadge checkpoint={checkpoint} />
                 )}
                 {/* Restore button: only on non-last turns when a checkpoint exists */}
@@ -2015,7 +1998,7 @@ const BusyThinkingIndicator = memo(function BusyThinkingIndicator({
   status: SessionStatus | undefined;
   lastMessage: MessageWithParts | undefined;
 }) {
-  if (status?.type !== "busy" || !lastMessage || lastMessage.info.role !== "user") return null;
+  if (!isSessionWorking(status) || !lastMessage || lastMessage.info.role !== "user") return null;
   return <BloxMindThinking />;
 });
 
@@ -2026,7 +2009,7 @@ function ChatMessages() {
   const { activeSessionId } = useActiveSession();
   const queryClient = useQueryClient();
   const sessionStatus = useSessionStatus(activeSessionId);
-  const isBusy = sessionStatus !== undefined && sessionStatus.type !== "idle";
+  const isBusy = isSessionWorking(sessionStatus);
   const usageAction = getOpenCodeUsageAction(sessionStatus);
   const todos = useTodos();
   const activeQuestion = useActiveQuestion();
@@ -2036,17 +2019,13 @@ function ChatMessages() {
   const answerQuestion = useAnswerQuestion();
   const rejectQuestion = useRejectQuestion();
   const replyPermission = useReplyPermission();
-  // Extract the session status type early so we can pass it as a refresh
-  // trigger to useCheckpointHistory. This ensures the hook re-fetches the
-  // checkpoint list when the agent transitions between busy/idle (which is
-  // when checkpoints are captured/restored). Without this, the checkpoint
-  // badge and restore button would never appear after a capture.
+  // Session status drives both the checkpoint capture trigger (busy
+  // transitions) and the working-vs-idle gating for message controls.
   const sessionStatusType = sessionStatus?.type;
   const checkpoint = useCheckpointHistory(activeSessionId ?? undefined);
   const {
     capture: captureCheckpoint,
     validate: validateWorkspace,
-    list: listCheckpoints,
     restore: restoreCheckpoint,
   } = useCheckpoints();
 
@@ -2076,13 +2055,10 @@ function ChatMessages() {
         tool: "session.promptAsync",
         paths: [],
       })
-        .then(() => {
-          void checkpoint.refreshCheckpoints();
-          // Retry once after a short delay: the capture IPC may have
-          // resolved, but the file-system write can lag by ~1-2s on
-          // Windows. Without this retry the button would flicker and
-          // disappear when the stale empty list overwrites state.
-          setTimeout(() => void checkpoint.refreshCheckpoints(), 600);
+        .then((captured) => {
+          // Record the checkpoint in RAM so the badge/restore UI only ever
+          // reflects checkpoints captured during this app run.
+          checkpoint.recordCapturedCheckpoint(captured);
         })
         .catch((err: unknown) => {
           console.error("Pre-execution checkpoint capture failed:", err);
@@ -2094,17 +2070,8 @@ function ChatMessages() {
     messageIds,
     captureCheckpoint,
     sessionStatus,
-    checkpoint.refreshCheckpoints,
+    checkpoint.recordCapturedCheckpoint,
   ]);
-
-  // Auto-save a permanent checkpoint whenever the agent finishes a task
-  useEffect(() => {
-    if (sessionStatus?.type === "idle" && messageIds.length > 0) {
-      // Debounce the save so we don't spam localStorage
-      const timeout = setTimeout(() => checkpoint.saveCheckpoint(), 300);
-      return () => clearTimeout(timeout);
-    }
-  }, [sessionStatus?.type, messageIds.length, checkpoint.saveCheckpoint]);
 
   // Automatic Rollback (Validation Failure): when the agent finishes a task,
   // run the validation pipeline. If it fails, restore the pre-execution file
@@ -2121,9 +2088,11 @@ function ChatMessages() {
           if (cancelled) return;
           if (validation.ok) return;
 
-          // Validation failed → find the latest FS checkpoint and restore it.
-          const fsList = await listCheckpoints(activeSessionId);
-          if (cancelled) return;
+          // Validation failed → restore the latest checkpoint captured this
+          // run. Checkpoints from previous runs are intentionally ignored:
+          // the workspace may have changed since, and rolling back to an
+          // unknown older state is worse than surfacing the build failure.
+          const fsList = checkpoint.liveCheckpoints;
           if (fsList.length === 0) {
             toast.error(validation.logs.slice(0, 200), {
               description: "Build failed, but no checkpoint exists to restore.",
@@ -2167,7 +2136,7 @@ function ChatMessages() {
     activeSessionId,
     messageIds.length,
     queryClient,
-    listCheckpoints,
+    checkpoint.liveCheckpoints,
     restoreCheckpoint,
     validateWorkspace,
   ]);
@@ -2331,11 +2300,10 @@ function ChatMessages() {
               // end of a task. This prevents the button from disappearing
               // when the user types and the role cache is briefly stale.
               const isLastOfTask = isLastIndex || nextRole !== "assistant";
-              // Treat anything that isn't "busy" as idle so buttons persist
-              // during brief status refetches/polls where sessionStatus is
-              // momentarily undefined. Only hide controls when the agent is
-              // actively working.
-              const isTaskIdle = sessionStatus?.type !== "busy";
+              // Treat a missing status as idle so buttons persist during brief
+              // status refetches/polls, but any non-idle status (busy, retry)
+              // counts as working so checkpoint actions never appear mid-turn.
+              const isTaskIdle = !isSessionWorking(sessionStatus);
 
               // The `!isLastIndex` guard is intentionally omitted: the
               // completed agent turn is always the last message, so excluding

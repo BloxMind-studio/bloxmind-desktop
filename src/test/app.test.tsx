@@ -831,6 +831,277 @@ describe("User journeys", () => {
     expect(window.localStorage.getItem("BloxMind:usage-limit:free-tier:hidden")).toBe("true");
   });
 
+  it("hides the thinking indicator when a stopped session goes idle", async () => {
+    const session = makeSession("s1", "Stop Session");
+    const client = createClient({
+      get: vi.fn().mockResolvedValue({ data: session }),
+      messages: vi.fn().mockResolvedValue({ data: [] }),
+    });
+    const queryClient = createQueryClient();
+    seedReadyState(queryClient, { sessions: [session] });
+
+    render(<TestApp client={client} queryClient={queryClient} />);
+    await act(async () => {
+      fireEvent.click(await screen.findByText("Stop Session"));
+    });
+    await screen.findByRole("textbox", { name: "Message" });
+
+    const activeRef = { current: "s1" };
+    act(() => {
+      sseDispatch(
+        queryClient,
+        {
+          type: "message.updated",
+          properties: {
+            info: {
+              id: "msg_a",
+              sessionID: "s1",
+              role: "assistant",
+              time: { created: Date.now(), updated: Date.now() },
+            },
+          },
+        } as never,
+        activeRef,
+      );
+    });
+    act(() => {
+      sseDispatch(
+        queryClient,
+        {
+          type: "session.status",
+          properties: { sessionID: "s1", status: { type: "busy" } },
+        },
+        activeRef,
+      );
+    });
+    expect(await screen.findByText("Thinking...")).toBeInTheDocument();
+
+    // The user hits Stop: the session goes idle while the assistant message
+    // never received any parts. Nothing may stay on screen.
+    act(() => {
+      sseDispatch(
+        queryClient,
+        {
+          type: "session.status",
+          properties: { sessionID: "s1", status: { type: "idle" } },
+        },
+        activeRef,
+      );
+    });
+    await waitFor(() => {
+      expect(screen.queryByText("Thinking...")).not.toBeInTheDocument();
+    });
+  });
+
+  it("removes leftover thinking parts from an aborted turn that produced no text", async () => {
+    const session = makeSession("s1", "Aborted Session");
+    const client = createClient({
+      get: vi.fn().mockResolvedValue({ data: session }),
+      messages: vi.fn().mockResolvedValue({ data: [] }),
+    });
+    const queryClient = createQueryClient();
+    seedReadyState(queryClient, { sessions: [session] });
+
+    render(<TestApp client={client} queryClient={queryClient} />);
+    await act(async () => {
+      fireEvent.click(await screen.findByText("Aborted Session"));
+    });
+    await screen.findByRole("textbox", { name: "Message" });
+
+    const activeRef = { current: "s1" };
+    act(() => {
+      sseDispatch(
+        queryClient,
+        {
+          type: "message.updated",
+          properties: {
+            info: {
+              id: "msg_a",
+              sessionID: "s1",
+              role: "assistant",
+              error: { name: "MessageAbortedError", data: { message: "aborted" } },
+              time: { created: Date.now(), updated: Date.now() },
+            },
+          },
+        } as never,
+        activeRef,
+      );
+    });
+    act(() => {
+      sseDispatch(
+        queryClient,
+        {
+          type: "message.part.updated",
+          properties: {
+            part: {
+              id: "reasoning_1",
+              messageID: "msg_a",
+              sessionID: "s1",
+              type: "reasoning",
+              text: "The user probably wants a lava level.",
+              time: { created: Date.now(), updated: Date.now() },
+            },
+          },
+        } as never,
+        activeRef,
+      );
+    });
+
+    // The stopped turn produced nothing durable: no indicator, no lone
+    // "Reasoning"/"Thought process" row frozen on screen.
+    await waitFor(() => {
+      expect(screen.queryByText("Reasoning")).not.toBeInTheDocument();
+    });
+    expect(screen.queryByText("Thinking...")).not.toBeInTheDocument();
+  });
+
+  it("keeps thinking history for completed turns", async () => {
+    const session = makeSession("s1", "Completed Session");
+    const client = createClient({
+      get: vi.fn().mockResolvedValue({ data: session }),
+      messages: vi.fn().mockResolvedValue({ data: [] }),
+    });
+    const queryClient = createQueryClient();
+    seedReadyState(queryClient, { sessions: [session] });
+
+    render(<TestApp client={client} queryClient={queryClient} />);
+    await act(async () => {
+      fireEvent.click(await screen.findByText("Completed Session"));
+    });
+    await screen.findByRole("textbox", { name: "Message" });
+
+    const activeRef = { current: "s1" };
+    act(() => {
+      sseDispatch(
+        queryClient,
+        {
+          type: "message.updated",
+          properties: {
+            info: {
+              id: "msg_a",
+              sessionID: "s1",
+              role: "assistant",
+              time: { created: Date.now(), completed: Date.now() },
+            },
+          },
+        } as never,
+        activeRef,
+      );
+    });
+    act(() => {
+      sseDispatch(
+        queryClient,
+        {
+          type: "message.part.updated",
+          properties: {
+            part: {
+              id: "reasoning_1",
+              messageID: "msg_a",
+              sessionID: "s1",
+              type: "reasoning",
+              text: "I inspected the map layout.",
+              time: { created: Date.now(), updated: Date.now() },
+            },
+          },
+        } as never,
+        activeRef,
+      );
+    });
+
+    expect(await screen.findByText("Reasoning")).toBeInTheDocument();
+  });
+
+  it("hides message controls while the session is retrying", async () => {
+    const session = makeSession("s1", "Retry Session");
+    const client = createClient({
+      get: vi.fn().mockResolvedValue({ data: session }),
+      messages: vi.fn().mockResolvedValue({ data: [] }),
+    });
+    const queryClient = createQueryClient();
+    seedReadyState(queryClient, { sessions: [session] });
+
+    render(<TestApp client={client} queryClient={queryClient} />);
+    await act(async () => {
+      fireEvent.click(await screen.findByText("Retry Session"));
+    });
+    await screen.findByRole("textbox", { name: "Message" });
+
+    const activeRef = { current: "s1" };
+    act(() => {
+      sseDispatch(
+        queryClient,
+        {
+          type: "message.updated",
+          properties: {
+            info: {
+              id: "msg_a",
+              sessionID: "s1",
+              role: "assistant",
+              time: { created: Date.now(), completed: Date.now() },
+            },
+          },
+        } as never,
+        activeRef,
+      );
+    });
+    act(() => {
+      sseDispatch(
+        queryClient,
+        {
+          type: "message.part.updated",
+          properties: {
+            part: {
+              id: "txt_1",
+              messageID: "msg_a",
+              sessionID: "s1",
+              type: "text",
+              text: "All done.",
+              time: { created: Date.now(), updated: Date.now() },
+            },
+          },
+        } as never,
+        activeRef,
+      );
+    });
+    expect(await screen.findByText("Copy")).toBeInTheDocument();
+
+    // Retrying counts as working: the controls row (and with it any
+    // checkpoint badge/restore action) must not be visible mid-turn.
+    act(() => {
+      sseDispatch(
+        queryClient,
+        {
+          type: "session.status",
+          properties: {
+            sessionID: "s1",
+            status: {
+              type: "retry",
+              attempt: 1,
+              message: "Retrying request",
+              next: Date.now() + 60_000,
+            },
+          },
+        },
+        activeRef,
+      );
+    });
+    await waitFor(() => {
+      expect(screen.queryByText("Copy")).not.toBeInTheDocument();
+    });
+
+    act(() => {
+      sseDispatch(
+        queryClient,
+        {
+          type: "session.status",
+          properties: { sessionID: "s1", status: { type: "idle" } },
+        },
+        activeRef,
+      );
+    });
+    expect(await screen.findByText("Copy")).toBeInTheDocument();
+  });
+
   it("SSE session.created adds a new session to the sidebar", async () => {
     const s1 = makeSession("s1", "Existing Session");
     const client = createClient();
