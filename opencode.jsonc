@@ -11,7 +11,9 @@
       "description": "Roblox Studio development assistant"
     }
   },
+  // Skills installed with `pnpm dlx skills add` land in .agents/skills; only
+  // hand-written project skills live in .opencode/skills.
   "skills": {
-    "paths": [".opencode/skills"]
+    "paths": [".opencode/skills", ".agents/skills"]
   }
 }

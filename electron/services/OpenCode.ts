@@ -114,6 +114,8 @@ interface PreparedOpenCode {
 
 export interface OpenCodeOptions {
   binaryCacheDirectory: string;
+  /** Directories OpenCode scans for SKILL.md. Empty when no skill ships. */
+  skillsPaths?: readonly string[];
   workspace: string;
   onStartupProgress?: (progress: OpenCodeStartupProgress) => void;
 }
@@ -296,7 +298,7 @@ function prepareOpenCode(
       ),
       { concurrency: "unbounded", discard: true },
     );
-    const config = createOpenCodeConfig(broker.info);
+    const config = createOpenCodeConfig(broker.info, options.skillsPaths ?? []);
     yield* fileOperation("Failed to write the OpenCode configuration", () =>
       writeFile(
         join(configDirectory, "opencode.json"),

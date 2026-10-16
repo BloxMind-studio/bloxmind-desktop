@@ -26,6 +26,7 @@ import {
 import { handleLastWindowClosed } from "./appLifecycle";
 import { createMainErrorReporter } from "./errorReporter";
 import { findInstructionFiles, stripLegacyManagedBlock } from "./instructionFiles";
+import { skillDirectories } from "./opencodeConfig";
 import { channels } from "./channels";
 import { makeOpenCodeLayer, OpenCode } from "./services/OpenCode";
 import {
@@ -119,6 +120,13 @@ const openCodeRuntime = ManagedRuntime.make(
     Layer.merge(
       makeOpenCodeLayer({
         binaryCacheDirectory: openCodeBinaryDirectory,
+        // The bundled Roblox skill sits next to the app's resources once
+        // packaged, and in the repository during development.
+        skillsPaths: skillDirectories({
+          appPath: app.getAppPath(),
+          isPackaged: app.isPackaged,
+          resourcesPath: process.resourcesPath,
+        }),
         workspace: join(app.getPath("home"), "BloxMind"),
         onStartupProgress: (progress: OpenCodeStartupProgress) => {
           if (mainWindow && !mainWindow.isDestroyed()) {

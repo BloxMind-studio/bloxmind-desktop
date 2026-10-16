@@ -9,6 +9,12 @@ files:
   - "package.json"
 npmRebuild: false
 asar: true
+# Agent skills ship outside the asar so OpenCode can read every SKILL.md and its
+# bundled Luau helpers from disk. createOpenCodeConfig() adds resources/skills to
+# `skills.paths` at runtime, which is why the destination is not under app.asar.
+extraResources:
+  - from: ".agents/skills"
+    to: "skills"
 mac:
   category: public.app-category.developer-tools
   icon: electron/icons/icon.icns

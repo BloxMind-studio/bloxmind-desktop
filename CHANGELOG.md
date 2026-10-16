@@ -7,6 +7,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- BloxMind now ships a Roblox game development skill — Luau helper modules, project templates and reference guides — that the Studio assistant loads on demand while you work.
+
 ## [0.13.8] - 2026-10-16
 
 ### Added

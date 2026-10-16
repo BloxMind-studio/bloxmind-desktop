@@ -1,4 +1,4 @@
-import { win32 } from "node:path";
+import { join, win32 } from "node:path";
 
 import { STUDIO_MCP_SERVER_NAME } from "../src/lib/bloxbotProgramManifest";
 
@@ -42,12 +42,31 @@ export function studioMcpInstallPath(
   return null;
 }
 
-export function createOpenCodeConfig(broker: { url: string }) {
+export interface OpenCodeRuntimePaths {
+  appPath: string;
+  isPackaged: boolean;
+  resourcesPath: string;
+}
+
+/**
+ * Directories OpenCode scans for SKILL.md. Packaged builds read the skills
+ * electron-builder copies to resources/skills (see `extraResources`), while
+ * development runs read the repository copy.
+ */
+export function skillDirectories(runtime: OpenCodeRuntimePaths): string[] {
+  return runtime.isPackaged
+    ? [join(runtime.resourcesPath, "skills")]
+    : [join(runtime.appPath, ".agents", "skills")];
+}
+
+export function createOpenCodeConfig(broker: { url: string }, skillsPaths: readonly string[] = []) {
   return {
     // Keep OpenCode's standard automatic context compaction enabled for long sessions.
     compaction: {
       auto: true,
     },
+    // Only advertised when a skill actually ships, so OpenCode never scans a missing directory.
+    ...(skillsPaths.length > 0 ? { skills: { paths: [...skillsPaths] } } : {}),
     mcp: {
       [STUDIO_MCP_SERVER_NAME]: {
         type: "remote",

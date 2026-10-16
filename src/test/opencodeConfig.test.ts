@@ -1,6 +1,12 @@
+import { join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
-import { createOpenCodeConfig, studioMcpCommand } from "../../electron/opencodeConfig";
+import {
+  createOpenCodeConfig,
+  skillDirectories,
+  studioMcpCommand,
+} from "../../electron/opencodeConfig";
 
 const broker = { url: "http://127.0.0.1:43210/mcp" };
 
@@ -71,5 +77,38 @@ describe("OpenCode configuration", () => {
       url: broker.url,
       enabled: true,
     });
+  });
+});
+
+describe("Bundled skills", () => {
+  it("scans the skills copied next to the packaged app's resources", () => {
+    expect(
+      skillDirectories({
+        appPath: join("C:\\", "app", "resources", "app.asar"),
+        isPackaged: true,
+        resourcesPath: join("C:\\", "app", "resources"),
+      }),
+    ).toEqual([join("C:\\", "app", "resources", "skills")]);
+  });
+
+  it("scans the repository copy during development", () => {
+    expect(
+      skillDirectories({
+        appPath: join("C:\\", "repo"),
+        isPackaged: false,
+        resourcesPath: join("C:\\", "electron", "resources"),
+      }),
+    ).toEqual([join("C:\\", "repo", ".agents", "skills")]);
+  });
+
+  it("stays out of the config until a skill actually ships", () => {
+    expect(createOpenCodeConfig(broker)).not.toHaveProperty("skills");
+  });
+
+  it("advertises the shipped skill directory in skills.paths", () => {
+    const config = createOpenCodeConfig(broker, ["C:\\app\\resources\\skills"]);
+
+    expect(config.skills).toEqual({ paths: ["C:\\app\\resources\\skills"] });
+    expect(config.agent.studio.mode).toBe("primary");
   });
 });
