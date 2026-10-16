@@ -446,8 +446,20 @@ export async function startStudioMcpBroker(
     for (const { server } of sessions.values()) void server.sendToolListChanged();
   });
 
+  let boundPort = 0;
   const httpServer = createServer(async (req, res) => {
     try {
+      // DNS-rebinding guard: only the loopback origin the broker advertised
+      // is a valid Host. A browser pointed at an attacker-controlled domain
+      // that resolves to 127.0.0.1 sends that domain as Host and is rejected.
+      const host = req.headers.host?.toLowerCase();
+      if (
+        host !== `${LOOPBACK}:${boundPort}` &&
+        host !== `localhost:${boundPort}` &&
+        host !== `[::1]:${boundPort}`
+      ) {
+        return reject(res, 403, "Forbidden host");
+      }
       if (req.url !== "/mcp") return reject(res, 404, "Not found");
       const sessionId = req.headers["mcp-session-id"];
       let session = typeof sessionId === "string" ? sessions.get(sessionId) : undefined;
@@ -476,6 +488,7 @@ export async function startStudioMcpBroker(
   });
   const address = httpServer.address();
   if (!address || typeof address === "string") throw new Error("Broker did not bind a TCP port");
+  boundPort = address.port;
 
   process.stderr.write(`[studio-mcp] broker listening on ${LOOPBACK}:${address.port}\n`);
   return {
