@@ -10,7 +10,7 @@ import PlaytestPanel from "@/components/PlaytestPanel";
 import StudioSetup from "@/components/StudioSetup";
 import StudioTargetPicker from "@/components/StudioTargetPicker";
 import { useCreateSession } from "@/hooks/mutations/useCreateSession";
-import { useSessionStatus } from "@/hooks/useSessionStatuses";
+import { isSessionWorking, useSessionStatus } from "@/hooks/useSessionStatuses";
 import { useSessions } from "@/hooks/useSessions";
 import { useStudioConnection } from "@/hooks/useStudioConnection";
 import { analyticsProperties, POSTHOG_PROJECT_TOKEN } from "@/lib/analytics";
@@ -99,7 +99,7 @@ function Chat() {
   const { ready, initError } = useOpenCodeClient();
   const { activeSessionId, clearSession } = useActiveSession();
   const sessionStatus = useSessionStatus(activeSessionId);
-  const isBusy = sessionStatus !== undefined && sessionStatus.type !== "idle";
+  const isBusy = isSessionWorking(sessionStatus);
   const createSession = useCreateSession();
   const { data: allSessions } = useSessions();
   const studioConnection = useStudioConnection();

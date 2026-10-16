@@ -12,6 +12,9 @@ import { verifyBloxBotProgramManifest } from "../bloxbotProgramSignature";
 
 // Published as prerelease assets on a rolling release, so electron-updater (which
 // follows the repository's latest release) never mistakes it for an app update.
+// Intentionally still the upstream publishing repo: the signed manifest lives
+// only there, so moving this URL requires republishing (and re-signing) the
+// programs release somewhere else first.
 const RELEASE_URL = "https://github.com/paralov/app-bloxbot-ai/releases/download/bloxbot-programs";
 export const BLOXBOT_PROGRAMS_MANIFEST_URL = `${RELEASE_URL}/manifest.json`;
 export const BLOXBOT_PROGRAMS_SIGNATURE_URL = `${RELEASE_URL}/manifest.json.sig`;
