@@ -74,11 +74,14 @@ import { useActiveQuestion } from "@/hooks/useQuestions";
 import { useSessionError } from "@/hooks/useSessionError";
 import { isSessionWorking, useSessionStatus } from "@/hooks/useSessionStatuses";
 import { useTodos } from "@/hooks/useTodos";
+import { notifyResponseReady } from "@/lib/desktopNotifications";
 import { type ModelError, presentModelError } from "@/lib/modelError";
 import { qk } from "@/lib/queryKeys";
+import { playResponseReady } from "@/lib/soundEffects";
 import type { MessagesCache } from "@/lib/sseDispatch";
 import { getOpenCodeUsageAction, type OpenCodeUsageAction } from "@/lib/usageLimit";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
+import { usePreferences } from "@/providers/PreferencesProvider";
 import type { MessageWithParts } from "@/types";
 
 // ── Image lightbox ───────────────────────────────────────────────────────
@@ -2008,6 +2011,7 @@ function ChatMessages() {
   const sessionError = useSessionError();
   const { activeSessionId } = useActiveSession();
   const queryClient = useQueryClient();
+  const { autoScroll } = usePreferences();
   const sessionStatus = useSessionStatus(activeSessionId);
   const isBusy = isSessionWorking(sessionStatus);
   const usageAction = getOpenCodeUsageAction(sessionStatus);
@@ -2033,6 +2037,9 @@ function ChatMessages() {
   // (it's about to modify files for the latest message), capture a full
   // pre-task snapshot so auto-rollback always has a restore point.
   const previousStatusRef = useRef<SessionStatus | undefined>(undefined);
+  // Session the cached previous status belongs to, so a session switch never
+  // reads as a busy→idle transition of the newly active session.
+  const previousStatusSessionRef = useRef<string | null>(null);
   const capturedForMessageRef = useRef<string | null>(null);
   // Session whose most recent busy→idle transition still needs validation.
   // Set when a task goes busy, consumed by the auto-rollback effect. Without
@@ -2042,11 +2049,20 @@ function ChatMessages() {
   useEffect(() => {
     if (!activeSessionId) {
       previousStatusRef.current = undefined;
+      previousStatusSessionRef.current = null;
       capturedForMessageRef.current = null;
       return;
     }
     const prev = previousStatusRef.current;
     previousStatusRef.current = sessionStatus;
+    const sameSession = previousStatusSessionRef.current === activeSessionId;
+    previousStatusSessionRef.current = activeSessionId;
+    // Response finished (busy→idle of this session): play the completion cue
+    // and, when the window is in the background, raise a system notification.
+    if (sameSession && prev?.type === "busy" && sessionStatusType === "idle") {
+      playResponseReady();
+      notifyResponseReady();
+    }
     // Capture whenever the agent transitions into "busy" (from idle, error,
     // or the very first message of a session), once per message. Empty paths
     // → full-workspace journal snapshot (works with or without git).
@@ -2209,7 +2225,7 @@ function ChatMessages() {
         return target?.closest("[data-preserve-scroll]") !== null;
       });
       if (onlyDisclosureChanges) return;
-      if (!shouldAutoScroll.current) return;
+      if (!autoScroll || !shouldAutoScroll.current) return;
       if (!rafId) {
         rafId = requestAnimationFrame(() => {
           rafId = 0;
@@ -2222,14 +2238,14 @@ function ChatMessages() {
       observer.disconnect();
       cancelAnimationFrame(rafId);
     };
-  }, []);
+  }, [autoScroll]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional scroll triggers
   useEffect(() => {
-    if (shouldAutoScroll.current) {
+    if (autoScroll && shouldAutoScroll.current) {
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-  }, [isBusy, todos, activeQuestion, activePermission]);
+  }, [autoScroll, isBusy, todos, activeQuestion, activePermission]);
 
   const handleAnswer = useCallback(
     (requestID: string, answers: QuestionAnswer[]) => answerQuestion.mutate({ requestID, answers }),

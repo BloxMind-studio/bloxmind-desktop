@@ -12,6 +12,7 @@ import { useCommands } from "@/hooks/useCommands";
 import { useAllModels, useConnectedProviders } from "@/hooks/useProviders";
 import { useIsBusy } from "@/hooks/useSessionStatuses";
 import { findModelInfo, formatTokens, modelSpecs, reasoningLabel } from "@/lib/modelSpecs";
+import { playMessageSent } from "@/lib/soundEffects";
 import { splitModelKey } from "@/lib/splitModelKey";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { useExplorerReference } from "@/providers/ExplorerReferenceProvider";
@@ -249,6 +250,7 @@ function ChatInput() {
     selectedVariant,
     hiddenModels,
     enterToSend,
+    systemPrompt: customSystemPrompt,
     setSelectedModel,
     setSelectedAgent,
     setSelectedVariant,
@@ -257,9 +259,13 @@ function ChatInput() {
   const { contextPrompt: projectIndexContext } = useProjectIndexContext();
 
   const systemPrompt = useMemo(() => {
-    const parts = [studioTargetReference, projectIndexContext].filter(Boolean);
+    const parts = [
+      customSystemPrompt.trim() || null,
+      studioTargetReference,
+      projectIndexContext,
+    ].filter(Boolean);
     return parts.length ? parts.join("\n\n") : null;
-  }, [studioTargetReference, projectIndexContext]);
+  }, [customSystemPrompt, studioTargetReference, projectIndexContext]);
 
   // Available variants for the currently selected model
   const availableVariants = useMemo(() => {
@@ -551,6 +557,7 @@ function ChatInput() {
     setText("");
     setAttachments([]);
     promptEditorRef.current?.clear();
+    playMessageSent();
     void sendMessage
       .mutateAsync({ text: trimmed || " ", images, studioTargetReference, systemPrompt })
       .catch(() => undefined);

@@ -11,14 +11,18 @@ import {
 } from "react";
 import { toast } from "sonner";
 import { useAgents } from "@/hooks/useAgents";
-import { useConnectedProviders } from "@/hooks/useProviders";
+import { useConnectedProviders, useProviderList } from "@/hooks/useProviders";
 import {
   ANALYTICS_NOTICE_VERSION,
   setDetailedAnalyticsEnabled as setDetailedAnalyticsCollection,
 } from "@/lib/analytics";
 import { type AppConfig, loadConfig, patchConfig } from "@/lib/config";
+import { setNotificationsEnabled as setDesktopNotificationsEnabled } from "@/lib/desktopNotifications";
+import { applyEngineSettings } from "@/lib/engineSettings";
 import { qk } from "@/lib/queryKeys";
+import { setSoundEffectsEnabled } from "@/lib/soundEffects";
 import { splitModelKey } from "@/lib/splitModelKey";
+import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 import type { AccentColor, LayoutDensity } from "@/types/desktop";
 
 const ACCENT_CSS_VALUES: Record<AccentColor, string> = {
@@ -131,6 +135,8 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [sseHeartbeatTimeout, setSseHeartbeatTimeoutState] = useState(30_000);
 
   const connectedProviders = useConnectedProviders();
+  const providerList = useProviderList();
+  const { client, ready } = useOpenCodeClient();
 
   const setDetailedAnalyticsEnabled = useCallback((enabled: boolean) => {
     const previous = detailedAnalyticsEnabledRef.current;
@@ -343,6 +349,50 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     applyFontSize(fontSize);
   }, [fontSize]);
+
+  // Mirror the toggles into the module-level flags the chat surfaces read.
+  useEffect(() => {
+    setSoundEffectsEnabled(soundEffects);
+  }, [soundEffects]);
+
+  useEffect(() => {
+    setDesktopNotificationsEnabled(notificationsEnabled);
+  }, [notificationsEnabled]);
+
+  // Push the AI Engine settings into the running server's config so they take
+  // effect. Debounced because the temperature slider fires per step and the
+  // update round-trips through the server; gated on the initial config load
+  // so the persisted values are applied, not the in-code defaults.
+  useEffect(() => {
+    if (!client || !ready || !configData || !providerList) return;
+    const timer = setTimeout(() => {
+      void applyEngineSettings(
+        client,
+        {
+          temperature,
+          maxTokens,
+          customApiEndpoint,
+          agent: selectedAgent,
+          modelKey: selectedModel,
+        },
+        providerList.all,
+        providerList.connected,
+      ).catch((error: unknown) => {
+        console.warn("Failed to apply AI engine settings:", error);
+      });
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [
+    client,
+    ready,
+    configData,
+    providerList,
+    temperature,
+    maxTokens,
+    customApiEndpoint,
+    selectedAgent,
+    selectedModel,
+  ]);
 
   const value = useMemo<PreferencesContextValue>(
     () => ({

@@ -1100,7 +1100,7 @@ function EngineTab() {
             className="h-8 w-full rounded border bg-background px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-ring"
           />
           <div className="mt-1 text-[10px] text-muted-foreground">
-            Max tokens per response (256–128,000)
+            Caps the response length for the selected model (256–128,000).
           </div>
         </div>
       </div>
@@ -1119,7 +1119,8 @@ function EngineTab() {
             className="h-8 w-full rounded border bg-background px-2 text-xs font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
           />
           <div className="mt-1 text-[10px] text-muted-foreground">
-            Leave empty to use the default endpoint.
+            Overrides the API base URL for every connected provider. Leave empty to use each
+            provider's default endpoint.
           </div>
           {customApiEndpoint && (
             <button
@@ -1238,7 +1239,8 @@ function BehaviorTab() {
             <div>
               <div className="text-sm font-medium">Notifications</div>
               <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-                Show toast notifications for events like session completion or errors.
+                Show a desktop notification when a response finishes while BloxMind is in the
+                background.
               </p>
             </div>
             <button

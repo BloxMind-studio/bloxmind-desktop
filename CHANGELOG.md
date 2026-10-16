@@ -10,10 +10,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Added
 
 - BloxMind now ships a Roblox game development skill — Luau helper modules, project templates and reference guides — that the Studio assistant loads on demand while you work.
+- The AI engine settings now reach the engine: temperature applies to the selected assistant, "Max output tokens" caps the selected model's replies, and a custom API endpoint is used for every connected provider.
+- A custom system prompt set in Settings is now included with every message you send.
+- Sound effects and desktop notifications preferences now do something: a cue plays when you send a message and when a reply finishes, and a desktop notification appears when a reply finishes while BloxMind is in the background.
+- Turning off "Auto-scroll" in Settings now stops the chat from jumping to the newest message.
 
 ### Fixed
 
 - Stopping the agent mid-turn no longer leaves a frozen "Thinking…" indicator or leftover reasoning and tool rows on screen. The thinking indicator only shows while the agent is actually working, and a stopped turn that produced no text leaves nothing behind.
+- The local connection to Roblox Studio now rejects requests that don't come from this machine, protecting the bridge against DNS-rebinding attacks from a malicious web page.
 - The automatic checkpoint badge and "Restore files" action no longer appear while the agent is still working, including while it is retrying a request.
 - Checkpoint marks only appear for checkpoints captured during the current session. After restarting the app, previously captured checkpoints are no longer offered for restore.
 - Build validation now runs the tools installed in the project itself and skips checks the project doesn't have. Previously the validator could fail to start on Windows, report a "build failure", and silently roll the agent's changes back.
