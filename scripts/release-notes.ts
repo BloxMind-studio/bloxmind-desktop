@@ -30,13 +30,15 @@ export function changelogSection(changelog: string, version: string): string {
   return body;
 }
 
-export function releaseNotes(changelog: string, version: string): string {
+export function releaseNotes(changelog: string, version: string, notice?: string): string {
   const tag = `v${version}`;
   const download = `${REPOSITORY_URL}/releases/download/${tag}`;
   const [arm64Dmg, , x64Dmg, , exe, deb] = releaseAssetNames(version);
+  const trimmedNotice = notice?.trim();
   return [
     "## Download BloxMind",
     "",
+    ...(trimmedNotice ? [trimmedNotice, ""] : []),
     `- [macOS Apple Silicon (.dmg)](${download}/${arm64Dmg})`,
     `- [macOS Intel (.dmg)](${download}/${x64Dmg})`,
     `- [Windows (.exe)](${download}/${exe})`,

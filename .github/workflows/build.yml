@@ -7,6 +7,8 @@ on:
         description: >-
           Sign the Windows installer and app with Azure Artifact Signing. Only
           release.yml sets this, and the caller must grant `id-token: write`.
+          Signing is skipped with a warning when the Azure repository variables
+          are not configured.
         type: boolean
         required: false
         default: false
@@ -111,6 +113,9 @@ jobs:
 
       # Windows signing uses Azure Artifact Signing (see release.yml for the Azure
       # resources). The Entra app only trusts OIDC tokens for refs/heads/main.
+      # The six Azure values are repository-scoped, so a freshly created repo has
+      # none: skip signing with a warning instead of failing the release. The
+      # publish job repeats this check so the release notes say "unsigned".
       - name: Check Windows signing setup
         if: env.SIGN_WINDOWS == 'true'
         shell: bash
@@ -126,13 +131,26 @@ jobs:
             echo "Windows signing only runs from main, not ${GITHUB_REF}."
             exit 1
           fi
+          missing=()
           for name in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID \
             AZURE_SIGNING_ENDPOINT AZURE_SIGNING_ACCOUNT AZURE_SIGNING_PROFILE; do
             if [[ -z "${!name}" ]]; then
-              echo "The ${name} repository variable is not set."
-              exit 1
+              missing+=("$name")
             fi
           done
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            echo "SIGN_WINDOWS=false" >> "$GITHUB_ENV"
+            echo "::warning title=Windows signing skipped::${missing[*]} not set for this repository; the Windows installer and app will be unsigned. Installs signed as \"Paralov AS\" will not auto-update to an unsigned build."
+            {
+              echo "### Windows signing skipped"
+              echo ""
+              echo "The Windows installer and app are **unsigned** because these repository variables are not set: \`${missing[*]}\`."
+              echo ""
+              echo "Installs signed as \`Paralov AS\` will not auto-update to an unsigned build."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "Windows signing is configured; the Windows build will be signed as \"Paralov AS\"."
 
       # Logs the Azure CLI in with the GitHub OIDC token. No client secret exists.
       - name: Log in to Azure

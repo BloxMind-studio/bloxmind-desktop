@@ -9,8 +9,14 @@ name: Release
 #      through `win.azureSignOptions`. electron-builder runs Invoke-TrustedSigning,
 #      whose DefaultAzureCredential picks up the Azure CLI login,
 #   3. fails unless Get-AuthenticodeSignature reports a valid, timestamped
-#      signature from O=Paralov AS on the installer and win-unpacked/BloxBot.exe.
+#      signature from O=Paralov AS on the installer and win-unpacked/BloxMind.exe.
 # CI and pull request builds never sign and need no Azure access.
+#
+# Until the Azure resources below are pointed at this repository (the federated
+# credential must trust repo:BloxMind-studio/bloxmind-desktop:ref:refs/heads/main)
+# the Windows job skips signing with a warning and the release is published
+# unsigned, with an "unsigned" warning at the top of the release notes. That is
+# a testing convenience, not a shipping configuration.
 #
 # Azure resources it depends on:
 #   - Artifact Signing account (AZURE_SIGNING_ACCOUNT, AZURE_SIGNING_ENDPOINT)
@@ -76,6 +82,12 @@ jobs:
       contents: write
     env:
       GH_TOKEN: ${{ github.token }}
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+      AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+      AZURE_SIGNING_PROFILE: ${{ vars.AZURE_SIGNING_PROFILE }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -86,8 +98,21 @@ jobs:
           path: release
           merge-multiple: true
 
+      # Mirrors the Windows job's check: with the Azure variables absent the
+      # installers are unsigned, so say so at the top of the release notes.
       - name: Verify and atomically publish the release
         run: |
+          missing=()
+          for name in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID \
+            AZURE_SIGNING_ENDPOINT AZURE_SIGNING_ACCOUNT AZURE_SIGNING_PROFILE; do
+            if [[ -z "${!name}" ]]; then
+              missing+=("$name")
+            fi
+          done
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            echo "::warning title=Unsigned release::Windows signing is not configured; these installers are unsigned."
+            export RELEASE_NOTE_NOTICE="> **This release is unsigned.** The Windows and macOS installers are not code-signed, so Windows SmartScreen and macOS Gatekeeper warn on first launch, and installs signed as \`Paralov AS\` will not auto-update to it."
+          fi
           echo "Starting release publication..."
           node scripts/release.ts publish release
           echo "Release published successfully"

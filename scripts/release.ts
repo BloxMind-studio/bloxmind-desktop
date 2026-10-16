@@ -113,7 +113,8 @@ async function publish(releaseDirectory: string): Promise<void> {
   const notesPath = join(temporaryDirectory, "release-notes.md");
 
   try {
-    await writeFile(notesPath, `${releaseNotes(changelog, version)}\n`);
+    const notice = process.env.RELEASE_NOTE_NOTICE?.trim();
+    await writeFile(notesPath, `${releaseNotes(changelog, version, notice || undefined)}\n`);
     if (action === "create") {
       command("gh", [
         "release",

@@ -36,6 +36,12 @@ test("puts end-user installers before changelog notes", () => {
   assert.ok(notes.indexOf("## Download BloxMind") < notes.indexOf("### Added"));
 });
 
+test("adds an unsigned-build warning above the installers when a notice is given", () => {
+  const notes = releaseNotes(changelog, "1.2.3", "> **This release is unsigned.**");
+  assert.match(notes, /## Download BloxMind\n\n> \*\*This release is unsigned\.\*\*\n\n- \[macOS Apple Silicon/);
+  assert.equal(releaseNotes(changelog, "1.2.3", "  "), releaseNotes(changelog, "1.2.3"));
+});
+
 test("fails when the version is absent", () => {
   assert.throws(() => changelogSection(changelog, "9.9.9"), /no ## \[9\.9\.9\] section/);
 });
