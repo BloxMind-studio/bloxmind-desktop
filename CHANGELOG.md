@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-17
+
 ### Added
 
 - BloxMind now ships a Roblox game development skill — Luau helper modules, project templates and reference guides — that the Studio assistant loads on demand while you work.
@@ -326,7 +328,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - OpenCode downloads are restricted to official GitHub release assets and verified with SHA-256 digests before installation and on every cache reuse.
 - Electron runs with context isolation, renderer sandboxing, Node.js integration disabled, validated IPC payloads, and external navigation blocked.
 
-[Unreleased]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.13.8...HEAD
+[Unreleased]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.13.8...v0.14.0
 [0.13.8]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.13.7...v0.13.8
 [0.13.7]: https://github.com/paralov/app-bloxbot-ai/compare/v0.13.6...v0.13.7
 [0.13.6]: https://github.com/paralov/app-bloxbot-ai/compare/v0.13.5...v0.13.6
