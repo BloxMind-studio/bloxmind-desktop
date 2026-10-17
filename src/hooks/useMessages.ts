@@ -5,6 +5,7 @@ import { useCallback } from "react";
 import { hasPlaytestContext } from "@/lib/playtestPlan";
 import { qk } from "@/lib/queryKeys";
 import type { MessagesCache } from "@/lib/sseDispatch";
+import { baseToolName } from "@/lib/toolName";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 import type { MessageWithParts } from "@/types";
@@ -124,6 +125,50 @@ export function useMessage(messageId: string): MessageWithParts | undefined {
     enabled: ready && !!client && !!activeSessionId,
     select: useCallback((d: MessagesCache) => d.messagesById[messageId], [messageId]),
   }).data;
+}
+
+/**
+ * The id of the last message in the task turn that most recently wrote the
+ * session's todo list, extended through the consecutive assistant messages
+ * that close that turn. The todo panel anchors just after this message so it
+ * stays with its turn once newer messages are added below it. Null while the
+ * history has no todo write yet (or hasn't loaded).
+ */
+export function useTodoAnchorMessageId(): string | null {
+  const { activeSessionId } = useActiveSession();
+  const { client, ready } = useOpenCodeClient();
+  const queryClient = useQueryClient();
+
+  return (
+    useQuery<MessagesCache, Error, string | null>({
+      queryKey: activeSessionId ? qk.messages(activeSessionId) : NOOP_KEY,
+      queryFn: () =>
+        client && activeSessionId
+          ? fetchMessages(client, queryClient, activeSessionId)
+          : Promise.resolve(EMPTY_CACHE),
+      enabled: ready && !!client && !!activeSessionId,
+      select: useCallback((cache: MessagesCache) => {
+        let lastWriteIndex = -1;
+        cache.messageIds.forEach((id, index) => {
+          const parts = cache.messagesById[id]?.parts;
+          if (
+            parts?.some((part) => part.type === "tool" && baseToolName(part.tool) === "todowrite")
+          ) {
+            lastWriteIndex = index;
+          }
+        });
+        if (lastWriteIndex === -1) return null;
+        let endIndex = lastWriteIndex;
+        while (
+          endIndex + 1 < cache.messageIds.length &&
+          cache.messagesById[cache.messageIds[endIndex + 1]]?.info.role === "assistant"
+        ) {
+          endIndex += 1;
+        }
+        return cache.messageIds[endIndex];
+      }, []),
+    }).data ?? null
+  );
 }
 
 /**

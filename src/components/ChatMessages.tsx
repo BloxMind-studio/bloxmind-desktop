@@ -64,11 +64,22 @@ const TOOLS_WITH_OWN_HEADER = new Set([
   "todowrite",
 ]);
 
+/** Stable key for the todo panel's item in the scroll feed. */
+const TODO_PANEL_KEY = "__todo_panel__";
+
+/**
+ * One item of the scroll feed: a message row, or the inline todo panel that
+ * anchors after the task turn which wrote the todos.
+ */
+type FeedItem =
+  | { key: string; messageId: string; messageIndex: number }
+  | { key: string; messageId: null; messageIndex: null };
+
 import { useAnswerQuestion, useRejectQuestion } from "@/hooks/mutations/useAnswerQuestion";
 import { useReplyPermission } from "@/hooks/mutations/useReplyPermission";
 import { useCheckpointHistory } from "@/hooks/useCheckpointHistory";
 import { useCheckpoints } from "@/hooks/useCheckpoints";
-import { useMessage, useMessageIds } from "@/hooks/useMessages";
+import { useMessage, useMessageIds, useTodoAnchorMessageId } from "@/hooks/useMessages";
 import { useActivePermission } from "@/hooks/usePermissions";
 import { useActiveQuestion } from "@/hooks/useQuestions";
 import { useSessionError } from "@/hooks/useSessionError";
@@ -79,6 +90,7 @@ import { type ModelError, presentModelError } from "@/lib/modelError";
 import { qk } from "@/lib/queryKeys";
 import { playResponseReady } from "@/lib/soundEffects";
 import type { MessagesCache } from "@/lib/sseDispatch";
+import { baseToolName } from "@/lib/toolName";
 import { getOpenCodeUsageAction, type OpenCodeUsageAction } from "@/lib/usageLimit";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
@@ -310,10 +322,6 @@ function BloxMindThinking({ label = "Thinking..." }: { label?: string }) {
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────
-
-function baseToolName(tool: string): string {
-  return tool.replace(/^mcp_[^_]+_/, "");
-}
 
 function inputField(input: Record<string, unknown>, key: string): string {
   const val = input[key];
@@ -2016,6 +2024,7 @@ function ChatMessages() {
   const isBusy = isSessionWorking(sessionStatus);
   const usageAction = getOpenCodeUsageAction(sessionStatus);
   const todos = useTodos();
+  const todoAnchorMessageId = useTodoAnchorMessageId();
   const activeQuestion = useActiveQuestion();
   const activePermission = useActivePermission();
   const lastMessageHasError =
@@ -2184,13 +2193,37 @@ function ChatMessages() {
     return roles;
   }, [activeSessionId, messageIds, queryClient]);
 
+  // The scroll feed is the message list with the todo panel inserted after
+  // the anchored task turn — the newest turn that wrote the todos. Anchoring
+  // it in the feed (instead of pinning it below the list) keeps it with its
+  // turn when the user sends the next message. While the anchor is unknown
+  // (todos but no todo write in the loaded history) the panel sits at the
+  // end of the stream, which matches the age of the chat.
+  const feed = useMemo(() => {
+    const items: FeedItem[] = messageIds.map((messageId, messageIndex) => ({
+      key: messageId,
+      messageId,
+      messageIndex,
+    }));
+    if (todos.length === 0 || messageIds.length === 0) return items;
+    const anchorIndex = todoAnchorMessageId
+      ? messageIds.indexOf(todoAnchorMessageId)
+      : messageIds.length - 1;
+    items.splice(anchorIndex === -1 ? messageIds.length : anchorIndex + 1, 0, {
+      key: TODO_PANEL_KEY,
+      messageId: null,
+      messageIndex: null,
+    });
+    return items;
+  }, [messageIds, todos, todoAnchorMessageId]);
+
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const shouldAutoScroll = useRef(true);
   const lastScrollTop = useRef(0);
 
   const virtualizer = useVirtualizer({
-    count: messageIds.length,
+    count: feed.length,
     getScrollElement: () => containerRef.current,
     estimateSize: () => 80,
     overscan: 5,
@@ -2297,8 +2330,32 @@ function ChatMessages() {
             }}
           >
             {virtualItems.map((virtualItem) => {
-              const msgId = messageIds[virtualItem.index];
-              const isLastIndex = virtualItem.index === messageIds.length - 1;
+              const item = feed[virtualItem.index];
+              if (!item) return null;
+              const positionedStyle = {
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: "100%",
+                transform: `translateY(${virtualItem.start}px)`,
+              } as const;
+              if (item.messageId === null) {
+                return (
+                  <div
+                    key={item.key}
+                    data-index={virtualItem.index}
+                    ref={virtualizer.measureElement}
+                    style={positionedStyle}
+                  >
+                    <div className="pb-4">
+                      <TodoPanel todos={todos} />
+                    </div>
+                  </div>
+                );
+              }
+              const msgId = item.messageId;
+              const messageIndex = item.messageIndex;
+              const isLastIndex = messageIndex === messageIds.length - 1;
               // Filter out injected system notifications (e.g. restore context
               // patches) from the visual feed. They remain in the session for
               // the agent's context, but are never rendered as a message bubble.
@@ -2310,23 +2367,11 @@ function ChatMessages() {
                 (p) => p.type === "text" && p.text.startsWith("[SYSTEM_NOTIFICATION"),
               );
               if (isSystemNotification) {
-                return (
-                  <div
-                    key={msgId}
-                    data-index={virtualItem.index}
-                    style={{
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      width: "100%",
-                      transform: `translateY(${virtualItem.start}px)`,
-                    }}
-                  />
-                );
+                return <div key={msgId} data-index={virtualItem.index} style={positionedStyle} />;
               }
               // This message is the end of a task if it's the last message,
               // OR the very next message belongs to the user.
-              const nextRole = rolesByIndex.get(virtualItem.index + 1);
+              const nextRole = rolesByIndex.get(messageIndex + 1);
               // Treat any non-assistant next role (including empty string when
               // the cache hasn't caught up to a new user message yet) as the
               // end of a task. This prevents the button from disappearing
@@ -2349,13 +2394,7 @@ function ChatMessages() {
                   key={msgId}
                   data-index={virtualItem.index}
                   ref={virtualizer.measureElement}
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    width: "100%",
-                    transform: `translateY(${virtualItem.start}px)`,
-                  }}
+                  style={positionedStyle}
                 >
                   <div className="pb-4">
                     <MessageBubble
@@ -2371,7 +2410,6 @@ function ChatMessages() {
             })}
           </div>
           <div className="space-y-4">
-            {todos.length > 0 && <TodoPanel todos={todos} />}
             {activeQuestion && (
               <QuestionPrompt
                 question={activeQuestion}

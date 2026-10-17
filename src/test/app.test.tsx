@@ -489,6 +489,79 @@ describe("User journeys", () => {
     });
   });
 
+  it("keeps the todo panel inline with its task turn when a new message arrives", async () => {
+    const session = makeSession("s1", "Todo Session");
+    const time = { created: Date.now(), updated: Date.now() };
+    const textPart = (id: string, messageID: string, text: string) => ({
+      id,
+      messageID,
+      sessionID: "s1",
+      type: "text",
+      text,
+      time,
+    });
+    const client = createClient({
+      get: vi.fn().mockResolvedValue({ data: session }),
+      messages: vi.fn().mockResolvedValue({
+        data: [
+          {
+            info: { id: "msg_u1", sessionID: "s1", role: "user", time },
+            parts: [textPart("part_u1", "msg_u1", "Build a market stall")],
+          },
+          {
+            info: { id: "msg_a1", sessionID: "s1", role: "assistant", time },
+            parts: [
+              {
+                id: "part_todo",
+                messageID: "msg_a1",
+                sessionID: "s1",
+                type: "tool",
+                tool: "todowrite",
+                callID: "call_1",
+                state: {
+                  status: "completed",
+                  input: {
+                    todos: [{ content: "Build shelves", status: "completed", priority: "high" }],
+                  },
+                  output: "",
+                  title: "todowrite",
+                  time,
+                },
+                time,
+              },
+              textPart("part_a1", "msg_a1", "All done"),
+            ],
+          },
+          {
+            info: { id: "msg_u2", sessionID: "s1", role: "user", time },
+            parts: [textPart("part_u2", "msg_u2", "Now add a bakery")],
+          },
+        ],
+      }),
+      todo: vi.fn().mockResolvedValue({
+        data: [{ id: "t1", content: "Build shelves", status: "completed", priority: "high" }],
+      }),
+    });
+    const queryClient = createQueryClient();
+    seedReadyState(queryClient, { sessions: [session] });
+
+    render(<TestApp client={client} queryClient={queryClient} />);
+    await act(async () => {
+      fireEvent.click(await screen.findByText("Todo Session"));
+    });
+
+    const panel = await screen.findByText("Tasks");
+    const firstTask = await screen.findByText("Build a market stall");
+    const followUp = screen.getByText("Now add a bakery");
+
+    // The panel stays with the turn that wrote it: after the first turn's
+    // messages, but before the follow-up message added later.
+    expect(
+      firstTask.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(panel.compareDocumentPosition(followUp) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("shows permission prompt and user can approve it", async () => {
     const session = makeSession("s1", "My Session");
     const permRequest = {
