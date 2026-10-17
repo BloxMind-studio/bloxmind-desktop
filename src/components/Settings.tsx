@@ -9,6 +9,7 @@ import ProviderLogo from "@/components/ProviderLogo";
 import { THEME_OPTIONS, type Theme, useTheme } from "@/components/theme-provider";
 import { useCheckProvider } from "@/hooks/mutations/useCheckProvider";
 import { useDisconnectProvider } from "@/hooks/mutations/useSetApiKey";
+import { type McpServerLiveStatus, useMcpStatus } from "@/hooks/useMcpStatus";
 import {
   useAllModels,
   useAllProviders,
@@ -18,6 +19,12 @@ import {
 } from "@/hooks/useProviders";
 import { analyticsDeviceId, analyticsProperties } from "@/lib/analytics";
 import { desktop } from "@/lib/desktop";
+import {
+  blenderMcpServer,
+  type McpServerConfig,
+  parseCommandLine,
+  validateMcpServer,
+} from "@/lib/mcpServers";
 import { OPENCODE_GO, shouldRecommendOpenCodeGo } from "@/lib/opencodeGo";
 import { connectHint, isFreeTier, providerDisplayName } from "@/lib/providerAuth";
 import { checkModels, checkPreference, type ProviderCheckResult } from "@/lib/providerCheck";
@@ -63,6 +70,7 @@ type SettingsTab =
   | "general"
   | "providers"
   | "models"
+  | "integrations"
   | "engine"
   | "behavior"
   | "connection"
@@ -162,6 +170,32 @@ function Settings({ onClose }: SettingsProps) {
               <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
             </svg>
             Models
+          </button>
+          <button
+            onClick={() => setTab("integrations")}
+            className={`flex shrink-0 items-center gap-2 whitespace-nowrap rounded-md px-2.5 py-1.5 text-left text-xs transition-colors @xl:mx-1.5 ${
+              tab === "integrations"
+                ? "bg-accent font-medium text-foreground"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground"
+            }`}
+          >
+            <svg
+              width="13"
+              height="13"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M9 3H5a2 2 0 0 0-2 2v4" />
+              <path d="M15 3h4a2 2 0 0 1 2 2v4" />
+              <path d="M9 21H5a2 2 0 0 1-2-2v-4" />
+              <path d="M15 21h4a2 2 0 0 0 2-2v-4" />
+              <circle cx="12" cy="12" r="2" />
+            </svg>
+            Integrations
           </button>
 
           <div className="mt-4 hidden px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground @xl:block">
@@ -338,6 +372,7 @@ function Settings({ onClose }: SettingsProps) {
           {tab === "general" && <GeneralTab />}
           {tab === "providers" && <ProvidersTab />}
           {tab === "models" && <ModelsTab />}
+          {tab === "integrations" && <IntegrationsTab />}
           {tab === "engine" && <EngineTab />}
           {tab === "behavior" && <BehaviorTab />}
           {tab === "connection" && <ConnectionTab />}
@@ -1152,6 +1187,402 @@ function EngineTab() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Integrations Tab — extra MCP servers (Blender, custom tools)
+// ═══════════════════════════════════════════════════════════════════════
+
+interface McpServerDraft {
+  /** The name the draft started from, or null when adding. */
+  originalName: string | null;
+  name: string;
+  type: "local" | "remote";
+  commandLine: string;
+  url: string;
+  enabled: boolean;
+}
+
+function draftFromServer(server: McpServerConfig): McpServerDraft {
+  return {
+    originalName: server.name,
+    name: server.name,
+    type: server.type,
+    commandLine: (server.command ?? [])
+      .map((token) => (token.includes(" ") ? `"${token}"` : token))
+      .join(" "),
+    url: server.url ?? "",
+    enabled: server.enabled,
+  };
+}
+
+function draftToServer(draft: McpServerDraft): McpServerConfig {
+  return {
+    name: draft.name.trim(),
+    type: draft.type,
+    command: draft.type === "local" ? parseCommandLine(draft.commandLine.trim()) : null,
+    url: draft.type === "remote" ? draft.url.trim() : null,
+    enabled: draft.enabled,
+  };
+}
+
+function mcpStatusLabel(status: McpServerLiveStatus | undefined): {
+  label: string;
+  tone: string;
+  hint: string | null;
+} {
+  switch (status?.state) {
+    case "connected":
+      return { label: "Connected", tone: "bg-emerald-500", hint: null };
+    case "connecting":
+      return { label: "Connecting", tone: "bg-amber-500", hint: null };
+    case "needs_auth":
+      return { label: "Needs sign-in", tone: "bg-amber-500", hint: null };
+    case "disabled":
+      return { label: "Off", tone: "bg-border", hint: null };
+    case "failed":
+      return { label: "Failed to start", tone: "bg-red-500", hint: status.error };
+    default:
+      return {
+        label: "Not running",
+        tone: "bg-border",
+        hint: "BloxMind hasn't seen this server yet. If it just crashed on startup, fix the command and restart BloxMind.",
+      };
+  }
+}
+
+/** Setup instructions shown with the Blender preset card. */
+const BLENDER_SETUP_STEPS = [
+  "Install uv, the Python tool runner BloxMind uses to launch the bridge.",
+  "Install the Blender MCP addon (ahujasid/blender-mcp) in Blender 4.5 or newer and enable it.",
+  "In Blender, open the BlenderMCP panel in the sidebar and click Connect to MCP server (port 9876).",
+  "Add the integration here, then ask BloxMind to animate a character.",
+];
+
+function IntegrationsTab() {
+  const { mcpServers, setMcpServers } = usePreferences();
+  const { statuses } = useMcpStatus();
+  const [draft, setDraft] = useState<McpServerDraft | null>(null);
+  const [draftError, setDraftError] = useState<string | null>(null);
+
+  const hasBlender = mcpServers.some((server) => server.name.toLowerCase() === "blender");
+
+  function saveDraft() {
+    if (!draft) return;
+    const server = draftToServer(draft);
+    const nameError = validateMcpServer(server);
+    if (nameError) {
+      setDraftError(nameError);
+      return;
+    }
+    const duplicate = mcpServers.some(
+      (candidate) =>
+        candidate.name.toLowerCase() === server.name.toLowerCase() &&
+        candidate.name !== draft.originalName,
+    );
+    if (duplicate) {
+      setDraftError("Every server needs a unique name.");
+      return;
+    }
+    const next = draft.originalName
+      ? mcpServers.map((candidate) => (candidate.name === draft.originalName ? server : candidate))
+      : [...mcpServers, server];
+    setMcpServers(next);
+    setDraft(null);
+    setDraftError(null);
+  }
+
+  function toggleServer(name: string) {
+    setMcpServers(
+      mcpServers.map((server) =>
+        server.name === name ? { ...server, enabled: !server.enabled } : server,
+      ),
+    );
+  }
+
+  function removeServer(name: string) {
+    setMcpServers(mcpServers.filter((server) => server.name !== name));
+    if (draft?.originalName === name) {
+      setDraft(null);
+      setDraftError(null);
+    }
+  }
+
+  function addBlender() {
+    setMcpServers([...mcpServers, blenderMcpServer()]);
+    toast.success("Blender integration added", {
+      action: {
+        label: "Setup guide",
+        onClick: () =>
+          desktop.openUrl("https://github.com/ahujasid/blender-mcp#installation").catch(() => {}),
+      },
+    });
+  }
+
+  return (
+    <div className="mx-auto w-full max-w-md px-6 py-8">
+      <h4 className="font-serif text-lg italic text-foreground">Integrations</h4>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Extra MCP servers BloxMind can use, like Blender for character animations.
+      </p>
+
+      {/* Blender preset */}
+      <div className="mt-6">
+        <div className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Blender
+        </div>
+        <div className="rounded-lg border bg-card p-3.5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-sm font-medium">Character animations</div>
+              <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                Build R6 and R15 animations in Blender and load them straight into Studio.
+              </p>
+            </div>
+            {!hasBlender && (
+              <button
+                type="button"
+                onClick={addBlender}
+                className="shrink-0 rounded-md bg-foreground px-2.5 py-1.5 text-[11px] font-medium text-background transition-opacity hover:opacity-90"
+              >
+                Add Blender integration
+              </button>
+            )}
+          </div>
+          <ol className="mt-3 space-y-1.5 border-t pt-3">
+            {BLENDER_SETUP_STEPS.map((step, index) => (
+              <li
+                key={step}
+                className="flex gap-2 text-[11px] leading-relaxed text-muted-foreground"
+              >
+                <span className="shrink-0 font-mono text-muted-foreground/60">{index + 1}.</span>
+                {step}
+              </li>
+            ))}
+          </ol>
+          <button
+            type="button"
+            onClick={() =>
+              desktop
+                .openUrl("https://github.com/ahujasid/blender-mcp#installation")
+                .catch(() => {})
+            }
+            className="mt-2 text-[10px] text-muted-foreground underline hover:text-foreground"
+          >
+            Open the Blender MCP setup guide
+          </button>
+        </div>
+      </div>
+
+      {/* Configured servers */}
+      <div className="mt-6">
+        <div className="mb-1.5 flex items-center justify-between px-1">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Servers
+          </span>
+          {!draft && (
+            <button
+              type="button"
+              onClick={() => {
+                setDraft({
+                  originalName: null,
+                  name: "",
+                  type: "local",
+                  commandLine: "",
+                  url: "",
+                  enabled: true,
+                });
+                setDraftError(null);
+              }}
+              className="text-[10px] font-medium text-muted-foreground underline hover:text-foreground"
+            >
+              Add server
+            </button>
+          )}
+        </div>
+        <div className="space-y-2">
+          {mcpServers.length === 0 && !draft && (
+            <div className="rounded-lg border border-dashed p-3.5 text-[11px] text-muted-foreground">
+              No extra servers yet. Add Blender tooling above, or any MCP server you run.
+            </div>
+          )}
+          {mcpServers.map((server) => {
+            const status = mcpStatusLabel(statuses[server.name]);
+            const description =
+              server.type === "local" ? (server.command ?? []).join(" ") : (server.url ?? "");
+            return (
+              <div key={server.name} className="rounded-lg border bg-card p-3.5">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate font-mono text-xs font-medium">{server.name}</span>
+                      <span className="shrink-0 rounded border px-1 py-px text-[9px] uppercase tracking-wide text-muted-foreground">
+                        {server.type}
+                      </span>
+                    </div>
+                    <div
+                      className="mt-1 truncate font-mono text-[10px] text-muted-foreground"
+                      title={description}
+                    >
+                      {description}
+                    </div>
+                    <div
+                      className="mt-1.5 flex items-center gap-1.5"
+                      title={status.hint ?? undefined}
+                    >
+                      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${status.tone}`} />
+                      <span className="text-[10px] text-muted-foreground">{status.label}</span>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={server.enabled}
+                      aria-label={`Enable ${server.name}`}
+                      onClick={() => toggleServer(server.name)}
+                      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                        server.enabled ? "bg-foreground" : "bg-border"
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-3.5 w-3.5 rounded-full bg-background transition-transform ${
+                          server.enabled ? "translate-x-4" : "translate-x-0.5"
+                        }`}
+                      />
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-2 flex items-center gap-3 border-t pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDraft(draftFromServer(server));
+                      setDraftError(null);
+                    }}
+                    className="text-[10px] text-muted-foreground underline hover:text-foreground"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removeServer(server.name)}
+                    className="text-[10px] text-muted-foreground underline hover:text-destructive"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Add / edit form */}
+      {draft && (
+        <div className="mt-4">
+          <div className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            {draft.originalName ? `Edit ${draft.originalName}` : "New server"}
+          </div>
+          <div className="space-y-3 rounded-lg border bg-card p-3.5">
+            <div>
+              <label className="mb-1 block text-[10px] text-muted-foreground" htmlFor="mcp-name">
+                Name
+              </label>
+              <input
+                id="mcp-name"
+                type="text"
+                value={draft.name}
+                onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+                placeholder="my-server"
+                className="h-8 w-full rounded border bg-background px-2 text-xs font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+            </div>
+            <div>
+              <div className="mb-1 text-[10px] text-muted-foreground">Type</div>
+              <div className="flex gap-1.5">
+                {(["local", "remote"] as const).map((type) => (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => setDraft({ ...draft, type })}
+                    className={`rounded-md border px-2.5 py-1 text-[11px] transition-colors ${
+                      draft.type === type
+                        ? "border-foreground bg-accent font-medium text-foreground"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {type === "local" ? "Local (command)" : "Remote (URL)"}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {draft.type === "local" ? (
+              <div>
+                <label
+                  className="mb-1 block text-[10px] text-muted-foreground"
+                  htmlFor="mcp-command"
+                >
+                  Command
+                </label>
+                <input
+                  id="mcp-command"
+                  type="text"
+                  value={draft.commandLine}
+                  onChange={(e) => setDraft({ ...draft, commandLine: e.target.value })}
+                  placeholder="uvx blender-mcp"
+                  className="h-8 w-full rounded border bg-background px-2 text-xs font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
+                />
+                <div className="mt-1 text-[10px] text-muted-foreground">
+                  Wrap paths with spaces in quotes, like "C:\\Program Files\\uv\\uvx.exe" -y.
+                </div>
+              </div>
+            ) : (
+              <div>
+                <label className="mb-1 block text-[10px] text-muted-foreground" htmlFor="mcp-url">
+                  URL
+                </label>
+                <input
+                  id="mcp-url"
+                  type="text"
+                  value={draft.url}
+                  onChange={(e) => setDraft({ ...draft, url: e.target.value })}
+                  placeholder="https://example.com/mcp"
+                  className="h-8 w-full rounded border bg-background px-2 text-xs font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
+                />
+              </div>
+            )}
+            {draftError && <div className="text-[10px] text-destructive">{draftError}</div>}
+            <div className="flex items-center gap-2 border-t pt-3">
+              <button
+                type="button"
+                onClick={saveDraft}
+                className="rounded-md bg-foreground px-2.5 py-1.5 text-[11px] font-medium text-background transition-opacity hover:opacity-90"
+              >
+                {draft.originalName ? "Save changes" : "Add server"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDraft(null);
+                  setDraftError(null);
+                }}
+                className="rounded-md border px-2.5 py-1.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <p className="mt-6 text-[10px] leading-relaxed text-muted-foreground">
+        MCP servers run on your machine with BloxMind's permissions — the Blender bridge can run
+        Python inside Blender. Only add servers you trust. Changes apply right away; a server that
+        can't start is skipped until you fix it.
+      </p>
     </div>
   );
 }

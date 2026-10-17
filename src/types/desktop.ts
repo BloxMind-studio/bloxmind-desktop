@@ -31,6 +31,21 @@ export type ThemePreference = typeof ThemePreferenceSchema.Type;
 export type AccentColor = typeof AccentColorSchema.Type;
 export type LayoutDensity = typeof LayoutDensitySchema.Type;
 
+/**
+ * One extra MCP server the user configured in Settings → Integrations. Shape
+ * matches `McpServerConfig` in `src/lib/mcpServers.ts`, which holds the
+ * validation and engine conversion.
+ */
+export const McpServerSchema = Schema.mutable(
+  Schema.Struct({
+    name: Schema.String,
+    type: Schema.Literal("local", "remote"),
+    command: Schema.NullOr(MutableStrings),
+    url: Schema.NullOr(Schema.String),
+    enabled: Schema.Boolean,
+  }),
+);
+
 export const AppConfigSchema = Schema.mutable(
   Schema.Struct({
     lastModel: Schema.NullOr(Schema.String),
@@ -60,6 +75,8 @@ export const AppConfigSchema = Schema.mutable(
     // SSE connection
     sseReconnectDelay: Schema.Number.pipe(Schema.int(), Schema.between(1_000, 60_000)),
     sseHeartbeatTimeout: Schema.Number.pipe(Schema.int(), Schema.between(5_000, 120_000)),
+    // Extra MCP servers (Settings → Integrations), e.g. the Blender bridge.
+    mcpServers: Schema.mutable(Schema.Array(McpServerSchema)),
   }),
 );
 
@@ -87,6 +104,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   notificationsEnabled: true,
   sseReconnectDelay: 3_000,
   sseHeartbeatTimeout: 30_000,
+  mcpServers: [],
 };
 
 export const AppConfigPatchSchema = Schema.partial(AppConfigSchema);

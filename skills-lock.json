@@ -6,6 +6,12 @@
       "sourceType": "github",
       "skillPath": "roblox-game-developer/SKILL.md",
       "computedHash": "b41dd9c5d861144c8c9fd964a9d9dd137420eda7d9e6761b27a51cf86f446042"
+    },
+    "animate-roblox-characters": {
+      "source": "dillydog580/animate-roblox-characters",
+      "sourceType": "github",
+      "skillPath": "animate-roblox-characters/SKILL.md",
+      "computedHash": "3383ecf7129c7c5a2e487be1af58250e3e161eec14ba5351ebbd5fc151b22525"
     }
   }
 }

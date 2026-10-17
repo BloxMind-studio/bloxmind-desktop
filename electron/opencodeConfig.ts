@@ -1,6 +1,7 @@
 import { join, win32 } from "node:path";
 
 import { STUDIO_MCP_SERVER_NAME } from "../src/lib/bloxbotProgramManifest";
+import { type McpServerConfig, toEngineMcpConfig, validateMcpServer } from "../src/lib/mcpServers";
 
 export interface StudioMcpWindowsEnvironment {
   localAppData?: string;
@@ -59,7 +60,27 @@ export function skillDirectories(runtime: OpenCodeRuntimePaths): string[] {
     : [join(runtime.appPath, ".agents", "skills")];
 }
 
-export function createOpenCodeConfig(broker: { url: string }, skillsPaths: readonly string[] = []) {
+export function createOpenCodeConfig(
+  broker: { url: string },
+  skillsPaths: readonly string[] = [],
+  mcpServers: readonly McpServerConfig[] = [],
+) {
+  // User-configured servers sit beside the built-in Studio bridge. Invalid
+  // entries and reserved names are skipped rather than failing engine startup;
+  // Settings validates before saving, so this is the last line of defense.
+  const extraMcpServers = Object.fromEntries(
+    mcpServers
+      .filter((server) => validateMcpServer(server) === null)
+      .map((server) => [server.name, toEngineMcpConfig(server)]),
+  );
+  const mcp: Record<string, ReturnType<typeof toEngineMcpConfig>> = {
+    [STUDIO_MCP_SERVER_NAME]: {
+      type: "remote",
+      url: broker.url,
+      enabled: true,
+    },
+    ...extraMcpServers,
+  };
   return {
     // Keep OpenCode's standard automatic context compaction enabled for long sessions.
     compaction: {
@@ -67,13 +88,7 @@ export function createOpenCodeConfig(broker: { url: string }, skillsPaths: reado
     },
     // Only advertised when a skill actually ships, so OpenCode never scans a missing directory.
     ...(skillsPaths.length > 0 ? { skills: { paths: [...skillsPaths] } } : {}),
-    mcp: {
-      [STUDIO_MCP_SERVER_NAME]: {
-        type: "remote",
-        url: broker.url,
-        enabled: true,
-      },
-    },
+    mcp,
     default_agent: "studio",
     agent: {
       studio: {

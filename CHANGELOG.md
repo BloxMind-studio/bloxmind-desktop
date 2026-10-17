@@ -7,6 +7,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- Settings → Integrations: add extra MCP servers for the assistant to use, with a one-click Blender preset. Supports local (command) and remote (URL) servers, each with an on/off switch and a live status light; changes apply to the running engine immediately. The Blender card walks through installing uv and the Blender MCP addon.
+- A Blender character animation skill ships with the app: once the Blender integration is connected, the assistant can build R6 and R15 animations in Blender, export them, and load them into Studio.
+
 ## [0.14.0] - 2026-10-17
 
 ### Added

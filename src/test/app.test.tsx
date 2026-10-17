@@ -229,6 +229,7 @@ function seedReadyState(
     notificationsEnabled: true,
     sseReconnectDelay: 3_000,
     sseHeartbeatTimeout: 30_000,
+    mcpServers: [],
   });
 }
 

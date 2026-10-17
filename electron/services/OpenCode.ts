@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { Context, Data, Duration, Effect, Layer } from "effect";
 import { networkConnections, type Systeminformation } from "systeminformation";
 
+import type { McpServerConfig } from "../../src/lib/mcpServers";
 import type { OpenCodeInfo, OpenCodeStartupProgress } from "../../src/types/desktop";
 import { createOpenCodeConfig } from "../opencodeConfig";
 import { ensureOpenCodeBinary } from "./OpenCodeBinary";
@@ -116,6 +117,12 @@ export interface OpenCodeOptions {
   binaryCacheDirectory: string;
   /** Directories OpenCode scans for SKILL.md. Empty when no skill ships. */
   skillsPaths?: readonly string[];
+  /**
+   * The extra MCP servers the user configured (Settings → Integrations).
+   * Evaluated when the engine starts so the value reflects the config file at
+   * spawn time; a read failure starts the engine without extra servers.
+   */
+  mcpServers?: () => Effect.Effect<readonly McpServerConfig[], unknown>;
   workspace: string;
   onStartupProgress?: (progress: OpenCodeStartupProgress) => void;
 }
@@ -298,7 +305,22 @@ function prepareOpenCode(
       ),
       { concurrency: "unbounded", discard: true },
     );
-    const config = createOpenCodeConfig(broker.info, options.skillsPaths ?? []);
+    let mcpServers: readonly McpServerConfig[] = [];
+    if (options.mcpServers) {
+      mcpServers = yield* options.mcpServers().pipe(
+        Effect.catchAll((cause) =>
+          Effect.logWarning(
+            "[opencode] Failed to read configured MCP servers; starting without them",
+            cause,
+          ).pipe(Effect.as([] as readonly McpServerConfig[])),
+        ),
+      );
+    }
+    const config = createOpenCodeConfig(
+      broker.info,
+      options.skillsPaths ?? [],
+      mcpServers,
+    );
     yield* fileOperation("Failed to write the OpenCode configuration", () =>
       writeFile(
         join(configDirectory, "opencode.json"),

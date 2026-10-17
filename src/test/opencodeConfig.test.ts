@@ -78,6 +78,68 @@ describe("OpenCode configuration", () => {
       enabled: true,
     });
   });
+
+  it("keeps the Studio bridge alone when no extra servers are configured", () => {
+    expect(Object.keys(createOpenCodeConfig(broker).mcp)).toEqual(["roblox-studio"]);
+  });
+
+  it("writes user-configured MCP servers beside the Studio bridge", () => {
+    const config = createOpenCodeConfig(
+      broker,
+      [],
+      [
+        {
+          name: "blender",
+          type: "local",
+          command: ["uvx", "blender-mcp"],
+          url: null,
+          enabled: true,
+        },
+        {
+          name: "notes",
+          type: "remote",
+          command: null,
+          url: "https://example.com/mcp",
+          enabled: false,
+        },
+      ],
+    );
+
+    expect(config.mcp.blender).toEqual({
+      type: "local",
+      command: ["uvx", "blender-mcp"],
+      enabled: true,
+    });
+    expect(config.mcp.notes).toEqual({
+      type: "remote",
+      url: "https://example.com/mcp",
+      enabled: false,
+    });
+    expect(config.mcp["roblox-studio"]).toEqual({
+      type: "remote",
+      url: broker.url,
+      enabled: true,
+    });
+  });
+
+  it("drops invalid and reserved extra servers instead of failing startup", () => {
+    const config = createOpenCodeConfig(
+      broker,
+      [],
+      [
+        { name: "roblox-studio", type: "local", command: ["x"], url: null, enabled: true },
+        { name: "broken", type: "local", command: [], url: null, enabled: true },
+        { name: "bad url", type: "remote", command: null, url: "nope", enabled: true },
+      ],
+    );
+
+    expect(Object.keys(config.mcp)).toEqual(["roblox-studio"]);
+    expect(config.mcp["roblox-studio"]).toEqual({
+      type: "remote",
+      url: broker.url,
+      enabled: true,
+    });
+  });
 });
 
 describe("Bundled skills", () => {

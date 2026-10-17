@@ -19,6 +19,7 @@ import {
 import { type AppConfig, loadConfig, patchConfig } from "@/lib/config";
 import { setNotificationsEnabled as setDesktopNotificationsEnabled } from "@/lib/desktopNotifications";
 import { applyEngineSettings } from "@/lib/engineSettings";
+import { applyMcpServers, type McpServerConfig } from "@/lib/mcpServers";
 import { qk } from "@/lib/queryKeys";
 import { setSoundEffectsEnabled } from "@/lib/soundEffects";
 import { splitModelKey } from "@/lib/splitModelKey";
@@ -73,6 +74,8 @@ interface PreferencesContextValue {
   // SSE connection
   sseReconnectDelay: number;
   sseHeartbeatTimeout: number;
+  // Extra MCP servers (Settings → Integrations)
+  mcpServers: McpServerConfig[];
   setSelectedModel: (modelID: string) => void;
   setSelectedAgent: (name: string) => void;
   setSelectedVariant: (variant: string | null) => void;
@@ -91,6 +94,7 @@ interface PreferencesContextValue {
   setNotificationsEnabled: (enabled: boolean) => void;
   setSseReconnectDelay: (delay: number) => void;
   setSseHeartbeatTimeout: (timeout: number) => void;
+  setMcpServers: (servers: McpServerConfig[]) => void;
 }
 
 export const PreferencesContext = createContext<PreferencesContextValue | undefined>(undefined);
@@ -133,6 +137,8 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   // SSE connection
   const [sseReconnectDelay, setSseReconnectDelayState] = useState(3_000);
   const [sseHeartbeatTimeout, setSseHeartbeatTimeoutState] = useState(30_000);
+  // Extra MCP servers (Settings → Integrations)
+  const [mcpServers, setMcpServersState] = useState<McpServerConfig[]>([]);
 
   const connectedProviders = useConnectedProviders();
   const providerList = useProviderList();
@@ -213,6 +219,8 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     // SSE connection
     setSseReconnectDelayState(configData.sseReconnectDelay);
     setSseHeartbeatTimeoutState(configData.sseHeartbeatTimeout);
+    // Extra MCP servers
+    setMcpServersState(configData.mcpServers);
   }, [configData, setDetailedAnalyticsEnabled]);
 
   // Restore a valid last-used model and clear selections whose provider disconnected.
@@ -337,6 +345,29 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     patchConfig({ sseHeartbeatTimeout: timeout }).catch(() => {});
   }, []);
 
+  // Persist the MCP server list and push it into the running engine. The
+  // engine config file also carries the list, so a change made while the
+  // engine is starting still lands at next launch; the live apply covers the
+  // running session.
+  const setMcpServers = useCallback(
+    (next: McpServerConfig[]) => {
+      const removed = mcpServers
+        .filter((server) => !next.some((candidate) => candidate.name === server.name))
+        .map((server) => server.name);
+      setMcpServersState(next);
+      patchConfig({ mcpServers: next }).catch(() => {});
+      if (client) {
+        void applyMcpServers(client, next, removed).catch((error: unknown) => {
+          console.warn("Failed to apply MCP servers:", error);
+          toast.error(
+            "The change was saved, but the running engine didn't accept it. Restart BloxMind to apply it.",
+          );
+        });
+      }
+    },
+    [client, mcpServers],
+  );
+
   // Apply UI customization CSS variables
   useEffect(() => {
     applyAccentColor(accentColor);
@@ -428,6 +459,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       notificationsEnabled,
       sseReconnectDelay,
       sseHeartbeatTimeout,
+      mcpServers,
       setSelectedModel,
       setSelectedAgent,
       setSelectedVariant,
@@ -446,6 +478,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       setNotificationsEnabled,
       setSseReconnectDelay,
       setSseHeartbeatTimeout,
+      setMcpServers,
     }),
     [
       selectedModel,
@@ -466,6 +499,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       notificationsEnabled,
       sseReconnectDelay,
       sseHeartbeatTimeout,
+      mcpServers,
       setSelectedModel,
       setSelectedAgent,
       setSelectedVariant,
@@ -484,6 +518,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       setNotificationsEnabled,
       setSseReconnectDelay,
       setSseHeartbeatTimeout,
+      setMcpServers,
     ],
   );
 

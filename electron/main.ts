@@ -127,6 +127,10 @@ const openCodeRuntime = ManagedRuntime.make(
           isPackaged: app.isPackaged,
           resourcesPath: process.resourcesPath,
         }),
+        // Read lazily at engine start so a server added in Settings while the
+        // app runs is picked up on the next restart (live changes go through
+        // the engine's config API instead).
+        mcpServers: () => loadConfig.pipe(Effect.map((config) => config.mcpServers)),
         workspace: join(app.getPath("home"), "BloxMind"),
         onStartupProgress: (progress: OpenCodeStartupProgress) => {
           if (mainWindow && !mainWindow.isDestroyed()) {
