@@ -147,13 +147,11 @@ describe("uvAssetName", () => {
 
 describe("findUvx", () => {
   it("finds uvx on PATH", async () => {
-    const uvx = join("C:", "tools", "bin", "uvx.exe");
-    const files = { [uvx]: "file" as const };
-    const found = await findUvx(
-      "win32",
-      { PATH: join("C:", "tools", "bin") },
-      "C:\\Users\\Ali",
-      (path) => Promise.resolve(path in files),
+    // No drive letter: ":" would split the fake PATH on POSIX test runners.
+    const bin = join("tools", "bin");
+    const uvx = join(bin, "uvx.exe");
+    const found = await findUvx("win32", { PATH: bin }, "home", (path) =>
+      Promise.resolve(path === uvx),
     );
     expect(found).toBe(uvx);
   });
