@@ -14,7 +14,7 @@ import { splitModelKey } from "@/lib/splitModelKey";
 /** One model as surfaced by `provider.list`, reduced to what the patch needs. */
 export interface EngineModelInfo {
   name?: string;
-  limit?: { context?: number };
+  limit?: { context?: number; output?: number };
 }
 
 /** One provider as surfaced by `provider.list`, reduced to what the patch needs. */
@@ -26,6 +26,7 @@ export interface EngineProviderInfo {
 /** The Settings → AI Engine values to push into the server config. */
 export interface EngineSettingsInput {
   temperature: number;
+  /** Output-token cap for the selected model; `0` leaves the model's own limit. */
   maxTokens: number;
   customApiEndpoint: string | null;
   agent: string | null;
@@ -49,9 +50,12 @@ interface EngineConfigPatch {
  *
  * - `temperature` → `agent.<agent>.temperature` for the agent in use.
  * - `maxTokens` → `provider.<id>.models.<id>.limit.output` for the selected
- *   model, preserving the model's known context window.
+ *   model, preserving the model's known context window. `0` (the default)
+ *   leaves the model's own output limit untouched; a positive value is
+ *   clamped to that own limit so requests never exceed what the model allows.
  * - `customApiEndpoint` → `provider.<id>.options.baseURL` for every connected
- *   provider; `null` removes a previously written override.
+ *   provider; an empty raw value or `null` removes a previously written
+ *   override.
  */
 export function buildEngineConfigPatch(
   input: EngineSettingsInput,
@@ -60,6 +64,8 @@ export function buildEngineConfigPatch(
 ): Config | null {
   const patch: EngineConfigPatch = {};
 
+  const endpoint = input.customApiEndpoint?.trim() ? input.customApiEndpoint.trim() : null;
+
   if (input.agent) {
     patch.agent = { [input.agent]: { temperature: input.temperature } };
   }
@@ -67,12 +73,12 @@ export function buildEngineConfigPatch(
   if (connectedProviders.length > 0) {
     const provider: Record<string, EngineProviderPatch> = {};
     for (const id of connectedProviders) {
-      provider[id] = { options: { baseURL: input.customApiEndpoint } };
+      provider[id] = { options: { baseURL: endpoint } };
     }
     patch.provider = provider;
   }
 
-  if (input.modelKey) {
+  if (input.modelKey && input.maxTokens > 0) {
     const [providerID, modelID] = splitModelKey(input.modelKey);
     const model =
       providerID && modelID
@@ -80,13 +86,16 @@ export function buildEngineConfigPatch(
         : undefined;
     const context = model?.limit?.context;
     if (providerID && modelID && context) {
+      const nativeOutput = model.limit?.output;
+      const output =
+        nativeOutput !== undefined ? Math.min(input.maxTokens, nativeOutput) : input.maxTokens;
       patch.provider ??= {};
       patch.provider[providerID] = {
         ...patch.provider[providerID],
         models: {
           [modelID]: {
             name: model.name ?? modelID,
-            limit: { context, output: input.maxTokens },
+            limit: { context, output },
           },
         },
       };

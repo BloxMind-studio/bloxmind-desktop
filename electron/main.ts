@@ -210,6 +210,10 @@ const loadConfig = Effect.gen(function* () {
     });
     const candidate =
       stored !== null && typeof stored === "object" ? { ...defaultConfig, ...stored } : defaultConfig;
+    // Old builds persisted the (then non-functional) Max Tokens default of
+    // 4096. Map it to the new "model's own limit" sentinel so upgrading never
+    // silently caps replies.
+    if (candidate.maxTokens === 4_096) candidate.maxTokens = 0;
     return yield* Schema.decodeUnknown(AppConfigSchema)(candidate).pipe(
       Effect.mapError(
         (cause) => new DesktopMainError({ message: "App configuration is invalid", cause }),

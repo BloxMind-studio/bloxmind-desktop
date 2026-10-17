@@ -221,7 +221,7 @@ function seedReadyState(
     fontSize: 1,
     soundEffects: true,
     temperature: 0.7,
-    maxTokens: 4_096,
+    maxTokens: 0,
     systemPrompt: "",
     customApiEndpoint: null,
     autoScroll: true,

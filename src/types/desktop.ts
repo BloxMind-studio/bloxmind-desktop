@@ -49,7 +49,8 @@ export const AppConfigSchema = Schema.mutable(
     soundEffects: Schema.Boolean,
     // AI engine
     temperature: Schema.Number.pipe(Schema.between(0, 1)),
-    maxTokens: Schema.Number.pipe(Schema.int(), Schema.between(256, 128_000)),
+    // Output-token cap for the selected model; 0 leaves the model's own limit.
+    maxTokens: Schema.Number.pipe(Schema.int(), Schema.between(0, 128_000)),
     systemPrompt: Schema.String,
     customApiEndpoint: Schema.NullOr(Schema.String),
     // Behavior
@@ -78,7 +79,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   fontSize: 1,
   soundEffects: true,
   temperature: 0.7,
-  maxTokens: 4_096,
+  maxTokens: 0,
   systemPrompt: "",
   customApiEndpoint: null,
   autoScroll: true,

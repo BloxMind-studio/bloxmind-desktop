@@ -10,13 +10,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Added
 
 - BloxMind now ships a Roblox game development skill — Luau helper modules, project templates and reference guides — that the Studio assistant loads on demand while you work.
-- The AI engine settings now reach the engine: temperature applies to the selected assistant, "Max output tokens" caps the selected model's replies, and a custom API endpoint is used for every connected provider.
+- The AI engine settings now reach the engine: temperature applies to the selected assistant, "Max output tokens" caps the selected model's replies (0, the default, uses the model's own limit), and a custom API endpoint is used for every connected provider.
 - A custom system prompt set in Settings is now included with every message you send.
 - Sound effects and desktop notifications preferences now do something: a cue plays when you send a message and when a reply finishes, and a desktop notification appears when a reply finishes while BloxMind is in the background.
 - Turning off "Auto-scroll" in Settings now stops the chat from jumping to the newest message.
 
 ### Fixed
 
+- Replies are no longer cut off mid-task: the previously non-functional "Max output tokens" default (4,096) no longer caps every reply now that the setting works. It now defaults to the model's own limit, and a cap you choose is clamped to what the model supports. Engine settings are also only sent to the engine when they actually change, instead of on every settings refetch.
 - Stopping the agent mid-turn no longer leaves a frozen "Thinking…" indicator or leftover reasoning and tool rows on screen. The thinking indicator only shows while the agent is actually working, and a stopped turn that produced no text leaves nothing behind.
 - The local connection to Roblox Studio now rejects requests that don't come from this machine, protecting the bridge against DNS-rebinding attacks from a malicious web page.
 - The automatic checkpoint badge and "Restore files" action no longer appear while the agent is still working, including while it is retrying a request.

@@ -11,7 +11,10 @@ const providers: EngineProviderInfo[] = [
   {
     id: "anthropic",
     models: {
-      "claude-3.5-sonnet": { name: "Claude 3.5 Sonnet", limit: { context: 200_000 } },
+      "claude-3.5-sonnet": {
+        name: "Claude 3.5 Sonnet",
+        limit: { context: 200_000, output: 64_000 },
+      },
       "no-limit": { name: "No Limit" },
     },
   },
@@ -20,7 +23,7 @@ const providers: EngineProviderInfo[] = [
 function input(overrides: Partial<EngineSettingsInput> = {}): EngineSettingsInput {
   return {
     temperature: 0.7,
-    maxTokens: 4_096,
+    maxTokens: 0,
     customApiEndpoint: null,
     agent: null,
     modelKey: null,
@@ -61,9 +64,16 @@ describe("buildEngineConfigPatch", () => {
     expect(patch).toEqual({ provider: { anthropic: { options: { baseURL: null } } } });
   });
 
-  it("writes the model's output limit with its known context window", () => {
+  it("treats a blank endpoint as removal", () => {
+    const patch = buildEngineConfigPatch(input({ customApiEndpoint: "   " }), providers, [
+      "anthropic",
+    ]);
+    expect(patch).toEqual({ provider: { anthropic: { options: { baseURL: null } } } });
+  });
+
+  it("writes the requested output limit with the model's known context window", () => {
     const patch = buildEngineConfigPatch(
-      input({ modelKey: "anthropic/claude-3.5-sonnet" }),
+      input({ modelKey: "anthropic/claude-3.5-sonnet", maxTokens: 4_096 }),
       providers,
       [],
     );
@@ -81,17 +91,50 @@ describe("buildEngineConfigPatch", () => {
     });
   });
 
+  it("clamps the requested output limit to the model's own limit", () => {
+    const patch = buildEngineConfigPatch(
+      input({ modelKey: "anthropic/claude-3.5-sonnet", maxTokens: 100_000 }),
+      providers,
+      [],
+    );
+    expect(patch).toEqual({
+      provider: {
+        anthropic: {
+          models: {
+            "claude-3.5-sonnet": {
+              name: "Claude 3.5 Sonnet",
+              limit: { context: 200_000, output: 64_000 },
+            },
+          },
+        },
+      },
+    });
+  });
+
+  it("leaves the model limit untouched when no cap is requested", () => {
+    expect(
+      buildEngineConfigPatch(input({ modelKey: "anthropic/claude-3.5-sonnet" }), providers, []),
+    ).toBeNull();
+  });
+
   it("skips the model limit when the context window is unknown", () => {
     expect(
-      buildEngineConfigPatch(input({ modelKey: "anthropic/no-limit" }), providers, []),
+      buildEngineConfigPatch(
+        input({ modelKey: "anthropic/no-limit", maxTokens: 4_096 }),
+        providers,
+        [],
+      ),
     ).toBeNull();
-    expect(buildEngineConfigPatch(input({ modelKey: "missing/model" }), providers, [])).toBeNull();
+    expect(
+      buildEngineConfigPatch(input({ modelKey: "missing/model", maxTokens: 4_096 }), providers, []),
+    ).toBeNull();
   });
 
   it("keeps the endpoint override when the same provider also gets a model limit", () => {
     const patch = buildEngineConfigPatch(
       input({
         modelKey: "anthropic/claude-3.5-sonnet",
+        maxTokens: 4_096,
         customApiEndpoint: "https://example.test",
       }),
       providers,
@@ -112,11 +155,15 @@ describe("buildEngineConfigPatch", () => {
     });
   });
 
-  it("falls back to the model id when the provider list has no name", () => {
+  it("uses the requested cap as-is when the model has no known output limit", () => {
     const unnamed: EngineProviderInfo[] = [
       { id: "local", models: { llama: { limit: { context: 8_192 } } } },
     ];
-    const patch = buildEngineConfigPatch(input({ modelKey: "local/llama" }), unnamed, []);
+    const patch = buildEngineConfigPatch(
+      input({ modelKey: "local/llama", maxTokens: 4_096 }),
+      unnamed,
+      [],
+    );
     expect(patch).toEqual({
       provider: {
         local: { models: { llama: { name: "llama", limit: { context: 8_192, output: 4_096 } } } },

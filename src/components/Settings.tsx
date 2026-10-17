@@ -1090,17 +1090,18 @@ function EngineTab() {
         <div className="rounded-lg border bg-card p-3.5">
           <input
             type="number"
-            min={256}
+            min={0}
             max={128_000}
             step={256}
             value={maxTokens}
             onChange={(e) =>
-              setMaxTokens(Math.min(128_000, Math.max(256, parseInt(e.target.value) || 256)))
+              setMaxTokens(Math.min(128_000, Math.max(0, parseInt(e.target.value) || 0)))
             }
             className="h-8 w-full rounded border bg-background px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-ring"
           />
           <div className="mt-1 text-[10px] text-muted-foreground">
-            Caps the response length for the selected model (256–128,000).
+            Caps the response length for the selected model (up to 128,000; 0 uses the model's own
+            limit).
           </div>
         </div>
       </div>

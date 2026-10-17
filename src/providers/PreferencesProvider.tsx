@@ -123,7 +123,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [soundEffects, setSoundEffectsState] = useState(true);
   // AI engine
   const [temperature, setTemperatureState] = useState(0.7);
-  const [maxTokens, setMaxTokensState] = useState(4_096);
+  const [maxTokens, setMaxTokensState] = useState(0);
   const [systemPrompt, setSystemPromptState] = useState("");
   const [customApiEndpoint, setCustomApiEndpointState] = useState<string | null>(null);
   // Behavior
@@ -362,10 +362,24 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   // Push the AI Engine settings into the running server's config so they take
   // effect. Debounced because the temperature slider fires per step and the
   // update round-trips through the server; gated on the initial config load
-  // so the persisted values are applied, not the in-code defaults.
+  // so the persisted values are applied, not the in-code defaults. Every
+  // update rewrites and hot-reloads the server config, so identical payloads
+  // (e.g. from unrelated config refetches) are skipped.
+  const lastEngineSyncRef = useRef<string | null>(null);
   useEffect(() => {
     if (!client || !ready || !configData || !providerList) return;
+    const fingerprint = JSON.stringify([
+      temperature,
+      maxTokens,
+      customApiEndpoint,
+      selectedAgent,
+      selectedModel,
+      providerList.all,
+      providerList.connected,
+    ]);
+    if (fingerprint === lastEngineSyncRef.current) return;
     const timer = setTimeout(() => {
+      lastEngineSyncRef.current = fingerprint;
       void applyEngineSettings(
         client,
         {
