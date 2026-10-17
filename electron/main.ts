@@ -34,6 +34,11 @@ import {
   GeneratedProgramRuntimeLive,
 } from "./services/GeneratedProgramRuntime";
 import { createBloxBotProgramStore } from "./services/BloxBotProgramStore";
+import {
+  defaultBlenderSetupEnvironment,
+  launchBlender,
+  runBlenderSetup,
+} from "./services/BlenderSetup";
 import { makeStudioMcpBrokerLayer, StudioMcpBroker } from "./services/StudioMcpBroker";
 import {
   CheckpointServiceTag,
@@ -334,6 +339,30 @@ const registerIpcHandlers = Effect.sync(() => {
   ipcMain.handle(channels.getOpenCodeInstallFolder, () => openCodeBinaryDirectory);
   ipcMain.handle(channels.getStudioMcpStatus, () =>
     openCodeRuntime.runPromise(StudioMcpBroker.pipe(Effect.flatMap((broker) => broker.status))),
+  );
+  // Blender setup downloads uv and installs the bridge addon, so it can run
+  // for a minute or more; the renderer shows progress while it waits.
+  ipcMain.handle(channels.blenderSetup, () =>
+    runMain(
+      Effect.tryPromise({
+        try: () =>
+          runBlenderSetup(
+            defaultBlenderSetupEnvironment(join(app.getPath("userData"), "blender")),
+          ),
+        catch: (cause) => new DesktopMainError({ message: "Blender setup failed", cause }),
+      }),
+    ),
+  );
+  ipcMain.handle(channels.blenderLaunch, () =>
+    runMain(
+      Effect.tryPromise({
+        try: () =>
+          launchBlender(
+            defaultBlenderSetupEnvironment(join(app.getPath("userData"), "blender")),
+          ),
+        catch: (cause) => new DesktopMainError({ message: "Failed to open Blender", cause }),
+      }),
+    ),
   );
   ipcMain.handle(channels.getVersion, () => runMain(Effect.sync(() => app.getVersion())));
   ipcMain.handle(channels.getInstructionFiles, () =>

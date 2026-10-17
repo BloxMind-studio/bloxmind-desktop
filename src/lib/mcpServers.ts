@@ -12,6 +12,11 @@ export interface McpServerConfig {
   /** Streamable HTTP endpoint for `remote` servers. */
   url: string | null;
   enabled: boolean;
+  /**
+   * Extra environment variables for `local` servers. The Blender preset uses
+   * this to switch the bridge's anonymous telemetry off.
+   */
+  environment?: Record<string, string> | null;
 }
 
 export const MCP_SERVER_NAME_PATTERN = /^[A-Za-z0-9_-]{1,48}$/;
@@ -110,14 +115,31 @@ export function parseCommandLine(input: string): string[] {
   return tokens;
 }
 
+/** Keeps only usable string env vars for the engine; returns null when empty. */
+export function normalizeEnvironment(
+  environment: Record<string, string> | null | undefined,
+): Record<string, string> | null {
+  if (!environment) return null;
+  const entries = Object.entries(environment).filter(
+    ([key, value]) => key.trim() !== "" && typeof value === "string",
+  );
+  return entries.length > 0 ? Object.fromEntries(entries) : null;
+}
+
 /** The engine-facing config entry for one server. Disabled servers are kept. */
 export function toEngineMcpConfig(
   server: McpServerConfig,
 ):
-  | { type: "local"; command: string[]; enabled: boolean }
+  | { type: "local"; command: string[]; environment?: Record<string, string>; enabled: boolean }
   | { type: "remote"; url: string; enabled: boolean } {
   if (server.type === "local") {
-    return { type: "local", command: [...(server.command ?? [])], enabled: server.enabled };
+    const environment = normalizeEnvironment(server.environment);
+    return {
+      type: "local",
+      command: [...(server.command ?? [])],
+      ...(environment ? { environment } : {}),
+      enabled: server.enabled,
+    };
   }
   return { type: "remote", url: server.url?.trim() ?? "", enabled: server.enabled };
 }
@@ -185,13 +207,19 @@ export async function applyMcpServers(
   await Promise.all(tasks);
 }
 
-/** The one-click Blender integration: drives Blender through Blender MCP. */
-export function blenderMcpServer(): McpServerConfig {
+/**
+ * The one-click Blender integration: drives Blender through the Blender MCP
+ * bridge. `uvxPath` comes from the automated setup so the entry keeps working
+ * even when uv isn't on the user's PATH.
+ */
+export function blenderMcpServer(uvxPath?: string | null): McpServerConfig {
   return {
     name: "blender",
     type: "local",
-    command: ["uvx", "blender-mcp"],
+    command: [uvxPath ?? "uvx", "mcp-for-blender"],
     url: null,
     enabled: true,
+    // The bridge would otherwise collect anonymous usage telemetry.
+    environment: { DISABLE_TELEMETRY: "1" },
   };
 }

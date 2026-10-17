@@ -91,9 +91,10 @@ describe("OpenCode configuration", () => {
         {
           name: "blender",
           type: "local",
-          command: ["uvx", "blender-mcp"],
+          command: ["uvx", "mcp-for-blender"],
           url: null,
           enabled: true,
+          environment: { DISABLE_TELEMETRY: "1" },
         },
         {
           name: "notes",
@@ -107,7 +108,8 @@ describe("OpenCode configuration", () => {
 
     expect(config.mcp.blender).toEqual({
       type: "local",
-      command: ["uvx", "blender-mcp"],
+      command: ["uvx", "mcp-for-blender"],
+      environment: { DISABLE_TELEMETRY: "1" },
       enabled: true,
     });
     expect(config.mcp.notes).toEqual({

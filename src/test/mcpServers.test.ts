@@ -6,6 +6,7 @@ import {
   blenderMcpServer,
   buildMcpConfigPatch,
   type McpServerConfig,
+  normalizeEnvironment,
   parseCommandLine,
   toEngineMcpConfig,
   validateMcpServer,
@@ -16,7 +17,7 @@ function local(overrides: Partial<McpServerConfig> = {}): McpServerConfig {
   return {
     name: "blender",
     type: "local",
-    command: ["uvx", "blender-mcp"],
+    command: ["uvx", "mcp-for-blender"],
     url: null,
     enabled: true,
     ...overrides,
@@ -70,14 +71,14 @@ describe("validateMcpServer", () => {
 
 describe("parseCommandLine", () => {
   it("splits on whitespace", () => {
-    expect(parseCommandLine("uvx blender-mcp")).toEqual(["uvx", "blender-mcp"]);
+    expect(parseCommandLine("uvx mcp-for-blender")).toEqual(["uvx", "mcp-for-blender"]);
   });
 
   it("keeps quoted paths with spaces together", () => {
-    expect(parseCommandLine('"C:\\Program Files\\uv\\uvx.exe" -y blender-mcp')).toEqual([
+    expect(parseCommandLine('"C:\\Program Files\\uv\\uvx.exe" run mcp-for-blender')).toEqual([
       "C:\\Program Files\\uv\\uvx.exe",
-      "-y",
-      "blender-mcp",
+      "run",
+      "mcp-for-blender",
     ]);
   });
 
@@ -90,11 +91,23 @@ describe("parseCommandLine", () => {
   });
 });
 
+describe("normalizeEnvironment", () => {
+  it("keeps string values and drops blank keys", () => {
+    expect(normalizeEnvironment({ A: "1", " ": "x", B: "two" })).toEqual({ A: "1", B: "two" });
+  });
+
+  it("returns null for nothing usable", () => {
+    expect(normalizeEnvironment(null)).toBeNull();
+    expect(normalizeEnvironment(undefined)).toBeNull();
+    expect(normalizeEnvironment({})).toBeNull();
+  });
+});
+
 describe("buildMcpConfigPatch", () => {
   it("writes full entries, including the enabled flag", () => {
     const patch = buildMcpConfigPatch([local({ enabled: false })]);
     expect(patch).toEqual({
-      blender: { type: "local", command: ["uvx", "blender-mcp"], enabled: false },
+      blender: { type: "local", command: ["uvx", "mcp-for-blender"], enabled: false },
     });
   });
 
@@ -112,7 +125,7 @@ describe("buildMcpConfigPatch", () => {
   it("disables removed servers without clobbering live ones", () => {
     const patch = buildMcpConfigPatch([local()], ["gone", "roblox-studio"]);
     expect(patch).toEqual({
-      blender: { type: "local", command: ["uvx", "blender-mcp"], enabled: true },
+      blender: { type: "local", command: ["uvx", "mcp-for-blender"], enabled: true },
       gone: { enabled: false },
     });
   });
@@ -122,9 +135,41 @@ describe("toEngineMcpConfig", () => {
   it("copies the command so callers can't mutate the source", () => {
     const server = local();
     const entry = toEngineMcpConfig(server);
-    expect(entry).toEqual({ type: "local", command: ["uvx", "blender-mcp"], enabled: true });
+    expect(entry).toEqual({
+      type: "local",
+      command: ["uvx", "mcp-for-blender"],
+      enabled: true,
+    });
     if (entry.type === "local") entry.command.push("extra");
-    expect(server.command).toEqual(["uvx", "blender-mcp"]);
+    expect(server.command).toEqual(["uvx", "mcp-for-blender"]);
+  });
+
+  it("passes environment variables through for local servers", () => {
+    const entry = toEngineMcpConfig(local({ environment: { DISABLE_TELEMETRY: "1" } }));
+    expect(entry).toEqual({
+      type: "local",
+      command: ["uvx", "mcp-for-blender"],
+      environment: { DISABLE_TELEMETRY: "1" },
+      enabled: true,
+    });
+  });
+
+  it("omits empty environments and never sends them for remote servers", () => {
+    expect(toEngineMcpConfig(local({ environment: {} }))).toEqual({
+      type: "local",
+      command: ["uvx", "mcp-for-blender"],
+      enabled: true,
+    });
+    expect(toEngineMcpConfig(local({ environment: null }))).toEqual({
+      type: "local",
+      command: ["uvx", "mcp-for-blender"],
+      enabled: true,
+    });
+    expect(toEngineMcpConfig(remote({ environment: { A: "1" } }))).toEqual({
+      type: "remote",
+      url: "https://example.com/mcp",
+      enabled: true,
+    });
   });
 });
 
@@ -148,7 +193,7 @@ describe("applyMcpServers", () => {
       {
         config: {
           mcp: {
-            blender: { type: "local", command: ["uvx", "blender-mcp"], enabled: true },
+            blender: { type: "local", command: ["uvx", "mcp-for-blender"], enabled: true },
             notes: { type: "remote", url: "https://example.com/mcp", enabled: false },
           },
         },
@@ -194,13 +239,21 @@ describe("applyMcpServers", () => {
 });
 
 describe("blenderMcpServer", () => {
-  it("describes the standard blender-mcp stdio server", () => {
+  it("describes the standard bridge server with telemetry off", () => {
     expect(blenderMcpServer()).toEqual({
       name: "blender",
       type: "local",
-      command: ["uvx", "blender-mcp"],
+      command: ["uvx", "mcp-for-blender"],
       url: null,
       enabled: true,
+      environment: { DISABLE_TELEMETRY: "1" },
     });
+  });
+
+  it("uses the uvx path from the automated setup", () => {
+    expect(blenderMcpServer("C:\\Users\\User\\.local\\bin\\uvx.exe").command).toEqual([
+      "C:\\Users\\User\\.local\\bin\\uvx.exe",
+      "mcp-for-blender",
+    ]);
   });
 });

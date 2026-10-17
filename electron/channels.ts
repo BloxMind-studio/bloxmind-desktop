@@ -29,4 +29,7 @@ export const channels = {
   checkpointPreview: "checkpoint:preview",
   checkpointList: "checkpoint:list",
   checkpointValidate: "checkpoint:validate",
+  // ── Blender bridge ─────────────────────────────────────────────────
+  blenderSetup: "blender:setup",
+  blenderLaunch: "blender:launch",
 } as const;

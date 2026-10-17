@@ -43,6 +43,10 @@ export const McpServerSchema = Schema.mutable(
     command: Schema.NullOr(MutableStrings),
     url: Schema.NullOr(Schema.String),
     enabled: Schema.Boolean,
+    // Optional so configs written before it existed still load.
+    environment: Schema.optional(
+      Schema.NullOr(Schema.Record({ key: Schema.String, value: Schema.String })),
+    ),
   }),
 );
 
@@ -159,6 +163,40 @@ export const StudioMcpStatusSchema = Schema.Struct({
 
 export type StudioMcpStatus = typeof StudioMcpStatusSchema.Type;
 
+/** How the Blender bridge addon ended up during automated setup. */
+export const BlenderAddonOutcomeSchema = Schema.Literal(
+  "enabled",
+  "needs_blender_open",
+  "manual_enable",
+  "not_found",
+);
+
+export type BlenderAddonOutcome = typeof BlenderAddonOutcomeSchema.Type;
+
+/** What Settings → Integrations shows after "Set up automatically" runs. */
+export const BlenderSetupResultSchema = Schema.mutable(
+  Schema.Struct({
+    ok: Schema.Boolean,
+    uvxPath: Schema.NullOr(Schema.String),
+    blenderExe: Schema.NullOr(Schema.String),
+    blenderVersion: Schema.NullOr(Schema.String),
+    blenderRunning: Schema.Boolean,
+    launched: Schema.Boolean,
+    addon: BlenderAddonOutcomeSchema,
+    detail: Schema.String,
+    steps: MutableStrings,
+  }),
+);
+
+export type BlenderSetupResult = typeof BlenderSetupResultSchema.Type;
+
+export const BlenderLaunchResultSchema = Schema.Struct({
+  launched: Schema.Boolean,
+  executable: Schema.NullOr(Schema.String),
+});
+
+export type BlenderLaunchResult = typeof BlenderLaunchResultSchema.Type;
+
 /** A main-process error forwarded to the renderer, which reports it through PostHog. */
 export interface MainErrorReport {
   source: string;
@@ -183,6 +221,10 @@ export interface DesktopApi {
   /** The folder OpenCode installs into, for antivirus exclusions. Null outside the desktop app. */
   getOpenCodeInstallFolder(): Promise<string | null>;
   getStudioMcpStatus(): Promise<StudioMcpStatus>;
+  /** Installs uv and the Blender bridge addon, then opens Blender. */
+  blenderSetup(): Promise<BlenderSetupResult>;
+  /** Opens the newest installed Blender, if there is one. */
+  blenderLaunch(): Promise<BlenderLaunchResult>;
   onOpenCodeStartupProgress(listener: (progress: OpenCodeStartupProgress) => void): () => void;
   getVersion(): Promise<string>;
   getInstructionFiles(): Promise<readonly InstructionFile[]>;

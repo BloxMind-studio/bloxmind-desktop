@@ -30,7 +30,12 @@ import { connectHint, isFreeTier, providerDisplayName } from "@/lib/providerAuth
 import { checkModels, checkPreference, type ProviderCheckResult } from "@/lib/providerCheck";
 import { usePreferences } from "@/providers/PreferencesProvider";
 import type { ModelInfo, ProviderInfo } from "@/types";
-import { type AppConfig, DEFAULT_APP_CONFIG, type UpdateInfo } from "@/types/desktop";
+import {
+  type AppConfig,
+  type BlenderSetupResult,
+  DEFAULT_APP_CONFIG,
+  type UpdateInfo,
+} from "@/types/desktop";
 
 // ── Popular providers (same order as OpenCode's web UI) ──────────────
 const POPULAR_PROVIDERS = [
@@ -1203,6 +1208,8 @@ interface McpServerDraft {
   commandLine: string;
   url: string;
   enabled: boolean;
+  /** Env vars from the original entry, kept as-is (not edited in the form). */
+  environment: Record<string, string> | null;
 }
 
 function draftFromServer(server: McpServerConfig): McpServerDraft {
@@ -1215,6 +1222,7 @@ function draftFromServer(server: McpServerConfig): McpServerDraft {
       .join(" "),
     url: server.url ?? "",
     enabled: server.enabled,
+    environment: server.environment ?? null,
   };
 }
 
@@ -1225,6 +1233,7 @@ function draftToServer(draft: McpServerDraft): McpServerConfig {
     command: draft.type === "local" ? parseCommandLine(draft.commandLine.trim()) : null,
     url: draft.type === "remote" ? draft.url.trim() : null,
     enabled: draft.enabled,
+    environment: draft.environment,
   };
 }
 
@@ -1253,11 +1262,18 @@ function mcpStatusLabel(status: McpServerLiveStatus | undefined): {
   }
 }
 
-/** Setup instructions shown with the Blender preset card. */
-const BLENDER_SETUP_STEPS = [
-  "Install uv, the Python tool runner BloxMind uses to launch the bridge.",
-  "Install the Blender MCP addon (ahujasid/blender-mcp) in Blender 4.5 or newer and enable it.",
-  "In Blender, open the BlenderMCP panel in the sidebar and click Connect to MCP server (port 9876).",
+/** What the automatic Blender setup does, shown before it runs. */
+const BLENDER_AUTO_STEPS = [
+  "Installs uv and the Blender bridge addon.",
+  "Enables the addon and opens Blender with the bridge running.",
+  "Adds the integration so BloxMind can animate characters.",
+];
+
+/** The manual alternative, kept in case the automatic setup can't find Blender. */
+const BLENDER_MANUAL_STEPS = [
+  "Install uv (docs.astral.sh/uv), then run: uvx mcp-for-blender@latest install-addon",
+  'Open Blender and enable "MCP for Blender" in Preferences → Add-ons.',
+  "Press N in Blender for the MCP for Blender tab; the server starts automatically.",
   "Add the integration here, then ask BloxMind to animate a character.",
 ];
 
@@ -1266,6 +1282,9 @@ function IntegrationsTab() {
   const { statuses } = useMcpStatus();
   const [draft, setDraft] = useState<McpServerDraft | null>(null);
   const [draftError, setDraftError] = useState<string | null>(null);
+  const [blenderBusy, setBlenderBusy] = useState(false);
+  const [blenderSetup, setBlenderSetup] = useState<BlenderSetupResult | null>(null);
+  const [blenderError, setBlenderError] = useState<string | null>(null);
 
   const hasBlender = mcpServers.some((server) => server.name.toLowerCase() === "blender");
 
@@ -1312,13 +1331,42 @@ function IntegrationsTab() {
 
   function addBlender() {
     setMcpServers([...mcpServers, blenderMcpServer()]);
-    toast.success("Blender integration added", {
-      action: {
-        label: "Setup guide",
-        onClick: () =>
-          desktop.openUrl("https://github.com/ahujasid/blender-mcp#installation").catch(() => {}),
-      },
-    });
+    toast.success("Blender integration added");
+  }
+
+  /** Installs uv, the addon and Blender itself, then wires up the integration. */
+  async function setUpBlender() {
+    if (blenderBusy) return;
+    setBlenderBusy(true);
+    setBlenderError(null);
+    setBlenderSetup(null);
+    try {
+      const result = await desktop.blenderSetup();
+      setBlenderSetup(result);
+      if (result.ok && result.uvxPath) {
+        const entry = blenderMcpServer(result.uvxPath);
+        const next = hasBlender
+          ? mcpServers.map((server) => (server.name.toLowerCase() === "blender" ? entry : server))
+          : [...mcpServers, entry];
+        setMcpServers(next);
+      }
+      if (result.ok) toast.success(result.detail);
+      else toast.error(result.detail);
+    } catch (cause) {
+      setBlenderError(cause instanceof Error ? cause.message : "Blender setup failed");
+    } finally {
+      setBlenderBusy(false);
+    }
+  }
+
+  async function openBlender() {
+    try {
+      const result = await desktop.blenderLaunch();
+      if (result.launched) toast.success("Opening Blender");
+      else toast.error("Blender wasn't found on this computer.");
+    } catch {
+      toast.error("Couldn't open Blender.");
+    }
   }
 
   return (
@@ -1341,38 +1389,102 @@ function IntegrationsTab() {
                 Build R6 and R15 animations in Blender and load them straight into Studio.
               </p>
             </div>
-            {!hasBlender && (
+            <button
+              type="button"
+              onClick={setUpBlender}
+              disabled={blenderBusy}
+              className="shrink-0 rounded-md bg-foreground px-2.5 py-1.5 text-[11px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              {blenderBusy ? "Setting up…" : hasBlender ? "Re-run setup" : "Set up automatically"}
+            </button>
+          </div>
+          {blenderBusy && (
+            <p className="mt-3 border-t pt-3 text-[11px] leading-relaxed text-muted-foreground">
+              Installing uv and the Blender bridge, then opening Blender. This can take a minute on
+              the first run.
+            </p>
+          )}
+          {!blenderBusy && blenderError && (
+            <p className="mt-3 border-t pt-3 text-[11px] leading-relaxed text-red-500">
+              {blenderError}
+            </p>
+          )}
+          {!blenderBusy && !blenderError && blenderSetup && (
+            <div className="mt-3 border-t pt-3">
+              <p className="text-[11px] font-medium text-foreground">{blenderSetup.detail}</p>
+              <ol className="mt-1.5 space-y-1">
+                {blenderSetup.steps.map((step, index) => (
+                  <li
+                    key={step}
+                    className="flex gap-2 text-[11px] leading-relaxed text-muted-foreground"
+                  >
+                    <span className="shrink-0 font-mono text-muted-foreground/60">
+                      {index + 1}.
+                    </span>
+                    {step}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+          {!blenderBusy && !blenderError && !blenderSetup && (
+            <ol className="mt-3 space-y-1.5 border-t pt-3">
+              {BLENDER_AUTO_STEPS.map((step, index) => (
+                <li
+                  key={step}
+                  className="flex gap-2 text-[11px] leading-relaxed text-muted-foreground"
+                >
+                  <span className="shrink-0 font-mono text-muted-foreground/60">{index + 1}.</span>
+                  {step}
+                </li>
+              ))}
+            </ol>
+          )}
+          <details className="mt-3 border-t pt-3">
+            <summary className="cursor-pointer text-[11px] font-medium text-muted-foreground hover:text-foreground">
+              Manual setup
+            </summary>
+            <ol className="mt-2 space-y-1.5">
+              {BLENDER_MANUAL_STEPS.map((step, index) => (
+                <li
+                  key={step}
+                  className="flex gap-2 text-[11px] leading-relaxed text-muted-foreground"
+                >
+                  <span className="shrink-0 font-mono text-muted-foreground/60">{index + 1}.</span>
+                  {step}
+                </li>
+              ))}
+            </ol>
+            <div className="mt-2.5 flex flex-wrap items-center gap-2">
+              {!hasBlender && (
+                <button
+                  type="button"
+                  onClick={addBlender}
+                  className="rounded-md border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  Add Blender integration
+                </button>
+              )}
               <button
                 type="button"
-                onClick={addBlender}
-                className="shrink-0 rounded-md bg-foreground px-2.5 py-1.5 text-[11px] font-medium text-background transition-opacity hover:opacity-90"
+                onClick={openBlender}
+                className="rounded-md border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:text-foreground"
               >
-                Add Blender integration
+                Open Blender
               </button>
-            )}
-          </div>
-          <ol className="mt-3 space-y-1.5 border-t pt-3">
-            {BLENDER_SETUP_STEPS.map((step, index) => (
-              <li
-                key={step}
-                className="flex gap-2 text-[11px] leading-relaxed text-muted-foreground"
+              <button
+                type="button"
+                onClick={() =>
+                  desktop
+                    .openUrl("https://github.com/ahujasid/blender-mcp#installation")
+                    .catch(() => {})
+                }
+                className="text-[10px] text-muted-foreground underline hover:text-foreground"
               >
-                <span className="shrink-0 font-mono text-muted-foreground/60">{index + 1}.</span>
-                {step}
-              </li>
-            ))}
-          </ol>
-          <button
-            type="button"
-            onClick={() =>
-              desktop
-                .openUrl("https://github.com/ahujasid/blender-mcp#installation")
-                .catch(() => {})
-            }
-            className="mt-2 text-[10px] text-muted-foreground underline hover:text-foreground"
-          >
-            Open the Blender MCP setup guide
-          </button>
+                Setup guide
+              </button>
+            </div>
+          </details>
         </div>
       </div>
 
@@ -1393,6 +1505,7 @@ function IntegrationsTab() {
                   commandLine: "",
                   url: "",
                   enabled: true,
+                  environment: null,
                 });
                 setDraftError(null);
               }}

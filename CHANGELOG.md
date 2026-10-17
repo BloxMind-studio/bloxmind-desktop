@@ -9,8 +9,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
-- Settings → Integrations: add extra MCP servers for the assistant to use, with a one-click Blender preset. Supports local (command) and remote (URL) servers, each with an on/off switch and a live status light; changes apply to the running engine immediately. The Blender card walks through installing uv and the Blender MCP addon.
+- Settings → Integrations: add extra MCP servers for the assistant to use, with a one-click Blender preset. Supports local (command) and remote (URL) servers, each with an on/off switch and a live status light; changes apply to the running engine immediately.
 - A Blender character animation skill ships with the app: once the Blender integration is connected, the assistant can build R6 and R15 animations in Blender, export them, and load them into Studio.
+- The Blender card in Settings → Integrations now sets everything up automatically: one click installs uv, installs and enables the bridge addon in your newest Blender, adds the integration, and opens Blender with the bridge running. The old manual steps are still available under "Manual setup".
 
 ## [0.14.0] - 2026-10-17
 
