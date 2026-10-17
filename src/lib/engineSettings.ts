@@ -33,9 +33,15 @@ export interface EngineSettingsInput {
   modelKey: string | null;
 }
 
+interface EngineModelPatch {
+  name?: string;
+  limit?: { context: number; output: number } | null;
+}
+
 interface EngineProviderPatch {
   options?: { baseURL: string | null };
-  models?: Record<string, { name: string; limit: { context: number; output: number } }>;
+  /** `null` drops every model override written by an earlier update. */
+  models?: Record<string, EngineModelPatch> | null;
 }
 
 interface EngineConfigPatch {
@@ -50,9 +56,15 @@ interface EngineConfigPatch {
  *
  * - `temperature` → `agent.<agent>.temperature` for the agent in use.
  * - `maxTokens` → `provider.<id>.models.<id>.limit.output` for the selected
- *   model, preserving the model's known context window. `0` (the default)
- *   leaves the model's own output limit untouched; a positive value is
- *   clamped to that own limit so requests never exceed what the model allows.
+ *   model, preserving the model's known context window. A positive value is
+ *   clamped to the model's own limit so requests never exceed what the model
+ *   allows. `0` (the default) removes any limit written by an earlier update
+ *   instead of leaving it behind: a stale `limit.output` caps the whole
+ *   reply, reasoning included, so long replies get cut off mid-thought with
+ *   nothing but a truncated message behind. Removal clears every model
+ *   override of the provider because the server only unsets one model at a
+ *   time through its own `limit.output`, and reading the model's real limit
+ *   back is no help — `provider.list` already reports the capped value.
  * - `customApiEndpoint` → `provider.<id>.options.baseURL` for every connected
  *   provider; an empty raw value or `null` removes a previously written
  *   override.
@@ -70,10 +82,15 @@ export function buildEngineConfigPatch(
     patch.agent = { [input.agent]: { temperature: input.temperature } };
   }
 
+  // `models: null` clears the model overrides of every connected provider, so
+  // no cap set earlier can outlive the setting that asked for it.
   if (connectedProviders.length > 0) {
     const provider: Record<string, EngineProviderPatch> = {};
     for (const id of connectedProviders) {
       provider[id] = { options: { baseURL: endpoint } };
+    }
+    if (input.maxTokens <= 0) {
+      for (const target of Object.values(provider)) target.models = null;
     }
     patch.provider = provider;
   }
@@ -87,16 +104,13 @@ export function buildEngineConfigPatch(
     const context = model?.limit?.context;
     if (providerID && modelID && context) {
       const nativeOutput = model.limit?.output;
-      const output =
+      const capped =
         nativeOutput !== undefined ? Math.min(input.maxTokens, nativeOutput) : input.maxTokens;
       patch.provider ??= {};
       patch.provider[providerID] = {
         ...patch.provider[providerID],
         models: {
-          [modelID]: {
-            name: model.name ?? modelID,
-            limit: { context, output },
-          },
+          [modelID]: { name: model.name ?? modelID, limit: { context, output: capped } },
         },
       };
     }

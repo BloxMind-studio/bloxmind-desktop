@@ -1101,7 +1101,7 @@ function EngineTab() {
           />
           <div className="mt-1 text-[10px] text-muted-foreground">
             Caps the response length for the selected model (up to 128,000; 0 uses the model's own
-            limit).
+            limit). Very low caps can cut a long reply off mid-thought.
           </div>
         </div>
       </div>

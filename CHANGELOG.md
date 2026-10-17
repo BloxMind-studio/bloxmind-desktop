@@ -18,6 +18,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Fixed
 
 - Replies are no longer cut off mid-task: the previously non-functional "Max output tokens" default (4,096) no longer caps every reply now that the setting works. It now defaults to the model's own limit, and a cap you choose is clamped to what the model supports. Engine settings are also only sent to the engine when they actually change, instead of on every settings refetch.
+- A reply that stopped mid-thought no longer keeps happening after the cap is cleared: clearing "Max output tokens" now also removes the limit left behind in the engine's settings, which used to survive the reset and cut long replies off mid-thought.
 - Stopping the agent mid-turn no longer leaves a frozen "Thinking…" indicator or leftover reasoning and tool rows on screen. The thinking indicator only shows while the agent is actually working, and a stopped turn that produced no text leaves nothing behind.
 - The local connection to Roblox Studio now rejects requests that don't come from this machine, protecting the bridge against DNS-rebinding attacks from a malicious web page.
 - The automatic checkpoint badge and "Restore files" action no longer appear while the agent is still working, including while it is retrying a request.

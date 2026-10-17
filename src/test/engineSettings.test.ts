@@ -47,7 +47,7 @@ describe("buildEngineConfigPatch", () => {
 
   it("writes the endpoint override for every connected provider", () => {
     const patch = buildEngineConfigPatch(
-      input({ customApiEndpoint: "https://example.test/api" }),
+      input({ customApiEndpoint: "https://example.test/api", maxTokens: 4_096 }),
       providers,
       ["anthropic", "openai"],
     );
@@ -61,14 +61,18 @@ describe("buildEngineConfigPatch", () => {
 
   it("removes the endpoint override with null when the setting is cleared", () => {
     const patch = buildEngineConfigPatch(input(), providers, ["anthropic"]);
-    expect(patch).toEqual({ provider: { anthropic: { options: { baseURL: null } } } });
+    expect(patch).toEqual({
+      provider: { anthropic: { options: { baseURL: null }, models: null } },
+    });
   });
 
   it("treats a blank endpoint as removal", () => {
     const patch = buildEngineConfigPatch(input({ customApiEndpoint: "   " }), providers, [
       "anthropic",
     ]);
-    expect(patch).toEqual({ provider: { anthropic: { options: { baseURL: null } } } });
+    expect(patch).toEqual({
+      provider: { anthropic: { options: { baseURL: null }, models: null } },
+    });
   });
 
   it("writes the requested output limit with the model's known context window", () => {
@@ -111,13 +115,40 @@ describe("buildEngineConfigPatch", () => {
     });
   });
 
-  it("leaves the model limit untouched when no cap is requested", () => {
+  it("clears stale model overrides when no cap is requested", () => {
+    const patch = buildEngineConfigPatch(
+      input({ modelKey: "anthropic/claude-3.5-sonnet" }),
+      providers,
+      ["anthropic", "openai"],
+    );
+    expect(patch).toEqual({
+      provider: {
+        anthropic: { options: { baseURL: null }, models: null },
+        openai: { options: { baseURL: null }, models: null },
+      },
+    });
+  });
+
+  it("keeps a set endpoint while clearing stale model overrides", () => {
+    const patch = buildEngineConfigPatch(
+      input({ customApiEndpoint: "https://example.test" }),
+      providers,
+      ["anthropic"],
+    );
+    expect(patch).toEqual({
+      provider: {
+        anthropic: { options: { baseURL: "https://example.test" }, models: null },
+      },
+    });
+  });
+
+  it("sends nothing when no cap is requested and no provider is connected", () => {
     expect(
       buildEngineConfigPatch(input({ modelKey: "anthropic/claude-3.5-sonnet" }), providers, []),
     ).toBeNull();
   });
 
-  it("skips the model limit when the context window is unknown", () => {
+  it("skips the model override when the context window is unknown", () => {
     expect(
       buildEngineConfigPatch(
         input({ modelKey: "anthropic/no-limit", maxTokens: 4_096 }),
