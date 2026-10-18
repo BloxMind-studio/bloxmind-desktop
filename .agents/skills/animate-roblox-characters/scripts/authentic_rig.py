@@ -893,18 +893,32 @@ def build_studio_plugin_obj(
     rebased_cframes = [_cframe_multiply(delta, cframe) for cframe in part_cframes]
 
     part_aux: list[dict[str, Any]] = []
-    for index, (name, size, cframe) in enumerate(zip(part_names, part_sizes, rebased_cframes), start=1):
+    for index, (snapshot_part, name, size, cframe) in enumerate(
+        zip(parts, part_names, part_sizes, rebased_cframes), start=1
+    ):
         dims_fp = tuple(component + index * 0.0001 for component in size)
-        part_aux.append(
-            {
-                "idx": index,
-                "name": name,
-                "dims_fp": [_round_metadata_number(value) for value in dims_fp],
-                "vol_fp": _round_metadata_number(dims_fp[0] * dims_fp[1] * dims_fp[2]),
-                "part_size": [_round_metadata_number(value) for value in size],
-                "part_cf": [_round_metadata_number(value) for value in cframe],
-            }
-        )
+        aux_entry: dict[str, Any] = {
+            "idx": index,
+            "name": name,
+            "dims_fp": [_round_metadata_number(value) for value in dims_fp],
+            "vol_fp": _round_metadata_number(dims_fp[0] * dims_fp[1] * dims_fp[2]),
+            "part_size": [_round_metadata_number(value) for value in size],
+            "part_cf": [_round_metadata_number(value) for value in cframe],
+        }
+        is_mesh_part = str(snapshot_part.get("className")) == "MeshPart"
+        snapshot_mesh_id = snapshot_part.get("meshId")
+        if snapshot_mesh_id is not None:
+            if isinstance(snapshot_mesh_id, str) and snapshot_mesh_id.strip():
+                if is_mesh_part:
+                    aux_entry["mesh_id"] = snapshot_mesh_id.strip()
+                    aux_entry["mesh_class"] = "MeshPart"
+                else:
+                    warnings.append(f"Part {name!r} reports a meshId but is not a MeshPart; ignoring it.")
+            else:
+                warnings.append(f"Part {name!r} has a malformed meshId; transferring it as a Size box.")
+        elif is_mesh_part:
+            warnings.append(f"MeshPart {name!r} has no MeshId; transferring it as a Size box.")
+        part_aux.append(aux_entry)
 
     tree_names: list[str] = []
     tree_errors: list[str] = []

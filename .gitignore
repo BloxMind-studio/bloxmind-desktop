@@ -51,3 +51,10 @@ Thumbs.db
 staged-release/
 test-results/
 playwright-report/
+
+# Python caches
+__pycache__/
+
+# Fetched external rig assets (no redistribution license)
+.agents/skills/animate-roblox-characters/assets/external/*
+!.agents/skills/animate-roblox-characters/assets/external/.gitkeep

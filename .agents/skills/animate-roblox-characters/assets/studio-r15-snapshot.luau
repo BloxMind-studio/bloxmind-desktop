@@ -11,10 +11,12 @@
 --      R15 body part names and that uses Motor6D joints.
 --   3. Ambiguity or missing targets return an error object instead.
 --
--- Scope: classic part-based Motor6D rigs (the stock premade Studio R15).
--- Rigs containing MeshParts, accessories, welds, AnimationConstraints, or
--- SpecialMesh descendants are rejected or flagged so the caller can fall back
--- to the Creator Store plugin's interactive file transfer.
+-- Scope: Motor6D rigs built from Part or MeshPart body parts (the stock
+-- premade Studio R15 uses MeshParts). MeshPart ids are captured so the Blender
+-- importer can inspect FileMesh data (including skinning) per body part; the
+-- generated transfer OBJ still approximates geometry with Size boxes.
+-- Rigs containing welds, AnimationConstraints, or accessories are rejected so
+-- the caller can fall back to the Creator Store plugin's interactive transfer.
 
 local HttpService = game:GetService("HttpService")
 local Selection = game:GetService("Selection")
@@ -62,6 +64,63 @@ end
 
 local function sizeComponents(size)
 	return { size.X, size.Y, size.Z }
+end
+
+local function readMeshId(part)
+	local okContent, content = pcall(function()
+		return part.MeshContent
+	end)
+	if okContent and content ~= nil then
+		if type(content) == "string" then
+			if content ~= "" then
+				return content
+			end
+		else
+			local okUri, uri = pcall(function()
+				return content.Uri
+			end)
+			if okUri and type(uri) == "string" and uri ~= "" then
+				return uri
+			end
+		end
+	end
+	local okId, id = pcall(function()
+		return part.MeshId
+	end)
+	if okId and type(id) == "string" and id ~= "" then
+		return id
+	end
+	return nil
+end
+
+local function buildPartRecord(part, warnings)
+	local isMeshPart = part:IsA("MeshPart")
+	if not isMeshPart and not part:IsA("Part") then
+		error(string.format("part '%s' of class %s is not supported by the automated transfer.", part:GetFullName(), part.ClassName))
+	end
+	local record = {
+		name = part.Name,
+		className = part.ClassName,
+		size = sizeComponents(part.Size),
+		cframe = cfComponents(part.CFrame),
+	}
+	if isMeshPart then
+		local meshId = readMeshId(part)
+		if meshId then
+			record.meshId = meshId
+		else
+			table.insert(
+				warnings,
+				string.format("part '%s' is a MeshPart without a readable MeshId; transferred geometry uses its Size box.", part.Name)
+			)
+		end
+	elseif part:FindFirstChildWhichIsA("SpecialMesh", true) then
+		table.insert(
+			warnings,
+			string.format("part '%s' has a SpecialMesh; transferred geometry uses its Part size box.", part.Name)
+		)
+	end
+	return record
 end
 
 local function countR15Parts(model)
@@ -172,28 +231,7 @@ local function buildTree(model)
 	local visited = {}
 
 	local function partEntry(part)
-		if part:IsA("MeshPart") then
-			error(string.format(
-				"part '%s' is a %s; the automated transfer supports classic Part rigs only. Use the Creator Store plugin transfer.",
-				part:GetFullName(),
-				part.ClassName
-			))
-		end
-		if not part:IsA("Part") then
-			error(string.format("part '%s' of class %s is not supported by the automated transfer.", part:GetFullName(), part.ClassName))
-		end
-		if part:FindFirstChildWhichIsA("SpecialMesh", true) then
-			table.insert(
-				warnings,
-				string.format("part '%s' has a SpecialMesh; transferred geometry uses its Part size box.", part.Name)
-			)
-		end
-		return {
-			name = part.Name,
-			className = part.ClassName,
-			size = sizeComponents(part.Size),
-			cframe = cfComponents(part.CFrame),
-		}
+		return buildPartRecord(part, warnings)
 	end
 
 	local function walk(part)
@@ -268,16 +306,25 @@ if treeError then
 end
 
 local partEntries = {}
+local meshPartCount = 0
 for _, desc in ipairs(target:GetDescendants()) do
 	if desc:IsA("BasePart") then
-		local entry = {
-			name = desc.Name,
-			className = desc.ClassName,
-			size = sizeComponents(desc.Size),
-			cframe = cfComponents(desc.CFrame),
-		}
+		local entry = buildPartRecord(desc, {})
+		if entry.className == "MeshPart" then
+			meshPartCount += 1
+		end
 		table.insert(partEntries, entry)
 	end
+end
+
+if meshPartCount > 0 then
+	table.insert(
+		built.warnings,
+		string.format(
+			"%d MeshPart body part(s) transfer with approximate Size-box geometry; the Blender importer can still rebuild FileMesh skinning.",
+			meshPartCount
+		)
+	)
 end
 
 return encode({
