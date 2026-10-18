@@ -120,7 +120,7 @@
       "version": "current Roblox Studio",
       "source": "https://create.roblox.com/docs/studio/rig-builder",
       "license": "Roblox platform terms",
-      "security": "Create or select the stock premade R15 character inside Studio, then transfer it through Cautioned's Creator Store plugin. Never replace it with repository-generated geometry."
+      "security": "Create or select the stock premade R15 character inside Studio, then transfer it: classic part-based Motor6D rigs through the bundled studio-r15-snapshot.luau extractor and authentic_rig.import_studio_snapshot(); skinned or mixed rigs through Cautioned's Creator Store plugin. Never replace it with repository-generated geometry."
     },
     {
       "id": "roblox-official-r15-project-files",

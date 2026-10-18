@@ -8,10 +8,12 @@ the pinned R6 IK/FK V2.22 control rig, and conventional skinned FBX rigs.
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import hmac
 import json
 import importlib.util
+import math
 import os
 import secrets
 import shutil
@@ -51,6 +53,10 @@ R6_ACTIVATION_NAMESPACE = "ANIMATE_ROBLOX_R6_V222_BOOTSTRAP"
 R6_ATTESTATION_NAMESPACE = "ANIMATE_ROBLOX_R6_V222_ATTESTATION"
 SKINNED_PROVENANCE_PROPERTY = "animate_roblox_skinned_source"
 VERIFIED_SKINNED_SOURCES = {"studio-rig-builder", "studio-export", "user-verified-studio-export"}
+STUDIO_SNAPSHOT_SCHEMA = "animate-roblox-characters/studio-r15-snapshot@1"
+PLUGIN_META_VERSION = "1.6"
+PLUGIN_META_CHUNK_LENGTH = 45
+IDENTITY_CFRAME = (0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
 R6_REQUIRED_CONTROLS = {
     "MasterControl",
     "LowerTorso-FK",
@@ -677,23 +683,34 @@ def import_motor6d_obj(filepath: str | Path, rigging_type: str = "LOCAL_YAXIS_EX
             "errors": addon["errors"] or ["The Roblox Animations Importer/Exporter add-on is unavailable"],
             "warnings": [],
         }
+    before_names = {obj.name for obj in bpy.context.scene.objects}
     try:
         imported = bpy.ops.object.rbxanims_importmodel(filepath=str(source))
     except Exception as exc:
         return {"ok": False, "errors": [f"Rig import operator failed: {exc}"], "warnings": []}
     if "FINISHED" not in imported:
         return {"ok": False, "errors": [f"Rig import returned {sorted(imported)}"], "warnings": []}
-    if not _operator_available(bpy.ops.object.rbxanims_genrig):
-        return {"ok": False, "errors": ["The imported rig cannot be rebuilt because the add-on operator is missing"], "warnings": []}
-    try:
-        rebuilt = bpy.ops.object.rbxanims_genrig(pr_rigging_type=rigging_type)
-    except Exception as exc:
-        return {"ok": False, "errors": [f"Rig rebuild operator failed: {exc}"], "warnings": []}
-    if "FINISHED" not in rebuilt:
-        return {"ok": False, "errors": [f"Rig rebuild returned {sorted(rebuilt)}"], "warnings": []}
+    new_objects = [obj for obj in bpy.context.scene.objects if obj.name not in before_names]
+    new_meta_objects = [obj for obj in new_objects if "RigMeta" in obj]
+    if not new_meta_objects:
+        return {"ok": False, "errors": ["The imported OBJ did not supply a rig metadata object"], "warnings": []}
+    new_armatures = [obj for obj in new_objects if obj.type == "ARMATURE"]
+    if not new_armatures:
+        try:
+            creation = importlib.import_module("animate_roblox_cautioned_v263.rig.creation")
+            creation.create_rig(rigging_type, new_meta_objects[-1].name)
+        except Exception as exc:
+            return {"ok": False, "errors": [f"Rig rebuild failed: {exc}"], "warnings": []}
+        new_armatures = [obj for obj in bpy.context.scene.objects if obj.name not in before_names and obj.type == "ARMATURE"]
     settings = getattr(bpy.context.scene, "rbx_anim_settings", None)
-    armature_name = getattr(settings, "rbx_anim_armature", "") if settings is not None else ""
-    armature = bpy.data.objects.get(armature_name) if armature_name else bpy.context.view_layer.objects.active
+    settings_armature_name = getattr(settings, "rbx_anim_armature", "") if settings is not None else ""
+    armature = next((obj for obj in new_armatures if obj.name == settings_armature_name), None)
+    if armature is None and new_armatures:
+        armature = new_armatures[0]
+    if armature is None and settings_armature_name:
+        armature = bpy.data.objects.get(settings_armature_name)
+    if armature is None:
+        armature = bpy.context.view_layer.objects.active
     if armature is None or armature.type != "ARMATURE":
         return {"ok": False, "errors": ["The add-on did not create a selectable armature"], "warnings": []}
     authenticity = inspect_authenticity(armature)
@@ -717,6 +734,321 @@ def import_motor6d_obj(filepath: str | Path, rigging_type: str = "LOCAL_YAXIS_EX
         "warnings": [],
         "errors": [],
     }
+
+
+def _round_metadata_number(value: float) -> float:
+    """Round half away from zero at three decimals, matching the Studio exporter."""
+    scaled = float(value) * 1000.0
+    if scaled >= 0:
+        return math.floor(scaled + 0.5) / 1000.0
+    return math.ceil(scaled - 0.5) / 1000.0
+
+
+def _cframe_components(value: Any, label: str) -> tuple[float, ...]:
+    if not isinstance(value, (list, tuple)) or len(value) != 12:
+        raise ValueError(f"{label} must provide 12 CFrame components")
+    return tuple(float(component) for component in value)
+
+
+def _cframe_multiply(left: tuple[float, ...], right: tuple[float, ...]) -> tuple[float, ...]:
+    rotation_left = left[3:12]
+    rotation_right = right[3:12]
+    product = [0.0] * 9
+    for row in range(3):
+        for column in range(3):
+            product[row * 3 + column] = sum(
+                rotation_left[row * 3 + k] * rotation_right[k * 3 + column] for k in range(3)
+            )
+    tx = left[0] + rotation_left[0] * right[0] + rotation_left[1] * right[1] + rotation_left[2] * right[2]
+    ty = left[1] + rotation_left[3] * right[0] + rotation_left[4] * right[1] + rotation_left[5] * right[2]
+    tz = left[2] + rotation_left[6] * right[0] + rotation_left[7] * right[1] + rotation_left[8] * right[2]
+    return (tx, ty, tz, *product)
+
+
+def _cframe_inverse(cframe: tuple[float, ...]) -> tuple[float, ...]:
+    rotation = cframe[3:12]
+    transposed = [
+        rotation[0],
+        rotation[3],
+        rotation[6],
+        rotation[1],
+        rotation[4],
+        rotation[7],
+        rotation[2],
+        rotation[5],
+        rotation[8],
+    ]
+    px, py, pz = cframe[0], cframe[1], cframe[2]
+    tx = -(transposed[0] * px + transposed[1] * py + transposed[2] * pz)
+    ty = -(transposed[3] * px + transposed[4] * py + transposed[5] * pz)
+    tz = -(transposed[6] * px + transposed[7] * py + transposed[8] * pz)
+    return (tx, ty, tz, *transposed)
+
+
+def _cframe_transform_point(cframe: tuple[float, ...], point: tuple[float, float, float]) -> tuple[float, float, float]:
+    x, y, z = point
+    rotation = cframe[3:12]
+    return (
+        cframe[0] + rotation[0] * x + rotation[1] * y + rotation[2] * z,
+        cframe[1] + rotation[3] * x + rotation[4] * y + rotation[5] * z,
+        cframe[2] + rotation[6] * x + rotation[7] * y + rotation[8] * z,
+    )
+
+
+_BOX_CORNERS = (
+    (-1.0, -1.0, -1.0),
+    (1.0, -1.0, -1.0),
+    (1.0, 1.0, -1.0),
+    (-1.0, 1.0, -1.0),
+    (-1.0, -1.0, 1.0),
+    (1.0, -1.0, 1.0),
+    (1.0, 1.0, 1.0),
+    (-1.0, 1.0, 1.0),
+)
+_BOX_TRIANGLES = (
+    (5, 6, 7),
+    (5, 7, 8),
+    (2, 1, 4),
+    (2, 4, 3),
+    (1, 5, 8),
+    (1, 8, 4),
+    (6, 2, 3),
+    (6, 3, 7),
+    (1, 2, 6),
+    (1, 6, 5),
+    (4, 8, 7),
+    (4, 7, 3),
+)
+
+
+def _format_obj_number(value: float) -> str:
+    text = f"{value:.6f}".rstrip("0").rstrip(".")
+    return "0" if text in {"", "-", "-0"} else text
+
+
+def build_studio_plugin_obj(
+    snapshot: dict[str, Any],
+    output_path: str | Path,
+    *,
+    rebase_origin: bool = True,
+) -> dict[str, Any]:
+    """Assemble a Studio-plugin-compatible OBJ (geometry + metadata v1.6) from a snapshot."""
+    warnings: list[str] = [str(item) for item in snapshot.get("warnings", [])] if isinstance(snapshot, dict) else []
+    if not isinstance(snapshot, dict) or snapshot.get("schema") != STUDIO_SNAPSHOT_SCHEMA:
+        return {"ok": False, "errors": [f"A {STUDIO_SNAPSHOT_SCHEMA} snapshot object is required"], "warnings": warnings}
+    if snapshot.get("ok") is not True:
+        return {"ok": False, "errors": [str(item) for item in snapshot.get("errors", [])] or ["The snapshot reported a failure"], "warnings": warnings}
+    rig_name = snapshot.get("rigName")
+    parts = snapshot.get("parts")
+    root = snapshot.get("root")
+    if not isinstance(rig_name, str) or not rig_name.strip():
+        return {"ok": False, "errors": ["Snapshot is missing its rigName"], "warnings": warnings}
+    if not isinstance(parts, list) or not parts:
+        return {"ok": False, "errors": ["Snapshot is missing its parts list"], "warnings": warnings}
+    if not isinstance(root, dict):
+        return {"ok": False, "errors": ["Snapshot is missing its Motor6D root tree"], "warnings": warnings}
+
+    errors: list[str] = []
+    part_names: list[str] = []
+    for entry in parts:
+        name = entry.get("name") if isinstance(entry, dict) else None
+        if not isinstance(name, str) or not name:
+            errors.append("Every snapshot part needs a name")
+            break
+        part_names.append(name)
+    if errors:
+        return {"ok": False, "errors": errors, "warnings": warnings}
+    if len(set(part_names)) != len(part_names):
+        return {"ok": False, "errors": ["Snapshot part names must be unique"], "warnings": warnings}
+    matched_r15 = sorted(set(part_names) & set(R15_PARTS))
+    if len(matched_r15) < 10:
+        return {
+            "ok": False,
+            "errors": [f"Snapshot exposes only {len(matched_r15)} R15 part names; at least 10 are required"],
+            "warnings": warnings,
+        }
+
+    part_cframes: list[tuple[float, ...]] = []
+    part_sizes: list[tuple[float, float, float]] = []
+    for index, entry in enumerate(parts):
+        try:
+            part_cframes.append(_cframe_components(entry.get("cframe"), f"cframe of part {index + 1}"))
+            size = entry.get("size")
+            if not isinstance(size, (list, tuple)) or len(size) != 3:
+                raise ValueError(f"size of part {index + 1} must provide 3 components")
+            part_sizes.append((float(size[0]), float(size[1]), float(size[2])))
+        except (ValueError, TypeError) as exc:
+            return {"ok": False, "errors": [str(exc)], "warnings": warnings}
+
+    root_name = root.get("name")
+    if root_name not in part_names:
+        return {"ok": False, "errors": [f"Root part {root_name!r} is not present in the parts list"], "warnings": warnings}
+    root_index = part_names.index(root_name)
+    if rebase_origin:
+        actual_root = part_cframes[root_index]
+        target_root = (0.0, actual_root[1], 0.0, *actual_root[3:12])
+        delta = _cframe_multiply(target_root, _cframe_inverse(actual_root))
+    else:
+        delta = IDENTITY_CFRAME
+    rebased_cframes = [_cframe_multiply(delta, cframe) for cframe in part_cframes]
+
+    part_aux: list[dict[str, Any]] = []
+    for index, (name, size, cframe) in enumerate(zip(part_names, part_sizes, rebased_cframes), start=1):
+        dims_fp = tuple(component + index * 0.0001 for component in size)
+        part_aux.append(
+            {
+                "idx": index,
+                "name": name,
+                "dims_fp": [_round_metadata_number(value) for value in dims_fp],
+                "vol_fp": _round_metadata_number(dims_fp[0] * dims_fp[1] * dims_fp[2]),
+                "part_size": [_round_metadata_number(value) for value in size],
+                "part_cf": [_round_metadata_number(value) for value in cframe],
+            }
+        )
+
+    tree_names: list[str] = []
+    tree_errors: list[str] = []
+
+    def build_node(node: dict[str, Any], is_root: bool) -> dict[str, Any] | None:
+        name = node.get("name")
+        if name not in part_names:
+            tree_errors.append(f"Rig node {name!r} has no matching entry in the parts list")
+            return None
+        tree_names.append(name)
+        transform = rebased_cframes[part_names.index(name)]
+        entry: dict[str, Any] = {
+            "jname": name,
+            "pname": name,
+            "transform": [_round_metadata_number(value) for value in transform],
+        }
+        if not is_root:
+            joint = node.get("joint") if isinstance(node.get("joint"), dict) else {}
+            if joint.get("class") != "Motor6D":
+                tree_errors.append(f"The joint feeding {name!r} is not a Motor6D")
+                return None
+            try:
+                joint_c0 = _cframe_components(joint.get("c0"), f"C0 of {name}")
+                joint_c1 = _cframe_components(joint.get("c1"), f"C1 of {name}")
+            except (ValueError, TypeError) as exc:
+                tree_errors.append(str(exc))
+                return None
+            first, second = (joint_c0, joint_c1) if joint.get("parentIsPart0", True) else (joint_c1, joint_c0)
+            entry["jointtransform0"] = [_round_metadata_number(value) for value in first]
+            entry["jointtransform1"] = [_round_metadata_number(value) for value in second]
+            entry["jointType"] = "Motor6D"
+        children: list[dict[str, Any]] = []
+        for child in node.get("children") or []:
+            if not isinstance(child, dict):
+                tree_errors.append(f"Rig node {'root' if is_root else name!r} has a malformed child")
+                continue
+            built_child = build_node(child, False)
+            if built_child is not None:
+                children.append(built_child)
+        entry["children"] = children
+        return entry
+
+    rig_tree = build_node(root, True)
+    if tree_errors or rig_tree is None:
+        return {"ok": False, "errors": tree_errors or ["Unable to build the rig tree"], "warnings": warnings}
+    if len(tree_names) != len(set(tree_names)):
+        return {"ok": False, "errors": ["Rig tree references the same part more than once"], "warnings": warnings}
+    missing = sorted(set(part_names) - set(tree_names))
+    if missing:
+        return {
+            "ok": False,
+            "errors": [f"Parts missing from the Motor6D tree: {', '.join(missing)}"],
+            "warnings": warnings,
+        }
+
+    meta = {
+        "rigName": rig_name,
+        "parts": part_names,
+        "rig": rig_tree,
+        "partAux": part_aux,
+        "meshToBone": {name: name for name in part_names},
+        "version": PLUGIN_META_VERSION,
+    }
+    payload = json.dumps(meta, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    encoded = base64.b32encode(payload).decode("ascii").replace("=", "0")
+    chunks = [
+        encoded[begin : begin + PLUGIN_META_CHUNK_LENGTH]
+        for begin in range(0, len(encoded), PLUGIN_META_CHUNK_LENGTH)
+    ]
+
+    output = Path(output_path).expanduser().resolve()
+    try:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        lines: list[str] = ["# Studio R15 snapshot transfer (metadata v1.6)"]
+        vertex_offset = 0
+        for index, (size, cframe) in enumerate(zip(part_sizes, rebased_cframes), start=1):
+            dims = tuple(size[axis] + index * 0.0001 for axis in range(3))
+            half = tuple(component / 2.0 for component in dims)
+            lines.append(f"o p{index}x")
+            lines.append(f"g p{index}x")
+            for corner in _BOX_CORNERS:
+                point = (corner[0] * half[0], corner[1] * half[1], corner[2] * half[2])
+                world = _cframe_transform_point(cframe, point)
+                lines.append("v " + " ".join(_format_obj_number(value) for value in world))
+            for triangle in _BOX_TRIANGLES:
+                lines.append("f " + " ".join(str(vertex_offset + corner) for corner in triangle))
+            vertex_offset += 8
+        for chunk_index, chunk in enumerate(chunks, start=1):
+            lines.append(f"o meta{chunk_index}q1{chunk}q1")
+            lines.append(f"g meta{chunk_index}q1{chunk}q1")
+            lines.append("v 0 0 0")
+            lines.append("v 0.001 0 0")
+            lines.append("v 0 0.001 0")
+            lines.append(f"f {vertex_offset + 1} {vertex_offset + 2} {vertex_offset + 3}")
+            vertex_offset += 3
+        output.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    except OSError as exc:
+        return {"ok": False, "errors": [f"Unable to write the generated OBJ: {exc}"], "warnings": warnings}
+    return {
+        "ok": True,
+        "obj": str(output),
+        "rig_name": rig_name,
+        "parts": len(part_names),
+        "meta_chunks": len(chunks),
+        "rebased_origin": bool(rebase_origin),
+        "warnings": warnings,
+        "errors": [],
+    }
+
+
+def import_studio_snapshot(
+    snapshot_path: str | Path,
+    rigging_type: str = "LOCAL_YAXIS_EXTEND",
+    obj_output: str | Path | None = None,
+    rebase_origin: bool = True,
+) -> dict[str, Any]:
+    """Import a Studio R15 snapshot through a generated plugin-format OBJ."""
+    source = Path(snapshot_path).expanduser().resolve()
+    if not source.is_file():
+        return {"ok": False, "errors": [f"Snapshot file not found: {source}"], "warnings": []}
+    try:
+        snapshot = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return {"ok": False, "errors": [f"Unable to parse the snapshot JSON: {exc}"], "warnings": []}
+    if obj_output is None:
+        directory = Path(tempfile.mkdtemp(prefix="animate-roblox-studio-transfer-"))
+        obj_output = directory / f"{Path(source).stem}.obj"
+    built = build_studio_plugin_obj(snapshot, obj_output, rebase_origin=rebase_origin)
+    if not built["ok"]:
+        return built
+    result = import_motor6d_obj(built["obj"], rigging_type)
+    merged = dict(result)
+    merged["artifacts"] = {
+        **(result.get("artifacts") or {}),
+        "snapshot": str(source),
+        "generated_obj": built["obj"],
+    }
+    merged["transfer"] = {
+        "parts": built["parts"],
+        "meta_chunks": built["meta_chunks"],
+        "rebased_origin": built["rebased_origin"],
+        "warnings": [*built["warnings"], *merged.get("warnings", [])],
+    }
+    return merged
 
 
 def export_rbxanim(
@@ -859,6 +1191,11 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     import_parser = subparsers.add_parser("import-obj")
     import_parser.add_argument("--input", required=True)
     import_parser.add_argument("--rigging-type", default="LOCAL_YAXIS_EXTEND")
+    snapshot_parser = subparsers.add_parser("import-snapshot")
+    snapshot_parser.add_argument("--snapshot", required=True)
+    snapshot_parser.add_argument("--rigging-type", default="LOCAL_YAXIS_EXTEND")
+    snapshot_parser.add_argument("--obj-output")
+    snapshot_parser.add_argument("--no-rebase-origin", action="store_true")
     export_parser = subparsers.add_parser("export-rbxanim")
     export_parser.add_argument("--armature", required=True)
     export_parser.add_argument("--output", required=True)
@@ -886,6 +1223,13 @@ def main() -> int:
         )
     elif args.operation == "import-obj":
         result = import_motor6d_obj(args.input, args.rigging_type)
+    elif args.operation == "import-snapshot":
+        result = import_studio_snapshot(
+            args.snapshot,
+            args.rigging_type,
+            args.obj_output,
+            rebase_origin=not args.no_rebase_origin,
+        )
     elif args.operation == "export-rbxanim":
         result = export_rbxanim(args.output, args.armature, args.action, args.frame_start, args.frame_end)
     elif args.operation == "mark-skinned":

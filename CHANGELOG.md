@@ -13,6 +13,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - A Blender character animation skill ships with the app: once the Blender integration is connected, the assistant can build R6 and R15 animations in Blender, export them, and load them into Studio.
 - The Blender card in Settings → Integrations now sets everything up automatically: one click installs uv, installs and enables the bridge addon in your newest Blender, adds the integration, and opens Blender with the bridge running. The old manual steps are still available under "Manual setup".
 - The same one click now covers the Studio side: BloxMind checks whether the "Blender Animations" plugin is installed in Roblox Studio and opens its Creator Store page when it's missing, so a single click on Install there completes the R15 animation workflow. Creator Store plugins can only be installed by you, and the card links back to the plugin page any time.
+- The assistant can now transfer a classic R15 character from the open Studio place into Blender on its own: it reads the real model (part sizes, placement, and every Motor6D joint) through Studio itself and rebuilds that exact rig for animation, so the old manual "export the rig and pick a file" step is gone for premade R15 characters. Characters with skinned meshes, accessories, or welds still use the plugin's export path.
+
+### Fixed
+
+- Importing a Studio-exported rig into Blender now rebuilds the armature directly in every session. Previously the rebuild could fail when nothing was pre-selected in Blender, which blocked the R15 animation workflow.
 
 ## [0.14.0] - 2026-10-17
 

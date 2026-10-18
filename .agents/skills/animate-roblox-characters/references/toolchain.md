@@ -51,7 +51,7 @@ The bundled `rbx_anims_v2.6.3.zip` is the unmodified current GitHub release. Sta
 - Permissive CORS on that optional local server.
 - No process-spawning imports in the release.
 
-`authentic_rig.enable_bundled_addon()` verifies the zip and registers it without starting OAuth or the live-sync server. Keep online access, auto-connect, and live sync off during ordinary authoring. When Studio transfer requires live sync, start it only for that operation, do not browse untrusted sites while it is running, and stop it immediately afterward.
+`authentic_rig.enable_bundled_addon()` verifies the zip and registers it without starting OAuth or the live-sync server. Keep online access, auto-connect, and live sync off during ordinary authoring. The automated classic R15 transfer (`assets/studio-r15-snapshot.luau` plus `authentic_rig.import_studio_snapshot()`) needs none of these online features. When the plugin-based Studio transfer requires live sync, start it only for that operation, do not browse untrusted sites while it is running, and stop it immediately afterward.
 
 ## Blender MCP boundary
 
