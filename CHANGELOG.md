@@ -12,6 +12,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Settings → Integrations: add extra MCP servers for the assistant to use, with a one-click Blender preset. Supports local (command) and remote (URL) servers, each with an on/off switch and a live status light; changes apply to the running engine immediately.
 - A Blender character animation skill ships with the app: once the Blender integration is connected, the assistant can build R6 and R15 animations in Blender, export them, and load them into Studio.
 - The Blender card in Settings → Integrations now sets everything up automatically: one click installs uv, installs and enables the bridge addon in your newest Blender, adds the integration, and opens Blender with the bridge running. The old manual steps are still available under "Manual setup".
+- The same one click now covers the Studio side: BloxMind checks whether the "Blender Animations" plugin is installed in Roblox Studio and opens its Creator Store page when it's missing, so a single click on Install there completes the R15 animation workflow. Creator Store plugins can only be installed by you, and the card links back to the plugin page any time.
 
 ## [0.14.0] - 2026-10-17
 

@@ -341,13 +341,16 @@ const registerIpcHandlers = Effect.sync(() => {
     openCodeRuntime.runPromise(StudioMcpBroker.pipe(Effect.flatMap((broker) => broker.status))),
   );
   // Blender setup downloads uv and installs the bridge addon, so it can run
-  // for a minute or more; the renderer shows progress while it waits.
+  // for a minute or more; the renderer shows progress while it waits. It also
+  // opens the Creator Store page when the Studio plugin still has to be installed.
   ipcMain.handle(channels.blenderSetup, () =>
     runMain(
       Effect.tryPromise({
         try: () =>
           runBlenderSetup(
-            defaultBlenderSetupEnvironment(join(app.getPath("userData"), "blender")),
+            defaultBlenderSetupEnvironment(join(app.getPath("userData"), "blender"), (url) =>
+              shell.openExternal(url),
+            ),
           ),
         catch: (cause) => new DesktopMainError({ message: "Blender setup failed", cause }),
       }),

@@ -20,6 +20,7 @@ import {
 import { analyticsDeviceId, analyticsProperties } from "@/lib/analytics";
 import { desktop } from "@/lib/desktop";
 import {
+  BLENDER_ANIMATIONS_PLUGIN_URL,
   blenderMcpServer,
   type McpServerConfig,
   parseCommandLine,
@@ -1264,6 +1265,7 @@ function mcpStatusLabel(status: McpServerLiveStatus | undefined): {
 
 /** What the automatic Blender setup does, shown before it runs. */
 const BLENDER_AUTO_STEPS = [
+  "Checks Roblox Studio for the Blender Animations plugin, opening its Creator Store page if it's missing.",
   "Installs uv and the Blender bridge addon.",
   "Enables the addon and opens Blender with the bridge running.",
   "Adds the integration so BloxMind can animate characters.",
@@ -1274,6 +1276,7 @@ const BLENDER_MANUAL_STEPS = [
   "Install uv (docs.astral.sh/uv), then run: uvx mcp-for-blender@latest install-addon",
   'Open Blender and enable "MCP for Blender" in Preferences → Add-ons.',
   "Press N in Blender for the MCP for Blender tab; the server starts automatically.",
+  "Install the Blender Animations plugin in Studio from its Creator Store listing (button below).",
   "Add the integration here, then ask BloxMind to animate a character.",
 ];
 
@@ -1425,6 +1428,20 @@ function IntegrationsTab() {
                   </li>
                 ))}
               </ol>
+              {blenderSetup.studioPlugin === "missing" && (
+                <div className="mt-2 flex items-center justify-between gap-3 rounded border border-dashed px-2 py-1.5">
+                  <span className="text-[10px] leading-relaxed text-muted-foreground">
+                    Studio installs the plugin once you click Install on its page.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => desktop.openUrl(BLENDER_ANIMATIONS_PLUGIN_URL).catch(() => {})}
+                    className="shrink-0 rounded-md border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    Open plugin page
+                  </button>
+                </div>
+              )}
             </div>
           )}
           {!blenderBusy && !blenderError && !blenderSetup && (
@@ -1471,6 +1488,13 @@ function IntegrationsTab() {
                 className="rounded-md border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:text-foreground"
               >
                 Open Blender
+              </button>
+              <button
+                type="button"
+                onClick={() => desktop.openUrl(BLENDER_ANIMATIONS_PLUGIN_URL).catch(() => {})}
+                className="rounded-md border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+              >
+                Get the Studio plugin
               </button>
               <button
                 type="button"

@@ -8,7 +8,11 @@ import { promisify } from "node:util";
 import extractZip from "extract-zip";
 import { x as extractTar } from "tar";
 
-import type { BlenderSetupResult } from "../../src/types/desktop";
+import {
+  BLENDER_ANIMATIONS_PLUGIN_ID,
+  BLENDER_ANIMATIONS_PLUGIN_URL,
+} from "../../src/lib/mcpServers";
+import type { BlenderSetupResult, BlenderStudioPluginOutcome } from "../../src/types/desktop";
 
 const execFileAsync = promisify(execFile);
 
@@ -46,10 +50,15 @@ export interface BlenderSetupEnvironment {
   readDirectory: (path: string) => Promise<string[]>;
   blenderRunning: () => Promise<boolean>;
   launch: (executable: string) => Promise<void>;
+  /** Opens a URL in the user's browser (the Creator Store needs a click to install). */
+  openExternal: (url: string) => Promise<void>;
   log: (line: string) => void;
 }
 
-export function defaultBlenderSetupEnvironment(cacheDirectory: string): BlenderSetupEnvironment {
+export function defaultBlenderSetupEnvironment(
+  cacheDirectory: string,
+  openExternal: (url: string) => Promise<void> = async () => {},
+): BlenderSetupEnvironment {
   return {
     platform: process.platform,
     arch: process.arch,
@@ -115,6 +124,7 @@ export function defaultBlenderSetupEnvironment(cacheDirectory: string): BlenderS
       const child = spawn(executable, [], { detached: true, stdio: "ignore" });
       child.unref();
     },
+    openExternal,
     log: (line) => console.log(`[blender] ${line}`),
   };
 }
@@ -403,6 +413,48 @@ export function addonModuleName(target: string): string {
   return stem;
 }
 
+// ── Roblox Studio ─────────────────────────────────────────────────────────
+
+/** Roblox's data directory (where Studio keeps installed plugins), or null. */
+export function robloxBaseDirectory(
+  platform: NodeJS.Platform,
+  env: NodeJS.ProcessEnv,
+  home: string,
+): string | null {
+  if (platform === "win32") {
+    return env.LOCALAPPDATA ? join(env.LOCALAPPDATA, "Roblox") : null;
+  }
+  if (platform === "darwin") {
+    return join(home, "Documents", "Roblox");
+  }
+  return null;
+}
+
+/**
+ * Whether the Blender Animations plugin from Cautioned's Creator Store listing
+ * is already installed in Studio. Studio keeps store plugins under
+ * `<base>/<userId>/InstalledPlugins/<assetId>/<versionId>/Plugin.rbxm`; older
+ * installs keep a shared `<base>/InstalledPlugins/<userId>` layout instead.
+ */
+export async function findStudioPlugin(
+  environment: BlenderSetupEnvironment,
+  assetId: number,
+): Promise<BlenderStudioPluginOutcome> {
+  const base = robloxBaseDirectory(environment.platform, environment.env, environment.home);
+  if (!base || !(await environment.isDirectory(base))) return "studio_missing";
+  const id = String(assetId);
+  for (const user of await environment.readDirectory(base)) {
+    if (await environment.isDirectory(join(base, user, "InstalledPlugins", id))) {
+      return "installed";
+    }
+  }
+  const legacy = join(base, "InstalledPlugins");
+  for (const user of await environment.readDirectory(legacy)) {
+    if (await environment.isDirectory(join(legacy, user, id))) return "installed";
+  }
+  return "missing";
+}
+
 // ── The setup flow ────────────────────────────────────────────────────────
 
 /**
@@ -500,10 +552,12 @@ export async function enableAddonHeadless(
 }
 
 /**
- * Everything behind the "Set up automatically" button: make sure uvx exists,
- * install the bridge addon into the newest Blender, enable it, and open
- * Blender so the bridge comes up. Never throws for expected failures; the
- * result carries user-facing detail either way.
+ * Everything behind the "Set up automatically" button: check the Studio-side
+ * Blender Animations plugin (opening its Creator Store page when it's missing —
+ * Roblox only installs Creator Store plugins on a click), make sure uvx exists,
+ * install the bridge addon into the newest Blender, enable it, and open Blender
+ * so the bridge comes up. Never throws for expected failures; the result carries
+ * user-facing detail either way.
  */
 export async function runBlenderSetup(
   environment: BlenderSetupEnvironment,
@@ -521,11 +575,35 @@ export async function runBlenderSetup(
     blenderRunning: false,
     launched: false,
     addon: "not_found",
+    studioPlugin: "studio_missing",
     detail: "",
     steps,
   };
 
-  // 1. uvx: PATH first, then BloxMind's cache, then a fresh download.
+  // 1. The Studio-side plugin from Cautioned's Creator Store listing. Roblox
+  // doesn't let apps sideload store plugins, so when it's missing the flow
+  // opens the store page and the user's click finishes the install.
+  result.studioPlugin = await findStudioPlugin(environment, BLENDER_ANIMATIONS_PLUGIN_ID);
+  if (result.studioPlugin === "installed") {
+    note("The Blender Animations plugin is already installed in Roblox Studio");
+  } else if (result.studioPlugin === "missing") {
+    try {
+      await environment.openExternal(BLENDER_ANIMATIONS_PLUGIN_URL);
+      note(
+        "Opened the Blender Animations plugin page in your browser — click Install there and Studio installs it.",
+      );
+    } catch {
+      note(
+        `Blender Animations isn't in Roblox Studio yet — install it from ${BLENDER_ANIMATIONS_PLUGIN_URL}`,
+      );
+    }
+  } else {
+    note(
+      "Roblox Studio wasn't found, so the Blender Animations Studio plugin wasn't checked.",
+    );
+  }
+
+  // 2. uvx: PATH first, then BloxMind's cache, then a fresh download.
   let uvx = await findUvx(environment.platform, environment.env, environment.home, environment.pathExists);
   if (uvx) {
     note("Found uv already installed");
@@ -544,7 +622,7 @@ export async function runBlenderSetup(
   }
   result.uvxPath = uvx;
 
-  // 2. Blender itself.
+  // 3. Blender itself.
   const blender = await newestBlender(environment);
   result.blenderRunning = await environment.blenderRunning();
   if (!blender) {
@@ -557,7 +635,7 @@ export async function runBlenderSetup(
   result.blenderVersion = blender.version;
   note(`Found Blender ${blender.version}`);
 
-  // 3. Install the addon into the newest Blender's addons folder.
+  // 4. Install the addon into the newest Blender's addons folder.
   const base = blenderConfigBase(environment.platform, environment.env, environment.home);
   if (!base) {
     result.detail = "Couldn't locate Blender's settings folder; install the addon manually instead.";
@@ -600,7 +678,7 @@ export async function runBlenderSetup(
     return result;
   }
 
-  // 4. Enable it: headless Blender writes the preference so it loads on launch.
+  // 5. Enable it: headless Blender writes the preference so it loads on launch.
   if (result.blenderRunning) {
     // Enabling while Blender runs would race Blender's own preference file on exit.
     result.addon = "needs_blender_open";
@@ -625,7 +703,7 @@ export async function runBlenderSetup(
     }
   }
 
-  // 5. Open Blender so the bridge comes up; the addon starts its server on launch.
+  // 6. Open Blender so the bridge comes up; the addon starts its server on launch.
   if (!result.blenderRunning) {
     try {
       await environment.launch(blender.executable);

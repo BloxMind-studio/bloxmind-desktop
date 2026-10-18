@@ -21,6 +21,16 @@ export interface McpServerConfig {
 
 export const MCP_SERVER_NAME_PATTERN = /^[A-Za-z0-9_-]{1,48}$/;
 
+/**
+ * The Studio-side companion to the Blender bridge: Cautioned's "Blender
+ * Animations (ultimate edition)" plugin, which moves R15 rigs and animations
+ * between Blender and Studio. Roblox requires Creator Store plugins to be
+ * installed from its own listing, so the best an app can do is open this page.
+ */
+export const BLENDER_ANIMATIONS_PLUGIN_ID = 16708835782;
+export const BLENDER_ANIMATIONS_PLUGIN_URL =
+  "https://create.roblox.com/store/asset/16708835782/Blender-Animations-ultimate-edition";
+
 /** The built-in Studio bridge is written by the app and can't be shadowed. */
 export function isReservedMcpServerName(name: string): boolean {
   return name.toLowerCase() === STUDIO_MCP_SERVER_NAME;

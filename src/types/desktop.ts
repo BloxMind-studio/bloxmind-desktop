@@ -173,6 +173,19 @@ export const BlenderAddonOutcomeSchema = Schema.Literal(
 
 export type BlenderAddonOutcome = typeof BlenderAddonOutcomeSchema.Type;
 
+/**
+ * Where the Studio-side "Blender Animations" plugin stands after setup.
+ * `studio_missing` means Roblox Studio isn't on this computer, `missing` means
+ * Studio is there but the plugin still has to be installed from the Creator Store.
+ */
+export const BlenderStudioPluginOutcomeSchema = Schema.Literal(
+  "installed",
+  "missing",
+  "studio_missing",
+);
+
+export type BlenderStudioPluginOutcome = typeof BlenderStudioPluginOutcomeSchema.Type;
+
 /** What Settings → Integrations shows after "Set up automatically" runs. */
 export const BlenderSetupResultSchema = Schema.mutable(
   Schema.Struct({
@@ -183,6 +196,7 @@ export const BlenderSetupResultSchema = Schema.mutable(
     blenderRunning: Schema.Boolean,
     launched: Schema.Boolean,
     addon: BlenderAddonOutcomeSchema,
+    studioPlugin: BlenderStudioPluginOutcomeSchema,
     detail: Schema.String,
     steps: MutableStrings,
   }),

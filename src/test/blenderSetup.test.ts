@@ -8,20 +8,27 @@ import {
   blenderConfigBase,
   buildEnableAddonScript,
   findBlenderExecutables,
+  findStudioPlugin,
   findUvx,
   parseBlenderVersion,
+  robloxBaseDirectory,
   runBlenderSetup,
   safeToSavePrefs,
   uvAssetName,
 } from "../../electron/services/BlenderSetup";
+import { BLENDER_ANIMATIONS_PLUGIN_URL } from "../lib/mcpServers";
 
 type Entry = "file" | "dir";
+
+/** The Roblox data directory the fake Windows machine reports. */
+const robloxDirectory = join("C:", "Users", "Ali", "AppData", "Local", "Roblox");
 
 interface Harness {
   environment: BlenderSetupEnvironment;
   files: Map<string, Entry>;
   run: ReturnType<typeof vi.fn>;
   launch: ReturnType<typeof vi.fn>;
+  openExternal: ReturnType<typeof vi.fn>;
   fetchFn: ReturnType<typeof vi.fn>;
 }
 
@@ -44,6 +51,7 @@ function harness(options: HarnessOptions = {}): Harness {
     return options.run?.(command, args) ?? { code: 0, stdout: "", stderr: "" };
   });
   const launch = vi.fn(async () => {});
+  const openExternal = vi.fn(async () => {});
   const fetchFn = vi.fn(async () => {
     throw new Error("fetch should not be called");
   });
@@ -53,6 +61,7 @@ function harness(options: HarnessOptions = {}): Harness {
     env: {
       PATH: pathDirectories.join(delimiter),
       APPDATA: join("C:", "Users", "Ali", "AppData", "Roaming"),
+      LOCALAPPDATA: join("C:", "Users", "Ali", "AppData", "Local"),
       ProgramFiles: join("C:", "Program Files"),
       "ProgramFiles(x86)": join("C:", "Program Files (x86)"),
     },
@@ -75,9 +84,10 @@ function harness(options: HarnessOptions = {}): Harness {
     },
     blenderRunning: async () => options.blenderRunning ?? false,
     launch,
+    openExternal,
     log: () => {},
   };
-  return { environment, files, run, launch, fetchFn };
+  return { environment, files, run, launch, openExternal, fetchFn };
 }
 
 /** The standard Windows machine: uvx on PATH, Blender 4.5 installed with saved prefs. */
@@ -184,6 +194,55 @@ describe("blenderConfigBase", () => {
       join("/home/ali", ".config", "blender"),
     );
     expect(blenderConfigBase("win32", {}, "C:\\Users\\Ali")).toBeNull();
+  });
+});
+
+describe("robloxBaseDirectory", () => {
+  it("follows each platform's conventions", () => {
+    expect(robloxBaseDirectory("win32", { LOCALAPPDATA: "C:\\Local" }, "C:\\Users\\Ali")).toBe(
+      join("C:\\Local", "Roblox"),
+    );
+    expect(robloxBaseDirectory("darwin", {}, "/Users/Ali")).toBe(
+      join("/Users/Ali", "Documents", "Roblox"),
+    );
+    expect(robloxBaseDirectory("win32", {}, "C:\\Users\\Ali")).toBeNull();
+    expect(robloxBaseDirectory("linux", {}, "/home/ali")).toBeNull();
+  });
+});
+
+describe("findStudioPlugin", () => {
+  it("finds the plugin under Studio's per-user InstalledPlugins", async () => {
+    const machine = harness({
+      files: {
+        [robloxDirectory]: "dir",
+        [join(robloxDirectory, "4503821539")]: "dir",
+        [join(robloxDirectory, "4503821539", "InstalledPlugins")]: "dir",
+        [join(robloxDirectory, "4503821539", "InstalledPlugins", "16708835782")]: "dir",
+      },
+    });
+    expect(await findStudioPlugin(machine.environment, 16708835782)).toBe("installed");
+  });
+
+  it("finds plugin folders from the older shared layout", async () => {
+    const machine = harness({
+      files: {
+        [robloxDirectory]: "dir",
+        [join(robloxDirectory, "InstalledPlugins")]: "dir",
+        [join(robloxDirectory, "InstalledPlugins", "4503821539")]: "dir",
+        [join(robloxDirectory, "InstalledPlugins", "4503821539", "16708835782")]: "dir",
+      },
+    });
+    expect(await findStudioPlugin(machine.environment, 16708835782)).toBe("installed");
+  });
+
+  it("reports missing when Studio is there without the plugin", async () => {
+    const machine = harness({ files: { [robloxDirectory]: "dir" } });
+    expect(await findStudioPlugin(machine.environment, 16708835782)).toBe("missing");
+  });
+
+  it("reports studio_missing when Roblox isn't installed", async () => {
+    const machine = harness({ files: {} });
+    expect(await findStudioPlugin(machine.environment, 16708835782)).toBe("studio_missing");
   });
 });
 
@@ -426,5 +485,50 @@ describe("runBlenderSetup", () => {
     });
     const result = await runBlenderSetup(machine.environment);
     expect(result).toMatchObject({ ok: true, addon: "enabled" });
+  });
+
+  it("leaves the Studio plugin alone when it's already installed", async () => {
+    const machine = windowsMachine();
+    machine.files.set(robloxDirectory, "dir");
+    machine.files.set(join(robloxDirectory, "4503821539"), "dir");
+    machine.files.set(join(robloxDirectory, "4503821539", "InstalledPlugins"), "dir");
+    machine.files.set(
+      join(robloxDirectory, "4503821539", "InstalledPlugins", "16708835782"),
+      "dir",
+    );
+    const result = await runBlenderSetup(machine.environment);
+    expect(result.studioPlugin).toBe("installed");
+    expect(machine.openExternal).not.toHaveBeenCalled();
+    expect(result.steps).toContain(
+      "The Blender Animations plugin is already installed in Roblox Studio",
+    );
+  });
+
+  it("opens the Creator Store page when the Studio plugin is missing", async () => {
+    const machine = windowsMachine();
+    machine.files.set(robloxDirectory, "dir");
+    const result = await runBlenderSetup(machine.environment);
+    expect(result.studioPlugin).toBe("missing");
+    expect(machine.openExternal).toHaveBeenCalledWith(BLENDER_ANIMATIONS_PLUGIN_URL);
+    expect(result.steps.some((step) => step.includes("click Install"))).toBe(true);
+    // The Studio side never fails the Blender setup itself.
+    expect(result.ok).toBe(true);
+  });
+
+  it("points at the store page when the browser can't be opened", async () => {
+    const machine = windowsMachine();
+    machine.files.set(robloxDirectory, "dir");
+    machine.openExternal.mockRejectedValueOnce(new Error("no browser"));
+    const result = await runBlenderSetup(machine.environment);
+    expect(result.studioPlugin).toBe("missing");
+    expect(result.steps.some((step) => step.includes(BLENDER_ANIMATIONS_PLUGIN_URL))).toBe(true);
+  });
+
+  it("notes Studio's absence instead of opening a page", async () => {
+    const machine = windowsMachine();
+    const result = await runBlenderSetup(machine.environment);
+    expect(result.studioPlugin).toBe("studio_missing");
+    expect(machine.openExternal).not.toHaveBeenCalled();
+    expect(result.steps.some((step) => step.includes("Roblox Studio wasn't found"))).toBe(true);
   });
 });
