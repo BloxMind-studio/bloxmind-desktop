@@ -12,6 +12,7 @@ import { useCommands } from "@/hooks/useCommands";
 import { useAllModels, useConnectedProviders } from "@/hooks/useProviders";
 import { useIsBusy } from "@/hooks/useSessionStatuses";
 import { findModelInfo, formatTokens, modelSpecs, reasoningLabel } from "@/lib/modelSpecs";
+import { resolveVariantForModel } from "@/lib/modelVariant";
 import { playMessageSent } from "@/lib/soundEffects";
 import { splitModelKey } from "@/lib/splitModelKey";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
@@ -275,28 +276,28 @@ function ChatInput() {
     return model?.variants ? Object.keys(model.variants) : [];
   }, [selectedModel, allModels]);
 
-  // Auto-select "medium" variant on first model load only.
-  // Once the user interacts with the slider, respect whatever they pick.
+  // Pick a reasoning effort when the selected model changes. A variant the
+  // user already chose — or the persisted default restored by
+  // PreferencesProvider — is kept when the new model offers it; otherwise fall
+  // back to "medium" once. Resetting to "medium" on every model change used to
+  // overwrite explicit choices and the saved default.
   const previousModelRef = useRef<string | null>(null);
-  const userTouchedVariantRef = useRef(false);
   useEffect(() => {
     if (!selectedModel) return;
     // Only run when the model actually changes
     if (previousModelRef.current === selectedModel) return;
     previousModelRef.current = selectedModel;
-    userTouchedVariantRef.current = false;
     const [, modelId] = splitModelKey(selectedModel);
     const model = allModels.find((m) => m.id === modelId);
     const variants = model?.variants ? Object.keys(model.variants) : [];
-    if (variants.includes("medium") && !userTouchedVariantRef.current) {
-      setSelectedVariant("medium");
-    }
-  }, [selectedModel, allModels, setSelectedVariant]);
+    // Only write when it actually changes: the setter persists to config, and a
+    // model switch that keeps the same effort should not cause a config write.
+    const next = resolveVariantForModel(selectedVariant, variants);
+    if (next !== selectedVariant) setSelectedVariant(next);
+  }, [selectedModel, selectedVariant, allModels, setSelectedVariant]);
 
-  // Mark the variant as user-touched when they move the slider
   const handleVariantChange = useCallback(
     (index: number) => {
-      userTouchedVariantRef.current = true;
       setSelectedVariant(index === 0 ? null : availableVariants[index - 1]);
     },
     [availableVariants, setSelectedVariant],

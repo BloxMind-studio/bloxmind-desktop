@@ -169,4 +169,17 @@ describe("checkFailure", () => {
       keyRejected: false,
     });
   });
+
+  it("survives an error that arrived without a data payload", () => {
+    // The SDK type requires `data`, but a decoded server error can omit it.
+    const error = { name: "UnknownError" } as unknown as ModelError;
+    const failure = checkFailure(error);
+    expect(failure.keyRejected).toBe(false);
+    expect(failure.message).toBe("The provider didn't answer the test message.");
+  });
+
+  it("survives a null data payload", () => {
+    const error = { name: "APIError", data: null } as unknown as ModelError;
+    expect(checkFailure(error).message).toBe("The provider didn't answer the test message.");
+  });
 });

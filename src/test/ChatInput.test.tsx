@@ -137,8 +137,8 @@ function seedState(qc: QueryClient, session: Session) {
   });
   qc.setQueryData<MessagesCache>(qk.messages(session.id), { messageIds: [], messagesById: {} });
   qc.setQueryData(qk.todos(session.id), []);
-  qc.setQueryData(qk.questions(session.id), null);
-  qc.setQueryData(qk.permissions(session.id), null);
+  qc.setQueryData(qk.questions(session.id), []);
+  qc.setQueryData(qk.permissions(session.id), []);
 }
 
 /**

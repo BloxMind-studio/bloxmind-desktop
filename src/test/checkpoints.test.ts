@@ -1,13 +1,18 @@
+import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { Effect } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
   CheckpointServiceTag,
   makeCheckpointServiceLayer,
+  parseGitStatusPaths,
 } from "../../electron/services/CheckpointService";
+
+const execFileAsync = promisify(execFile);
 
 const temporaryDirectories: string[] = [];
 
@@ -35,6 +40,91 @@ function withService<T>(
     return yield* run(service);
   }).pipe(Effect.provide(makeCheckpointServiceLayer({ workspace, storeRoot })));
 }
+
+describe("CheckpointService capture scope", () => {
+  it("parses git status paths, including rename originals", () => {
+    expect(parseGitStatusPaths(" M src/a.lua\0?? new.lua\0R  moved.lua\0old.lua\0")).toEqual([
+      "src/a.lua",
+      "new.lua",
+      "moved.lua",
+      "old.lua",
+    ]);
+  });
+
+  it("takes one full snapshot per session, then journals only changed files", async () => {
+    const workspace = await makeTemporaryDirectory("bloxmind-cp-workspace-");
+    const storeRoot = await makeTemporaryDirectory("bloxmind-cp-store-");
+    await execFileAsync("git", ["init", "-q"], { cwd: workspace });
+    await execFileAsync("git", ["config", "user.email", "test@example.com"], { cwd: workspace });
+    await execFileAsync("git", ["config", "user.name", "Test"], { cwd: workspace });
+    await writeFile(join(workspace, "tracked.lua"), "print('v1')\n");
+    await writeFile(join(workspace, "untouched.lua"), "print('keep')\n");
+    await execFileAsync("git", ["add", "."], { cwd: workspace });
+    await execFileAsync("git", ["commit", "-qm", "initial"], { cwd: workspace });
+
+    const [first, second] = await Effect.runPromise(
+      withService(workspace, storeRoot, (service) =>
+        Effect.gen(function* () {
+          const before = yield* service.capture({
+            sessionId: "session-1",
+            messageId: "message-1",
+            tool: null,
+            paths: [],
+          });
+          yield* Effect.tryPromise(() =>
+            writeFile(join(workspace, "tracked.lua"), "print('v2')\n"),
+          );
+          yield* Effect.tryPromise(() => writeFile(join(workspace, "fresh.lua"), "print('new')\n"));
+          const after = yield* service.capture({
+            sessionId: "session-1",
+            messageId: "message-2",
+            tool: null,
+            paths: [],
+          });
+          return [before, after] as const;
+        }),
+      ),
+    );
+
+    expect(first.fullSnapshot).toBe(true);
+    expect(first.paths.map((change) => change.path).sort()).toEqual([
+      "tracked.lua",
+      "untouched.lua",
+    ]);
+
+    const secondPaths = second.paths.map((change) => change.path).sort();
+    expect(second.fullSnapshot).toBe(false);
+    expect(secondPaths).toEqual(["fresh.lua", "tracked.lua"]);
+  });
+
+  it("keeps taking full snapshots when the workspace is not a git repository", async () => {
+    const workspace = await makeTemporaryDirectory("bloxmind-cp-workspace-");
+    const storeRoot = await makeTemporaryDirectory("bloxmind-cp-store-");
+    await writeFile(join(workspace, "script.lua"), "print('hi')\n");
+
+    const checkpoints = await Effect.runPromise(
+      withService(workspace, storeRoot, (service) =>
+        Effect.gen(function* () {
+          const first = yield* service.capture({
+            sessionId: "session-1",
+            messageId: "message-1",
+            tool: null,
+            paths: [],
+          });
+          const second = yield* service.capture({
+            sessionId: "session-1",
+            messageId: "message-2",
+            tool: null,
+            paths: [],
+          });
+          return [first, second] as const;
+        }),
+      ),
+    );
+
+    expect(checkpoints.map((checkpoint) => checkpoint.fullSnapshot)).toEqual([true, true]);
+  });
+});
 
 describe("CheckpointService journal encoding", () => {
   it("restores binary files byte-for-byte", async () => {

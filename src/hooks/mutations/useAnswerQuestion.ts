@@ -23,8 +23,10 @@ export function useAnswerQuestion() {
       await client.question.reply({ requestID, answers }, { throwOnError: true });
       return sessionID;
     },
-    onSuccess: (sessionID) => {
-      queryClient.setQueryData<QuestionRequest | null>(qk.questions(sessionID), null);
+    onSuccess: (sessionID, { requestID }) => {
+      queryClient.setQueryData<QuestionRequest[]>(qk.questions(sessionID), (prev) =>
+        prev?.filter((question) => question.id !== requestID),
+      );
     },
   });
 }
@@ -41,8 +43,10 @@ export function useRejectQuestion() {
       await client.question.reject({ requestID }, { throwOnError: true });
       return sessionID;
     },
-    onSuccess: (sessionID) => {
-      queryClient.setQueryData<QuestionRequest | null>(qk.questions(sessionID), null);
+    onSuccess: (sessionID, requestID) => {
+      queryClient.setQueryData<QuestionRequest[]>(qk.questions(sessionID), (prev) =>
+        prev?.filter((question) => question.id !== requestID),
+      );
     },
   });
 }

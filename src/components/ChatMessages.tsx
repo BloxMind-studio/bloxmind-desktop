@@ -2084,7 +2084,8 @@ function ChatMessages() {
     }
     // Capture whenever the agent transitions into "busy" (from idle, error,
     // or the very first message of a session), once per message. Empty paths
-    // → full-workspace journal snapshot (works with or without git).
+    // → the service snapshots the whole workspace on the session's first turn,
+    // then journals only the files git reports as changed.
     if (prev?.type !== "busy" && sessionStatusType === "busy") {
       const lastId = messageIds[messageIds.length - 1];
       if (!lastId || capturedForMessageRef.current === lastId) return;

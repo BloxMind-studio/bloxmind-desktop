@@ -11,8 +11,12 @@ export interface ModelErrorPresentation {
 
 /** The provider's own words about a model error: its message, else its response body. */
 export function modelErrorDetail(error: ModelError): string | undefined {
-  const data = error.data as { message?: unknown; responseBody?: unknown };
-  const detail = [data.message, data.responseBody].find(
+  // Decoded from server JSON, so `data` can be missing despite the SDK type.
+  const data =
+    error.data && typeof error.data === "object"
+      ? (error.data as { message?: unknown; responseBody?: unknown })
+      : undefined;
+  const detail = [data?.message, data?.responseBody].find(
     (value): value is string => typeof value === "string" && value.trim() !== "",
   );
   return detail?.trim();

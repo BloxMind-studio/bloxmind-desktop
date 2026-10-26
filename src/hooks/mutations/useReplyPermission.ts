@@ -23,8 +23,11 @@ export function useReplyPermission() {
       await client.permission.reply({ requestID, reply }, { throwOnError: true });
       return sessionID;
     },
-    onSuccess: (sessionID) => {
-      queryClient.setQueryData<PermissionRequest | null>(qk.permissions(sessionID), null);
+    onSuccess: (sessionID, { requestID }) => {
+      // Remove only the answered request so the next queued one takes its place.
+      queryClient.setQueryData<PermissionRequest[]>(qk.permissions(sessionID), (prev) =>
+        prev?.filter((permission) => permission.id !== requestID),
+      );
     },
   });
 }

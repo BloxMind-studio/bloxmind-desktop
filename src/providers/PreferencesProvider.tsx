@@ -161,6 +161,29 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     if (!configData) return;
     setHiddenModels(new Set(configData.hiddenModels));
 
+    // These settings are independent of the analytics notice, so they are
+    // applied before the branch below. Returning early for a pending notice
+    // used to leave every one of them at its default until some later refetch.
+    // UI customization
+    setAccentColorState(configData.accentColor);
+    setLayoutDensityState(configData.layoutDensity);
+    setFontSizeState(configData.fontSize);
+    setSoundEffectsState(configData.soundEffects);
+    // AI engine
+    setTemperatureState(configData.temperature);
+    setMaxTokensState(configData.maxTokens);
+    setSystemPromptState(configData.systemPrompt);
+    setCustomApiEndpointState(configData.customApiEndpoint);
+    // Behavior
+    setAutoScrollState(configData.autoScroll);
+    setEnterToSendState(configData.enterToSend);
+    setNotificationsEnabledState(configData.notificationsEnabled);
+    // SSE connection
+    setSseReconnectDelayState(configData.sseReconnectDelay);
+    setSseHeartbeatTimeoutState(configData.sseHeartbeatTimeout);
+    // Extra MCP servers
+    setMcpServersState(configData.mcpServers);
+
     // Model usage metrics moved from opt-in to opt-out in notice version 1. Choices
     // recorded under the old consent prompt (including clickaways) do not carry
     // over; opt-outs made since then do and skip the notice, since nothing is sent.
@@ -201,26 +224,6 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     detailedAnalyticsEnabledRef.current = detailedEnabled;
     setDetailedAnalyticsEnabledState(detailedEnabled);
     setDetailedAnalyticsCollection(detailedEnabled);
-
-    // UI customization
-    setAccentColorState(configData.accentColor);
-    setLayoutDensityState(configData.layoutDensity);
-    setFontSizeState(configData.fontSize);
-    setSoundEffectsState(configData.soundEffects);
-    // AI engine
-    setTemperatureState(configData.temperature);
-    setMaxTokensState(configData.maxTokens);
-    setSystemPromptState(configData.systemPrompt);
-    setCustomApiEndpointState(configData.customApiEndpoint);
-    // Behavior
-    setAutoScrollState(configData.autoScroll);
-    setEnterToSendState(configData.enterToSend);
-    setNotificationsEnabledState(configData.notificationsEnabled);
-    // SSE connection
-    setSseReconnectDelayState(configData.sseReconnectDelay);
-    setSseHeartbeatTimeoutState(configData.sseHeartbeatTimeout);
-    // Extra MCP servers
-    setMcpServersState(configData.mcpServers);
   }, [configData, setDetailedAnalyticsEnabled]);
 
   // Restore a valid last-used model and clear selections whose provider disconnected.

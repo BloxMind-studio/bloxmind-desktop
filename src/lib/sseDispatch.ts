@@ -427,29 +427,43 @@ function dispatchEvent(
     case "question.asked": {
       const props = event.properties;
       if (props.sessionID === currentSessionId) {
-        queryClient.setQueryData<QuestionRequest | null>(qk.questions(props.sessionID), props);
+        // One slot holds the whole queue: a second question must not replace
+        // the one the user is still looking at.
+        queryClient.setQueryData<QuestionRequest[]>(qk.questions(props.sessionID), (prev) => {
+          const queue = prev ?? [];
+          if (queue.some((question) => question.id === props.id)) return queue;
+          return [...queue, props];
+        });
       }
       break;
     }
     case "question.replied":
     case "question.rejected": {
-      const { sessionID } = event.properties;
+      const { sessionID, requestID } = event.properties;
       if (sessionID === currentSessionId) {
-        queryClient.setQueryData<QuestionRequest | null>(qk.questions(sessionID), null);
+        queryClient.setQueryData<QuestionRequest[]>(qk.questions(sessionID), (prev) =>
+          prev?.filter((question) => question.id !== requestID),
+        );
       }
       break;
     }
     case "permission.asked": {
       const props = event.properties;
       if (props.sessionID === currentSessionId) {
-        queryClient.setQueryData<PermissionRequest | null>(qk.permissions(props.sessionID), props);
+        queryClient.setQueryData<PermissionRequest[]>(qk.permissions(props.sessionID), (prev) => {
+          const queue = prev ?? [];
+          if (queue.some((permission) => permission.id === props.id)) return queue;
+          return [...queue, props];
+        });
       }
       break;
     }
     case "permission.replied": {
-      const { sessionID } = event.properties;
+      const { sessionID, requestID } = event.properties;
       if (sessionID === currentSessionId) {
-        queryClient.setQueryData<PermissionRequest | null>(qk.permissions(sessionID), null);
+        queryClient.setQueryData<PermissionRequest[]>(qk.permissions(sessionID), (prev) =>
+          prev?.filter((permission) => permission.id !== requestID),
+        );
       }
       break;
     }

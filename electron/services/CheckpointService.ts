@@ -233,6 +233,58 @@ function isGitRepo(workspace: string): Effect.Effect<boolean, CheckpointError> {
   );
 }
 
+/**
+ * Workspace-relative paths that differ from HEAD: modifications, deletions and
+ * every untracked file.
+ *
+ * `git status` reports repo-root-relative paths, so a workspace nested inside a
+ * larger repository is rebased onto `--show-prefix` (otherwise the capture would
+ * resolve paths outside the workspace). `git status` has no `--relative`.
+ */
+function workspaceStatusPaths(workspace: string): Effect.Effect<string[], CheckpointError> {
+  return Effect.gen(function* () {
+    const prefix = (yield* git(["rev-parse", "--show-prefix"], workspace)).trim();
+    const stdout = yield* git(
+      ["status", "--porcelain=v1", "-z", "--untracked-files=all"],
+      workspace,
+    );
+    const paths = parseGitStatusPaths(stdout);
+    if (!prefix) return paths;
+    return paths
+      .filter((path) => path.startsWith(prefix))
+      .map((path) => path.slice(prefix.length));
+  });
+}
+
+/** Parse NUL-delimited `git status --porcelain=v1 -z` output into paths. */
+export function parseGitStatusPaths(stdout: string): string[] {
+  const fields = stdout.split("\0");
+  const paths: string[] = [];
+  for (let index = 0; index < fields.length; index += 1) {
+    const entry = fields[index];
+    if (!entry) continue;
+    // Format: `XY <path>`. Renames and copies append the original path as the
+    // next field; journal it too so a restore can delete a file the agent
+    // recreated at a path that was empty at snapshot time.
+    const status = entry.slice(0, 2);
+    const path = entry.slice(3);
+    if (path) paths.push(path);
+    if (status.includes("R") || status.includes("C")) {
+      const original = fields[index + 1];
+      if (original) paths.push(original);
+      index += 1;
+    }
+  }
+  return [...new Set(paths)];
+}
+
+function listWorkspaceFilesEffect(workspace: string): Effect.Effect<string[], CheckpointError> {
+  return Effect.tryPromise({
+    try: () => listWorkspaceFiles(workspace),
+    catch: (cause) => new CheckpointError({ message: "Failed to enumerate workspace", cause }),
+  });
+}
+
 // ── Index persistence ───────────────────────────────────────────────────
 
 function sessionIndexPath(storeRoot: string, sessionId: string): string {
@@ -330,6 +382,12 @@ function persistSessionIndex(
 function makeCapture(
   options: CheckpointServiceOptions,
 ): (context: CaptureContext) => Effect.Effect<Checkpoint, CheckpointError> {
+  // Sessions whose whole workspace has already been journaled by this process.
+  // The first capture of a session must be a full snapshot (it is the fallback
+  // when git cannot restore a file); later turns only journal what git status
+  // reports as changed, which keeps large workspaces cheap.
+  const snapshottedSessions = new Set<string>();
+
   return (context) =>
     Effect.gen(function* () {
       const decoded = yield* Schema.decodeUnknown(CaptureContextSchema)(context).pipe(
@@ -340,18 +398,39 @@ function makeCapture(
       const sessionId = decoded.sessionId;
       yield* validateWorkspacePaths(options.workspace, decoded.paths);
 
-      // 1. Capture pre-state for every scoped path (journal fallback).
-      //    When no paths are given, the whole workspace is journaled so a
-      //    restore works even when the workspace is not a git repository.
-      const fullSnapshot = decoded.paths.length === 0;
+      // 1. Decide the capture scope and journal the pre-state of every path in
+      //    it. A non-git workspace has no cheap change list, so it always gets
+      //    a full walk; a git workspace gets one full walk per session and
+      //    `git status` afterwards.
+      const repoBacked = yield* isGitRepo(options.workspace);
+      let fullSnapshot = false;
+      let targetPaths: string[];
+      if (decoded.paths.length > 0) {
+        targetPaths = decoded.paths.map(toPosixPath);
+      } else if (!repoBacked || !snapshottedSessions.has(sessionId)) {
+        fullSnapshot = true;
+        targetPaths = yield* listWorkspaceFilesEffect(options.workspace);
+      } else {
+        const status = yield* workspaceStatusPaths(options.workspace).pipe(
+          Effect.map((paths) => ({ listed: true, paths })),
+          Effect.catchAll((error) => {
+            // A failing status must not silently narrow the snapshot: fall
+            // back to the safe (slow) full walk instead.
+            console.warn(
+              `[checkpoint] git status failed, taking a full snapshot: ${error.message}`,
+            );
+            return Effect.succeed({ listed: false, paths: [] });
+          }),
+        );
+        if (status.listed) {
+          targetPaths = status.paths;
+        } else {
+          fullSnapshot = true;
+          targetPaths = yield* listWorkspaceFilesEffect(options.workspace);
+        }
+      }
+
       const changes: FileChange[] = [];
-      const targetPaths = fullSnapshot
-        ? yield* Effect.tryPromise({
-            try: () => listWorkspaceFiles(options.workspace),
-            catch: (cause) =>
-              new CheckpointError({ message: "Failed to enumerate workspace", cause }),
-          })
-        : decoded.paths.map(toPosixPath);
       for (const relPath of targetPaths) {
         const absPath = resolve(options.workspace, relPath);
         const contents = yield* Effect.tryPromise({
@@ -394,23 +473,15 @@ function makeCapture(
 
       // 2. Git-backed snapshot for tracked files. Untracked files are kept in
       // the journal above; `git stash create` cannot safely include them.
-      const gitRef = yield* isGitRepo(options.workspace).pipe(
-        Effect.flatMap((isRepo) =>
-          isRepo
-            ? git(
-                [
-                  "stash",
-                  "create",
-                  `bloxmind:${randomBytes(6).toString("hex")}`,
-                ],
-                options.workspace,
-              ).pipe(
-                Effect.map((out) => out.trim() || null),
-                Effect.catchAll(() => Effect.succeed<string | null>(null)),
-              )
-            : Effect.succeed<string | null>(null),
-        ),
-      );
+      const gitRef = repoBacked
+        ? yield* git(
+            ["stash", "create", `bloxmind:${randomBytes(6).toString("hex")}`],
+            options.workspace,
+          ).pipe(
+            Effect.map((out) => out.trim() || null),
+            Effect.catchAll(() => Effect.succeed<string | null>(null)),
+          )
+        : null;
 
       // 3. Persist index (DAG: parent = activeIndex). The load-modify-persist
       //    cycle runs under the store mutex so a concurrent restore can't
@@ -441,8 +512,12 @@ function makeCapture(
         }),
       );
 
+      // Only mark the session after the snapshot is safely persisted, so a
+      // failed capture never downgrades the next attempt to a scoped one.
+      if (fullSnapshot) snapshottedSessions.add(sessionId);
+
       yield* Effect.logInfo(
-        `[checkpoint] captured ${checkpoint.id} session=${sessionId} paths=${changes.length} gitRef=${gitRef ?? "none"}`,
+        `[checkpoint] captured ${checkpoint.id} session=${sessionId} paths=${changes.length} gitRef=${gitRef ?? "none"} full=${fullSnapshot}`,
       );
       return checkpoint;
     });

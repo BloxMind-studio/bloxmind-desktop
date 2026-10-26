@@ -191,6 +191,7 @@ function seedReadyState(
     sessions?: Session[];
     detailedAnalytics?: "unset" | "enabled" | "disabled";
     analyticsNoticeVersion?: number;
+    layoutDensity?: "comfortable" | "compact";
   } = {},
 ) {
   const sessions = opts.sessions ?? [];
@@ -219,7 +220,7 @@ function seedReadyState(
     detailedAnalytics: opts.detailedAnalytics ?? "disabled",
     analyticsNoticeVersion: opts.analyticsNoticeVersion ?? 2,
     accentColor: "blue",
-    layoutDensity: "comfortable",
+    layoutDensity: opts.layoutDensity ?? "comfortable",
     fontSize: 1,
     soundEffects: true,
     temperature: 0.7,
@@ -254,13 +255,20 @@ describe("User journeys", () => {
     const client = createClient();
     const queryClient = createQueryClient();
     // An old clickaway ("disabled" without a notice version) does not carry over.
-    seedReadyState(queryClient, { detailedAnalytics: "disabled", analyticsNoticeVersion: 0 });
+    seedReadyState(queryClient, {
+      detailedAnalytics: "disabled",
+      analyticsNoticeVersion: 0,
+      layoutDensity: "compact",
+    });
 
     render(<TestApp client={client} queryClient={queryClient} />);
 
     const noticeTitle = await screen.findByText("BloxMind shares AI usage data");
     expect(noticeTitle).toBeVisible();
     expect(noticeTitle.closest("[data-sonner-toast]")).toHaveClass("analytics-consent-toast");
+    // Settings saved before the notice appeared still apply while it is shown;
+    // the effect used to return early and leave them at their defaults.
+    expect(document.documentElement.classList.contains("layout-compact")).toBe(true);
     await expect(desktop.loadConfig()).resolves.toMatchObject({
       detailedAnalytics: "enabled",
       analyticsNoticeVersion: 2,
@@ -418,8 +426,8 @@ describe("User journeys", () => {
       messagesById: {},
     });
     queryClient.setQueryData(qk.todos("s1"), []);
-    queryClient.setQueryData(qk.questions("s1"), null);
-    queryClient.setQueryData(qk.permissions("s1"), null);
+    queryClient.setQueryData(qk.questions("s1"), []);
+    queryClient.setQueryData(qk.permissions("s1"), []);
 
     render(<TestApp client={client} queryClient={queryClient} />);
 
@@ -635,8 +643,8 @@ describe("User journeys", () => {
     const queryClient = createQueryClient();
     seedReadyState(queryClient, { sessions: [s1, s2] });
     queryClient.setQueryData(qk.todos("s1"), []);
-    queryClient.setQueryData(qk.questions("s1"), null);
-    queryClient.setQueryData(qk.permissions("s1"), null);
+    queryClient.setQueryData(qk.questions("s1"), []);
+    queryClient.setQueryData(qk.permissions("s1"), []);
 
     render(<TestApp client={client} queryClient={queryClient} />);
 
@@ -751,8 +759,8 @@ describe("User journeys", () => {
       messagesById: {},
     });
     queryClient.setQueryData(qk.todos("s1"), []);
-    queryClient.setQueryData(qk.questions("s1"), null);
-    queryClient.setQueryData(qk.permissions("s1"), null);
+    queryClient.setQueryData(qk.questions("s1"), []);
+    queryClient.setQueryData(qk.permissions("s1"), []);
 
     render(<TestApp client={client} queryClient={queryClient} />);
 

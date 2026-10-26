@@ -16,6 +16,7 @@ import { aiTracer, captureDetailedAnalytics } from "@/lib/analytics";
 import { loadConfig } from "@/lib/config";
 import { desktop } from "@/lib/desktop";
 import { qk } from "@/lib/queryKeys";
+import { isVisibleSession } from "@/lib/sessionVisibility";
 import { sseDispatch } from "@/lib/sseDispatch";
 import type { OpenCodeStartupProgress } from "@/types/desktop";
 
@@ -547,7 +548,9 @@ export async function prefetchServerState(client: OpencodeClient, queryClient: Q
   const authRes = authResult.status === "fulfilled" ? authResult.value : undefined;
 
   if (sessionRes?.data) {
-    const sorted = [...sessionRes.data].sort((a, b) => b.time.created - a.time.created);
+    const sorted = sessionRes.data
+      .filter(isVisibleSession)
+      .sort((a, b) => b.time.created - a.time.created);
     queryClient.setQueryData(qk.sessions, sorted);
   }
 

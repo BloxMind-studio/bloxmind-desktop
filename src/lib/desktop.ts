@@ -3,6 +3,7 @@ import {
   type BloxBotProgramManifest,
   BloxBotProgramManifestSchema,
 } from "@/lib/bloxbotProgramManifest";
+import { migrateStoredConfig } from "@/lib/configMigration";
 import { type ExplorerSnapshot, ExplorerSnapshotSchema } from "@/lib/explorer";
 import { ProjectSkeletonSchema } from "@/lib/projectIndex";
 import {
@@ -122,10 +123,9 @@ const loadBrowserConfig = Effect.gen(function* () {
     },
     catch: (cause) => new DesktopError({ message: "Failed to load browser configuration", cause }),
   });
-  const candidate =
-    stored !== null && typeof stored === "object"
-      ? { ...DEFAULT_CONFIG, ...stored }
-      : DEFAULT_CONFIG;
+  // Browser storage needs no separate write: a later `patchConfig` persists the
+  // migrated values along with the version marker.
+  const candidate = { ...DEFAULT_CONFIG, ...migrateStoredConfig(stored).config };
   return yield* Schema.decodeUnknown(AppConfigSchema)(candidate).pipe(
     Effect.mapError(
       (cause) => new DesktopError({ message: "Browser configuration is invalid", cause }),

@@ -50,8 +50,17 @@ export const McpServerSchema = Schema.mutable(
   }),
 );
 
+/**
+ * Version of the stored configuration shape. Bumped whenever loading an older
+ * file must rewrite values; `migrateStoredConfig` applies the rewrites once and
+ * persists the new version.
+ */
+export const APP_CONFIG_VERSION = 1;
+
 export const AppConfigSchema = Schema.mutable(
   Schema.Struct({
+    // Filled from defaults for configs written before the marker existed.
+    configVersion: Schema.Number.pipe(Schema.int(), Schema.between(0, 1_000)),
     lastModel: Schema.NullOr(Schema.String),
     hiddenModels: MutableStrings,
     theme: ThemePreferenceSchema,
@@ -87,6 +96,7 @@ export const AppConfigSchema = Schema.mutable(
 export type AppConfig = typeof AppConfigSchema.Type;
 
 export const DEFAULT_APP_CONFIG: AppConfig = {
+  configVersion: APP_CONFIG_VERSION,
   lastModel: null,
   hiddenModels: [],
   theme: "system",

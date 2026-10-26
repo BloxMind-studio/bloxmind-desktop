@@ -694,7 +694,7 @@ describe("sseDispatch", () => {
   // ── Question events ────────────────────────────────────────────────
 
   describe("question.asked", () => {
-    it("sets the active question", () => {
+    it("adds the question to the queue", () => {
       dispatch(
         qc,
         {
@@ -704,33 +704,71 @@ describe("sseDispatch", () => {
         "s1",
       );
 
-      const q = qc.getQueryData<QuestionRequest | null>(qk.questions("s1"));
-      expect((q as any).id).toBe("q1");
+      const queue = qc.getQueryData<QuestionRequest[]>(qk.questions("s1"));
+      expect(queue?.map((question) => question.id)).toEqual(["q1"]);
+    });
+
+    it("keeps the earlier question when another arrives", () => {
+      for (const id of ["q1", "q2"]) {
+        dispatch(
+          qc,
+          { type: "question.asked", properties: { id, sessionID: "s1", questions: [] } },
+          "s1",
+        );
+      }
+
+      const queue = qc.getQueryData<QuestionRequest[]>(qk.questions("s1"));
+      expect(queue?.map((question) => question.id)).toEqual(["q1", "q2"]);
+    });
+
+    it("does not duplicate a repeated event", () => {
+      const event = {
+        type: "question.asked" as const,
+        properties: { id: "q1", sessionID: "s1", questions: [] },
+      };
+      dispatch(qc, event, "s1");
+      dispatch(qc, event, "s1");
+
+      expect(qc.getQueryData<QuestionRequest[]>(qk.questions("s1"))).toHaveLength(1);
     });
   });
 
   describe("question.replied / question.rejected", () => {
-    it("clears the question on reply", () => {
-      qc.setQueryData(qk.questions("s1"), { id: "q1", sessionID: "s1" });
+    it("removes only the answered question", () => {
+      qc.setQueryData<QuestionRequest[]>(qk.questions("s1"), [
+        { id: "q1", sessionID: "s1" } as QuestionRequest,
+        { id: "q2", sessionID: "s1" } as QuestionRequest,
+      ]);
 
-      dispatch(qc, { type: "question.replied", properties: { sessionID: "s1" } }, "s1");
+      dispatch(
+        qc,
+        { type: "question.replied", properties: { sessionID: "s1", requestID: "q1" } },
+        "s1",
+      );
 
-      expect(qc.getQueryData(qk.questions("s1"))).toBeNull();
+      const queue = qc.getQueryData<QuestionRequest[]>(qk.questions("s1"));
+      expect(queue?.map((question) => question.id)).toEqual(["q2"]);
     });
 
-    it("clears the question on reject", () => {
-      qc.setQueryData(qk.questions("s1"), { id: "q1", sessionID: "s1" });
+    it("removes the rejected question", () => {
+      qc.setQueryData<QuestionRequest[]>(qk.questions("s1"), [
+        { id: "q1", sessionID: "s1" } as QuestionRequest,
+      ]);
 
-      dispatch(qc, { type: "question.rejected", properties: { sessionID: "s1" } }, "s1");
+      dispatch(
+        qc,
+        { type: "question.rejected", properties: { sessionID: "s1", requestID: "q1" } },
+        "s1",
+      );
 
-      expect(qc.getQueryData(qk.questions("s1"))).toBeNull();
+      expect(qc.getQueryData<QuestionRequest[]>(qk.questions("s1"))).toEqual([]);
     });
   });
 
   // ── Permission events ──────────────────────────────────────────────
 
   describe("permission.asked", () => {
-    it("sets the active permission request", () => {
+    it("queues the permission request", () => {
       dispatch(
         qc,
         {
@@ -740,18 +778,42 @@ describe("sseDispatch", () => {
         "s1",
       );
 
-      const p = qc.getQueryData<PermissionRequest | null>(qk.permissions("s1"));
-      expect((p as any).id).toBe("p1");
+      const queue = qc.getQueryData<PermissionRequest[]>(qk.permissions("s1"));
+      expect(queue?.map((permission) => permission.id)).toEqual(["p1"]);
+    });
+
+    it("keeps the earlier request when a second one arrives", () => {
+      for (const id of ["p1", "p2"]) {
+        dispatch(
+          qc,
+          {
+            type: "permission.asked",
+            properties: { id, sessionID: "s1", permission: "bash", patterns: [] },
+          },
+          "s1",
+        );
+      }
+
+      const queue = qc.getQueryData<PermissionRequest[]>(qk.permissions("s1"));
+      expect(queue?.map((permission) => permission.id)).toEqual(["p1", "p2"]);
     });
   });
 
   describe("permission.replied", () => {
-    it("clears the permission request", () => {
-      qc.setQueryData(qk.permissions("s1"), { id: "p1", sessionID: "s1" });
+    it("removes only the answered request", () => {
+      qc.setQueryData<PermissionRequest[]>(qk.permissions("s1"), [
+        { id: "p1", sessionID: "s1" } as PermissionRequest,
+        { id: "p2", sessionID: "s1" } as PermissionRequest,
+      ]);
 
-      dispatch(qc, { type: "permission.replied", properties: { sessionID: "s1" } }, "s1");
+      dispatch(
+        qc,
+        { type: "permission.replied", properties: { sessionID: "s1", requestID: "p1" } },
+        "s1",
+      );
 
-      expect(qc.getQueryData(qk.permissions("s1"))).toBeNull();
+      const queue = qc.getQueryData<PermissionRequest[]>(qk.permissions("s1"));
+      expect(queue?.map((permission) => permission.id)).toEqual(["p2"]);
     });
   });
 });

@@ -57,6 +57,33 @@ describe("OpenCode query lifecycle", () => {
     );
   });
 
+  it("keeps hidden sessions out of the prefetched session list", async () => {
+    const client = {
+      experimental: {
+        session: {
+          list: vi.fn().mockResolvedValue({
+            data: [
+              { id: "visible", time: { created: 2 }, metadata: {} },
+              { id: "hidden", time: { created: 3 }, metadata: { BloxMindHidden: true } },
+            ],
+          }),
+        },
+      },
+      session: { status: vi.fn().mockResolvedValue({ data: {} }) },
+      provider: {
+        list: vi.fn().mockResolvedValue({ data: { all: [], connected: [], default: {} } }),
+        auth: vi.fn().mockResolvedValue({ data: {} }),
+      },
+      app: { agents: vi.fn().mockResolvedValue({ data: [] }) },
+    } as unknown as OpencodeClient;
+    const queryClient = makeQueryClient();
+
+    await prefetchServerState(client, queryClient);
+
+    const sessions = queryClient.getQueryData<Array<{ id: string }>>(qk.sessions);
+    expect(sessions?.map((session) => session.id)).toEqual(["visible"]);
+  });
+
   it("invalidates every active-session snapshot after SSE connects", async () => {
     const queryClient = makeQueryClient();
     const activeKeys = [

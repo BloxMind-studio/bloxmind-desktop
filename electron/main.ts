@@ -14,6 +14,7 @@ import {
   DEFAULT_APP_CONFIG,
   type OpenCodeStartupProgress,
 } from "../src/types/desktop";
+import { migrateStoredConfig } from "../src/lib/configMigration";
 import { ExplorerProgramEnvelopeSchema, ExplorerSnapshotSchema } from "../src/lib/explorer";
 import { ProjectIndexProgramEnvelopeSchema, ProjectSkeletonSchema } from "../src/lib/projectIndex";
 import { GeneratedProgramArtifactSchema } from "../src/types/generatedProgram";
@@ -214,7 +215,32 @@ function parseExternalUrl(rawUrl: string) {
   );
 }
 
-const loadConfig = Effect.gen(function* () {
+/** Write the whole configuration atomically (temp file + rename). */
+function writeConfig(config: AppConfig) {
+  return Effect.tryPromise({
+    try: async () => {
+      const destination = configPath();
+      const temporary = `${destination}.${process.pid}.tmp`;
+      try {
+        await writeFile(temporary, JSON.stringify(config, null, 2), { mode: 0o600 });
+        await rename(temporary, destination);
+      } catch (cause) {
+        await rm(temporary, { force: true }).catch(() => undefined);
+        throw cause;
+      }
+    },
+    catch: (cause) => new DesktopMainError({ message: "Failed to write app configuration", cause }),
+  });
+}
+
+/**
+ * Read and migrate the stored configuration without writing anything.
+ *
+ * `patchConfig` uses this directly so it can fold the migration into its own
+ * write; going through `loadConfig` there would either write twice or deadlock
+ * on the config mutex.
+ */
+const readConfig = Effect.gen(function* () {
   const contents = yield* Effect.tryPromise({
     try: () => readFile(configPath(), "utf8"),
     catch: (cause) => new DesktopMainError({ message: "Failed to read app configuration", cause }),
@@ -223,29 +249,42 @@ const loadConfig = Effect.gen(function* () {
       isMissingFile(error.cause) ? Effect.succeed(null) : Effect.fail(error),
     ),
   );
-  if (contents === null) return defaultConfig;
+  if (contents === null) return { config: defaultConfig, needsWrite: false };
 
   return yield* Effect.gen(function* () {
     const stored = yield* Effect.try({
       try: () => JSON.parse(contents) as unknown,
       catch: (cause) => new DesktopMainError({ message: "App configuration is invalid", cause }),
     });
-    const candidate =
-      stored !== null && typeof stored === "object" ? { ...defaultConfig, ...stored } : defaultConfig;
-    // Old builds persisted the (then non-functional) Max Tokens default of
-    // 4096. Map it to the new "model's own limit" sentinel so upgrading never
-    // silently caps replies.
-    if (candidate.maxTokens === 4_096) candidate.maxTokens = 0;
-    return yield* Schema.decodeUnknown(AppConfigSchema)(candidate).pipe(
+    const migrated = migrateStoredConfig(stored);
+    const candidate = { ...defaultConfig, ...migrated.config };
+    const config = yield* Schema.decodeUnknown(AppConfigSchema)(candidate).pipe(
       Effect.mapError(
         (cause) => new DesktopMainError({ message: "App configuration is invalid", cause }),
       ),
     );
+    return { config, needsWrite: migrated.changed };
   }).pipe(
     Effect.tapError((error) => Effect.logWarning(error.message, error.cause)),
-    Effect.catchAll(() => Effect.succeed(defaultConfig)),
+    // A corrupt config still falls back to defaults; leaving the file alone
+    // keeps it available for support/debugging instead of silently replacing it.
+    Effect.catchAll(() => Effect.succeed({ config: defaultConfig, needsWrite: false })),
   );
 });
+
+// Hold the mutex across the read and the migration write so a concurrent patch
+// cannot land between them and be overwritten by the migrated snapshot.
+const loadConfig = Effect.gen(function* () {
+  const loaded = yield* readConfig;
+  if (loaded.needsWrite) {
+    // Persist the migration once so the rewrites do not run on every launch. A
+    // failed write is not fatal: the in-memory config is already migrated.
+    yield* writeConfig(loaded.config).pipe(
+      Effect.catchAll((error) => Effect.logWarning(error.message, error.cause)),
+    );
+  }
+  return loaded.config;
+}).pipe(configMutex.withPermits(1));
 
 function patchConfig(input: unknown) {
   return Effect.gen(function* () {
@@ -254,23 +293,11 @@ function patchConfig(input: unknown) {
         (cause) => new DesktopMainError({ message: "App configuration patch is invalid", cause }),
       ),
     );
-    const current = yield* loadConfig;
-    const next = { ...current, ...patch };
-    yield* Effect.tryPromise({
-      try: async () => {
-        const destination = configPath();
-        const temporary = `${destination}.${process.pid}.tmp`;
-        try {
-          await writeFile(temporary, JSON.stringify(next, null, 2), { mode: 0o600 });
-          await rename(temporary, destination);
-        } catch (cause) {
-          await rm(temporary, { force: true }).catch(() => undefined);
-          throw cause;
-        }
-      },
-      catch: (cause) =>
-        new DesktopMainError({ message: "Failed to write app configuration", cause }),
-    });
+    const current = yield* readConfig;
+    // The merged config carries the migration's rewritten values and version,
+    // so this single write persists both.
+    const next = { ...current.config, ...patch };
+    yield* writeConfig(next);
   }).pipe(configMutex.withPermits(1));
 }
 
@@ -463,7 +490,16 @@ const registerIpcHandlers = Effect.sync(() => {
             new DesktopMainError({ message: "Update download did not produce any files" }),
           );
         }
-        yield* Effect.sync(() => autoUpdater.quitAndInstall());
+        // Stop the engine before the installer runs: it owns the helper
+        // processes and files the installer replaces. Doing it here, instead of
+        // letting before-quit do it, keeps the installer from starting while
+        // the old app still holds those files, and avoids before-quit
+        // preventDefault-ing the quit that quitAndInstall just requested.
+        yield* disposeOpenCodeRuntimeBounded.pipe(Effect.catchAll(Effect.logError));
+        yield* Effect.sync(() => {
+          quitting = true;
+          autoUpdater.quitAndInstall();
+        });
       }),
     ),
   );

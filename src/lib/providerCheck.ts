@@ -81,8 +81,14 @@ export type ProviderCheckResult =
 
 /** What a failed check tells the user, and whether a new key would fix it. */
 export function checkFailure(error: ModelError): Extract<ProviderCheckResult, { ok: false }> {
-  const data = error.data as { statusCode?: unknown };
-  const status = typeof data.statusCode === "number" ? data.statusCode : undefined;
+  // `data` is required by the SDK type but arrives decoded from server JSON, so
+  // it can be absent in practice; reading through it must not throw inside the
+  // path that reports the failure.
+  const data =
+    error.data && typeof error.data === "object"
+      ? (error.data as { statusCode?: unknown })
+      : undefined;
+  const status = typeof data?.statusCode === "number" ? data.statusCode : undefined;
   const keyRejected = error.name === "ProviderAuthError" || status === 401 || status === 403;
   const message = modelErrorDetail(error) ?? "The provider didn't answer the test message.";
   return { ok: false, message, keyRejected };

@@ -32,8 +32,8 @@ export function useCreateSession() {
         messagesById: {},
       });
       queryClient.setQueryData(qk.todos(newSession.id), []);
-      queryClient.setQueryData(qk.questions(newSession.id), null);
-      queryClient.setQueryData(qk.permissions(newSession.id), null);
+      queryClient.setQueryData(qk.questions(newSession.id), []);
+      queryClient.setQueryData(qk.permissions(newSession.id), []);
 
       selectSession(newSession.id);
       posthog.capture("session_created", analyticsProperties("sessions", { outcome: "success" }));

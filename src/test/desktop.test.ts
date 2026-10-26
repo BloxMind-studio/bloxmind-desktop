@@ -21,6 +21,7 @@ describe("browser desktop fallback", () => {
     await desktop.patchConfig({ lastModel: "openai/gpt-5" });
 
     await expect(desktop.loadConfig()).resolves.toEqual({
+      configVersion: 1,
       lastModel: "openai/gpt-5",
       hiddenModels: [],
       theme: "system",
@@ -54,6 +55,7 @@ describe("browser desktop fallback", () => {
     const { desktop } = await import("@/lib/desktop");
 
     await expect(desktop.loadConfig()).resolves.toEqual({
+      configVersion: 1,
       lastModel: null,
       hiddenModels: [],
       theme: "system",
@@ -85,6 +87,7 @@ describe("browser desktop fallback", () => {
     await desktop.patchConfig({ theme: "dark" });
 
     await expect(desktop.loadConfig()).resolves.toEqual({
+      configVersion: 1,
       lastModel: null,
       hiddenModels: [],
       theme: "dark",
