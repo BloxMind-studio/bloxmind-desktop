@@ -249,11 +249,4 @@ describe("blenderMcpServer", () => {
       environment: { DISABLE_TELEMETRY: "1" },
     });
   });
-
-  it("uses the uvx path from the automated setup", () => {
-    expect(blenderMcpServer("C:\\Users\\User\\.local\\bin\\uvx.exe").command).toEqual([
-      "C:\\Users\\User\\.local\\bin\\uvx.exe",
-      "mcp-for-blender",
-    ]);
-  });
 });

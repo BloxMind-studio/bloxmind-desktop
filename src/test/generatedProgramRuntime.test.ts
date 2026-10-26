@@ -549,4 +549,52 @@ describe("GeneratedProgramRuntime", () => {
     expect(callTool).toHaveBeenNthCalledWith(2, "list_roblox_studios", {});
     expect(callTool).toHaveBeenNthCalledWith(3, "list_roblox_studios", {});
   });
+
+  it("runs programs without access to the main process globals", async () => {
+    const runtime = startGeneratedProgramRuntime(vi.fn());
+    const artifact = await Effect.runPromise(
+      runtime.compile(
+        envelope(`async function run() {
+          let viaGlobal = "reached";
+          try {
+            viaGlobal = globalThis.constructor.constructor("return typeof process")();
+          } catch {
+            viaGlobal = "blocked";
+          }
+          let viaFunction = "reached";
+          try {
+            viaFunction = ({}).constructor.constructor("return typeof process")();
+          } catch {
+            viaFunction = "blocked";
+          }
+          return { process: typeof process, require: typeof require, viaGlobal, viaFunction };
+        }`),
+      ),
+    );
+
+    await expect(
+      Effect.runPromise(runtime.invoke({ artifact, input: null })),
+    ).resolves.toMatchObject({
+      value: {
+        process: "undefined",
+        require: "undefined",
+        viaGlobal: "blocked",
+        viaFunction: "blocked",
+      },
+    });
+  });
+
+  it("terminates a runaway program instead of freezing the app", async () => {
+    const runtime = startGeneratedProgramRuntime(vi.fn(), undefined, undefined, {
+      timeoutMs: 250,
+    });
+    const artifact = await Effect.runPromise(
+      runtime.compile(envelope("async function run() { while (true) {} }")),
+    );
+
+    const failure = await Effect.runPromise(Effect.flip(runtime.invoke({ artifact, input: null })));
+
+    expect(failure).toMatchObject({ phase: "runtime" });
+    expect(failure.message).toContain("exceeded the");
+  });
 });

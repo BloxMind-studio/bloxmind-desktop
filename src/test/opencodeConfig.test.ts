@@ -79,6 +79,16 @@ describe("OpenCode configuration", () => {
     });
   });
 
+  it("sends the broker's per-launch bearer token with every request", () => {
+    const headers = { Authorization: "Bearer test-token" };
+    expect(createOpenCodeConfig({ ...broker, headers }).mcp["roblox-studio"]).toEqual({
+      type: "remote",
+      url: broker.url,
+      headers,
+      enabled: true,
+    });
+  });
+
   it("keeps the Studio bridge alone when no extra servers are configured", () => {
     expect(Object.keys(createOpenCodeConfig(broker).mcp)).toEqual(["roblox-studio"]);
   });

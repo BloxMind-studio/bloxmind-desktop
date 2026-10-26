@@ -163,54 +163,6 @@ export const StudioMcpStatusSchema = Schema.Struct({
 
 export type StudioMcpStatus = typeof StudioMcpStatusSchema.Type;
 
-/** How the Blender bridge addon ended up during automated setup. */
-export const BlenderAddonOutcomeSchema = Schema.Literal(
-  "enabled",
-  "needs_blender_open",
-  "manual_enable",
-  "not_found",
-);
-
-export type BlenderAddonOutcome = typeof BlenderAddonOutcomeSchema.Type;
-
-/**
- * Where the Studio-side "Blender Animations" plugin stands after setup.
- * `studio_missing` means Roblox Studio isn't on this computer, `missing` means
- * Studio is there but the plugin still has to be installed from the Creator Store.
- */
-export const BlenderStudioPluginOutcomeSchema = Schema.Literal(
-  "installed",
-  "missing",
-  "studio_missing",
-);
-
-export type BlenderStudioPluginOutcome = typeof BlenderStudioPluginOutcomeSchema.Type;
-
-/** What Settings → Integrations shows after "Set up automatically" runs. */
-export const BlenderSetupResultSchema = Schema.mutable(
-  Schema.Struct({
-    ok: Schema.Boolean,
-    uvxPath: Schema.NullOr(Schema.String),
-    blenderExe: Schema.NullOr(Schema.String),
-    blenderVersion: Schema.NullOr(Schema.String),
-    blenderRunning: Schema.Boolean,
-    launched: Schema.Boolean,
-    addon: BlenderAddonOutcomeSchema,
-    studioPlugin: BlenderStudioPluginOutcomeSchema,
-    detail: Schema.String,
-    steps: MutableStrings,
-  }),
-);
-
-export type BlenderSetupResult = typeof BlenderSetupResultSchema.Type;
-
-export const BlenderLaunchResultSchema = Schema.Struct({
-  launched: Schema.Boolean,
-  executable: Schema.NullOr(Schema.String),
-});
-
-export type BlenderLaunchResult = typeof BlenderLaunchResultSchema.Type;
-
 /** A main-process error forwarded to the renderer, which reports it through PostHog. */
 export interface MainErrorReport {
   source: string;
@@ -235,10 +187,6 @@ export interface DesktopApi {
   /** The folder OpenCode installs into, for antivirus exclusions. Null outside the desktop app. */
   getOpenCodeInstallFolder(): Promise<string | null>;
   getStudioMcpStatus(): Promise<StudioMcpStatus>;
-  /** Installs uv and the Blender bridge addon, then opens Blender. */
-  blenderSetup(): Promise<BlenderSetupResult>;
-  /** Opens the newest installed Blender, if there is one. */
-  blenderLaunch(): Promise<BlenderLaunchResult>;
   onOpenCodeStartupProgress(listener: (progress: OpenCodeStartupProgress) => void): () => void;
   getVersion(): Promise<string>;
   getInstructionFiles(): Promise<readonly InstructionFile[]>;

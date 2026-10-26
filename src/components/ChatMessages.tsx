@@ -15,6 +15,7 @@ import {
   Suspense,
   useCallback,
   useContext,
+  useDeferredValue,
   useEffect,
   useMemo,
   useRef,
@@ -875,7 +876,12 @@ function decodeReference(value: string) {
   return value.replace(/&quot;/g, '"').replace(/&amp;/g, "&");
 }
 
-function MessageText({ text }: { text: string }) {
+/**
+ * Parsing markdown is the expensive part of rendering a streamed answer, so
+ * this is memoized on the text it parses. `TextPartView` feeds it a deferred
+ * value, which lets React skip parsing for most intermediate tokens.
+ */
+const MessageText = memo(function MessageText({ text }: { text: string }) {
   const parts: Array<{ type: "text" | "instance"; value: string; label?: string }> = [];
   let cursor = 0;
   for (const match of text.matchAll(INSTANCE_REFERENCE_PATTERN)) {
@@ -901,13 +907,17 @@ function MessageText({ text }: { text: string }) {
       </Markdown>
     ),
   );
-}
+});
 
 const TextPartView = memo(
   function TextPartView({ part }: { part: Extract<Part, { type: "text" }> }) {
+    // Streaming rewrites this string on every token. Deferring it keeps the
+    // urgent render cheap (it re-renders against the previous text, which the
+    // memo above skips) and collapses intermediate parses into one per commit.
+    const text = useDeferredValue(part.text);
     return (
       <div className="select-text text-[13px] leading-relaxed">
-        <MessageText text={part.text} />
+        <MessageText text={text} />
       </div>
     );
   },
@@ -2227,7 +2237,24 @@ function ChatMessages() {
     getScrollElement: () => containerRef.current,
     estimateSize: () => 80,
     overscan: 5,
+    // Rows are keyed by message id and the todo panel is spliced into the
+    // middle, so index-keyed measurements would shift under the list and cause
+    // scroll jumps when the panel appears or a turn ends.
+    getItemKey: (index) => feed[index]?.key ?? index,
   });
+
+  // A different session is a different list: drop the previous session's row
+  // measurements and start pinned to the newest message.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-measure only when the session changes
+  useEffect(() => {
+    shouldAutoScroll.current = true;
+    lastScrollTop.current = 0;
+    virtualizer.measure();
+    const frame = requestAnimationFrame(() => {
+      bottomRef.current?.scrollIntoView({ behavior: "instant" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [activeSessionId, virtualizer]);
 
   const handleScroll = useCallback(() => {
     const el = containerRef.current;
@@ -2367,7 +2394,14 @@ function ChatMessages() {
                 (p) => p.type === "text" && p.text.startsWith("[SYSTEM_NOTIFICATION"),
               );
               if (isSystemNotification) {
-                return <div key={msgId} data-index={virtualItem.index} style={positionedStyle} />;
+                return (
+                  <div
+                    key={msgId}
+                    ref={virtualizer.measureElement}
+                    data-index={virtualItem.index}
+                    style={positionedStyle}
+                  />
+                );
               }
               // This message is the end of a task if it's the last message,
               // OR the very next message belongs to the user.

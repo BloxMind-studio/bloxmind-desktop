@@ -1,5 +1,6 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { Worker } from "node:worker_threads";
 
 import { Context, Data, Effect, Layer, Schema } from "effect";
 import { transform } from "sucrase";
@@ -34,7 +35,6 @@ export type DescribeTool = (
 export type ListTools = () => Promise<
   readonly { name: string; annotations?: StudioToolAnnotations }[]
 >;
-type ProgramFunction = (input: unknown, callTool: CallTool) => Promise<unknown>;
 
 export type GeneratedProgramFailurePhase =
   | "compile"
@@ -70,8 +70,6 @@ export class GeneratedProgramRuntime extends Context.Tag("@BloxMind/GeneratedPro
   GeneratedProgramRuntime,
   GeneratedProgramRuntimeService
 >() {}
-
-class ToolContractError extends Error {}
 
 const TOOL_LIST_TTL_MS = 30_000;
 
@@ -130,24 +128,273 @@ function hasValidSignature(artifact: GeneratedProgramArtifact): boolean {
   return provided.length === expected.length && timingSafeEqual(provided, expected);
 }
 
-function makeFunction(compiledSource: string): ProgramFunction {
-  const AsyncFunction = Object.getPrototypeOf(async () => undefined).constructor as new (
-    ...args: string[]
-  ) => ProgramFunction;
-  return new AsyncFunction(
-    "input",
-    "callTool",
-    `"use strict";\n${compiledSource}\nif (typeof run !== "function") throw new Error("Generated program must define async function run({ input, callTool })");\nreturn await run({ input, callTool });`,
-  );
+// ── Sandboxed execution ─────────────────────────────────────────────────
+//
+// Model-authored programs used to be compiled with `new AsyncFunction` and run
+// in the main process, where `process.getBuiltinModule("node:fs")` reached the
+// user's filesystem and a stray infinite loop froze the whole app. Each run now
+// happens on a throwaway worker thread inside a fresh `vm` context with code
+// generation disabled and no `process`, `require`, or host objects exposed.
+//
+// This is substantial isolation, not a formal security boundary: Node's `vm`
+// module is not a supported sandbox, so a determined escape may still be
+// possible. The thread separation and the hard timeout always hold, and the
+// program never runs with the main process's globals by default.
+
+const PROGRAM_TIMEOUT_MS = 60_000;
+const MAX_COMPILED_PROGRAMS = 64;
+
+type ToolCallOutcome =
+  | { readonly ok: true; readonly value: unknown }
+  | { readonly ok: false; readonly contract: boolean; readonly message: string };
+
+/** A worker failure that already knows how the program failed. */
+class ProgramWorkerError extends Error {
+  constructor(
+    message: string,
+    readonly phase: "runtime" | "output",
+  ) {
+    super(message);
+    this.name = "ProgramWorkerError";
+  }
+}
+
+interface ProgramWorkerOptions {
+  compiledSource: string;
+  input: unknown;
+  timeoutMs: number;
+  onToolCall: (name: string, args: Record<string, unknown>) => Promise<ToolCallOutcome>;
+}
+
+// Runs as CommonJS in a worker thread (`eval: true`), so `require` is the
+// worker's own loader rather than anything the generated program can reach.
+const PROGRAM_WORKER_SOURCE = String.raw`
+const { parentPort } = require("node:worker_threads");
+const vm = require("node:vm");
+
+let nextId = 1;
+const pending = new Map();
+
+function bridge(requestJson) {
+  return new Promise((resolve) => {
+    const id = nextId++;
+    pending.set(id, resolve);
+    parentPort.postMessage({ type: "tool", id, requestJson });
+  });
+}
+
+// Runs inside the sandbox. The bridge is captured in this closure and removed
+// from the globals before any program code runs, and responses cross the
+// boundary as JSON strings so no host-realm object is ever exposed (a host
+// object's .constructor would leak the real Function constructor).
+const BOOTSTRAP = [
+  '"use strict";',
+  "const __bridge = globalThis.__bridge;",
+  "delete globalThis.__bridge;",
+  "globalThis.console = Object.freeze({ log() {}, info() {}, warn() {}, error() {}, debug() {} });",
+  "globalThis.callTool = async (name, args) => {",
+  "  const response = JSON.parse(await __bridge(JSON.stringify([name, args === undefined ? {} : args])));",
+  "  if (!response || response.ok !== true) {",
+  '    const error = new Error(String((response && response.message) || "Studio tool call failed"));',
+  '    error.name = response && response.contract ? "ToolContractError" : "Error";',
+  "    throw error;",
+  "  }",
+  "  return response.value;",
+  "};",
+].join("\n");
+
+async function execute(message) {
+  try {
+    const context = vm.createContext(
+      // A null prototype matters: with a plain empty object the context
+      // global inherits the host's Object.prototype, so globalThis.constructor
+      // .constructor is the real Function constructor and the sandbox is
+      // gone in one line.
+      Object.create(null),
+      { codeGeneration: { strings: false, wasm: false } },
+    );
+    context.__bridge = bridge;
+    vm.runInContext(BOOTSTRAP, context);
+    context.__inputJson = message.inputJson;
+    const wrapped = [
+      "(async () => {",
+      '"use strict";',
+      "const input = JSON.parse(globalThis.__inputJson);",
+      "delete globalThis.__inputJson;",
+      message.compiledSource,
+      'if (typeof run !== "function") throw new Error("Generated program must define async function run({ input, callTool })");',
+      "return await run({ input, callTool: globalThis.callTool });",
+      "})()",
+    ].join("\n");
+    const value = await vm.runInContext(wrapped, context, { filename: "generated-program.js" });
+    const valueJson = JSON.stringify(value);
+    if (valueJson === undefined) throw new Error("Output is not JSON serializable");
+    parentPort.postMessage({ type: "result", valueJson });
+  } catch (cause) {
+    // Errors thrown inside the vm belong to another realm, so instanceof
+    // Error is false here; read the message structurally instead.
+    const message =
+      cause && typeof cause === "object" && typeof cause.message === "string"
+        ? cause.message
+        : String(cause);
+    const serializationFailure = message === "Output is not JSON serializable";
+    parentPort.postMessage({
+      type: "error",
+      message,
+      phase: serializationFailure ? "output" : "runtime",
+    });
+  }
+}
+
+parentPort.on("message", (message) => {
+  if (message && message.type === "tool-result") {
+    const resolve = pending.get(message.id);
+    pending.delete(message.id);
+    if (resolve) resolve(String(message.payload));
+    return;
+  }
+  if (message && message.type === "run") void execute(message);
+});
+`;
+
+function runProgramInWorker(options: ProgramWorkerOptions): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let worker: Worker;
+    try {
+      worker = new Worker(PROGRAM_WORKER_SOURCE, {
+        eval: true,
+        resourceLimits: { maxOldGenerationSizeMb: 192, maxYoungGenerationSizeMb: 48 },
+        stdout: true,
+        stderr: true,
+      });
+    } catch (cause) {
+      reject(new ProgramWorkerError(withCause("Generated program worker failed to start", cause), "runtime"));
+      return;
+    }
+
+    let settled = false;
+    const timer = setTimeout(() => {
+      settle(
+        new ProgramWorkerError(
+          `Generated program exceeded the ${Math.round(options.timeoutMs / 1000)}s limit`,
+          "runtime",
+        ),
+      );
+    }, options.timeoutMs);
+
+    function settle(error?: Error, valueJson?: string) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      worker.removeAllListeners();
+      void worker.terminate().catch(() => undefined);
+      if (error) reject(error);
+      else resolve(valueJson ?? "");
+    }
+
+    const handleToolCall = (record: Record<string, unknown>) => {
+      const id = record.id;
+      const requestJson = record.requestJson;
+      if (typeof id !== "number" || typeof requestJson !== "string") return;
+      void (async () => {
+        let outcome: ToolCallOutcome;
+        try {
+          const parsed = JSON.parse(requestJson) as unknown;
+          const [rawName, rawArgs] = Array.isArray(parsed) ? parsed : [];
+          if (typeof rawName !== "string") {
+            throw new Error("Generated program requested an invalid tool");
+          }
+          const args =
+            rawArgs && typeof rawArgs === "object" && !Array.isArray(rawArgs)
+              ? (rawArgs as Record<string, unknown>)
+              : {};
+          outcome = await options.onToolCall(rawName, args);
+        } catch (cause) {
+          outcome = {
+            ok: false,
+            contract: false,
+            message: withCause("Studio tool call failed", cause),
+          };
+        }
+        if (settled) return;
+        let payload: string;
+        try {
+          payload = JSON.stringify(outcome);
+        } catch (cause) {
+          payload = JSON.stringify({
+            ok: false,
+            contract: false,
+            message: withCause("Studio tool returned an unserializable result", cause),
+          });
+        }
+        try {
+          worker.postMessage({ type: "tool-result", id, payload });
+        } catch {
+          // The worker was terminated while the tool was in flight.
+        }
+      })();
+    };
+
+    worker.on("message", (message: unknown) => {
+      if (!message || typeof message !== "object") return;
+      const record = message as Record<string, unknown>;
+      if (record.type === "tool") {
+        handleToolCall(record);
+      } else if (record.type === "result" && typeof record.valueJson === "string") {
+        settle(undefined, record.valueJson);
+      } else if (record.type === "error") {
+        settle(
+          new ProgramWorkerError(
+            typeof record.message === "string" ? record.message : "Generated program failed",
+            record.phase === "output" ? "output" : "runtime",
+          ),
+        );
+      }
+    });
+    worker.on("error", (cause) =>
+      settle(
+        new ProgramWorkerError(withCause("Generated program worker failed", cause), "runtime"),
+      ),
+    );
+    worker.on("exit", (code) =>
+      settle(new ProgramWorkerError(`Generated program worker exited with code ${code}`, "runtime")),
+    );
+    // Keep the worker's output from filling a pipe nobody reads.
+    worker.stdout?.resume();
+    worker.stderr?.resume();
+    worker.postMessage({
+      type: "run",
+      compiledSource: options.compiledSource,
+      inputJson: JSON.stringify(options.input ?? null),
+    });
+  });
+}
+
+export interface GeneratedProgramRuntimeOptions {
+  /** Hard limit for a single invocation. Defaults to 60 seconds. */
+  timeoutMs?: number;
 }
 
 export function startGeneratedProgramRuntime(
   callTool: CallTool,
   describeTool: DescribeTool = async () => undefined,
   listTools: ListTools = async () => [],
+  options: GeneratedProgramRuntimeOptions = {},
 ): GeneratedProgramRuntimeService {
   const artifacts = new Map<string, GeneratedProgramArtifact>();
-  const functions = new Map<string, ProgramFunction>();
+  const timeoutMs = options.timeoutMs ?? PROGRAM_TIMEOUT_MS;
+
+  const remember = (key: string, artifact: GeneratedProgramArtifact) => {
+    // Re-insert so the oldest entry is evicted first, and keep the cache
+    // bounded: compiled sources are otherwise never released.
+    artifacts.delete(key);
+    artifacts.set(key, artifact);
+    while (artifacts.size > MAX_COMPILED_PROGRAMS) {
+      const oldest = artifacts.keys().next().value;
+      if (oldest === undefined) break;
+      artifacts.delete(oldest);
+    }
+  };
 
   const compile = async (candidate: GeneratedProgramEnvelope) => {
     const envelope = await Schema.decodeUnknownPromise(GeneratedProgramEnvelopeSchema)(candidate);
@@ -169,8 +416,7 @@ export function startGeneratedProgramRuntime(
       compiledSource,
       signature,
     });
-    functions.set(key, makeFunction(compiledSource));
-    artifacts.set(key, artifact);
+    remember(key, artifact);
     return artifact;
   };
 
@@ -197,61 +443,94 @@ export function startGeneratedProgramRuntime(
             runtimeError("runtime", "Generated program invocation is invalid", cause),
           ),
         );
-        let program = functions.get(invocation.artifact.cacheKey);
-        if (!program) {
-          if (!hasValidSignature(invocation.artifact)) {
-            return yield* Effect.fail(
-              runtimeError(
-                "compile",
-                "Compiled program was not signed by this session; recompile it before invoking",
-                undefined,
-              ),
-            );
-          }
-          program = yield* Effect.try({
-            try: () => makeFunction(invocation.artifact.compiledSource),
-            catch: (cause) =>
-              runtimeError("compile", "Cached generated program is invalid", cause),
-          });
-          functions.set(invocation.artifact.cacheKey, program);
+        // Verify the HMAC over the executable fields before trusting any part
+        // of the artifact: the renderer can echo back a tampered object.
+        if (!hasValidSignature(invocation.artifact)) {
+          return yield* Effect.fail(
+            runtimeError(
+              "compile",
+              "Compiled program was not signed by this session; recompile it before invoking",
+              undefined,
+            ),
+          );
         }
+        // Prefer the source this process compiled over the copy that came
+        // back over IPC, even though the signature already covers it.
+        const compiledSource =
+          artifacts.get(invocation.artifact.cacheKey)?.compiledSource ??
+          invocation.artifact.compiledSource;
         const contractName = invocation.artifact.contract.name;
-        const guardedCallTool: CallTool = async (requestedName, args) => {
+        let toolContractFailed = false;
+
+        const guardedCallTool = async (
+          requestedName: string,
+          args: Record<string, unknown>,
+        ): Promise<ToolCallOutcome> => {
           // A model-written program may use OpenCode's name for a tool
           // (roblox-studio_search_game_tree). The rule below and Studio both
           // see Studio's own name, so the prefix never changes what's allowed.
           const name = studioToolName(requestedName);
           // Programs may only read from Studio, whoever wrote them.
-          const allowed =
-            isKnownBloxBotProgramTool(contractName, name) ||
-            (isBloxBotProgramContract(contractName) &&
-              isReadOnlyStudioTool((await describeTool(name))?.annotations));
+          let allowed = false;
+          try {
+            allowed =
+              isKnownBloxBotProgramTool(contractName, name) ||
+              (isBloxBotProgramContract(contractName) &&
+                isReadOnlyStudioTool((await describeTool(name))?.annotations));
+          } catch (cause) {
+            toolContractFailed = true;
+            return {
+              ok: false,
+              contract: true,
+              message: withCause(`Could not check whether ${name} is read-only`, cause),
+            };
+          }
           if (!allowed) {
-            throw new ToolContractError(`${contractName} programs may not call ${requestedName}`);
+            toolContractFailed = true;
+            return {
+              ok: false,
+              contract: true,
+              message: `${contractName} programs may not call ${requestedName}`,
+            };
           }
           try {
-            return await callTool(name, args);
+            return { ok: true, value: await callTool(name, args) };
           } catch (cause) {
-            throw new ToolContractError(
-              cause instanceof Error ? cause.message : "Studio MCP tool call failed",
-            );
+            // Keep the program's own message (such as Studio's error text) in
+            // the message itself, since only the message crosses the bridge.
+            toolContractFailed = true;
+            return {
+              ok: false,
+              contract: true,
+              message: cause instanceof Error ? cause.message : "Studio MCP tool call failed",
+            };
           }
         };
-        const value = yield* Effect.tryPromise({
-          try: () => program(invocation.input, guardedCallTool),
-          // Keep the program's own message (such as Studio's error text) in the
-          // message itself, since only the message crosses the IPC bridge.
-          catch: (cause) =>
-            cause instanceof ToolContractError
-              ? runtimeError("tool-contract", withCause("Generated program tool contract failed", cause), cause)
-              : runtimeError("runtime", withCause("Generated program execution failed", cause), cause),
-        });
-        const jsonValue = yield* Effect.try({
-          try: () => {
-            const json = JSON.stringify(value);
-            if (json === undefined) throw new Error("Output is not JSON serializable");
-            return JSON.parse(json) as unknown;
+
+        const valueJson = yield* Effect.tryPromise({
+          try: () =>
+            runProgramInWorker({
+              compiledSource,
+              input: invocation.input,
+              timeoutMs,
+              onToolCall: guardedCallTool,
+            }),
+          catch: (cause) => {
+            const workerPhase = cause instanceof ProgramWorkerError ? cause.phase : "runtime";
+            const phase: GeneratedProgramFailurePhase =
+              workerPhase === "output" ? "output" : toolContractFailed ? "tool-contract" : "runtime";
+            const message =
+              phase === "output"
+                ? "Generated program output is invalid"
+                : phase === "tool-contract"
+                  ? "Generated program tool contract failed"
+                  : "Generated program execution failed";
+            return runtimeError(phase, withCause(message, cause), cause);
           },
+        });
+
+        const jsonValue = yield* Effect.try({
+          try: () => JSON.parse(valueJson) as unknown,
           catch: (cause) =>
             runtimeError("output", withCause("Generated program output is invalid", cause), cause),
         });

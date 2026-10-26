@@ -16,8 +16,6 @@ const api: DesktopApi = {
   getOpenCodeInfo: () => ipcRenderer.invoke(channels.getOpenCodeInfo),
   getOpenCodeInstallFolder: () => ipcRenderer.invoke(channels.getOpenCodeInstallFolder),
   getStudioMcpStatus: () => ipcRenderer.invoke(channels.getStudioMcpStatus),
-  blenderSetup: () => ipcRenderer.invoke(channels.blenderSetup),
-  blenderLaunch: () => ipcRenderer.invoke(channels.blenderLaunch),
   onOpenCodeStartupProgress: (listener) => {
     const handleProgress = (_event: Electron.IpcRendererEvent, progress: OpenCodeStartupProgress) =>
       listener(progress);

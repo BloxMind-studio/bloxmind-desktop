@@ -11,8 +11,16 @@ export const FileChangeSchema = Schema.mutable(
   Schema.Struct({
     path: Schema.String, // POSIX-style relative path from workspace root
     operation: FileOperationSchema,
-    preHash: Schema.String, // sha256 of pre-state
-    preContent: Schema.NullOr(Schema.String), // raw text for small files (< 512 KB)
+    preHash: Schema.String, // sha256 of the pre-state bytes
+    preContent: Schema.NullOr(Schema.String), // journal payload for files < 512 KB
+    /**
+     * How `preContent` is encoded. Binary files are journalled as base64 so a
+     * restore writes the original bytes instead of UTF-8 replacement chars.
+     * Older checkpoints predate this field and are UTF-8.
+     */
+    preEncoding: Schema.optionalWith(Schema.Literal("utf8", "base64"), {
+      default: () => "utf8" as const,
+    }),
   }),
 );
 export type FileChange = typeof FileChangeSchema.Type;

@@ -17,7 +17,12 @@ import { QueryClient } from "@tanstack/react-query";
 import { Cause, Effect } from "effect";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { qk } from "@/lib/queryKeys";
-import { type MessagesCache, sseDispatch, sseDispatchEffect } from "@/lib/sseDispatch";
+import {
+  flushSseDeltas,
+  type MessagesCache,
+  sseDispatch,
+  sseDispatchEffect,
+} from "@/lib/sseDispatch";
 
 function makeQC() {
   return new QueryClient({
@@ -486,10 +491,11 @@ describe("sseDispatch", () => {
         qc,
         {
           type: "message.part.delta",
-          properties: { messageID: "m1", partID: "p1", delta: " World" },
+          properties: { sessionID: "s1", messageID: "m1", partID: "p1", delta: " World" },
         },
         "s1",
       );
+      flushSseDeltas();
 
       const part = qc.getQueryData<MessagesCache>(qk.messages("s1"))!.messagesById.m1.parts[0];
       expect((part as any).text).toBe("Hello World");
@@ -510,15 +516,78 @@ describe("sseDispatch", () => {
         qc,
         {
           type: "message.part.delta",
-          properties: { messageID: "m1", partID: "p1", field: "output", delta: "+more" },
+          properties: {
+            sessionID: "s1",
+            messageID: "m1",
+            partID: "p1",
+            field: "output",
+            delta: "+more",
+          },
         },
         "s1",
       );
+      flushSseDeltas();
 
       const part = qc.getQueryData<MessagesCache>(qk.messages("s1"))!.messagesById.m1
         .parts[0] as any;
       expect(part.output).toBe("out+more");
       expect(part.text).toBe("base"); // unchanged
+    });
+
+    it("coalesces a burst of deltas into one cache write", () => {
+      qc.setQueryData<MessagesCache>(qk.messages("s1"), {
+        messageIds: ["m1"],
+        messagesById: {
+          m1: {
+            info: { id: "m1" } as any,
+            parts: [{ id: "p1", type: "text", text: "" } as any],
+          },
+        },
+      });
+      const setQueryData = vi.spyOn(qc, "setQueryData");
+
+      for (const delta of ["Hello", " ", "World", "!"]) {
+        dispatch(
+          qc,
+          {
+            type: "message.part.delta",
+            properties: { sessionID: "s1", messageID: "m1", partID: "p1", delta },
+          },
+          "s1",
+        );
+      }
+      expect(setQueryData).not.toHaveBeenCalled();
+
+      flushSseDeltas();
+
+      expect(setQueryData).toHaveBeenCalledTimes(1);
+      const part = qc.getQueryData<MessagesCache>(qk.messages("s1"))!.messagesById.m1.parts[0];
+      expect((part as any).text).toBe("Hello World!");
+    });
+
+    it("ignores deltas addressed to another session", () => {
+      qc.setQueryData<MessagesCache>(qk.messages("s1"), {
+        messageIds: ["m1"],
+        messagesById: {
+          m1: {
+            info: { id: "m1" } as any,
+            parts: [{ id: "p1", type: "text", text: "Hello" } as any],
+          },
+        },
+      });
+
+      dispatch(
+        qc,
+        {
+          type: "message.part.delta",
+          properties: { sessionID: "s2", messageID: "m1", partID: "p1", delta: " World" },
+        },
+        "s1",
+      );
+      flushSseDeltas();
+
+      const part = qc.getQueryData<MessagesCache>(qk.messages("s1"))!.messagesById.m1.parts[0];
+      expect((part as any).text).toBe("Hello");
     });
 
     it("ignores delta when part is not found", () => {
@@ -531,10 +600,11 @@ describe("sseDispatch", () => {
         qc,
         {
           type: "message.part.delta",
-          properties: { messageID: "m1", partID: "nonexistent", delta: "x" },
+          properties: { sessionID: "s1", messageID: "m1", partID: "nonexistent", delta: "x" },
         },
         "s1",
       );
+      flushSseDeltas();
 
       // Should not throw, cache unchanged
       expect(qc.getQueryData<MessagesCache>(qk.messages("s1"))!.messagesById.m1.parts).toHaveLength(

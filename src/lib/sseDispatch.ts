@@ -37,6 +37,123 @@ export class SseDispatchError extends Data.TaggedError("SseDispatchError")<{
 const MESSAGES_REFETCH_DEBOUNCE_MS = 750;
 
 /**
+ * Deltas arrive many times per second. Appending each one straight into the
+ * cache copies every message in the session and re-renders the chat for every
+ * token, so they are accumulated and applied once per animation frame (or
+ * every 100 ms while the window is hidden and frames are throttled).
+ */
+interface PendingDelta {
+  sessionID: string;
+  messageID: string;
+  partID: string;
+  field: string;
+  text: string;
+}
+
+const pendingDeltas = new Map<QueryClient, Map<string, PendingDelta>>();
+let pendingFlushFrame: number | null = null;
+let pendingFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function cancelScheduledFlush(): void {
+  if (pendingFlushFrame !== null) {
+    if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(pendingFlushFrame);
+    pendingFlushFrame = null;
+  }
+  if (pendingFlushTimer !== null) {
+    clearTimeout(pendingFlushTimer);
+    pendingFlushTimer = null;
+  }
+}
+
+/** Apply every queued delta now. Also used when another event could reorder the cache. */
+export function flushSseDeltas(): void {
+  cancelScheduledFlush();
+  if (pendingDeltas.size === 0) return;
+
+  const batch = new Map(pendingDeltas);
+  pendingDeltas.clear();
+
+  for (const [queryClient, entries] of batch) {
+    // One cache write per session; within it, one object copy per message.
+    const bySession = new Map<string, PendingDelta[]>();
+    for (const entry of entries.values()) {
+      const list = bySession.get(entry.sessionID);
+      if (list) list.push(entry);
+      else bySession.set(entry.sessionID, [entry]);
+    }
+
+    for (const [sessionID, updates] of bySession) {
+      queryClient.setQueryData<MessagesCache>(qk.messages(sessionID), (prev) => {
+        if (!prev) return prev;
+        const messagesById = { ...prev.messagesById };
+        let changed = false;
+
+        const byMessage = new Map<string, PendingDelta[]>();
+        for (const update of updates) {
+          const list = byMessage.get(update.messageID);
+          if (list) list.push(update);
+          else byMessage.set(update.messageID, [update]);
+        }
+
+        for (const [messageID, messageUpdates] of byMessage) {
+          const msg = messagesById[messageID];
+          if (!msg) continue;
+          const parts = [...msg.parts];
+          let messageChanged = false;
+          for (const update of messageUpdates) {
+            const index = parts.findIndex((part) => part.id === update.partID);
+            if (index < 0) continue;
+            const part = { ...parts[index] } as Record<string, unknown>;
+            if (typeof part[update.field] !== "string") continue;
+            part[update.field] = (part[update.field] as string) + update.text;
+            parts[index] = part as (typeof parts)[number];
+            messageChanged = true;
+          }
+          if (messageChanged) {
+            messagesById[messageID] = { ...msg, parts };
+            changed = true;
+          }
+        }
+
+        return changed ? { ...prev, messagesById } : prev;
+      });
+    }
+  }
+}
+
+function scheduleSseFlush(): void {
+  if (pendingFlushFrame === null && typeof requestAnimationFrame === "function") {
+    pendingFlushFrame = requestAnimationFrame(() => {
+      pendingFlushFrame = null;
+      flushSseDeltas();
+    });
+  }
+  if (pendingFlushTimer === null) {
+    pendingFlushTimer = setTimeout(() => {
+      pendingFlushTimer = null;
+      flushSseDeltas();
+    }, 100);
+  }
+}
+
+function queueDelta(
+  queryClient: QueryClient,
+  delta: Omit<PendingDelta, "text">,
+  text: string,
+): void {
+  let entries = pendingDeltas.get(queryClient);
+  if (!entries) {
+    entries = new Map();
+    pendingDeltas.set(queryClient, entries);
+  }
+  const key = [delta.sessionID, delta.messageID, delta.partID, delta.field].join("\0");
+  const existing = entries.get(key);
+  if (existing) existing.text += text;
+  else entries.set(key, { ...delta, text });
+  scheduleSseFlush();
+}
+
+/**
  * Event deltas can outrun the message cache (for example when this window
  * opened mid-stream). Refetching on every miss would thrash the server, so
  * misses coalesce into one debounced invalidate per session.
@@ -108,6 +225,10 @@ function dispatchEvent(
   captureModelUsage?: (usage: ModelUsageEvent) => void,
 ): void {
   const currentSessionId = activeSessionIdRef.current;
+
+  // Anything that rewrites a part, or a message, must land after the text
+  // already streamed into the cache.
+  if (event.type !== "message.part.delta") flushSseDeltas();
 
   switch (event.type) {
     case "session.created": {
@@ -255,32 +376,15 @@ function dispatchEvent(
       break;
     }
     case "message.part.delta": {
-      const { messageID, partID, field, delta } = event.properties;
-      if (!currentSessionId) break;
-      const messages = queryClient.getQueryData<MessagesCache>(qk.messages(currentSessionId));
+      const { sessionID, messageID, partID, field, delta } = event.properties;
+      if (sessionID !== currentSessionId) break;
+      const messages = queryClient.getQueryData<MessagesCache>(qk.messages(sessionID));
       const knownPart = messages?.messagesById[messageID]?.parts.some((p) => p.id === partID);
       if (!knownPart) {
-        scheduleMessagesRefetch(queryClient, currentSessionId);
+        scheduleMessagesRefetch(queryClient, sessionID);
         break;
       }
-      queryClient.setQueryData<MessagesCache>(qk.messages(currentSessionId), (prev) => {
-        if (!prev) return prev;
-        const msg = prev.messagesById[messageID];
-        if (!msg) return prev;
-        const partIdx = msg.parts.findIndex((p) => p.id === partID);
-        if (partIdx < 0) return prev;
-        const part = { ...msg.parts[partIdx] };
-        const key = field || "text";
-        if (key in part && typeof (part as Record<string, unknown>)[key] === "string") {
-          (part as Record<string, unknown>)[key] =
-            ((part as Record<string, unknown>)[key] as string) + delta;
-        }
-        const newParts = msg.parts.map((p, i) => (i === partIdx ? part : p));
-        return {
-          ...prev,
-          messagesById: { ...prev.messagesById, [messageID]: { ...msg, parts: newParts } },
-        };
-      });
+      queueDelta(queryClient, { sessionID, messageID, partID, field: field || "text" }, delta);
       break;
     }
     case "message.removed": {

@@ -1,7 +1,7 @@
 import { rename, readFile, rm, writeFile } from "node:fs/promises";
 import { userInfo } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from "electron";
 import { autoUpdater } from "electron-updater";
@@ -34,11 +34,6 @@ import {
   GeneratedProgramRuntimeLive,
 } from "./services/GeneratedProgramRuntime";
 import { createBloxBotProgramStore } from "./services/BloxBotProgramStore";
-import {
-  defaultBlenderSetupEnvironment,
-  launchBlender,
-  runBlenderSetup,
-} from "./services/BlenderSetup";
 import { makeStudioMcpBrokerLayer, StudioMcpBroker } from "./services/StudioMcpBroker";
 import {
   CheckpointServiceTag,
@@ -57,6 +52,24 @@ import {
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
 const defaultConfig: AppConfig = DEFAULT_APP_CONFIG;
 const configMutex = Effect.unsafeMakeSemaphore(1);
+
+/**
+ * The only document the app window may show. Origins are not enough: packaged
+ * builds load over `file://`, where every local path shares the origin "null",
+ * so an origin check would let the window navigate to any HTML file on disk —
+ * with the preload bridge attached. Compare the resolved URL exactly.
+ */
+const appEntryUrl = process.env.VITE_DEV_SERVER_URL
+  ? new URL(process.env.VITE_DEV_SERVER_URL).href
+  : pathToFileURL(join(currentDirectory, "..", "..", "dist", "index.html")).href;
+
+function isAppEntryUrl(candidate: string): boolean {
+  try {
+    return new URL(candidate).href === appEntryUrl;
+  } catch {
+    return false;
+  }
+}
 
 function configPath(): string {
   return join(app.getPath("userData"), "BloxMind-store.json");
@@ -339,33 +352,6 @@ const registerIpcHandlers = Effect.sync(() => {
   ipcMain.handle(channels.getOpenCodeInstallFolder, () => openCodeBinaryDirectory);
   ipcMain.handle(channels.getStudioMcpStatus, () =>
     openCodeRuntime.runPromise(StudioMcpBroker.pipe(Effect.flatMap((broker) => broker.status))),
-  );
-  // Blender setup downloads uv and installs the bridge addon, so it can run
-  // for a minute or more; the renderer shows progress while it waits. It also
-  // opens the Creator Store page when the Studio plugin still has to be installed.
-  ipcMain.handle(channels.blenderSetup, () =>
-    runMain(
-      Effect.tryPromise({
-        try: () =>
-          runBlenderSetup(
-            defaultBlenderSetupEnvironment(join(app.getPath("userData"), "blender"), (url) =>
-              shell.openExternal(url),
-            ),
-          ),
-        catch: (cause) => new DesktopMainError({ message: "Blender setup failed", cause }),
-      }),
-    ),
-  );
-  ipcMain.handle(channels.blenderLaunch, () =>
-    runMain(
-      Effect.tryPromise({
-        try: () =>
-          launchBlender(
-            defaultBlenderSetupEnvironment(join(app.getPath("userData"), "blender")),
-          ),
-        catch: (cause) => new DesktopMainError({ message: "Failed to open Blender", cause }),
-      }),
-    ),
   );
   ipcMain.handle(channels.getVersion, () => runMain(Effect.sync(() => app.getVersion())));
   ipcMain.handle(channels.getInstructionFiles, () =>
@@ -697,14 +683,10 @@ function createWindow(): Effect.Effect<void, DesktopMainError> {
         return { action: "deny" };
       });
       window.webContents.on("will-navigate", (event, url) => {
-        const currentUrl = window.webContents.getURL();
-        const shouldBlock = Effect.runSync(
-          Effect.try({
-            try: () => Boolean(currentUrl && new URL(url).origin !== new URL(currentUrl).origin),
-            catch: () => true,
-          }).pipe(Effect.catchAll(() => Effect.succeed(true))),
-        );
-        if (shouldBlock) event.preventDefault();
+        if (!isAppEntryUrl(url)) event.preventDefault();
+      });
+      window.webContents.on("will-redirect", (event, url) => {
+        if (!isAppEntryUrl(url)) event.preventDefault();
       });
       window.once("ready-to-show", () => Effect.runSync(Effect.sync(() => window.show())));
       window.on("closed", () =>

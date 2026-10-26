@@ -31,12 +31,7 @@ import { connectHint, isFreeTier, providerDisplayName } from "@/lib/providerAuth
 import { checkModels, checkPreference, type ProviderCheckResult } from "@/lib/providerCheck";
 import { usePreferences } from "@/providers/PreferencesProvider";
 import type { ModelInfo, ProviderInfo } from "@/types";
-import {
-  type AppConfig,
-  type BlenderSetupResult,
-  DEFAULT_APP_CONFIG,
-  type UpdateInfo,
-} from "@/types/desktop";
+import { type AppConfig, DEFAULT_APP_CONFIG, type UpdateInfo } from "@/types/desktop";
 
 // ── Popular providers (same order as OpenCode's web UI) ──────────────
 const POPULAR_PROVIDERS = [
@@ -1263,15 +1258,10 @@ function mcpStatusLabel(status: McpServerLiveStatus | undefined): {
   }
 }
 
-/** What the automatic Blender setup does, shown before it runs. */
-const BLENDER_AUTO_STEPS = [
-  "Checks Roblox Studio for the Blender Animations plugin, opening its Creator Store page if it's missing.",
-  "Installs uv and the Blender bridge addon.",
-  "Enables the addon and opens Blender with the bridge running.",
-  "Adds the integration so BloxMind can animate characters.",
-];
-
-/** The manual alternative, kept in case the automatic setup can't find Blender. */
+/**
+ * Blender is an advanced, bring-your-own-tooling integration: BloxMind connects
+ * to a Blender session the user already runs, and never installs or opens it.
+ */
 const BLENDER_MANUAL_STEPS = [
   "Install uv (docs.astral.sh/uv), then run: uvx mcp-for-blender@latest install-addon",
   'Open Blender and enable "MCP for Blender" in Preferences → Add-ons.',
@@ -1285,9 +1275,6 @@ function IntegrationsTab() {
   const { statuses } = useMcpStatus();
   const [draft, setDraft] = useState<McpServerDraft | null>(null);
   const [draftError, setDraftError] = useState<string | null>(null);
-  const [blenderBusy, setBlenderBusy] = useState(false);
-  const [blenderSetup, setBlenderSetup] = useState<BlenderSetupResult | null>(null);
-  const [blenderError, setBlenderError] = useState<string | null>(null);
 
   const hasBlender = mcpServers.some((server) => server.name.toLowerCase() === "blender");
 
@@ -1337,41 +1324,6 @@ function IntegrationsTab() {
     toast.success("Blender integration added");
   }
 
-  /** Installs uv, the addon and Blender itself, then wires up the integration. */
-  async function setUpBlender() {
-    if (blenderBusy) return;
-    setBlenderBusy(true);
-    setBlenderError(null);
-    setBlenderSetup(null);
-    try {
-      const result = await desktop.blenderSetup();
-      setBlenderSetup(result);
-      if (result.ok && result.uvxPath) {
-        const entry = blenderMcpServer(result.uvxPath);
-        const next = hasBlender
-          ? mcpServers.map((server) => (server.name.toLowerCase() === "blender" ? entry : server))
-          : [...mcpServers, entry];
-        setMcpServers(next);
-      }
-      if (result.ok) toast.success(result.detail);
-      else toast.error(result.detail);
-    } catch (cause) {
-      setBlenderError(cause instanceof Error ? cause.message : "Blender setup failed");
-    } finally {
-      setBlenderBusy(false);
-    }
-  }
-
-  async function openBlender() {
-    try {
-      const result = await desktop.blenderLaunch();
-      if (result.launched) toast.success("Opening Blender");
-      else toast.error("Blender wasn't found on this computer.");
-    } catch {
-      toast.error("Couldn't open Blender.");
-    }
-  }
-
   return (
     <div className="mx-auto w-full max-w-md px-6 py-8">
       <h4 className="font-serif text-lg italic text-foreground">Integrations</h4>
@@ -1379,136 +1331,62 @@ function IntegrationsTab() {
         Extra MCP servers BloxMind can use, like Blender for character animations.
       </p>
 
-      {/* Blender preset */}
+      {/* Blender is an advanced integration: the user runs Blender themselves. */}
       <div className="mt-6">
-        <div className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Blender
+        <div className="mb-1.5 flex items-center gap-2 px-1">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Blender
+          </span>
+          <span className="rounded border px-1 py-px text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
+            Advanced
+          </span>
         </div>
         <div className="rounded-lg border bg-card p-3.5">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <div className="text-sm font-medium">Character animations</div>
-              <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-                Build R6 and R15 animations in Blender and load them straight into Studio.
-              </p>
-            </div>
+          <div className="text-sm font-medium">Character animations</div>
+          <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+            Build R6 and R15 animations in Blender and load them into Studio. BloxMind connects to a
+            Blender session you run yourself — it doesn't install or open Blender for you.
+          </p>
+          <ol className="mt-3 space-y-1.5 border-t pt-3">
+            {BLENDER_MANUAL_STEPS.map((step, index) => (
+              <li
+                key={step}
+                className="flex gap-2 text-[11px] leading-relaxed text-muted-foreground"
+              >
+                <span className="shrink-0 font-mono text-muted-foreground/60">{index + 1}.</span>
+                {step}
+              </li>
+            ))}
+          </ol>
+          <div className="mt-2.5 flex flex-wrap items-center gap-2">
+            {!hasBlender && (
+              <button
+                type="button"
+                onClick={addBlender}
+                className="rounded-md border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+              >
+                Add Blender integration
+              </button>
+            )}
             <button
               type="button"
-              onClick={setUpBlender}
-              disabled={blenderBusy}
-              className="shrink-0 rounded-md bg-foreground px-2.5 py-1.5 text-[11px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
+              onClick={() => desktop.openUrl(BLENDER_ANIMATIONS_PLUGIN_URL).catch(() => {})}
+              className="rounded-md border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:text-foreground"
             >
-              {blenderBusy ? "Setting up…" : hasBlender ? "Re-run setup" : "Set up automatically"}
+              Get the Studio plugin
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                desktop
+                  .openUrl("https://github.com/ahujasid/blender-mcp#installation")
+                  .catch(() => {})
+              }
+              className="text-[10px] text-muted-foreground underline hover:text-foreground"
+            >
+              Setup guide
             </button>
           </div>
-          {blenderBusy && (
-            <p className="mt-3 border-t pt-3 text-[11px] leading-relaxed text-muted-foreground">
-              Installing uv and the Blender bridge, then opening Blender. This can take a minute on
-              the first run.
-            </p>
-          )}
-          {!blenderBusy && blenderError && (
-            <p className="mt-3 border-t pt-3 text-[11px] leading-relaxed text-red-500">
-              {blenderError}
-            </p>
-          )}
-          {!blenderBusy && !blenderError && blenderSetup && (
-            <div className="mt-3 border-t pt-3">
-              <p className="text-[11px] font-medium text-foreground">{blenderSetup.detail}</p>
-              <ol className="mt-1.5 space-y-1">
-                {blenderSetup.steps.map((step, index) => (
-                  <li
-                    key={step}
-                    className="flex gap-2 text-[11px] leading-relaxed text-muted-foreground"
-                  >
-                    <span className="shrink-0 font-mono text-muted-foreground/60">
-                      {index + 1}.
-                    </span>
-                    {step}
-                  </li>
-                ))}
-              </ol>
-              {blenderSetup.studioPlugin === "missing" && (
-                <div className="mt-2 flex items-center justify-between gap-3 rounded border border-dashed px-2 py-1.5">
-                  <span className="text-[10px] leading-relaxed text-muted-foreground">
-                    Studio installs the plugin once you click Install on its page.
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => desktop.openUrl(BLENDER_ANIMATIONS_PLUGIN_URL).catch(() => {})}
-                    className="shrink-0 rounded-md border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:text-foreground"
-                  >
-                    Open plugin page
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-          {!blenderBusy && !blenderError && !blenderSetup && (
-            <ol className="mt-3 space-y-1.5 border-t pt-3">
-              {BLENDER_AUTO_STEPS.map((step, index) => (
-                <li
-                  key={step}
-                  className="flex gap-2 text-[11px] leading-relaxed text-muted-foreground"
-                >
-                  <span className="shrink-0 font-mono text-muted-foreground/60">{index + 1}.</span>
-                  {step}
-                </li>
-              ))}
-            </ol>
-          )}
-          <details className="mt-3 border-t pt-3">
-            <summary className="cursor-pointer text-[11px] font-medium text-muted-foreground hover:text-foreground">
-              Manual setup
-            </summary>
-            <ol className="mt-2 space-y-1.5">
-              {BLENDER_MANUAL_STEPS.map((step, index) => (
-                <li
-                  key={step}
-                  className="flex gap-2 text-[11px] leading-relaxed text-muted-foreground"
-                >
-                  <span className="shrink-0 font-mono text-muted-foreground/60">{index + 1}.</span>
-                  {step}
-                </li>
-              ))}
-            </ol>
-            <div className="mt-2.5 flex flex-wrap items-center gap-2">
-              {!hasBlender && (
-                <button
-                  type="button"
-                  onClick={addBlender}
-                  className="rounded-md border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:text-foreground"
-                >
-                  Add Blender integration
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={openBlender}
-                className="rounded-md border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:text-foreground"
-              >
-                Open Blender
-              </button>
-              <button
-                type="button"
-                onClick={() => desktop.openUrl(BLENDER_ANIMATIONS_PLUGIN_URL).catch(() => {})}
-                className="rounded-md border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:text-foreground"
-              >
-                Get the Studio plugin
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  desktop
-                    .openUrl("https://github.com/ahujasid/blender-mcp#installation")
-                    .catch(() => {})
-                }
-                className="text-[10px] text-muted-foreground underline hover:text-foreground"
-              >
-                Setup guide
-              </button>
-            </div>
-          </details>
         </div>
       </div>
 

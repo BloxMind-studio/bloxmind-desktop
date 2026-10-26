@@ -405,6 +405,48 @@ describe("OpenCode binary releases", () => {
     expect(fetch.mock.calls[1]?.[0]).toContain("/v1.5.0/");
   });
 
+  it("launches from a verified cache without waiting for the release check", async () => {
+    const cacheDirectory = await makeTemporaryDirectory();
+    const assetName = "opencode-darwin-arm64.zip";
+    const archive = Buffer.from("cached archive");
+    const digest = `sha256:${createHash("sha256").update(archive).digest("hex")}`;
+    const pinnedRelease = pinnedFor("darwin-arm64", assetName, archive);
+
+    await Effect.runPromise(
+      ensureOpenCodeBinary({
+        cacheDirectory,
+        platform: "darwin",
+        arch: "arm64",
+        pinnedRelease,
+        fetch: vi
+          .fn()
+          .mockResolvedValueOnce(Response.json([release("v1.2.3", assetName, digest)]))
+          .mockResolvedValueOnce(new Response(archive)),
+        extractArchive: writeExecutable("opencode"),
+      }),
+    );
+
+    // A release check that never answers must not hold up a verified cache.
+    const neverFetch = vi.fn(() => new Promise<Response>(() => {}));
+    const cached = await Effect.runPromise(
+      ensureOpenCodeBinary({
+        cacheDirectory,
+        platform: "darwin",
+        arch: "arm64",
+        pinnedRelease,
+        fetch: neverFetch as unknown as typeof fetch,
+        extractArchive: writeExecutable("opencode"),
+      }).pipe(
+        Effect.timeoutFail({
+          duration: "2 seconds",
+          onTimeout: () => new Error("startup waited for the release check"),
+        }),
+      ),
+    );
+
+    expect(cached.executable).toBe(join(cacheDirectory, "darwin-arm64", "1.2.3", "opencode"));
+  });
+
   it("aborts an in-flight download and cleans its temporary directory", async () => {
     const cacheDirectory = await makeTemporaryDirectory();
     const assetName = "opencode-darwin-arm64.zip";

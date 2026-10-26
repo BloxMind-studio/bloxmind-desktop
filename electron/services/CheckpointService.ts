@@ -76,9 +76,11 @@ function isMissingFile(cause: unknown): boolean {
   );
 }
 
-function readJsonFile<A>(
+function readJsonFile<A, I>(
   file: string,
-  schema: Schema.Schema<A>,
+  // Encoded may differ from decoded: `optionalWith(..., { default })` accepts
+  // records written before the field existed and fills it in on decode.
+  schema: Schema.Schema<A, I>,
   fallback: A,
 ): Effect.Effect<A, CheckpointError> {
   return Effect.gen(function* () {
@@ -106,12 +108,34 @@ function readJsonFile<A>(
   });
 }
 
-function hashContent(contents: string): string {
+function hashBytes(contents: Buffer): string {
   return createHash("sha256").update(contents).digest("hex");
 }
 
-function readTextSafe(path: string): Promise<string | null> {
-  return readFile(path, "utf8").then(
+/** sha256 of a string's UTF-8 bytes. */
+function hashContent(contents: string): string {
+  return hashBytes(Buffer.from(contents, "utf8"));
+}
+
+const strictUtf8 = new TextDecoder("utf-8", { fatal: true });
+
+/**
+ * The text of a file that is valid UTF-8 without NUL bytes, or null when the
+ * file is binary. Journaling binaries as decoded text silently replaced every
+ * invalid byte with U+FFFD, so a restore corrupted images, audio and .rbxl
+ * files while still reporting a successful hash check.
+ */
+function textFromBytes(contents: Buffer): string | null {
+  if (contents.includes(0)) return null;
+  try {
+    return strictUtf8.decode(contents);
+  } catch {
+    return null;
+  }
+}
+
+function readBytesSafe(path: string): Promise<Buffer | null> {
+  return readFile(path).then(
     (contents) => contents,
     (cause) => {
       // Only a genuinely missing file counts as "absent". Any other error
@@ -331,7 +355,7 @@ function makeCapture(
       for (const relPath of targetPaths) {
         const absPath = resolve(options.workspace, relPath);
         const contents = yield* Effect.tryPromise({
-          try: () => readTextSafe(absPath),
+          try: () => readBytesSafe(absPath),
           catch: (cause) => new CheckpointError({ message: `Failed to read ${relPath}`, cause }),
         }).pipe(
           // A file that can't be read right now (locked by Studio, permissions,
@@ -340,7 +364,7 @@ function makeCapture(
           // which a later restore would have to interpret as "delete it".
           Effect.catchAll((error) => {
             console.warn(`[checkpoint] skipping unreadable file ${relPath}: ${error.message}`);
-            return Effect.succeed<string | null | undefined>(undefined);
+            return Effect.succeed<Buffer | null | undefined>(undefined);
           }),
         );
         if (contents === undefined) continue;
@@ -350,14 +374,20 @@ function makeCapture(
             operation: "create",
             preHash: hashContent(""),
             preContent: null,
+            preEncoding: "utf8",
           });
         } else {
+          const text = textFromBytes(contents);
+          const withinLimit = contents.byteLength <= MAX_JOURNAL_FILE_BYTES;
           changes.push({
             path: relPath,
             operation: "modify",
-            preHash: hashContent(contents),
-            preContent:
-              Buffer.byteLength(contents, "utf8") <= MAX_JOURNAL_FILE_BYTES ? contents : null,
+            preHash: hashBytes(contents),
+            // Text is stored verbatim; binary pre-images are base64 so a
+            // restore writes back exact bytes. Oversized files are skipped and
+            // reported as such instead of pretending to be restored.
+            preContent: !withinLimit ? null : (text ?? contents.toString("base64")),
+            preEncoding: text === null ? "base64" : "utf8",
           });
         }
       }
@@ -435,8 +465,14 @@ function restoreFromJournal(
           try: async () => {
             await mkdir(dirname(absPath), { recursive: true });
             const temporary = `${absPath}.${process.pid}.restore.tmp`;
+            // Write the recorded bytes, not a decoded string: binary
+            // pre-images are base64 and text is UTF-8.
+            const payload = Buffer.from(
+              change.preContent ?? "",
+              change.preEncoding === "base64" ? "base64" : "utf8",
+            );
             try {
-              await writeFile(temporary, change.preContent ?? "", { mode: 0o600 });
+              await writeFile(temporary, payload, { mode: 0o600 });
               try {
                 await rename(temporary, absPath);
               } catch {
@@ -541,7 +577,7 @@ function restoreImpl(
         if (change.preContent === null && change.operation === "modify") continue;
         const absPath = resolve(options.workspace, change.path);
         const after = yield* Effect.tryPromise({
-          try: () => readTextSafe(absPath),
+          try: () => readBytesSafe(absPath),
           catch: (cause) => new CheckpointError({ message: `Failed to verify ${change.path}`, cause }),
         });
         if (change.operation === "create") {
@@ -552,7 +588,7 @@ function restoreImpl(
               }),
             );
           }
-        } else if (after === null || hashContent(after) !== change.preHash) {
+        } else if (after === null || hashBytes(after) !== change.preHash) {
           yield* Effect.fail(
             new CheckpointError({
               message: `Restore verification failed for ${change.path}: hash mismatch`,
@@ -572,9 +608,19 @@ function restoreImpl(
         `[checkpoint] restored ${checkpoint.id} session=${decoded.sessionId} files=${scopedPaths.length}`,
       );
 
+      // Files with no journal payload are deliberately left untouched, so say
+      // so instead of claiming the whole workspace came back.
+      const skipped =
+        checkpoint.gitRef === null
+          ? checkpoint.paths.filter(
+              (change) => change.operation === "modify" && change.preContent === null,
+            ).length
+          : 0;
+      const skippedNote =
+        skipped > 0 ? `; ${skipped} file(s) too large to journal were left untouched` : "";
       const message = checkpoint.fullSnapshot
-        ? `Restored entire workspace (${checkpoint.paths.length} file(s) tracked)`
-        : `Restored ${checkpoint.paths.length} file(s)`;
+        ? `Restored entire workspace (${checkpoint.paths.length} file(s) tracked${skippedNote})`
+        : `Restored ${checkpoint.paths.length} file(s)${skippedNote}`;
 
       return {
         restoredId: checkpoint.id,

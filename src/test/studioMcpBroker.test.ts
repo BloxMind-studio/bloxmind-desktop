@@ -47,9 +47,11 @@ afterEach(async () => {
   await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
 });
 
-async function connect(info: { url: string }) {
+async function connect(info: { url: string; headers?: Record<string, string> }) {
   const client = new Client({ name: "test-client", version: "1.0.0" });
-  const transport = new StreamableHTTPClientTransport(new URL(info.url));
+  const transport = new StreamableHTTPClientTransport(new URL(info.url), {
+    requestInit: info.headers ? { headers: info.headers } : undefined,
+  });
   await client.connect(transport);
   cleanups.push(() => client.close());
   return client;
@@ -61,6 +63,49 @@ describe("Studio MCP broker", () => {
     cleanups.push(() => broker.close());
 
     expect(broker.info.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/mcp$/);
+    expect(broker.info.headers.Authorization).toMatch(/^Bearer [\w-]{20,}$/);
+  });
+
+  it("rejects requests without the per-launch token", async () => {
+    const broker = await startStudioMcpBroker(fakeUpstream(), { token: "only-this-launch" });
+    cleanups.push(() => broker.close());
+
+    const unauthorized = await fetch(broker.info.url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize" }),
+    });
+    expect(unauthorized.status).toBe(401);
+
+    const wrongToken = await fetch(broker.info.url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer wrong-token",
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize" }),
+    });
+    expect(wrongToken.status).toBe(401);
+  });
+
+  it("rejects oversized request bodies", async () => {
+    const broker = await startStudioMcpBroker(fakeUpstream(), { token: "body-cap" });
+    cleanups.push(() => broker.close());
+
+    const response = await fetch(broker.info.url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer body-cap",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        padding: "x".repeat(300_000),
+      }),
+    });
+    expect(response.status).toBe(413);
   });
 
   it("forwards tool discovery and calls over standard MCP transport", async () => {

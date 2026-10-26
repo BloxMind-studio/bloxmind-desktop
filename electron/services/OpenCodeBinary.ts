@@ -971,6 +971,50 @@ export function ensureOpenCodeBinary(
           ),
         ),
       );
+    const installQuiet = (release: CompatibleRelease) =>
+      installRelease({ ...context, reportProgress: undefined }, release).pipe(
+        Effect.tap(() =>
+          pruneCache(platformDirectory).pipe(
+            Effect.catchAll((error) => Effect.logWarning(error.message, error.cause)),
+          ),
+        ),
+      );
+
+    // Fast path: a verified cache at or above the pinned release launches
+    // immediately. The update check then runs detached, so a slow, offline, or
+    // rate-limited GitHub API (60 req/h per IP) never delays startup — it only
+    // refreshes the cache for the next launch.
+    const pinnedVersion = parseVersion(pinnedRelease.version);
+    const fastCached = yield* findNewestCachedBinary(platformDirectory, platform, arch, spec);
+    const fastVersion = fastCached ? parseVersion(fastCached.version) : null;
+    if (
+      fastCached &&
+      fastVersion &&
+      pinnedVersion &&
+      fastVersion.major === pinnedVersion.major &&
+      compareVersions(fastVersion, pinnedVersion) >= 0
+    ) {
+      yield* Effect.forkDaemon(
+        findCompatibleRelease(fetchFn, spec.archiveName).pipe(
+          Effect.flatMap((release) =>
+            readValidCachedBinary(
+              join(platformDirectory, release.version.value),
+              platform,
+              arch,
+              spec,
+              release,
+            ).pipe(Effect.flatMap((existing) => (existing ? Effect.void : installQuiet(release)))),
+          ),
+          Effect.catchAll((error) =>
+            Effect.logWarning(
+              `[opencode] Background update check failed: ${error.message}`,
+              error.cause,
+            ),
+          ),
+        ),
+      );
+      return fastCached;
+    }
 
     // Newer releases come from the API. When it fails (rate limit, timeout, DNS), a cached
     // copy or the pinned release keeps BloxBot working.

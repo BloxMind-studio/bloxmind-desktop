@@ -12,7 +12,7 @@ import {
   type Tool,
 } from "@modelcontextprotocol/sdk/types.js";
 import type { ChildProcess } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { access, mkdir } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { Context, Data, Effect, Layer, Schedule } from "effect";
@@ -25,6 +25,10 @@ import {
 } from "../studioMcpHelper";
 
 const LOOPBACK = "127.0.0.1";
+/** Request bodies are JSON-RPC; anything larger is not a legitimate call. */
+const MAX_REQUEST_BYTES = 256 * 1024;
+/** Bound the sessions a misbehaving local client can open. */
+const MAX_SESSIONS = 32;
 
 export class StudioMcpBrokerError extends Data.TaggedError("StudioMcpBrokerError")<{
   message: string;
@@ -68,6 +72,12 @@ export const studioMcpStartSchedule = Schedule.exponential("2 seconds").pipe(
 
 export interface StudioMcpBrokerInfo {
   url: string;
+  /**
+   * The bearer token every request must carry. Loopback alone is not a
+   * boundary: any local process, and any web page that can reach
+   * 127.0.0.1, could otherwise drive the user's open Studio session.
+   */
+  headers: Record<string, string>;
 }
 
 export interface StudioMcpUpstream {
@@ -395,13 +405,33 @@ function summarizeToolResult(name: string, result: CallToolResult): string {
   }
 }
 
+class RequestTooLargeError extends Error {}
+
 async function readJson(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
+  let total = 0;
+  let tooLarge = false;
   for await (const chunk of req) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    chunks.push(buffer);
+    total += buffer.byteLength;
+    if (total > MAX_REQUEST_BYTES) {
+      // Keep draining so the 413 response can be written, but never buffer
+      // more than the cap.
+      tooLarge = true;
+      chunks.length = 0;
+      continue;
+    }
+    if (!tooLarge) chunks.push(buffer);
   }
+  if (tooLarge) throw new RequestTooLargeError("Request body too large");
   return chunks.length === 0 ? undefined : JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
+
+function hasValidToken(provided: string | undefined, expected: string): boolean {
+  if (!provided) return false;
+  const given = Buffer.from(provided, "utf8");
+  const wanted = Buffer.from(expected, "utf8");
+  return given.length === wanted.length && timingSafeEqual(given, wanted);
 }
 
 function reject(res: ServerResponse, statusCode: number, message: string) {
@@ -415,8 +445,12 @@ interface BrokerResource extends StudioMcpBrokerService {
 
 export async function startStudioMcpBroker(
   upstream: StudioMcpUpstream,
+  options: { token?: string } = {},
 ): Promise<BrokerResource> {
   process.stderr.write("[studio-mcp] broker starting\n");
+  // Per-launch credential. It is only shared with the OpenCode config this
+  // app writes, so a stray local client cannot join the user's session.
+  const token = options.token ?? randomBytes(32).toString("base64url");
   const sessions = new Map<
     string,
     { server: Server; transport: StreamableHTTPServerTransport }
@@ -461,12 +495,19 @@ export async function startStudioMcpBroker(
         return reject(res, 403, "Forbidden host");
       }
       if (req.url !== "/mcp") return reject(res, 404, "Not found");
+      if (!hasValidToken(req.headers.authorization, `Bearer ${token}`)) {
+        res.setHeader("www-authenticate", "Bearer");
+        return reject(res, 401, "Unauthorized");
+      }
       const sessionId = req.headers["mcp-session-id"];
       let session = typeof sessionId === "string" ? sessions.get(sessionId) : undefined;
       let body: unknown;
       if (req.method === "POST") body = await readJson(req);
 
       if (!session && req.method === "POST" && isInitializeRequest(body)) {
+        if (sessions.size >= MAX_SESSIONS) {
+          return reject(res, 503, "Too many MCP sessions");
+        }
         try {
           await upstream.ready?.();
         } catch {
@@ -477,8 +518,14 @@ export async function startStudioMcpBroker(
       }
       if (!session) return reject(res, 400, "A valid MCP session is required");
       await session.transport.handleRequest(req, res, body);
-    } catch {
-      if (!res.headersSent) reject(res, 500, "MCP broker request failed");
+    } catch (cause) {
+      if (!res.headersSent) {
+        reject(
+          res,
+          cause instanceof RequestTooLargeError ? 413 : 500,
+          cause instanceof RequestTooLargeError ? "Request body too large" : "MCP broker request failed",
+        );
+      }
     }
   });
 
@@ -492,7 +539,7 @@ export async function startStudioMcpBroker(
 
   process.stderr.write(`[studio-mcp] broker listening on ${LOOPBACK}:${address.port}\n`);
   return {
-    info: { url: `http://${LOOPBACK}:${address.port}/mcp` },
+    info: { url: `http://${LOOPBACK}:${address.port}/mcp`, headers: { Authorization: `Bearer ${token}` } },
     callTool: (name, args) =>
       Effect.tryPromise({
         try: () => upstream.callTool(name, args),

@@ -441,14 +441,19 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
         });
         unchangedPolls = previousComparable === nextComparable ? unchangedPolls + 1 : 0;
         failuresRef.current = 0;
-        collectionRef.current = next;
-        setCollection(next);
-        publishObjects(next.snapshot.roots);
-        setExpanded((currentExpanded) =>
-          currentExpanded.size > 0
-            ? currentExpanded
-            : new Set(next.snapshot.roots.map((node) => node.path)),
-        );
+        // An idle poll that returns the same tree must not publish: a fresh
+        // object identity re-renders every TreeRow and rebuilds the composer's
+        // reference index for nothing.
+        if (!unchangedPolls) {
+          collectionRef.current = next;
+          setCollection(next);
+          publishObjects(next.snapshot.roots);
+          setExpanded((currentExpanded) =>
+            currentExpanded.size > 0
+              ? currentExpanded
+              : new Set(next.snapshot.roots.map((node) => node.path)),
+          );
+        }
         if (isFirstSync || telemetryRef.current.hadFailure) {
           posthog.capture(
             "sync_succeeded",
@@ -585,6 +590,8 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
     [expanded, search, visibleRoots],
   );
 
+  const handleSelect = useCallback((next: ExplorerNode) => setSelectedPath(next.path), []);
+
   const handleReference = useCallback(() => {
     if (!selected) return;
     referenceObject(createExplorerReference(selected));
@@ -667,7 +674,7 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
             expanded={visibleExpanded}
             selectedPath={selectedPath}
             onToggle={toggleNode}
-            onSelect={(next) => setSelectedPath(next.path)}
+            onSelect={handleSelect}
           />
         ))}
       </div>

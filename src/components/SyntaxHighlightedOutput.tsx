@@ -43,6 +43,9 @@ export type HighlightLanguage =
   | "tsx"
   | "typescript";
 
+/** Coalesce rapid edits (streaming) before re-tokenizing the whole block. */
+const HIGHLIGHT_DEBOUNCE_MS = 60;
+
 const languageLoads = new Map<HighlightLanguage, Promise<void>>();
 
 function ensureLanguage(language: HighlightLanguage) {
@@ -93,24 +96,30 @@ export default function SyntaxHighlightedOutput({
 
   useEffect(() => {
     let active = true;
-    void Promise.all([highlighterPromise, ensureLanguage(language)]).then(([highlighter]) => {
-      const tokenLines = highlighter.codeToTokensWithThemes(code, {
-        lang: language,
-        themes: { light: "github-light", dark: "github-dark" },
+    // A streamed code block changes on every token. Tokenizing every
+    // intermediate string costs CPU without ever reaching the screen, so
+    // coalesce rapid edits and only highlight what settles.
+    const timer = setTimeout(() => {
+      void Promise.all([highlighterPromise, ensureLanguage(language)]).then(([highlighter]) => {
+        const tokenLines = highlighter.codeToTokensWithThemes(code, {
+          lang: language,
+          themes: { light: "github-light", dark: "github-dark" },
+        });
+        if (!active) return;
+        setLines(
+          tokenLines.map((line) =>
+            line.map((token) => ({
+              content: token.content,
+              light: token.variants.light?.color,
+              dark: token.variants.dark?.color,
+            })),
+          ),
+        );
       });
-      if (!active) return;
-      setLines(
-        tokenLines.map((line) =>
-          line.map((token) => ({
-            content: token.content,
-            light: token.variants.light?.color,
-            dark: token.variants.dark?.color,
-          })),
-        ),
-      );
-    });
+    }, HIGHLIGHT_DEBOUNCE_MS);
     return () => {
       active = false;
+      clearTimeout(timer);
     };
   }, [code, language]);
 

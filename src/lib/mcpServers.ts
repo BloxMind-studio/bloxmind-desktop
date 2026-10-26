@@ -219,14 +219,14 @@ export async function applyMcpServers(
 
 /**
  * The one-click Blender integration: drives Blender through the Blender MCP
- * bridge. `uvxPath` comes from the automated setup so the entry keeps working
- * even when uv isn't on the user's PATH.
+ * bridge. BloxMind doesn't install or launch Blender for the user, so this
+ * entry assumes the bridge is set up and `uvx` is on their PATH.
  */
-export function blenderMcpServer(uvxPath?: string | null): McpServerConfig {
+export function blenderMcpServer(): McpServerConfig {
   return {
     name: "blender",
     type: "local",
-    command: [uvxPath ?? "uvx", "mcp-for-blender"],
+    command: ["uvx", "mcp-for-blender"],
     url: null,
     enabled: true,
     // The bridge would otherwise collect anonymous usage telemetry.

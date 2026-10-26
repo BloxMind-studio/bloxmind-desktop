@@ -21,10 +21,6 @@ import {
   type AppConfig,
   AppConfigPatchSchema,
   AppConfigSchema,
-  type BlenderLaunchResult,
-  BlenderLaunchResultSchema,
-  type BlenderSetupResult,
-  BlenderSetupResultSchema,
   DEFAULT_APP_CONFIG,
   type DesktopApi,
   type InstructionFile,
@@ -83,8 +79,6 @@ interface DesktopEffects {
   readonly getOpenCodeInfo: Effect.Effect<OpenCodeInfo, DesktopError>;
   readonly getOpenCodeInstallFolder: Effect.Effect<string | null, DesktopError>;
   readonly getStudioMcpStatus: Effect.Effect<StudioMcpStatus, DesktopError>;
-  readonly blenderSetup: Effect.Effect<BlenderSetupResult, DesktopError>;
-  readonly blenderLaunch: Effect.Effect<BlenderLaunchResult, DesktopError>;
   readonly getVersion: Effect.Effect<string, DesktopError>;
   readonly getInstructionFiles: Effect.Effect<readonly InstructionFile[], DesktopError>;
   readonly openUrl: (url: string) => Effect.Effect<void, DesktopError>;
@@ -151,12 +145,6 @@ const browserEffects: DesktopEffects = {
   ),
   getOpenCodeInstallFolder: Effect.succeed(null),
   getStudioMcpStatus: Effect.succeed({ state: "starting" }),
-  blenderSetup: Effect.fail(
-    new DesktopError({ message: "Blender setup requires the desktop app." }),
-  ),
-  blenderLaunch: Effect.fail(
-    new DesktopError({ message: "Opening Blender requires the desktop app." }),
-  ),
   getVersion: Effect.succeed("0.5.2"),
   getInstructionFiles: Effect.succeed([]),
   openUrl: (url) =>
@@ -258,12 +246,6 @@ function makeBridgeEffects(api: DesktopApi): DesktopEffects {
     getStudioMcpStatus: invoke("Failed to get the Studio MCP status", () =>
       api.getStudioMcpStatus(),
     ).pipe(decodeBridgeValue("Studio MCP status is invalid", StudioMcpStatusSchema)),
-    blenderSetup: invoke("Blender setup failed", () => api.blenderSetup()).pipe(
-      decodeBridgeValue("Blender setup result is invalid", BlenderSetupResultSchema),
-    ),
-    blenderLaunch: invoke("Failed to open Blender", () => api.blenderLaunch()).pipe(
-      decodeBridgeValue("Blender launch result is invalid", BlenderLaunchResultSchema),
-    ),
     getVersion: invoke("Failed to get the app version", () => api.getVersion()).pipe(
       decodeBridgeValue("Desktop app version is invalid", Schema.String),
     ),
@@ -349,8 +331,6 @@ export const desktop: DesktopApi = {
   getOpenCodeInfo: () => runPromise(desktopEffects.getOpenCodeInfo),
   getOpenCodeInstallFolder: () => runPromise(desktopEffects.getOpenCodeInstallFolder),
   getStudioMcpStatus: () => runPromise(desktopEffects.getStudioMcpStatus),
-  blenderSetup: () => runPromise(desktopEffects.blenderSetup),
-  blenderLaunch: () => runPromise(desktopEffects.blenderLaunch),
   onOpenCodeStartupProgress: (listener: StartupProgressListener) =>
     window.BloxMind?.onOpenCodeStartupProgress(listener) ?? (() => {}),
   getVersion: () => runPromise(desktopEffects.getVersion),

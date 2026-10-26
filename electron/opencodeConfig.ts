@@ -61,7 +61,7 @@ export function skillDirectories(runtime: OpenCodeRuntimePaths): string[] {
 }
 
 export function createOpenCodeConfig(
-  broker: { url: string },
+  broker: { url: string; headers?: Record<string, string> },
   skillsPaths: readonly string[] = [],
   mcpServers: readonly McpServerConfig[] = [],
 ) {
@@ -73,10 +73,14 @@ export function createOpenCodeConfig(
       .filter((server) => validateMcpServer(server) === null)
       .map((server) => [server.name, toEngineMcpConfig(server)]),
   );
-  const mcp: Record<string, ReturnType<typeof toEngineMcpConfig>> = {
+  type EngineMcpConfig = ReturnType<typeof toEngineMcpConfig> & {
+    headers?: Record<string, string>;
+  };
+  const mcp: Record<string, EngineMcpConfig> = {
     [STUDIO_MCP_SERVER_NAME]: {
       type: "remote",
       url: broker.url,
+      ...(broker.headers ? { headers: broker.headers } : {}),
       enabled: true,
     },
     ...extraMcpServers,
