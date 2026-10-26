@@ -87,18 +87,24 @@ export default function SyntaxHighlightedOutput({
   code,
   collapsed = false,
   language = "json",
+  streaming = false,
 }: {
   code: string;
   collapsed?: boolean;
   language?: HighlightLanguage;
+  /** True while the enclosing message is still receiving tokens. */
+  streaming?: boolean;
 }) {
   const [lines, setLines] = useState<HighlightedToken[][] | null>(null);
 
   useEffect(() => {
+    // Tokenizing a block that is still growing re-parses the whole fence for
+    // text that is replaced a frame later. Leave it as plain text until the
+    // message stops streaming; the effect then runs once for the final code.
+    if (streaming) return;
     let active = true;
-    // A streamed code block changes on every token. Tokenizing every
-    // intermediate string costs CPU without ever reaching the screen, so
-    // coalesce rapid edits and only highlight what settles.
+    // Non-streaming edits can still arrive in quick succession (a completed
+    // message replaced by a refetch), so keep coalescing them.
     const timer = setTimeout(() => {
       void Promise.all([highlighterPromise, ensureLanguage(language)]).then(([highlighter]) => {
         const tokenLines = highlighter.codeToTokensWithThemes(code, {
@@ -121,9 +127,11 @@ export default function SyntaxHighlightedOutput({
       active = false;
       clearTimeout(timer);
     };
-  }, [code, language]);
+  }, [code, language, streaming]);
 
-  if (!lines) {
+  // Streaming wins over stale tokens: an open fence must not keep showing the
+  // highlight of an earlier, shorter version of itself.
+  if (!lines || streaming) {
     return (
       <span className="block overflow-hidden whitespace-pre font-sans text-[13px] leading-relaxed">
         {(collapsed ? collapsedTextPreview(code) : code).split("\n").map((line, index) => (

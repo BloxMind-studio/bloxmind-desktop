@@ -12,9 +12,19 @@ export const FileChangeSchema = Schema.mutable(
     path: Schema.String, // POSIX-style relative path from workspace root
     operation: FileOperationSchema,
     preHash: Schema.String, // sha256 of the pre-state bytes
-    preContent: Schema.NullOr(Schema.String), // journal payload for files < 512 KB
     /**
-     * How `preContent` is encoded. Binary files are journalled as base64 so a
+     * Inline journal payload. New captures store the pre-image in a
+     * content-addressed blob instead (see `preBlob`) so the session index stays
+     * small; this field is what checkpoints written by older builds carry and
+     * is still honoured on restore.
+     */
+    preContent: Schema.NullOr(Schema.String),
+    /** Content-addressed blob holding the pre-image bytes (sha256 filename). */
+    preBlob: Schema.optionalWith(Schema.NullOr(Schema.String), {
+      default: () => null,
+    }),
+    /**
+     * How the payload is encoded. Binary files are journalled as base64 so a
      * restore writes the original bytes instead of UTF-8 replacement chars.
      * Older checkpoints predate this field and are UTF-8.
      */

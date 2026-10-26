@@ -128,6 +128,58 @@ export function useMessage(messageId: string): MessageWithParts | undefined {
 }
 
 /**
+ * Role of one message as a primitive. The chat container used to select the
+ * whole last message object, which subscribed it to every streamed token and
+ * re-rendered the virtualized list on each delta.
+ */
+export function useMessageRole(messageId: string | null): "user" | "assistant" | null {
+  const { activeSessionId } = useActiveSession();
+  const { client, ready } = useOpenCodeClient();
+  const queryClient = useQueryClient();
+
+  const { data } = useQuery<MessagesCache, Error, "user" | "assistant" | null>({
+    queryKey: activeSessionId ? qk.messages(activeSessionId) : NOOP_KEY,
+    queryFn: () =>
+      client && activeSessionId
+        ? fetchMessages(client, queryClient, activeSessionId)
+        : Promise.resolve(EMPTY_CACHE),
+    enabled: ready && !!client && !!activeSessionId,
+    select: useCallback(
+      (d: MessagesCache) => {
+        const role = messageId ? d.messagesById[messageId]?.info.role : undefined;
+        return role === "user" || role === "assistant" ? role : null;
+      },
+      [messageId],
+    ),
+  });
+  return data ?? null;
+}
+
+/** Whether one message is an assistant turn that failed. Primitive, see `useMessageRole`. */
+export function useMessageHasError(messageId: string | null): boolean {
+  const { activeSessionId } = useActiveSession();
+  const { client, ready } = useOpenCodeClient();
+  const queryClient = useQueryClient();
+
+  const { data } = useQuery<MessagesCache, Error, boolean>({
+    queryKey: activeSessionId ? qk.messages(activeSessionId) : NOOP_KEY,
+    queryFn: () =>
+      client && activeSessionId
+        ? fetchMessages(client, queryClient, activeSessionId)
+        : Promise.resolve(EMPTY_CACHE),
+    enabled: ready && !!client && !!activeSessionId,
+    select: useCallback(
+      (d: MessagesCache) => {
+        const info = messageId ? d.messagesById[messageId]?.info : undefined;
+        return info?.role === "assistant" && Boolean(info.error);
+      },
+      [messageId],
+    ),
+  });
+  return data ?? false;
+}
+
+/**
  * The id of the last message in the task turn that most recently wrote the
  * session's todo list, extended through the consecutive assistant messages
  * that close that turn. The todo panel anchors just after this message so it

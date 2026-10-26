@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -34,11 +34,12 @@ function withService<T>(
   workspace: string,
   storeRoot: string,
   run: (service: Effect.Effect.Success<typeof CheckpointServiceTag>) => Effect.Effect<T, unknown>,
+  options: { maxHistory?: number; blobGcMinAgeMs?: number } = {},
 ) {
   return Effect.gen(function* () {
     const service = yield* CheckpointServiceTag;
     return yield* run(service);
-  }).pipe(Effect.provide(makeCheckpointServiceLayer({ workspace, storeRoot })));
+  }).pipe(Effect.provide(makeCheckpointServiceLayer({ workspace, storeRoot, ...options })));
 }
 
 describe("CheckpointService capture scope", () => {
@@ -151,7 +152,10 @@ describe("CheckpointService journal encoding", () => {
 
     const [change] = checkpoint.paths;
     expect(change.preEncoding).toBe("base64");
-    expect(change.preContent).not.toBeNull();
+    expect(change.preContent).toBeNull();
+    expect(change.preBlob).toBe(change.preHash);
+    // The pre-image lives in the content-addressed blob store, not the index.
+    expect((await readFile(join(storeRoot, "blobs", change.preHash))).equals(original)).toBe(true);
 
     await writeFile(path, Buffer.from("agent replaced the place"));
 
@@ -189,7 +193,8 @@ describe("CheckpointService journal encoding", () => {
     );
 
     expect(checkpoint.paths[0].preEncoding).toBe("utf8");
-    expect(checkpoint.paths[0].preContent).toBe(original.toString("utf8"));
+    expect(checkpoint.paths[0].preContent).toBeNull();
+    expect(checkpoint.paths[0].preBlob).toMatch(/^[a-f0-9]{64}$/);
 
     await writeFile(path, "corrupted");
 
@@ -207,7 +212,7 @@ describe("CheckpointService journal encoding", () => {
     expect((await readFile(path)).equals(original)).toBe(true);
   });
 
-  it("decodes checkpoints written before preEncoding existed", async () => {
+  it("restores checkpoints that stored the pre-image inline", async () => {
     const workspace = await makeTemporaryDirectory("bloxmind-cp-workspace-");
     const storeRoot = await makeTemporaryDirectory("bloxmind-cp-store-");
     const path = join(workspace, "legacy.lua");
@@ -225,13 +230,18 @@ describe("CheckpointService journal encoding", () => {
       ),
     );
 
-    // Simulate an index from a build that predates the field.
+    // Simulate an index from a build that predates blobs and `preEncoding`:
+    // the payload sits inline and there is no blob reference.
     const indexFile = join(storeRoot, "sessions", "session-1", "checkpoints.json");
     const index = JSON.parse(await readFile(indexFile, "utf8")) as {
       history: Array<{ paths: Array<Record<string, unknown>> }>;
     };
     for (const entry of index.history) {
-      for (const change of entry.paths) delete change.preEncoding;
+      for (const change of entry.paths) {
+        change.preContent = original;
+        delete change.preBlob;
+        delete change.preEncoding;
+      }
     }
     await writeFile(indexFile, JSON.stringify(index));
 
@@ -250,5 +260,60 @@ describe("CheckpointService journal encoding", () => {
 
     expect(result.message).toContain("Restored 1 file(s)");
     expect(await readFile(path, "utf8")).toBe(original);
+  });
+});
+
+describe("CheckpointService history retention", () => {
+  it("caps the history and collects pre-images of trimmed checkpoints", async () => {
+    const workspace = await makeTemporaryDirectory("bloxmind-cp-workspace-");
+    const storeRoot = await makeTemporaryDirectory("bloxmind-cp-store-");
+    const path = join(workspace, "session.lua");
+    await writeFile(path, "v0");
+
+    const { history, remainingBlobs, trimmedBlob } = await Effect.runPromise(
+      withService(
+        workspace,
+        storeRoot,
+        (service) =>
+          Effect.gen(function* () {
+            let firstBlob: string | null = null;
+            for (let turn = 0; turn < 4; turn += 1) {
+              yield* Effect.tryPromise(() => writeFile(path, `v${turn}`));
+              const checkpoint = yield* service.capture({
+                sessionId: "session-1",
+                messageId: null,
+                tool: null,
+                paths: ["session.lua"],
+              });
+              if (turn === 0) firstBlob = checkpoint.paths[0].preBlob;
+            }
+            const retained = yield* service.list("session-1");
+            const blobs = yield* Effect.tryPromise(() => readdir(join(storeRoot, "blobs")));
+            return { history: retained, remainingBlobs: blobs, trimmedBlob: firstBlob };
+          }),
+        { maxHistory: 3, blobGcMinAgeMs: 0 },
+      ),
+    );
+
+    expect(history).toHaveLength(3);
+    expect(history.every((checkpoint) => checkpoint.paths[0].preBlob !== null)).toBe(true);
+    // One blob per distinct pre-image; the trimmed checkpoint's blob is gone.
+    expect(remainingBlobs).toHaveLength(3);
+    expect(trimmedBlob).not.toBeNull();
+    expect(remainingBlobs).not.toContain(trimmedBlob);
+
+    // A retained checkpoint still restores byte-for-byte.
+    await writeFile(path, "agent changed this");
+    await Effect.runPromise(
+      withService(workspace, storeRoot, (service) =>
+        service.restore({
+          checkpointId: history[0].id,
+          sessionId: "session-1",
+          dryRun: false,
+          preserveUserEdits: false,
+        }),
+      ),
+    );
+    expect(await readFile(path, "utf8")).toBe("v1");
   });
 });

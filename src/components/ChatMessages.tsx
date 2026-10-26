@@ -9,6 +9,7 @@ import type {
 import { useQueryClient } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
+  type ComponentProps,
   createContext,
   lazy,
   memo,
@@ -69,6 +70,13 @@ const TOOLS_WITH_OWN_HEADER = new Set([
 const TODO_PANEL_KEY = "__todo_panel__";
 
 /**
+ * Streamed text mutates a text node many times per second. Scrolling for every
+ * mutation forces a layout each time, and anything faster than this is not
+ * perceptible, so follow-scroll coalesces into one trailing scroll.
+ */
+const FOLLOW_SCROLL_COALESCE_MS = 100;
+
+/**
  * One item of the scroll feed: a message row, or the inline todo panel that
  * anchors after the task turn which wrote the todos.
  */
@@ -80,7 +88,13 @@ import { useAnswerQuestion, useRejectQuestion } from "@/hooks/mutations/useAnswe
 import { useReplyPermission } from "@/hooks/mutations/useReplyPermission";
 import { useCheckpointHistory } from "@/hooks/useCheckpointHistory";
 import { useCheckpoints } from "@/hooks/useCheckpoints";
-import { useMessage, useMessageIds, useTodoAnchorMessageId } from "@/hooks/useMessages";
+import {
+  useMessage,
+  useMessageHasError,
+  useMessageIds,
+  useMessageRole,
+  useTodoAnchorMessageId,
+} from "@/hooks/useMessages";
 import { useActivePermission } from "@/hooks/usePermissions";
 import { useActiveQuestion } from "@/hooks/useQuestions";
 import { useSessionError } from "@/hooks/useSessionError";
@@ -95,7 +109,6 @@ import { baseToolName } from "@/lib/toolName";
 import { getOpenCodeUsageAction, type OpenCodeUsageAction } from "@/lib/usageLimit";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
-import type { MessageWithParts } from "@/types";
 
 // ── Image lightbox ───────────────────────────────────────────────────────
 
@@ -763,6 +776,54 @@ const DefaultToolView = memo(function DefaultToolView({
 
 // ── Part renderers ─────────────────────────────────────────────────────
 
+/**
+ * True while the enclosing assistant message is still receiving tokens. Code
+ * fences read it so Shiki does not re-tokenize a block on every delta.
+ */
+const StreamingMessageContext = createContext(false);
+
+/**
+ * Markdown code renderer. A standalone component (rather than a shorthand
+ * method on `markdownComponents`) so its streaming-context read is a legal
+ * hook call.
+ */
+function MarkdownCode({ className, children }: ComponentProps<"code">) {
+  const streaming = useContext(StreamingMessageContext);
+  const isBlock = className?.includes("language-");
+  if (isBlock) {
+    const lang = className?.replace("language-", "") ?? "";
+    const language = HIGHLIGHT_LANGUAGE_ALIASES[lang.toLowerCase()];
+    const code = String(children).replace(/\n$/, "");
+    return (
+      <div className="mb-2 min-w-0 overflow-hidden pl-3 last:mb-0">
+        {lang && (
+          <div className="mb-1 text-[11px] font-medium text-muted-foreground/60">{lang}</div>
+        )}
+        {language ? (
+          <Suspense
+            fallback={
+              <pre className="app-scrollbar overflow-x-auto font-mono text-[13px] leading-relaxed text-muted-foreground/80">
+                {code}
+              </pre>
+            }
+          >
+            <SyntaxHighlightedOutput code={code} language={language} streaming={streaming} />
+          </Suspense>
+        ) : (
+          <pre className="app-scrollbar overflow-x-auto font-mono text-[13px] leading-relaxed text-muted-foreground/80">
+            {code}
+          </pre>
+        )}
+      </div>
+    );
+  }
+  return (
+    <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11.5px] text-foreground">
+      {children}
+    </code>
+  );
+}
+
 const markdownComponents: Components = {
   p({ children }) {
     return <p className="mb-2 last:mb-0">{children}</p>;
@@ -816,41 +877,7 @@ const markdownComponents: Components = {
   hr() {
     return <hr className="my-3 border-border" />;
   },
-  code({ className, children }) {
-    const isBlock = className?.includes("language-");
-    if (isBlock) {
-      const lang = className?.replace("language-", "") ?? "";
-      const language = HIGHLIGHT_LANGUAGE_ALIASES[lang.toLowerCase()];
-      const code = String(children).replace(/\n$/, "");
-      return (
-        <div className="mb-2 min-w-0 overflow-hidden pl-3 last:mb-0">
-          {lang && (
-            <div className="mb-1 text-[11px] font-medium text-muted-foreground/60">{lang}</div>
-          )}
-          {language ? (
-            <Suspense
-              fallback={
-                <pre className="app-scrollbar overflow-x-auto font-mono text-[13px] leading-relaxed text-muted-foreground/80">
-                  {code}
-                </pre>
-              }
-            >
-              <SyntaxHighlightedOutput code={code} language={language} />
-            </Suspense>
-          ) : (
-            <pre className="app-scrollbar overflow-x-auto font-mono text-[13px] leading-relaxed text-muted-foreground/80">
-              {code}
-            </pre>
-          )}
-        </div>
-      );
-    }
-    return (
-      <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11.5px] text-foreground">
-        {children}
-      </code>
-    );
-  },
+  code: MarkdownCode,
   pre({ children }) {
     return <>{children}</>;
   },
@@ -1913,6 +1940,8 @@ const MessageBubble = memo(function MessageBubble({
     !hasCompleted &&
     !isSessionWorking(sessionStatus) &&
     (aborted || !hasToolActivity);
+  // Only the newest assistant turn can still be receiving tokens.
+  const isStreaming = !isUser && isLastIndex && isBusy;
   const hasOnlyThinkingParts = msg.parts.every(
     (p) =>
       p.type === "reasoning" ||
@@ -1938,7 +1967,9 @@ const MessageBubble = memo(function MessageBubble({
               !aborted &&
               isSessionWorking(sessionStatus) &&
               msg.parts.length === 0 && <BloxMindThinking />}
-            <SmartPartsRenderer parts={msg.parts} hideThinking={hideThinking} />
+            <StreamingMessageContext.Provider value={isStreaming}>
+              <SmartPartsRenderer parts={msg.parts} hideThinking={hideThinking} />
+            </StreamingMessageContext.Provider>
             {"error" in msg.info && msg.info.error && !aborted && (
               <ModelErrorCard error={msg.info.error} />
             )}
@@ -2014,18 +2045,21 @@ const MessageBubble = memo(function MessageBubble({
 
 const BusyThinkingIndicator = memo(function BusyThinkingIndicator({
   status,
-  lastMessage,
+  lastMessageRole,
 }: {
   status: SessionStatus | undefined;
-  lastMessage: MessageWithParts | undefined;
+  lastMessageRole: "user" | "assistant" | null;
 }) {
-  if (!isSessionWorking(status) || !lastMessage || lastMessage.info.role !== "user") return null;
+  if (!isSessionWorking(status) || lastMessageRole !== "user") return null;
   return <BloxMindThinking />;
 });
 
 function ChatMessages() {
   const messageIds = useMessageIds();
-  const lastMessage = useMessage(messageIds[messageIds.length - 1] ?? "");
+  // Select primitives, not the message object: the container must not re-render
+  // for every token appended to the streaming message.
+  const lastMessageRole = useMessageRole(messageIds[messageIds.length - 1] ?? null);
+  const lastMessageHasError = useMessageHasError(messageIds[messageIds.length - 1] ?? null);
   const sessionError = useSessionError();
   const { activeSessionId } = useActiveSession();
   const queryClient = useQueryClient();
@@ -2037,8 +2071,6 @@ function ChatMessages() {
   const todoAnchorMessageId = useTodoAnchorMessageId();
   const activeQuestion = useActiveQuestion();
   const activePermission = useActivePermission();
-  const lastMessageHasError =
-    lastMessage?.info.role === "assistant" && Boolean(lastMessage.info.error);
   const answerQuestion = useAnswerQuestion();
   const rejectQuestion = useRejectQuestion();
   const replyPermission = useReplyPermission();
@@ -2278,26 +2310,34 @@ function ChatMessages() {
     const el = containerRef.current;
     const anchor = bottomRef.current;
     if (!el || !anchor) return;
-    let rafId = 0;
+    let scrollTimer: number | undefined;
+    const scheduleFollowScroll = () => {
+      if (scrollTimer !== undefined) return;
+      scrollTimer = window.setTimeout(() => {
+        scrollTimer = undefined;
+        if (!autoScroll || !shouldAutoScroll.current) return;
+        anchor.scrollIntoView({ behavior: "instant" });
+      }, FOLLOW_SCROLL_COALESCE_MS);
+    };
     const observer = new MutationObserver((mutations) => {
-      const onlyDisclosureChanges = mutations.every((mutation) => {
+      if (!autoScroll || !shouldAutoScroll.current) return;
+      for (const mutation of mutations) {
         const target =
           mutation.target instanceof Element ? mutation.target : mutation.target.parentElement;
-        return target?.closest("[data-preserve-scroll]") !== null;
-      });
-      if (onlyDisclosureChanges) return;
-      if (!autoScroll || !shouldAutoScroll.current) return;
-      if (!rafId) {
-        rafId = requestAnimationFrame(() => {
-          rafId = 0;
-          anchor.scrollIntoView({ behavior: "instant" });
-        });
+        // Expanding a disclosure is the user adjusting what they can see;
+        // yanking the view back to the bottom would undo that.
+        if (target?.closest("[data-preserve-scroll]")) continue;
+        scheduleFollowScroll();
+        return;
       }
     });
+    // `characterData` is what streaming produces (React updates the text node in
+    // place), so it is required for follow-scroll; the coalescing above keeps it
+    // from forcing a layout per token.
     observer.observe(el, { childList: true, subtree: true, characterData: true });
     return () => {
       observer.disconnect();
-      cancelAnimationFrame(rafId);
+      if (scrollTimer !== undefined) window.clearTimeout(scrollTimer);
     };
   }, [autoScroll]);
 
@@ -2455,7 +2495,7 @@ function ChatMessages() {
             {activePermission && (
               <PermissionPrompt permission={activePermission} onReply={handleReplyPermission} />
             )}
-            <BusyThinkingIndicator status={sessionStatus} lastMessage={lastMessage} />
+            <BusyThinkingIndicator status={sessionStatus} lastMessageRole={lastMessageRole} />
             {usageAction && (
               <UsageLimitDialog
                 key={`${usageAction.provider}:${usageAction.reason}`}

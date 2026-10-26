@@ -1,3 +1,4 @@
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   Box,
   Boxes,
@@ -61,8 +62,8 @@ interface ExplorerProps {
 interface TreeRowProps {
   node: ExplorerNode;
   depth: number;
-  expanded: ReadonlySet<string>;
-  selectedPath: string | null;
+  isExpanded: boolean;
+  isSelected: boolean;
   onToggle: (path: string) => void;
   onSelect: (node: ExplorerNode) => void;
 }
@@ -91,71 +92,55 @@ function iconForClass(className: string): LucideIcon {
 const TreeRow = memo(function TreeRow({
   node,
   depth,
-  expanded,
-  selectedPath,
+  isExpanded,
+  isSelected,
   onToggle,
   onSelect,
 }: TreeRowProps) {
-  const isExpanded = expanded.has(node.path);
   const canExpand = node.hasChildren || node.children.length > 0;
   const InstanceIcon = iconForClass(node.className);
 
   return (
-    <>
-      <div
-        role="treeitem"
-        tabIndex={0}
-        aria-selected={selectedPath === node.path}
-        aria-expanded={canExpand ? isExpanded : undefined}
-        onClick={() => onSelect(node)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            onSelect(node);
-          }
+    <div
+      role="treeitem"
+      tabIndex={0}
+      aria-selected={isSelected}
+      aria-expanded={canExpand ? isExpanded : undefined}
+      onClick={() => onSelect(node)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect(node);
+        }
+      }}
+      className={`group flex h-6 cursor-default items-center pr-2 text-[11px] ${isSelected ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"}`}
+      style={{ paddingLeft: `${8 + depth * 14}px` }}
+      title={`${node.path} · ${node.className}`}
+    >
+      <button
+        type="button"
+        aria-label={`${isExpanded ? "Collapse" : "Expand"} ${node.name}`}
+        disabled={!canExpand}
+        onClick={(event) => {
+          event.stopPropagation();
+          onToggle(node.path);
         }}
-        className={`group flex h-6 cursor-default items-center pr-2 text-[11px] ${selectedPath === node.path ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"}`}
-        style={{ paddingLeft: `${8 + depth * 14}px` }}
-        title={`${node.path} · ${node.className}`}
+        className="flex h-5 w-4 shrink-0 items-center justify-center disabled:opacity-0"
       >
-        <button
-          type="button"
-          aria-label={`${isExpanded ? "Collapse" : "Expand"} ${node.name}`}
-          disabled={!canExpand}
-          onClick={(event) => {
-            event.stopPropagation();
-            onToggle(node.path);
-          }}
-          className="flex h-5 w-4 shrink-0 items-center justify-center disabled:opacity-0"
-        >
-          <ChevronRight
-            size={10}
-            className={`transition-transform ${isExpanded ? "rotate-90" : ""}`}
-          />
-        </button>
-        <span className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
-          <InstanceIcon
-            size={13}
-            strokeWidth={1.8}
-            className="shrink-0 text-blue-600 dark:text-blue-400"
-          />
-          <span className="truncate">{node.name}</span>
-        </span>
-      </div>
-      {isExpanded
-        ? node.children.map((child) => (
-            <TreeRow
-              key={child.path}
-              node={child}
-              depth={depth + 1}
-              expanded={expanded}
-              selectedPath={selectedPath}
-              onToggle={onToggle}
-              onSelect={onSelect}
-            />
-          ))
-        : null}
-    </>
+        <ChevronRight
+          size={10}
+          className={`transition-transform ${isExpanded ? "rotate-90" : ""}`}
+        />
+      </button>
+      <span className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
+        <InstanceIcon
+          size={13}
+          strokeWidth={1.8}
+          className="shrink-0 text-blue-600 dark:text-blue-400"
+        />
+        <span className="truncate">{node.name}</span>
+      </span>
+    </div>
   );
 });
 
@@ -182,10 +167,68 @@ function collectPaths(nodes: readonly ExplorerNode[]): Set<string> {
   return paths;
 }
 
+function sameFields(a: readonly ExplorerField[], b: readonly ExplorerField[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let index = 0; index < a.length; index += 1) {
+    if (a[index].name !== b[index].name || a[index].value !== b[index].value) return false;
+  }
+  return true;
+}
+
+/**
+ * Keep the previous node objects for every part of the tree that did not
+ * change. Studio polls return a freshly parsed tree every few seconds; without
+ * this, one changed instance republished every node and defeated `TreeRow`'s
+ * memo (and the composer's reference index).
+ */
+function mergeExplorerNodes(
+  previous: readonly ExplorerNode[],
+  next: readonly ExplorerNode[],
+): ExplorerNode[] {
+  const previousByPath = new Map(previous.map((node) => [node.path, node]));
+  return next.map((node) => {
+    const before = previousByPath.get(node.path);
+    const children = mergeExplorerNodes(before?.children ?? [], node.children);
+    const unchanged =
+      before !== undefined &&
+      before.name === node.name &&
+      before.className === node.className &&
+      before.path === node.path &&
+      before.hasChildren === node.hasChildren &&
+      sameFields(before.properties, node.properties) &&
+      sameFields(before.attributes, node.attributes) &&
+      children.length === before.children.length &&
+      children.every((child, index) => child === before.children[index]);
+    return unchanged ? before : { ...node, children };
+  });
+}
+
+interface FlatTreeRow {
+  node: ExplorerNode;
+  depth: number;
+}
+
+/** Expand the tree into the rows currently visible, in render order. */
+function flattenVisibleRows(
+  nodes: readonly ExplorerNode[],
+  expanded: ReadonlySet<string>,
+  depth = 0,
+  rows: FlatTreeRow[] = [],
+): FlatTreeRow[] {
+  for (const node of nodes) {
+    rows.push({ node, depth });
+    if (node.children.length > 0 && expanded.has(node.path)) {
+      flattenVisibleRows(node.children, expanded, depth + 1, rows);
+    }
+  }
+  return rows;
+}
+
 export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerProps) {
   const { client } = useOpenCodeClient();
   const studioTarget = useStudioTargetOptional();
-  const { selectedModel, selectedAgent } = usePreferences();
+  const { selectedModel, selectedAgent, fontSize } = usePreferences();
   const { referenceObject, publishObjects } = useExplorerReference();
   const [collection, setCollection] = useState<ExplorerCollection | null>(null);
   const collectionRef = useRef<ExplorerCollection | null>(null);
@@ -195,7 +238,7 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
   // The latest sync effect's scheduler, for a sync that finishes after its
   // own effect was replaced.
   const scheduleLatestRef = useRef<() => void>(() => {});
-  const [syncing, setSyncing] = useState(false);
+  const [, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
@@ -432,26 +475,33 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
         }
 
         if (cancelled) return;
-        const previousComparable = current
-          ? JSON.stringify({ placeName: current.snapshot.placeName, roots: current.snapshot.roots })
-          : null;
-        const nextComparable = JSON.stringify({
-          placeName: next.snapshot.placeName,
-          roots: next.snapshot.roots,
-        });
-        unchangedPolls = previousComparable === nextComparable ? unchangedPolls + 1 : 0;
+        // Compare and merge structurally instead of serializing both trees:
+        // unchanged nodes keep their previous object identity, so only the rows
+        // that actually changed re-render.
+        const previousRoots = current?.snapshot.roots ?? [];
+        const mergedRoots = mergeExplorerNodes(previousRoots, next.snapshot.roots);
+        const treeUnchanged =
+          current !== null &&
+          next.snapshot.placeName === current.snapshot.placeName &&
+          mergedRoots.length === previousRoots.length &&
+          mergedRoots.every((node, index) => node === previousRoots[index]);
+        unchangedPolls = treeUnchanged ? unchangedPolls + 1 : 0;
         failuresRef.current = 0;
         // An idle poll that returns the same tree must not publish: a fresh
         // object identity re-renders every TreeRow and rebuilds the composer's
         // reference index for nothing.
-        if (!unchangedPolls) {
-          collectionRef.current = next;
-          setCollection(next);
-          publishObjects(next.snapshot.roots);
+        if (!treeUnchanged) {
+          const merged: ExplorerCollection = {
+            ...next,
+            snapshot: { ...next.snapshot, roots: mergedRoots },
+          };
+          collectionRef.current = merged;
+          setCollection(merged);
+          publishObjects(mergedRoots);
           setExpanded((currentExpanded) =>
             currentExpanded.size > 0
               ? currentExpanded
-              : new Set(next.snapshot.roots.map((node) => node.path)),
+              : new Set(mergedRoots.map((node) => node.path)),
           );
         }
         if (isFirstSync || telemetryRef.current.hadFailure) {
@@ -608,6 +658,29 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
     toast.success(`${selected.name} added to your message`);
   }, [referenceObject, selected]);
 
+  // Expanding a big place can produce thousands of visible rows; only the
+  // viewport slice is mounted so a poll never lays out the whole tree.
+  const treeScrollRef = useRef<HTMLDivElement>(null);
+  const treeRows = useMemo(
+    () => flattenVisibleRows(visibleRoots, visibleExpanded),
+    [visibleRoots, visibleExpanded],
+  );
+  // `h-6` is 1.5rem, and the root font size follows the font-size preference.
+  const treeRowHeight = Math.round(24 * fontSize);
+  const treeVirtualizer = useVirtualizer({
+    count: treeRows.length,
+    getScrollElement: () => treeScrollRef.current,
+    estimateSize: () => treeRowHeight,
+    overscan: 12,
+    getItemKey: (index) => treeRows[index]?.node.path ?? index,
+  });
+  // Rows have a fixed height, but that height changes with the font-size
+  // preference; recompute the offsets instead of keeping the old scale.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: measure only when the row height changes
+  useEffect(() => {
+    treeVirtualizer.measure();
+  }, [treeRowHeight, treeVirtualizer]);
+
   if (collapsed) {
     return (
       <aside className="flex w-10 shrink-0 flex-col items-center border-l bg-sidebar py-2">
@@ -660,23 +733,45 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
       ) : null}
 
       <div
+        ref={treeScrollRef}
         className="min-h-0 flex-1 overflow-y-auto py-1"
         role="tree"
         aria-label="Instance hierarchy"
       >
-        {!collection && syncing ? <ExplorerLoading /> : null}
-        {!collection && !syncing && !syncError ? <ExplorerLoading /> : null}
-        {visibleRoots.map((node) => (
-          <TreeRow
-            key={node.path}
-            node={node}
-            depth={0}
-            expanded={visibleExpanded}
-            selectedPath={selectedPath}
-            onToggle={toggleNode}
-            onSelect={handleSelect}
-          />
-        ))}
+        {!collection && !syncError ? <ExplorerLoading /> : null}
+        <div
+          style={{
+            height: `${treeVirtualizer.getTotalSize()}px`,
+            position: "relative",
+            width: "100%",
+          }}
+        >
+          {treeVirtualizer.getVirtualItems().map((virtualRow) => {
+            const row = treeRows[virtualRow.index];
+            if (!row) return null;
+            return (
+              <div
+                key={row.node.path}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  transform: `translateY(${virtualRow.start}px)`,
+                }}
+              >
+                <TreeRow
+                  node={row.node}
+                  depth={row.depth}
+                  isExpanded={visibleExpanded.has(row.node.path)}
+                  isSelected={selectedPath === row.node.path}
+                  onToggle={toggleNode}
+                  onSelect={handleSelect}
+                />
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {selected ? (

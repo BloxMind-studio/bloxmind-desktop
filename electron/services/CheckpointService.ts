@@ -8,6 +8,7 @@ import {
   readdir,
   rename,
   rm,
+  stat,
   writeFile,
 } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
@@ -34,6 +35,17 @@ const execFileAsync = promisify(execFile);
 const execShellAsync = promisify(exec);
 
 const MAX_JOURNAL_FILE_BYTES = 512 * 1024; // mirror raw content only for small files
+/**
+ * Checkpoints retained per session. Long sessions used to grow the index (and
+ * every rewrite of it) without bound; older entries are dropped once the cap is
+ * passed, and their pre-image blobs are collected when nothing else uses them.
+ */
+const DEFAULT_MAX_HISTORY_ENTRIES = 100;
+/**
+ * Unreferenced blobs younger than this may belong to a capture in flight in
+ * this or another process, so garbage collection leaves them alone.
+ */
+const DEFAULT_BLOB_GC_MIN_AGE_MS = 60 * 60 * 1000;
 
 export class CheckpointError extends Data.TaggedError("CheckpointError")<{
   message: string;
@@ -45,6 +57,10 @@ export interface CheckpointServiceOptions {
   storeRoot: string;
   /** The workspace root being edited (OpenCode workspace) */
   workspace: string;
+  /** Checkpoints kept per session before the oldest are trimmed. */
+  maxHistory?: number;
+  /** Minimum age before an unreferenced pre-image blob may be collected. */
+  blobGcMinAgeMs?: number;
 }
 
 export interface CheckpointService {
@@ -146,6 +162,95 @@ function readBytesSafe(path: string): Promise<Buffer | null> {
       throw cause;
     },
   );
+}
+
+// ── Pre-image blob store ────────────────────────────────────────────────
+// Pre-images are stored outside the session index: the index keeps one hash
+// per changed file and identical content is stored once. The index used to
+// carry every byte inline, so each capture rewrote the whole history as JSON
+// and the cost grew with the square of the session length.
+
+/** sha256 hex — the only shape a blob reference may take. */
+const BLOB_HASH_PATTERN = /^[a-f0-9]{64}$/;
+
+function blobPath(storeRoot: string, hash: string): string {
+  return join(storeRoot, "blobs", hash);
+}
+
+async function writeBlobImpl(storeRoot: string, hash: string, contents: Buffer): Promise<void> {
+  const directory = join(storeRoot, "blobs");
+  await mkdir(directory, { recursive: true });
+  const file = blobPath(storeRoot, hash);
+  try {
+    await access(file);
+    return; // content-addressed: the existing blob is byte-identical
+  } catch {
+    // fall through and write it
+  }
+  const temporary = `${file}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
+  try {
+    await writeFile(temporary, contents, { mode: 0o600 });
+    try {
+      await rename(temporary, file);
+    } catch {
+      // Windows rename can fail when the destination is open; copying is
+      // still atomic for content-addressed data because both writers hold
+      // the same bytes.
+      await copyFile(temporary, file);
+    }
+  } finally {
+    await rm(temporary, { force: true }).catch(() => undefined);
+  }
+}
+
+function writeBlob(
+  storeRoot: string,
+  hash: string,
+  contents: Buffer,
+): Effect.Effect<void, CheckpointError> {
+  return Effect.tryPromise({
+    try: () => writeBlobImpl(storeRoot, hash, contents),
+    catch: (cause) => new CheckpointError({ message: `Failed to store pre-image ${hash}`, cause }),
+  });
+}
+
+function readBlob(
+  storeRoot: string,
+  hash: string,
+): Effect.Effect<Buffer | null, CheckpointError> {
+  // A malformed reference can only come from a corrupted index; refusing it
+  // keeps it from being resolved as a path outside the blob directory.
+  if (!BLOB_HASH_PATTERN.test(hash)) {
+    return Effect.fail(new CheckpointError({ message: `Invalid pre-image reference: ${hash}` }));
+  }
+  return Effect.tryPromise({
+    try: () => readBytesSafe(blobPath(storeRoot, hash)),
+    catch: (cause) => new CheckpointError({ message: `Failed to read pre-image ${hash}`, cause }),
+  });
+}
+
+/** The bytes recorded for a change, from the blob store or a legacy inline payload. */
+function preImageFor(
+  storeRoot: string,
+  change: FileChange,
+): Effect.Effect<Buffer | null, CheckpointError> {
+  if (change.preBlob !== null) {
+    return readBlob(storeRoot, change.preBlob);
+  }
+  if (change.preContent !== null) {
+    return Effect.succeed(
+      Buffer.from(
+        change.preContent,
+        change.preEncoding === "base64" ? "base64" : "utf8",
+      ),
+    );
+  }
+  return Effect.succeed(null);
+}
+
+/** Whether a change carries (or points at) a restorable pre-image. */
+function hasJournalPayload(change: FileChange): boolean {
+  return change.preBlob !== null || change.preContent !== null;
 }
 
 function toPosixPath(path: string): string {
@@ -377,6 +482,77 @@ function persistSessionIndex(
   }).pipe(Effect.flatMap(() => writeJsonAtomic(file, index)));
 }
 
+/**
+ * Delete pre-image blobs that no session index references any more.
+ *
+ * Blobs are content-addressed and shared across sessions, so the only safe way
+ * to know whether one is still needed is to scan every index. That is
+ * expensive, so it runs only after a history trim (rare) and only removes
+ * files older than `blobGcMinAgeMs`: a capture writes its blobs before the
+ * index that references them, and a concurrent process may be doing the same.
+ */
+function collectOrphanBlobs(
+  options: CheckpointServiceOptions,
+): Effect.Effect<number, CheckpointError> {
+  return Effect.tryPromise({
+    try: async () => {
+      const blobsDirectory = join(options.storeRoot, "blobs");
+      let names: string[];
+      try {
+        names = await readdir(blobsDirectory);
+      } catch (cause) {
+        if (isMissingFile(cause)) return 0;
+        throw cause;
+      }
+
+      const referenced = new Set<string>();
+      const sessionsRoot = join(options.storeRoot, "sessions");
+      let sessionDirectories: string[];
+      try {
+        sessionDirectories = await readdir(sessionsRoot);
+      } catch (cause) {
+        if (isMissingFile(cause)) sessionDirectories = [];
+        else throw cause;
+      }
+      for (const directory of sessionDirectories) {
+        try {
+          const contents = await readFile(
+            join(sessionsRoot, directory, "checkpoints.json"),
+            "utf8",
+          );
+          const parsed = JSON.parse(contents) as {
+            history?: Array<{ paths?: Array<{ preBlob?: unknown }> }>;
+          };
+          for (const checkpoint of parsed.history ?? []) {
+            for (const change of checkpoint.paths ?? []) {
+              if (typeof change.preBlob === "string") referenced.add(change.preBlob);
+            }
+          }
+        } catch {
+          // An unreadable index may still reference its blobs; the age check
+          // below keeps everything recent, so skipping it is safe.
+        }
+      }
+
+      const cutoff = Date.now() - (options.blobGcMinAgeMs ?? DEFAULT_BLOB_GC_MIN_AGE_MS);
+      let removed = 0;
+      for (const name of names) {
+        if (referenced.has(name) || !BLOB_HASH_PATTERN.test(name)) continue;
+        try {
+          const stats = await stat(join(blobsDirectory, name));
+          if (stats.mtimeMs > cutoff) continue;
+          await rm(join(blobsDirectory, name), { force: true });
+          removed += 1;
+        } catch {
+          // Already gone or locked; a later trim retries.
+        }
+      }
+      return removed;
+    },
+    catch: (cause) => new CheckpointError({ message: "Failed to clean up pre-images", cause }),
+  });
+}
+
 // ── Capture / restore core ──────────────────────────────────────────────
 
 function makeCapture(
@@ -453,19 +629,24 @@ function makeCapture(
             operation: "create",
             preHash: hashContent(""),
             preContent: null,
+            preBlob: null,
             preEncoding: "utf8",
           });
         } else {
-          const text = textFromBytes(contents);
+          const preHash = hashBytes(contents);
           const withinLimit = contents.byteLength <= MAX_JOURNAL_FILE_BYTES;
+          // Store the bytes before the index references them: a failure here
+          // must fail the capture rather than leave an unrestorable entry.
+          if (withinLimit) yield* writeBlob(options.storeRoot, preHash, contents);
+          const text = textFromBytes(contents);
           changes.push({
             path: relPath,
             operation: "modify",
-            preHash: hashBytes(contents),
-            // Text is stored verbatim; binary pre-images are base64 so a
-            // restore writes back exact bytes. Oversized files are skipped and
-            // reported as such instead of pretending to be restored.
-            preContent: !withinLimit ? null : (text ?? contents.toString("base64")),
+            preHash,
+            preContent: null,
+            // Oversized files are skipped and reported as such instead of
+            // pretending to be restored.
+            preBlob: withinLimit ? preHash : null,
             preEncoding: text === null ? "base64" : "utf8",
           });
         }
@@ -504,11 +685,17 @@ function makeCapture(
             fullSnapshot,
           };
           const next = [...index.history, captured];
+          // Cap the history so the index rewrite and the settings list stay
+          // bounded over a long session. The active index always points at the
+          // checkpoint just captured, which stays in the retained tail.
+          const maxHistory = Math.max(1, options.maxHistory ?? DEFAULT_MAX_HISTORY_ENTRIES);
+          const overflow = Math.max(0, next.length - maxHistory);
+          const history = overflow > 0 ? next.slice(overflow) : next;
           yield* persistSessionIndex(options.storeRoot, sessionId, {
-            history: next,
-            activeIndex: next.length - 1,
+            history,
+            activeIndex: history.length - 1,
           });
-          return captured;
+          return { captured, trimmed: overflow > 0 };
         }),
       );
 
@@ -516,10 +703,18 @@ function makeCapture(
       // failed capture never downgrades the next attempt to a scoped one.
       if (fullSnapshot) snapshottedSessions.add(sessionId);
 
+      if (checkpoint.trimmed) {
+        yield* collectOrphanBlobs(options).pipe(
+          Effect.catchAll((error) =>
+            Effect.logWarning(`[checkpoint] pre-image cleanup failed: ${error.message}`),
+          ),
+        );
+      }
+
       yield* Effect.logInfo(
-        `[checkpoint] captured ${checkpoint.id} session=${sessionId} paths=${changes.length} gitRef=${gitRef ?? "none"} full=${fullSnapshot}`,
+        `[checkpoint] captured ${checkpoint.captured.id} session=${sessionId} paths=${changes.length} gitRef=${gitRef ?? "none"} full=${fullSnapshot}`,
       );
-      return checkpoint;
+      return checkpoint.captured;
     });
 }
 
@@ -535,44 +730,55 @@ function restoreFromJournal(
           try: () => rm(absPath, { force: true }),
           catch: (cause) => new CheckpointError({ message: `Failed to remove ${change.path}`, cause }),
         });
-      } else if (change.preContent !== null) {
-        yield* Effect.tryPromise({
-          try: async () => {
-            await mkdir(dirname(absPath), { recursive: true });
-            const temporary = `${absPath}.${process.pid}.restore.tmp`;
-            // Write the recorded bytes, not a decoded string: binary
-            // pre-images are base64 and text is UTF-8.
-            const payload = Buffer.from(
-              change.preContent ?? "",
-              change.preEncoding === "base64" ? "base64" : "utf8",
-            );
-            try {
-              await writeFile(temporary, payload, { mode: 0o600 });
-              try {
-                await rename(temporary, absPath);
-              } catch {
-                await copyFile(temporary, absPath);
-              }
-            } finally {
-              await rm(temporary, { force: true }).catch(() => undefined);
-            }
-          },
-          catch: (cause) =>
-            new CheckpointError({ message: `Failed to restore ${change.path}`, cause }),
-        });
-      } else if (change.operation === "modify") {
-        // Large/binary file that exceeded the journal size limit and no git
-        // snapshot is available — it can't be reconstructed byte-for-byte.
-        // Leave the current file untouched so the rest of the workspace
-        // still restores cleanly.
-        console.warn(`[checkpoint] skipping binary/large file (no git ref): ${change.path}`);
-      } else {
-        yield* Effect.fail(
-          new CheckpointError({
-            message: `No journal content for ${change.path} and no git ref available`,
-          }),
-        );
+        continue;
       }
+
+      // New checkpoints point at a blob; checkpoints written by older builds
+      // carry the payload inline. Both restore the exact recorded bytes.
+      const payload = yield* preImageFor(options.storeRoot, change);
+      if (payload === null) {
+        // A referenced blob that cannot be read is corruption, not a file that
+        // was intentionally skipped: fail instead of silently leaving the
+        // agent's edit in place.
+        if (change.preBlob !== null) {
+          return yield* Effect.fail(
+            new CheckpointError({ message: `Pre-image for ${change.path} is missing` }),
+          );
+        }
+        if (change.operation === "modify") {
+          // Large file that exceeded the journal size limit and no git
+          // snapshot is available — it can't be reconstructed
+          // byte-for-byte. Leave the current file untouched so the rest of
+          // the workspace still restores cleanly.
+          console.warn(`[checkpoint] skipping binary/large file (no git ref): ${change.path}`);
+        } else {
+          yield* Effect.fail(
+            new CheckpointError({
+              message: `No journal content for ${change.path} and no git ref available`,
+            }),
+          );
+        }
+        continue;
+      }
+
+      yield* Effect.tryPromise({
+        try: async () => {
+          await mkdir(dirname(absPath), { recursive: true });
+          const temporary = `${absPath}.${process.pid}.restore.tmp`;
+          try {
+            await writeFile(temporary, payload, { mode: 0o600 });
+            try {
+              await rename(temporary, absPath);
+            } catch {
+              await copyFile(temporary, absPath);
+            }
+          } finally {
+            await rm(temporary, { force: true }).catch(() => undefined);
+          }
+        },
+        catch: (cause) =>
+          new CheckpointError({ message: `Failed to restore ${change.path}`, cause }),
+      });
     }
   });
 }
@@ -649,7 +855,7 @@ function restoreImpl(
       // Atomicity: verify restored hashes match pre-state exactly. Entries
       // that were left untouched (large binaries with no git ref) are skipped.
       for (const change of checkpoint.paths) {
-        if (change.preContent === null && change.operation === "modify") continue;
+        if (!hasJournalPayload(change) && change.operation === "modify") continue;
         const absPath = resolve(options.workspace, change.path);
         const after = yield* Effect.tryPromise({
           try: () => readBytesSafe(absPath),
@@ -688,7 +894,7 @@ function restoreImpl(
       const skipped =
         checkpoint.gitRef === null
           ? checkpoint.paths.filter(
-              (change) => change.operation === "modify" && change.preContent === null,
+              (change) => change.operation === "modify" && !hasJournalPayload(change),
             ).length
           : 0;
       const skippedNote =

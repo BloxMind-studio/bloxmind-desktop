@@ -99,6 +99,12 @@ interface PreferencesContextValue {
 
 export const PreferencesContext = createContext<PreferencesContextValue | undefined>(undefined);
 
+/**
+ * Settings inputs fire per keystroke and per slider step. Each write is an IPC
+ * round trip plus a full config rewrite, so a burst is coalesced into one.
+ */
+const CONFIG_WRITE_DEBOUNCE_MS = 400;
+
 export function usePreferences() {
   const context = useContext(PreferencesContext);
   if (!context) throw new Error("usePreferences must be used within a PreferencesProvider");
@@ -144,6 +150,43 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const providerList = useProviderList();
   const { client, ready } = useOpenCodeClient();
 
+  // Pending settings write. Merged so a burst of edits lands as one patch and
+  // flushed on blur/unmount so a fast quit cannot drop the last change.
+  const pendingPatchRef = useRef<Partial<AppConfig>>({});
+  const patchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flushPendingPatch = useCallback(() => {
+    if (patchTimerRef.current !== null) {
+      clearTimeout(patchTimerRef.current);
+      patchTimerRef.current = null;
+    }
+    const patch = pendingPatchRef.current;
+    pendingPatchRef.current = {};
+    if (Object.keys(patch).length === 0) return;
+    patchConfig(patch).catch(() => {});
+  }, []);
+  const queuePatch = useCallback(
+    (patch: Partial<AppConfig>) => {
+      pendingPatchRef.current = { ...pendingPatchRef.current, ...patch };
+      if (patchTimerRef.current !== null) clearTimeout(patchTimerRef.current);
+      patchTimerRef.current = setTimeout(() => {
+        patchTimerRef.current = null;
+        flushPendingPatch();
+      }, CONFIG_WRITE_DEBOUNCE_MS);
+    },
+    [flushPendingPatch],
+  );
+
+  useEffect(() => {
+    const flush = () => flushPendingPatch();
+    window.addEventListener("blur", flush);
+    document.addEventListener("visibilitychange", flush);
+    return () => {
+      window.removeEventListener("blur", flush);
+      document.removeEventListener("visibilitychange", flush);
+      flushPendingPatch();
+    };
+  }, [flushPendingPatch]);
+
   const setDetailedAnalyticsEnabled = useCallback((enabled: boolean) => {
     const previous = detailedAnalyticsEnabledRef.current;
     detailedAnalyticsEnabledRef.current = enabled;
@@ -159,6 +202,9 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   // Initialize from config data when it arrives and notify once about opt-out metrics.
   useEffect(() => {
     if (!configData) return;
+    // A debounced edit is newer than this snapshot; applying it would undo
+    // what the user is typing.
+    if (Object.keys(pendingPatchRef.current).length > 0) return;
     setHiddenModels(new Set(configData.hiddenModels));
 
     // These settings are independent of the analytics notice, so they are
@@ -260,19 +306,25 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     if (primary) setSelectedAgentState(primary.name);
   }, [agents, selectedAgent]);
 
-  const setSelectedModel = useCallback((modelID: string) => {
-    setSelectedModelState(modelID);
-    patchConfig({ lastModel: modelID }).catch(() => {});
-  }, []);
+  const setSelectedModel = useCallback(
+    (modelID: string) => {
+      setSelectedModelState(modelID);
+      queuePatch({ lastModel: modelID });
+    },
+    [queuePatch],
+  );
 
   const setSelectedAgent = useCallback((name: string) => {
     setSelectedAgentState(name);
   }, []);
 
-  const setSelectedVariant = useCallback((variant: string | null) => {
-    setSelectedVariantState(variant);
-    patchConfig({ defaultVariant: variant }).catch(() => {});
-  }, []);
+  const setSelectedVariant = useCallback(
+    (variant: string | null) => {
+      setSelectedVariantState(variant);
+      queuePatch({ defaultVariant: variant });
+    },
+    [queuePatch],
+  );
 
   const toggleModelVisibility = useCallback(
     (modelKey: string) => {
@@ -283,70 +335,109 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
         next.add(modelKey);
       }
       setHiddenModels(next);
-      patchConfig({ hiddenModels: [...next] }).catch(() => {});
+      queuePatch({ hiddenModels: [...next] });
     },
-    [hiddenModels],
+    [hiddenModels, queuePatch],
   );
 
   // UI customization setters
-  const setAccentColor = useCallback((color: AccentColor) => {
-    setAccentColorState(color);
-    patchConfig({ accentColor: color }).catch(() => {});
-  }, []);
-  const setLayoutDensity = useCallback((density: LayoutDensity) => {
-    setLayoutDensityState(density);
-    patchConfig({ layoutDensity: density }).catch(() => {});
-  }, []);
-  const setFontSize = useCallback((size: number) => {
-    setFontSizeState(size);
-    patchConfig({ fontSize: size }).catch(() => {});
-  }, []);
-  const setSoundEffects = useCallback((enabled: boolean) => {
-    setSoundEffectsState(enabled);
-    patchConfig({ soundEffects: enabled }).catch(() => {});
-  }, []);
+  const setAccentColor = useCallback(
+    (color: AccentColor) => {
+      setAccentColorState(color);
+      queuePatch({ accentColor: color });
+    },
+    [queuePatch],
+  );
+  const setLayoutDensity = useCallback(
+    (density: LayoutDensity) => {
+      setLayoutDensityState(density);
+      queuePatch({ layoutDensity: density });
+    },
+    [queuePatch],
+  );
+  const setFontSize = useCallback(
+    (size: number) => {
+      setFontSizeState(size);
+      queuePatch({ fontSize: size });
+    },
+    [queuePatch],
+  );
+  const setSoundEffects = useCallback(
+    (enabled: boolean) => {
+      setSoundEffectsState(enabled);
+      queuePatch({ soundEffects: enabled });
+    },
+    [queuePatch],
+  );
 
   // AI engine setters
-  const setTemperature = useCallback((temp: number) => {
-    setTemperatureState(temp);
-    patchConfig({ temperature: temp }).catch(() => {});
-  }, []);
-  const setMaxTokens = useCallback((tokens: number) => {
-    setMaxTokensState(tokens);
-    patchConfig({ maxTokens: tokens }).catch(() => {});
-  }, []);
-  const setSystemPrompt = useCallback((prompt: string) => {
-    setSystemPromptState(prompt);
-    patchConfig({ systemPrompt: prompt }).catch(() => {});
-  }, []);
-  const setCustomApiEndpoint = useCallback((endpoint: string | null) => {
-    setCustomApiEndpointState(endpoint);
-    patchConfig({ customApiEndpoint: endpoint }).catch(() => {});
-  }, []);
+  const setTemperature = useCallback(
+    (temp: number) => {
+      setTemperatureState(temp);
+      queuePatch({ temperature: temp });
+    },
+    [queuePatch],
+  );
+  const setMaxTokens = useCallback(
+    (tokens: number) => {
+      setMaxTokensState(tokens);
+      queuePatch({ maxTokens: tokens });
+    },
+    [queuePatch],
+  );
+  const setSystemPrompt = useCallback(
+    (prompt: string) => {
+      setSystemPromptState(prompt);
+      queuePatch({ systemPrompt: prompt });
+    },
+    [queuePatch],
+  );
+  const setCustomApiEndpoint = useCallback(
+    (endpoint: string | null) => {
+      setCustomApiEndpointState(endpoint);
+      queuePatch({ customApiEndpoint: endpoint });
+    },
+    [queuePatch],
+  );
 
   // Behavior setters
-  const setAutoScroll = useCallback((enabled: boolean) => {
-    setAutoScrollState(enabled);
-    patchConfig({ autoScroll: enabled }).catch(() => {});
-  }, []);
-  const setEnterToSend = useCallback((enabled: boolean) => {
-    setEnterToSendState(enabled);
-    patchConfig({ enterToSend: enabled }).catch(() => {});
-  }, []);
-  const setNotificationsEnabled = useCallback((enabled: boolean) => {
-    setNotificationsEnabledState(enabled);
-    patchConfig({ notificationsEnabled: enabled }).catch(() => {});
-  }, []);
+  const setAutoScroll = useCallback(
+    (enabled: boolean) => {
+      setAutoScrollState(enabled);
+      queuePatch({ autoScroll: enabled });
+    },
+    [queuePatch],
+  );
+  const setEnterToSend = useCallback(
+    (enabled: boolean) => {
+      setEnterToSendState(enabled);
+      queuePatch({ enterToSend: enabled });
+    },
+    [queuePatch],
+  );
+  const setNotificationsEnabled = useCallback(
+    (enabled: boolean) => {
+      setNotificationsEnabledState(enabled);
+      queuePatch({ notificationsEnabled: enabled });
+    },
+    [queuePatch],
+  );
 
   // SSE connection setters
-  const setSseReconnectDelay = useCallback((delay: number) => {
-    setSseReconnectDelayState(delay);
-    patchConfig({ sseReconnectDelay: delay }).catch(() => {});
-  }, []);
-  const setSseHeartbeatTimeout = useCallback((timeout: number) => {
-    setSseHeartbeatTimeoutState(timeout);
-    patchConfig({ sseHeartbeatTimeout: timeout }).catch(() => {});
-  }, []);
+  const setSseReconnectDelay = useCallback(
+    (delay: number) => {
+      setSseReconnectDelayState(delay);
+      queuePatch({ sseReconnectDelay: delay });
+    },
+    [queuePatch],
+  );
+  const setSseHeartbeatTimeout = useCallback(
+    (timeout: number) => {
+      setSseHeartbeatTimeoutState(timeout);
+      queuePatch({ sseHeartbeatTimeout: timeout });
+    },
+    [queuePatch],
+  );
 
   // Persist the MCP server list and push it into the running engine. The
   // engine config file also carries the list, so a change made while the
