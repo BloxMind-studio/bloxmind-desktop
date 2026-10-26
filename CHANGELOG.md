@@ -7,17 +7,26 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-10-27
+
 ### Added
 
-- Settings → Integrations: add extra MCP servers for the assistant to use, with a one-click Blender preset. Supports local (command) and remote (URL) servers, each with an on/off switch and a live status light; changes apply to the running engine immediately.
+- Settings → Integrations: add extra MCP servers for the assistant to use, with a one-click Blender preset. Supports local (command) and remote (URL) servers, each with an on/off switch and a live status light; changes apply to the running engine immediately. The preset adds and configures the integration, but Blender setup itself is still yours to do — BloxMind doesn't install Blender, uv, or its add-ons for you.
 - A Blender character animation skill ships with the app: once the Blender integration is connected, the assistant can build R6 and R15 animations in Blender, export them, and load them into Studio.
-- The Blender card in Settings → Integrations now sets everything up automatically: one click installs uv, installs and enables the bridge addon in your newest Blender, adds the integration, and opens Blender with the bridge running. The old manual steps are still available under "Manual setup".
-- The same one click now covers the Studio side: BloxMind checks whether the "Blender Animations" plugin is installed in Roblox Studio and opens its Creator Store page when it's missing, so a single click on Install there completes the R15 animation workflow. Creator Store plugins can only be installed by you, and the card links back to the plugin page any time.
 - The assistant can now transfer a premade R15 character from the open Studio place into Blender on its own: it reads the real model through Studio itself — part sizes, placement, every Motor6D joint, and each MeshPart's mesh id — and rebuilds that exact rig for animation, so the old manual "export the rig and pick a file" step is gone for both the classic Part-based and the stock MeshPart-based R15. MeshPart body parts transfer with exact-size box geometry and can pick up FileMesh skinning data when available; accessory-heavy, welded, or new-gen constraint rigs still use the plugin's export path.
+
+### Changed
+
+- The assistant's generated programs no longer run inside the main app. Each one runs in a separate, isolated runtime with no direct access to your files, your settings, or the open Studio session, and a program that runs too long is stopped instead of hanging the app.
+- BloxMind now starts from the version of the assistant engine it already has instead of waiting on a network check first, so the window comes up sooner. The check still runs in the background.
+- Replies stream in more smoothly and use less CPU, especially in long sessions with large tool output.
 
 ### Fixed
 
 - Importing a Studio-exported rig into Blender now rebuilds the armature directly in every session. Previously the rebuild could fail when nothing was pre-selected in Blender, which blocked the R15 animation workflow.
+- Restoring a checkpoint now brings back images, meshes, and other binary files exactly as they were; before, those files could be silently rewritten and come back corrupted. Files too large to snapshot are now reported instead of being skipped without a word.
+- The local connection to Roblox Studio now requires a per-launch secret that only BloxMind and the engine it starts know, so another program on your machine — or a web page that tries to reach the port — can no longer send commands to your open Studio session. Requests that are too large are rejected, and the number of open sessions is capped.
+- BloxMind now refuses to navigate its own window anywhere except its own app page, instead of trusting any page that happened to share its origin.
 
 ## [0.14.0] - 2026-10-17
 
@@ -340,7 +349,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - OpenCode downloads are restricted to official GitHub release assets and verified with SHA-256 digests before installation and on every cache reuse.
 - Electron runs with context isolation, renderer sandboxing, Node.js integration disabled, validated IPC payloads, and external navigation blocked.
 
-[Unreleased]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.14.1...HEAD
+[0.14.1]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.13.8...v0.14.0
 [0.13.8]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.13.7...v0.13.8
 [0.13.7]: https://github.com/paralov/app-bloxbot-ai/compare/v0.13.6...v0.13.7
