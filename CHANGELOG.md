@@ -7,6 +7,27 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.14.2] - 2026-10-27
+
+### Changed
+
+- Permission and question prompts now queue in the order they arrive. When the assistant asks two things before you answer, the second no longer replaces the first, and the next one appears as soon as you answer.
+- Settings are saved once you stop adjusting them instead of on every keystroke or slider step, so typing a long system prompt no longer rewrites the whole configuration file for each character.
+- Checkpoints keep the newest 100 per chat, and file copies they share are stored once, so a long session's saved history no longer grows without limit.
+- The chat re-renders only the reply that is actually streaming, and the Explorer updates only the rows Studio reports as changed and mounts only the rows on screen. Long replies, large tool output and big places stay responsive.
+- Code blocks read as plain text while a reply is still streaming and are highlighted once it finishes, instead of being re-tokenized on every token.
+- Follow-scroll reacts to the size of the conversation rather than every text change, so a long reply keeps scrolling smoothly without watching each character.
+
+### Fixed
+
+- The chat now follows a reply that is streaming into a brand-new chat. Follow-scroll previously did not engage until the second turn.
+- The chat no longer flips back to "Working" after a turn finished, when a status check that started earlier resolved late.
+- Restoring a checkpoint now fails with a clear message if one of its saved file copies is missing, instead of silently leaving the agent's edit in place.
+- Installing an update now stops the assistant engine first, so a running engine can no longer hold files the installer needs to replace.
+- A saved Max Tokens value of 4,096 from an older build is migrated to "model's own limit" once instead of being reapplied on every launch.
+- Model error cards and provider checks no longer fail to render when the provider leaves out the usual error details.
+- Tools provided by a custom MCP server now render like their built-in counterparts even when the server name itself contains underscores.
+
 ## [0.14.1] - 2026-10-27
 
 ### Added
@@ -349,7 +370,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - OpenCode downloads are restricted to official GitHub release assets and verified with SHA-256 digests before installation and on every cache reuse.
 - Electron runs with context isolation, renderer sandboxing, Node.js integration disabled, validated IPC payloads, and external navigation blocked.
 
-[Unreleased]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.14.1...HEAD
+[Unreleased]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.14.2...HEAD
+[0.14.2]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.14.1...v0.14.2
 [0.14.1]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.13.8...v0.14.0
 [0.13.8]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.13.7...v0.13.8
