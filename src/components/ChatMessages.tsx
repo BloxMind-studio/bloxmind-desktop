@@ -70,11 +70,17 @@ const TOOLS_WITH_OWN_HEADER = new Set([
 const TODO_PANEL_KEY = "__todo_panel__";
 
 /**
- * Streamed text mutates a text node many times per second. Scrolling for every
- * mutation forces a layout each time, and anything faster than this is not
+ * Streamed text grows the feed many times per second. Scrolling for every
+ * resize forces a layout each time, and anything faster than this is not
  * perceptible, so follow-scroll coalesces into one trailing scroll.
  */
 const FOLLOW_SCROLL_COALESCE_MS = 100;
+
+/**
+ * How long a disclosure click keeps follow-scroll suppressed. Covers the
+ * disclosure expand/collapse animation (140ms) plus a frame or two of layout.
+ */
+const FOLLOW_SCROLL_SUPPRESS_MS = 300;
 
 /**
  * One item of the scroll feed: a message row, or the inline todo panel that
@@ -2262,8 +2268,13 @@ function ChatMessages() {
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const shouldAutoScroll = useRef(true);
   const lastScrollTop = useRef(0);
+  // Whether the scroll feed is mounted at all. The empty state below renders
+  // without the refs, and the follow-scroll effect must re-run when the first
+  // message turns that empty state into a feed.
+  const hasFeed = !(messageIds.length === 0 && !isBusy && !sessionError);
 
   const virtualizer = useVirtualizer({
     count: feed.length,
@@ -2306,11 +2317,17 @@ function ChatMessages() {
     lastScrollTop.current = currentScrollTop;
   }, []);
 
+  // Follow the newest content by observing the size of the feed, not its text
+  // nodes: streamed tokens, late-loading syntax highlighting, virtualizer
+  // measurements and newly mounted rows all change the content box height, and
+  // that is the only signal follow-scroll actually needs.
   useEffect(() => {
     const el = containerRef.current;
+    const content = contentRef.current;
     const anchor = bottomRef.current;
-    if (!el || !anchor) return;
+    if (!hasFeed || !el || !content || !anchor) return;
     let scrollTimer: number | undefined;
+    let suppressUntil = 0;
     const scheduleFollowScroll = () => {
       if (scrollTimer !== undefined) return;
       scrollTimer = window.setTimeout(() => {
@@ -2319,27 +2336,28 @@ function ChatMessages() {
         anchor.scrollIntoView({ behavior: "instant" });
       }, FOLLOW_SCROLL_COALESCE_MS);
     };
-    const observer = new MutationObserver((mutations) => {
-      if (!autoScroll || !shouldAutoScroll.current) return;
-      for (const mutation of mutations) {
-        const target =
-          mutation.target instanceof Element ? mutation.target : mutation.target.parentElement;
-        // Expanding a disclosure is the user adjusting what they can see;
-        // yanking the view back to the bottom would undo that.
-        if (target?.closest("[data-preserve-scroll]")) continue;
-        scheduleFollowScroll();
-        return;
+    // Expanding a disclosure is the user adjusting what they can see; yanking
+    // the view back to the bottom would undo that. The toggle changes the feed
+    // height like any other content, so remember the click and skip the resize
+    // events that follow it.
+    const handleClick = (event: MouseEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest("[data-preserve-scroll]")) {
+        suppressUntil = performance.now() + FOLLOW_SCROLL_SUPPRESS_MS;
       }
+    };
+    const observer = new ResizeObserver(() => {
+      if (performance.now() < suppressUntil) return;
+      scheduleFollowScroll();
     });
-    // `characterData` is what streaming produces (React updates the text node in
-    // place), so it is required for follow-scroll; the coalescing above keeps it
-    // from forcing a layout per token.
-    observer.observe(el, { childList: true, subtree: true, characterData: true });
+    observer.observe(content);
+    el.addEventListener("click", handleClick, true);
     return () => {
       observer.disconnect();
+      el.removeEventListener("click", handleClick, true);
       if (scrollTimer !== undefined) window.clearTimeout(scrollTimer);
     };
-  }, [autoScroll]);
+  }, [autoScroll, hasFeed]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional scroll triggers
   useEffect(() => {
@@ -2389,7 +2407,7 @@ function ChatMessages() {
         onScroll={handleScroll}
         className="app-scrollbar flex-1 overflow-y-auto [overflow-anchor:none]"
       >
-        <div className="mx-auto max-w-2xl px-4 py-4">
+        <div ref={contentRef} className="mx-auto max-w-2xl px-4 py-4">
           <div
             style={{
               height: `${virtualizer.getTotalSize()}px`,

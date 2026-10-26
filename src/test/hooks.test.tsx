@@ -24,6 +24,7 @@ import { useSessions } from "@/hooks/useSessions";
 import { qk } from "@/lib/queryKeys";
 import type { MessagesCache } from "@/lib/sseDispatch";
 import { ActiveSessionContext } from "@/providers/ActiveSessionProvider";
+import type { MessageWithParts } from "@/types";
 
 // ── Test helpers ─────────────────────────────────────────────────────
 
@@ -44,6 +45,21 @@ function makeSession(id: string, title: string): Session {
     version: "1",
     parentID: "",
   } as Session;
+}
+
+/** Minimal cached message; SSE handlers only read the fields under test. */
+function message(
+  id: string,
+  role: "user" | "assistant" = "assistant",
+  text?: string,
+): MessageWithParts {
+  return {
+    info: { id, sessionID: "s1", role },
+    parts:
+      text === undefined
+        ? []
+        : [{ id: `${id}-p1`, sessionID: "s1", messageID: id, type: "text", text }],
+  } as MessageWithParts;
 }
 
 /** Minimal wrapper providing QueryClient only */
@@ -91,7 +107,7 @@ describe("useSessions", () => {
     const { result } = renderHook(() => useSessions(), { wrapper: makeWrapper(qc) });
 
     expect(result.current.data).toHaveLength(2);
-    expect(result.current.data![0].id).toBe("s1");
+    expect(result.current.data?.[0].id).toBe("s1");
   });
 
   it("returns undefined when cache is empty", () => {
@@ -250,8 +266,8 @@ describe("useMessageIds", () => {
     qc.setQueryData<MessagesCache>(qk.messages("s1"), {
       messageIds: ["m1", "m2"],
       messagesById: {
-        m1: { info: { id: "m1" } as any, parts: [] },
-        m2: { info: { id: "m2" } as any, parts: [] },
+        m1: message("m1"),
+        m2: message("m2"),
       },
     });
 
@@ -277,10 +293,7 @@ describe("useMessage", () => {
     qc.setQueryData<MessagesCache>(qk.messages("s1"), {
       messageIds: ["m1"],
       messagesById: {
-        m1: {
-          info: { id: "m1", role: "assistant" } as any,
-          parts: [{ id: "p1", type: "text", text: "hello" } as any],
-        },
+        m1: message("m1", "assistant", "hello"),
       },
     });
 
@@ -296,7 +309,7 @@ describe("useMessage", () => {
     const qc = makeQC();
     qc.setQueryData<MessagesCache>(qk.messages("s1"), {
       messageIds: ["m1"],
-      messagesById: { m1: { info: { id: "m1" } as any, parts: [] } },
+      messagesById: { m1: message("m1") },
     });
 
     const { result } = renderHook(() => useMessage("m999"), {

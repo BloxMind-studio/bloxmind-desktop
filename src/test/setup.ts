@@ -18,6 +18,16 @@ Object.defineProperty(window, "localStorage", {
 // jsdom doesn't implement scrollIntoView
 Element.prototype.scrollIntoView = () => {};
 
+// jsdom doesn't implement ResizeObserver (ChatMessages follows the feed with it)
+class ResizeObserverStub {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+if (typeof globalThis.ResizeObserver === "undefined") {
+  globalThis.ResizeObserver = ResizeObserverStub as unknown as typeof ResizeObserver;
+}
+
 // jsdom doesn't implement matchMedia (used for system theme)
 Object.defineProperty(window, "matchMedia", {
   writable: true,

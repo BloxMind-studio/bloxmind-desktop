@@ -23,6 +23,10 @@ import {
   sseDispatch,
   sseDispatchEffect,
 } from "@/lib/sseDispatch";
+import type { MessageWithParts } from "@/types";
+
+type MessageInfo = MessageWithParts["info"];
+type MessagePart = MessageWithParts["parts"][number];
 
 function makeQC() {
   return new QueryClient({
@@ -41,6 +45,48 @@ function makeSession(id: string, title: string): Session {
     version: "1",
     parentID: "",
   } as Session;
+}
+
+// ── Cache fixtures ───────────────────────────────────────────────────
+// The SSE handlers only read the fields a test cares about, so these
+// helpers build the minimal shapes instead of hand-rolling casts in every
+// test.
+
+function messageInfo(id: string): MessageInfo {
+  return { id, sessionID: "s1", role: "assistant" } as MessageInfo;
+}
+
+function textPart(id: string, text: string, extra?: { output?: string }): MessagePart {
+  return {
+    id,
+    sessionID: "s1",
+    messageID: "m1",
+    type: "text",
+    text,
+    ...extra,
+  } as MessagePart;
+}
+
+function message(id: string, parts: MessagePart[] = []): MessageWithParts {
+  return { info: messageInfo(id), parts };
+}
+
+function getMessages(qc: QueryClient, sessionID = "s1"): MessagesCache {
+  const cache = qc.getQueryData<MessagesCache>(qk.messages(sessionID));
+  if (!cache) throw new Error(`no messages cache for ${sessionID}`);
+  return cache;
+}
+
+function getSessions(qc: QueryClient): Session[] {
+  const sessions = qc.getQueryData<Session[]>(qk.sessions);
+  if (!sessions) throw new Error("no sessions cache");
+  return sessions;
+}
+
+function getStatuses(qc: QueryClient): Record<string, SessionStatus> {
+  const statuses = qc.getQueryData<Record<string, SessionStatus>>(qk.statuses);
+  if (!statuses) throw new Error("no statuses cache");
+  return statuses;
 }
 
 function dispatch(qc: QueryClient, event: unknown, activeSessionId: string | null = null) {
@@ -114,7 +160,7 @@ describe("sseDispatch", () => {
         properties: { info: makeSession("s2", "Two") },
       });
 
-      const sessions = qc.getQueryData<Session[]>(qk.sessions)!;
+      const sessions = getSessions(qc);
       expect(sessions).toHaveLength(2);
       expect(sessions[0].id).toBe("s2"); // prepended
     });
@@ -134,7 +180,7 @@ describe("sseDispatch", () => {
         properties: { info: makeSession("s1", "One") },
       });
 
-      const sessions = qc.getQueryData<Session[]>(qk.sessions)!;
+      const sessions = getSessions(qc);
       expect(sessions).toHaveLength(1);
     });
   });
@@ -148,7 +194,7 @@ describe("sseDispatch", () => {
         properties: { info: makeSession("s1", "New Title") },
       });
 
-      const sessions = qc.getQueryData<Session[]>(qk.sessions)!;
+      const sessions = getSessions(qc);
       expect(sessions[0].title).toBe("New Title");
     });
 
@@ -160,7 +206,7 @@ describe("sseDispatch", () => {
         properties: { info: makeSession("s1", "Updated") },
       });
 
-      const sessions = qc.getQueryData<Session[]>(qk.sessions)!;
+      const sessions = getSessions(qc);
       expect(sessions[1].title).toBe("Two");
     });
   });
@@ -177,7 +223,7 @@ describe("sseDispatch", () => {
         properties: { info: makeSession("s1", "One") },
       });
 
-      const sessions = qc.getQueryData<Session[]>(qk.sessions)!;
+      const sessions = getSessions(qc);
       expect(sessions).toHaveLength(1);
       expect(sessions[0].id).toBe("s2");
       expect(qc.getQueryData(qk.messages("s1"))).toBeUndefined();
@@ -197,7 +243,7 @@ describe("sseDispatch", () => {
         properties: { sessionID: "s1", status: { type: "busy" } },
       });
 
-      const statuses = qc.getQueryData<Record<string, SessionStatus>>(qk.statuses)!;
+      const statuses = getStatuses(qc);
       expect(statuses.s1.type).toBe("busy");
     });
 
@@ -239,7 +285,7 @@ describe("sseDispatch", () => {
 
       dispatch(qc, { type: "session.idle", properties: { sessionID: "s1" } });
 
-      const statuses = qc.getQueryData<Record<string, SessionStatus>>(qk.statuses)!;
+      const statuses = getStatuses(qc);
       expect(statuses.s1.type).toBe("idle");
     });
 
@@ -359,7 +405,7 @@ describe("sseDispatch", () => {
         "s1",
       );
 
-      const cache = qc.getQueryData<MessagesCache>(qk.messages("s1"))!;
+      const cache = getMessages(qc);
       expect(cache.messageIds).toEqual(["m1"]);
       expect(cache.messagesById.m1.info.id).toBe("m1");
       expect(cache.messagesById.m1.parts).toEqual([]);
@@ -369,10 +415,7 @@ describe("sseDispatch", () => {
       qc.setQueryData<MessagesCache>(qk.messages("s1"), {
         messageIds: ["m1"],
         messagesById: {
-          m1: {
-            info: { id: "m1", sessionID: "s1", role: "assistant" } as any,
-            parts: [{ id: "p1", type: "text", text: "hello" } as any],
-          },
+          m1: message("m1", [textPart("p1", "hello")]),
         },
       });
 
@@ -387,10 +430,10 @@ describe("sseDispatch", () => {
         "s1",
       );
 
-      const cache = qc.getQueryData<MessagesCache>(qk.messages("s1"))!;
+      const cache = getMessages(qc);
       expect(cache.messageIds).toEqual(["m1"]); // not duplicated
       expect(cache.messagesById.m1.parts).toHaveLength(1); // parts preserved
-      expect((cache.messagesById.m1.info as any).metadata).toBe("updated");
+      expect(cache.messagesById.m1.info).toMatchObject({ metadata: "updated" });
     });
 
     it("ignores messages for a different session", () => {
@@ -405,7 +448,7 @@ describe("sseDispatch", () => {
         "s1",
       );
 
-      const cache = qc.getQueryData<MessagesCache>(qk.messages("s1"))!;
+      const cache = getMessages(qc);
       expect(cache.messageIds).toEqual([]);
     });
 
@@ -419,7 +462,7 @@ describe("sseDispatch", () => {
         "s1",
       );
 
-      const cache = qc.getQueryData<MessagesCache>(qk.messages("s1"))!;
+      const cache = getMessages(qc);
       expect(cache.messageIds).toEqual(["m1"]);
     });
   });
@@ -428,7 +471,7 @@ describe("sseDispatch", () => {
     it("appends a new part to an existing message", () => {
       qc.setQueryData<MessagesCache>(qk.messages("s1"), {
         messageIds: ["m1"],
-        messagesById: { m1: { info: { id: "m1" } as any, parts: [] } },
+        messagesById: { m1: message("m1") },
       });
 
       dispatch(
@@ -442,19 +485,16 @@ describe("sseDispatch", () => {
         "s1",
       );
 
-      const msg = qc.getQueryData<MessagesCache>(qk.messages("s1"))!.messagesById.m1;
+      const msg = getMessages(qc).messagesById.m1;
       expect(msg.parts).toHaveLength(1);
-      expect((msg.parts[0] as any).text).toBe("hi");
+      expect(msg.parts[0]).toMatchObject({ text: "hi" });
     });
 
     it("replaces an existing part by id", () => {
       qc.setQueryData<MessagesCache>(qk.messages("s1"), {
         messageIds: ["m1"],
         messagesById: {
-          m1: {
-            info: { id: "m1" } as any,
-            parts: [{ id: "p1", type: "text", text: "old" } as any],
-          },
+          m1: message("m1", [textPart("p1", "old")]),
         },
       });
 
@@ -469,9 +509,9 @@ describe("sseDispatch", () => {
         "s1",
       );
 
-      const msg = qc.getQueryData<MessagesCache>(qk.messages("s1"))!.messagesById.m1;
+      const msg = getMessages(qc).messagesById.m1;
       expect(msg.parts).toHaveLength(1);
-      expect((msg.parts[0] as any).text).toBe("new");
+      expect(msg.parts[0]).toMatchObject({ text: "new" });
     });
   });
 
@@ -480,10 +520,7 @@ describe("sseDispatch", () => {
       qc.setQueryData<MessagesCache>(qk.messages("s1"), {
         messageIds: ["m1"],
         messagesById: {
-          m1: {
-            info: { id: "m1" } as any,
-            parts: [{ id: "p1", type: "text", text: "Hello" } as any],
-          },
+          m1: message("m1", [textPart("p1", "Hello")]),
         },
       });
 
@@ -497,18 +534,15 @@ describe("sseDispatch", () => {
       );
       flushSseDeltas();
 
-      const part = qc.getQueryData<MessagesCache>(qk.messages("s1"))!.messagesById.m1.parts[0];
-      expect((part as any).text).toBe("Hello World");
+      const part = getMessages(qc).messagesById.m1.parts[0];
+      expect(part).toMatchObject({ text: "Hello World" });
     });
 
     it("uses field parameter when provided", () => {
       qc.setQueryData<MessagesCache>(qk.messages("s1"), {
         messageIds: ["m1"],
         messagesById: {
-          m1: {
-            info: { id: "m1" } as any,
-            parts: [{ id: "p1", type: "text", text: "base", output: "out" } as any],
-          },
+          m1: message("m1", [textPart("p1", "base", { output: "out" })]),
         },
       });
 
@@ -528,20 +562,15 @@ describe("sseDispatch", () => {
       );
       flushSseDeltas();
 
-      const part = qc.getQueryData<MessagesCache>(qk.messages("s1"))!.messagesById.m1
-        .parts[0] as any;
-      expect(part.output).toBe("out+more");
-      expect(part.text).toBe("base"); // unchanged
+      const part = getMessages(qc).messagesById.m1.parts[0];
+      expect(part).toMatchObject({ output: "out+more", text: "base" });
     });
 
     it("coalesces a burst of deltas into one cache write", () => {
       qc.setQueryData<MessagesCache>(qk.messages("s1"), {
         messageIds: ["m1"],
         messagesById: {
-          m1: {
-            info: { id: "m1" } as any,
-            parts: [{ id: "p1", type: "text", text: "" } as any],
-          },
+          m1: message("m1", [textPart("p1", "")]),
         },
       });
       const setQueryData = vi.spyOn(qc, "setQueryData");
@@ -561,18 +590,15 @@ describe("sseDispatch", () => {
       flushSseDeltas();
 
       expect(setQueryData).toHaveBeenCalledTimes(1);
-      const part = qc.getQueryData<MessagesCache>(qk.messages("s1"))!.messagesById.m1.parts[0];
-      expect((part as any).text).toBe("Hello World!");
+      const part = getMessages(qc).messagesById.m1.parts[0];
+      expect(part).toMatchObject({ text: "Hello World!" });
     });
 
     it("ignores deltas addressed to another session", () => {
       qc.setQueryData<MessagesCache>(qk.messages("s1"), {
         messageIds: ["m1"],
         messagesById: {
-          m1: {
-            info: { id: "m1" } as any,
-            parts: [{ id: "p1", type: "text", text: "Hello" } as any],
-          },
+          m1: message("m1", [textPart("p1", "Hello")]),
         },
       });
 
@@ -586,14 +612,14 @@ describe("sseDispatch", () => {
       );
       flushSseDeltas();
 
-      const part = qc.getQueryData<MessagesCache>(qk.messages("s1"))!.messagesById.m1.parts[0];
-      expect((part as any).text).toBe("Hello");
+      const part = getMessages(qc).messagesById.m1.parts[0];
+      expect(part).toMatchObject({ text: "Hello" });
     });
 
     it("ignores delta when part is not found", () => {
       qc.setQueryData<MessagesCache>(qk.messages("s1"), {
         messageIds: ["m1"],
-        messagesById: { m1: { info: { id: "m1" } as any, parts: [] } },
+        messagesById: { m1: message("m1") },
       });
 
       dispatch(
@@ -607,9 +633,7 @@ describe("sseDispatch", () => {
       flushSseDeltas();
 
       // Should not throw, cache unchanged
-      expect(qc.getQueryData<MessagesCache>(qk.messages("s1"))!.messagesById.m1.parts).toHaveLength(
-        0,
-      );
+      expect(getMessages(qc).messagesById.m1.parts).toHaveLength(0);
     });
   });
 
@@ -618,8 +642,8 @@ describe("sseDispatch", () => {
       qc.setQueryData<MessagesCache>(qk.messages("s1"), {
         messageIds: ["m1", "m2"],
         messagesById: {
-          m1: { info: { id: "m1" } as any, parts: [] },
-          m2: { info: { id: "m2" } as any, parts: [] },
+          m1: message("m1"),
+          m2: message("m2"),
         },
       });
 
@@ -629,7 +653,7 @@ describe("sseDispatch", () => {
         "s1",
       );
 
-      const cache = qc.getQueryData<MessagesCache>(qk.messages("s1"))!;
+      const cache = getMessages(qc);
       expect(cache.messageIds).toEqual(["m2"]);
       expect(cache.messagesById.m1).toBeUndefined();
     });
@@ -640,10 +664,7 @@ describe("sseDispatch", () => {
       qc.setQueryData<MessagesCache>(qk.messages("s1"), {
         messageIds: ["m1"],
         messagesById: {
-          m1: {
-            info: { id: "m1" } as any,
-            parts: [{ id: "p1", type: "text" } as any, { id: "p2", type: "text" } as any],
-          },
+          m1: message("m1", [textPart("p1", ""), textPart("p2", "")]),
         },
       });
 
@@ -656,7 +677,7 @@ describe("sseDispatch", () => {
         "s1",
       );
 
-      const parts = qc.getQueryData<MessagesCache>(qk.messages("s1"))!.messagesById.m1.parts;
+      const parts = getMessages(qc).messagesById.m1.parts;
       expect(parts).toHaveLength(1);
       expect(parts[0].id).toBe("p2");
     });

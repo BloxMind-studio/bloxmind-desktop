@@ -18,9 +18,10 @@ const ProjectIndexContext = createContext<ProjectIndexContextValue | null>(null)
  * or dependency names that contain <, >, or & characters.
  */
 function escapeXml(str: string): string {
-  const amp = String.fromCharCode(38) + "amp;";
-  const lt = String.fromCharCode(38) + "lt;";
-  const gt = String.fromCharCode(38) + "gt;";
+  const ampersand = String.fromCharCode(38);
+  const amp = `${ampersand}amp;`;
+  const lt = `${ampersand}lt;`;
+  const gt = `${ampersand}gt;`;
   return str.replace(/&/g, amp).replace(/</g, lt).replace(/>/g, gt);
 }
 
