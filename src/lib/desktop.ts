@@ -5,7 +5,7 @@ import {
 } from "@/lib/bloxbotProgramManifest";
 import { migrateStoredConfig } from "@/lib/configMigration";
 import { type ExplorerSnapshot, ExplorerSnapshotSchema } from "@/lib/explorer";
-import { ProjectSkeletonSchema } from "@/lib/projectIndex";
+import { type ProjectSkeleton, ProjectSkeletonSchema } from "@/lib/projectIndex";
 import {
   type CaptureContext,
   type Checkpoint,
@@ -72,11 +72,10 @@ interface DesktopEffects {
   ) => Promise<infer Output>
     ? (input: Input) => Effect.Effect<Output, DesktopError>
     : never;
-  readonly invokeProjectIndexProgram: DesktopApi["invokeProjectIndexProgram"] extends (
-    input: infer Input,
-  ) => Promise<infer Output>
-    ? (input: Input) => Effect.Effect<Output, DesktopError>
-    : never;
+  readonly invokeProjectIndexProgram: (
+    artifact: GeneratedProgramArtifact,
+    studioId: string,
+  ) => Effect.Effect<ProjectSkeleton, DesktopError>;
   readonly getOpenCodeInfo: Effect.Effect<OpenCodeInfo, DesktopError>;
   readonly getOpenCodeInstallFolder: Effect.Effect<string | null, DesktopError>;
   readonly getStudioMcpStatus: Effect.Effect<StudioMcpStatus, DesktopError>;
@@ -274,9 +273,9 @@ function makeBridgeEffects(api: DesktopApi): DesktopEffects {
     listExplorerProgramTools: invoke("Failed to list Explorer program tools", () =>
       api.listExplorerProgramTools(),
     ).pipe(decodeBridgeValue("Explorer program tools are invalid", Schema.Array(Schema.String))),
-    invokeProjectIndexProgram: (artifact) =>
+    invokeProjectIndexProgram: (artifact, studioId) =>
       invoke("Failed to invoke project index program", () =>
-        api.invokeProjectIndexProgram(artifact),
+        api.invokeProjectIndexProgram(artifact, studioId),
       ).pipe(decodeBridgeValue("Project index skeleton is invalid", ProjectSkeletonSchema)),
     relaunch: invoke("Failed to relaunch the app", () => api.relaunch()),
     installStudioTargetPrograms: (envelopes) =>
@@ -353,8 +352,8 @@ export const desktop: DesktopApi = {
   invokeExplorerProgram: (artifact, studioId) =>
     runPromise(desktopEffects.invokeExplorerProgram(artifact, studioId)),
   listExplorerProgramTools: () => runPromise(desktopEffects.listExplorerProgramTools),
-  invokeProjectIndexProgram: (artifact) =>
-    runPromise(desktopEffects.invokeProjectIndexProgram(artifact)),
+  invokeProjectIndexProgram: (artifact, studioId) =>
+    runPromise(desktopEffects.invokeProjectIndexProgram(artifact, studioId)),
   relaunch: () => runPromise(desktopEffects.relaunch),
   installStudioTargetPrograms: (envelopes) =>
     runPromise(desktopEffects.installStudioTargetPrograms(envelopes)),

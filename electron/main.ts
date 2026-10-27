@@ -548,31 +548,36 @@ const registerIpcHandlers = Effect.sync(() => {
       }),
     ),
   );
-  ipcMain.handle(channels.invokeProjectIndexProgram, (_event, input: unknown) =>
-    openCodeRuntime.runPromise(
-      Effect.gen(function* () {
-        const artifact = yield* Schema.decodeUnknown(GeneratedProgramArtifactSchema)(input);
-        if (
-          artifact.contract.name !== "project-index" ||
-          artifact.contract.outputSchemaVersion !== "project-index-skeleton-v1"
-        ) {
-          return yield* Effect.fail(
-            new DesktopMainError({ message: "Project index program contract is invalid" }),
+  ipcMain.handle(
+    channels.invokeProjectIndexProgram,
+    (_event, input: unknown, studioIdInput: unknown) =>
+      openCodeRuntime.runPromise(
+        Effect.gen(function* () {
+          const artifact = yield* Schema.decodeUnknown(GeneratedProgramArtifactSchema)(input);
+          const studioId = yield* Schema.decodeUnknown(
+            Schema.String.pipe(Schema.minLength(1), Schema.maxLength(512)),
+          )(studioIdInput);
+          if (
+            artifact.contract.name !== "project-index" ||
+            artifact.contract.outputSchemaVersion !== "project-index-skeleton-v1"
+          ) {
+            return yield* Effect.fail(
+              new DesktopMainError({ message: "Project index program contract is invalid" }),
+            );
+          }
+          const runtime = yield* GeneratedProgramRuntime;
+          const result = yield* runtime.invoke({ artifact, input: { studioId } });
+          return yield* Schema.decodeUnknown(ProjectSkeletonSchema)(result.value).pipe(
+            Effect.mapError(
+              (cause) => new DesktopMainError({ message: "Project index output is invalid", cause }),
+            ),
           );
-        }
-        const runtime = yield* GeneratedProgramRuntime;
-        const result = yield* runtime.invoke({ artifact, input: null });
-        return yield* Schema.decodeUnknown(ProjectSkeletonSchema)(result.value).pipe(
-          Effect.mapError(
-            (cause) => new DesktopMainError({ message: "Project index output is invalid", cause }),
+        }).pipe(
+          Effect.tapErrorCause((cause) =>
+            Effect.logError(`[project-index] invocation failed: ${String(cause)}`),
           ),
-        );
-      }).pipe(
-        Effect.tapErrorCause((cause) =>
-          Effect.logError(`[project-index] invocation failed: ${String(cause)}`),
         ),
       ),
-    ),
   );
   ipcMain.handle(channels.relaunch, () =>
     runMain(

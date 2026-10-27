@@ -1,14 +1,15 @@
+import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
   buildDependencyGraph,
   type ProjectModuleInput,
+  ProjectSkeletonSchema,
   parseRequireCalls,
   stripLuauComments,
 } from "@/lib/projectIndex";
 
 // ── stripLuauComments ────────────────────────────────────────────────────
-
 describe("stripLuauComments", () => {
   it("strips line comments", () => {
     const source = `local x = 1 -- this is a comment\nlocal y = 2`;
@@ -565,5 +566,22 @@ describe("buildDependencyGraph", () => {
       dependentsCount: 0,
       dependencyDepth: 0,
     });
+  });
+});
+
+// ── ProjectSkeletonSchema ────────────────────────────────────────────────
+
+describe("ProjectSkeletonSchema", () => {
+  it("defaults the index diagnostics when a skeleton predates them", () => {
+    const decoded = Schema.decodeUnknownSync(ProjectSkeletonSchema)({
+      modules: [],
+      entryPoints: [],
+      circularDependencies: [],
+      totalScripts: 0,
+      totalModuleScripts: 0,
+    });
+
+    expect(decoded.unreadableScripts).toBe(0);
+    expect(decoded.partial).toBe(false);
   });
 });

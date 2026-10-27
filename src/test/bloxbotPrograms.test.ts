@@ -117,7 +117,7 @@ describe("studio program manifest", () => {
 
   it("lets the project index program read the place tree and scripts", () => {
     expect(isBloxBotProgramToolAllowed("project-index", "search_game_tree")).toBe(true);
-    expect(isBloxBotProgramToolAllowed("project-index", "read_script")).toBe(true);
+    expect(isBloxBotProgramToolAllowed("project-index", "script_read")).toBe(true);
     // Still read-only: it may not mutate the place or reach the network.
     expect(
       isBloxBotProgramToolAllowed("project-index", "execute_luau", {
@@ -133,7 +133,7 @@ describe("studio program manifest", () => {
       }),
     ).toBe(false);
     expect(isBloxBotProgramContract("project-index")).toBe(true);
-    expect(knownBloxBotProgramTools("project-index")).toEqual(["search_game_tree", "read_script"]);
+    expect(knownBloxBotProgramTools("project-index")).toEqual(["search_game_tree", "script_read"]);
   });
 
   it("ships a manifest.json that matches bloxbot-programs/ (run `pnpm bloxbot-programs build`)", async () => {

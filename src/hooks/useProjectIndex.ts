@@ -26,6 +26,7 @@ import { useStudioTargetOptional } from "@/providers/StudioTargetProvider";
 export function useProjectIndex(): {
   skeleton: ProjectSkeleton | null;
   isLoading: boolean;
+  isFetching: boolean;
   error: string | null;
   refresh: () => void;
 } {
@@ -41,17 +42,18 @@ export function useProjectIndex(): {
     [targetKey],
   );
 
-  const { data, isLoading, error } = useQuery<ProjectSkeleton | null>({
+  const { data, isLoading, isFetching, error } = useQuery<ProjectSkeleton | null>({
     queryKey: projectIndexKey,
     queryFn: async () => {
-      if (!client || !hasStudioTarget) return null;
+      if (!client || !hasStudioTarget || !targetKey) return null;
 
       // Step 1: Compile the built-in program via the GeneratedProgramRuntime.
       const program = await desktop.compileProjectIndexProgram(BUILTIN_PROJECT_INDEX_PROGRAM);
       if (!program) return null;
 
-      // Step 2: Invoke the compiled program to get the skeleton.
-      const skeleton = await desktop.invokeProjectIndexProgram(program);
+      // Step 2: Invoke the compiled program with the selected Studio target.
+      // Studio's tools need the real studio_id; without it they fail.
+      const skeleton = await desktop.invokeProjectIndexProgram(program, targetKey);
       if (!skeleton) return null;
 
       // Validate the result against our schema via the runtime Effect system.
@@ -72,7 +74,8 @@ export function useProjectIndex(): {
   return {
     skeleton: data ?? null,
     isLoading,
-    error: error ? String(error) : null,
+    isFetching,
+    error: error ? (error instanceof Error ? error.message : String(error)) : null,
     refresh,
   };
 }

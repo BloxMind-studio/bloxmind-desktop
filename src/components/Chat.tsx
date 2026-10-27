@@ -30,19 +30,22 @@ import { useStudioTargetOptional } from "@/providers/StudioTargetProvider";
 const Settings = lazy(() => import("@/components/Settings"));
 
 /**
- * Compact button that shows the project index state and triggers a re-index.
- * Placed next to the Explorer/Playtest buttons in the header toolbar.
+ * Project index button that shows the live script count and triggers a
+ * re-index. Placed next to the Explorer/Playtest buttons in the header toolbar.
  */
 function ProjectIndexButton() {
-  const { skeleton, isLoading, error, refresh } = useProjectIndexContext();
+  const { skeleton, isLoading, isFetching, error, refresh } = useProjectIndexContext();
   const [showTooltip, setShowTooltip] = useState(false);
   const tooltipTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const indexed = skeleton !== null;
+  const busy = isLoading || isFetching;
   const scriptCount = skeleton?.totalScripts ?? 0;
   const moduleCount = skeleton?.totalModuleScripts ?? 0;
   const circularCount = skeleton?.circularDependencies.length ?? 0;
+  const unreadableCount = skeleton?.unreadableScripts ?? 0;
   const hubCount = skeleton?.modules.filter((m) => m.dependentsCount >= 3).length ?? 0;
+  const total = scriptCount + moduleCount;
 
   const handleClick = useCallback(() => {
     refresh();
@@ -53,46 +56,65 @@ function ProjectIndexButton() {
 
   useEffect(() => () => clearTimeout(tooltipTimer.current), []);
 
-  const summary = `${scriptCount} scripts · ${moduleCount} modules${circularCount > 0 ? ` · ${circularCount} cycles` : ""}`;
+  const summary =
+    total === 0
+      ? "No scripts found"
+      : `${scriptCount} scripts · ${moduleCount} modules${circularCount > 0 ? ` · ${circularCount} cycles` : ""}`;
+  const label = busy
+    ? indexed
+      ? "Refreshing..."
+      : "Indexing..."
+    : error
+      ? "Retry index"
+      : indexed
+        ? total === 0
+          ? "No scripts"
+          : `${total} ${total === 1 ? "script" : "scripts"}`
+        : "Index project";
+  const title =
+    error ?? (busy ? "Reading the script map from Studio" : `${summary}. Click to refresh.`);
 
   return (
     <div className="relative">
       <button
         type="button"
         onClick={handleClick}
-        disabled={isLoading}
-        aria-label={indexed ? summary : "Index project structure"}
-        className="inline-flex h-7 items-center rounded-md border bg-background px-2 text-[11px] font-medium text-muted-foreground transition-[background-color,color] hover:bg-accent hover:text-foreground disabled:opacity-50"
-        title={indexed ? summary : "Index project structure"}
+        disabled={busy}
+        aria-label={
+          error ? `Project index failed: ${error}. Retry` : indexed ? summary : "Index project"
+        }
+        className={`inline-flex h-7 items-center rounded-md border bg-background px-2 text-[11px] font-medium transition-[background-color,color] hover:bg-accent hover:text-foreground disabled:opacity-50 ${error ? "text-red-500" : "text-muted-foreground"}`}
+        title={title}
       >
         <div className="relative">
           <FolderTree aria-hidden="true" size={13} />
-          {indexed && (
+          {indexed && !busy && (
             <span
-              className={`absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full ${circularCount > 0 ? "bg-amber-500" : "bg-emerald-500"}`}
+              className={`absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full ${circularCount > 0 || unreadableCount > 0 ? "bg-amber-500" : "bg-emerald-500"}`}
             />
           )}
-          {isLoading && (
+          {busy && (
             <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 animate-ping rounded-full bg-amber-400" />
           )}
         </div>
-        {error && (
-          <span className="ml-1.5 text-[11px] text-red-500" title={error}>
-            Error
-          </span>
-        )}
+        <span className="ml-1.5 whitespace-nowrap">{label}</span>
       </button>
 
-      {showTooltip && indexed && (
-        <div className="animate-fade-in-up absolute right-0 top-9 z-50 whitespace-nowrap rounded-md border bg-popover px-3 py-1.5 text-[11px] text-popover-foreground shadow-lg">
-          Indexed: {scriptCount} scripts · {moduleCount} modules
-          {hubCount > 0 && ` · ${hubCount} hubs`}
-          {circularCount > 0 && ` · ${circularCount} cycles`}
-        </div>
-      )}
-      {showTooltip && !indexed && !isLoading && !error && (
-        <div className="animate-fade-in-up absolute right-0 top-9 z-50 whitespace-nowrap rounded-md border bg-popover px-3 py-1.5 text-[11px] text-popover-foreground shadow-lg">
-          No scripts found
+      {showTooltip && !busy && (
+        <div className="animate-fade-in-up absolute right-0 top-9 z-50 max-w-64 whitespace-normal rounded-md border bg-popover px-3 py-1.5 text-[11px] text-popover-foreground shadow-lg">
+          {error ? (
+            <>Index failed: {error}</>
+          ) : indexed ? (
+            <>
+              Indexed: {scriptCount} scripts · {moduleCount} modules
+              {hubCount > 0 && ` · ${hubCount} hubs`}
+              {circularCount > 0 && ` · ${circularCount} cycles`}
+              {unreadableCount > 0 && ` · ${unreadableCount} unreadable`}
+              {skeleton?.partial && " · partial"}
+            </>
+          ) : (
+            "No scripts found"
+          )}
         </div>
       )}
     </div>

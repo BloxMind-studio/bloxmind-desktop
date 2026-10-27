@@ -4,7 +4,9 @@ import {
   BUILTIN_EXPLORER_PROGRAM,
   BUILTIN_STUDIO_TARGET_PROGRAMS,
 } from "@/lib/builtinBloxBotPrograms";
+import { BUILTIN_PROJECT_INDEX_PROGRAM } from "@/lib/builtinProjectPrograms";
 import { ExplorerSnapshotSchema } from "@/lib/explorer";
+import { ProjectSkeletonSchema } from "@/lib/projectIndex";
 import {
   type CallTool,
   GeneratedProgramRuntimeError,
@@ -179,7 +181,7 @@ describe("GeneratedProgramRuntime", () => {
     expect(callTool).not.toHaveBeenCalled();
   });
 
-  it("lets a project-index program call search_game_tree and read_script", async () => {
+  it("lets the project-index program call search_game_tree and script_read", async () => {
     const callTool = vi.fn().mockResolvedValue({ content: [] });
     const runtime = startGeneratedProgramRuntime(callTool);
     const artifact = await Effect.runPromise(
@@ -192,23 +194,125 @@ describe("GeneratedProgramRuntime", () => {
           outputSchemaVersion: "project-index-skeleton-v1",
         },
         source: `async function run({ callTool }) {
-          await callTool("search_game_tree", { max_depth: 10, head_limit: 100000 });
-          await callTool("roblox-studio_read_script", { script_path: "game.Workspace.Main" });
+          await callTool("search_game_tree", {
+            studio_id: "studio-1",
+            datamodel_type: "Edit",
+            max_depth: 10,
+            head_limit: 100000,
+          });
+          await callTool("roblox-studio_script_read", {
+            studio_id: "studio-1",
+            target_file: "game.Workspace.Main",
+          });
           return { modules: [] };
         }`,
       }),
     );
 
     await expect(
-      Effect.runPromise(runtime.invoke({ artifact, input: null })),
+      Effect.runPromise(runtime.invoke({ artifact, input: { studioId: "studio-1" } })),
     ).resolves.toMatchObject({ value: { modules: [] } });
     expect(callTool).toHaveBeenNthCalledWith(1, "search_game_tree", {
+      studio_id: "studio-1",
+      datamodel_type: "Edit",
       max_depth: 10,
       head_limit: 100000,
     });
-    expect(callTool).toHaveBeenNthCalledWith(2, "read_script", {
-      script_path: "game.Workspace.Main",
+    expect(callTool).toHaveBeenNthCalledWith(2, "script_read", {
+      studio_id: "studio-1",
+      target_file: "game.Workspace.Main",
     });
+  });
+
+  it("indexes every discovered script with the built-in project index program", async () => {
+    const tree = [
+      { name: "Main", className: "Script", fullPath: "ServerScriptService.Main" },
+      { name: "Util", className: "ModuleScript", fullPath: "ReplicatedStorage.Util" },
+      {
+        name: "Client",
+        className: "LocalScript",
+        fullPath: "ReplicatedStorage.Client",
+      },
+      { name: "Part", className: "Part", fullPath: "Workspace.Part" },
+    ];
+    const sources: Record<string, string> = {
+      "game.ServerScriptService.Main":
+        "1→local Util = require(game.ReplicatedStorage.Util)\n2→print(Util)",
+      "game.ReplicatedStorage.Client":
+        '1→local Util = require(script.Parent.Util)\n2→print("client", Util)',
+    };
+    const textResult = (text: string) => ({ content: [{ type: "text" as const, text }] });
+    const callTool = vi.fn(async (name: string, args: Record<string, unknown>) => {
+      if (name === "search_game_tree") {
+        return textResult(JSON.stringify(tree));
+      }
+      if (name === "script_read") {
+        const source = sources[String(args.target_file)];
+        return source === undefined
+          ? { isError: true, content: [{ type: "text" as const, text: "Script is not readable" }] }
+          : textResult(source);
+      }
+      throw new Error(`Unexpected tool ${name}`);
+    });
+    const runtime = startGeneratedProgramRuntime(callTool);
+    const artifact = await Effect.runPromise(runtime.compile(BUILTIN_PROJECT_INDEX_PROGRAM));
+
+    const result = await Effect.runPromise(
+      runtime.invoke({ artifact, input: { studioId: "studio-1" } }),
+    );
+    const skeleton = await Effect.runPromise(
+      Schema.decodeUnknown(ProjectSkeletonSchema)(result.value),
+    );
+
+    // Every discovered script is counted, including the one whose source
+    // could not be read; only its dependencies are unknown.
+    expect(skeleton.totalScripts).toBe(2);
+    expect(skeleton.totalModuleScripts).toBe(1);
+    expect(skeleton.unreadableScripts).toBe(1);
+    expect(skeleton.partial).toBe(false);
+
+    const main = skeleton.modules.find((mod) => mod.path === "game.ServerScriptService.Main");
+    expect(main?.dependencies).toContain("game.ReplicatedStorage.Util");
+    // The line-number gutter is stripped before the source is measured.
+    expect(main?.sourceLength).toBe(
+      "local Util = require(game.ReplicatedStorage.Util)\nprint(Util)".length,
+    );
+
+    // Relative requires resolve against the requiring script.
+    const client = skeleton.modules.find((mod) => mod.path === "game.ReplicatedStorage.Client");
+    expect(client?.dependencies).toContain("game.ReplicatedStorage.Util");
+    const util = skeleton.modules.find((mod) => mod.path === "game.ReplicatedStorage.Util");
+    expect(util?.dependentsCount).toBe(2);
+
+    expect(callTool).toHaveBeenCalledWith("search_game_tree", {
+      studio_id: "studio-1",
+      datamodel_type: "Edit",
+      instance_type: "LuaSourceContainer",
+      max_depth: 10,
+      head_limit: 100000,
+    });
+    expect(callTool).toHaveBeenCalledWith("script_read", {
+      studio_id: "studio-1",
+      target_file: "game.ServerScriptService.Main",
+      should_read_entire_file: true,
+    });
+  });
+
+  it("reports a Studio error instead of returning an empty project index", async () => {
+    const callTool = vi.fn(async () => ({
+      isError: true,
+      content: [{ type: "text" as const, text: "No Studio instance is connected" }],
+    }));
+    const runtime = startGeneratedProgramRuntime(callTool);
+    const artifact = await Effect.runPromise(runtime.compile(BUILTIN_PROJECT_INDEX_PROGRAM));
+
+    const failure = await Effect.runPromise(
+      Effect.flip(runtime.invoke({ artifact, input: { studioId: "studio-1" } })),
+    );
+
+    expect(failure.message).toContain("No Studio instance is connected");
+    // One attempt per data model, not a silent empty result.
+    expect(callTool).toHaveBeenCalledTimes(3);
   });
 
   it("restores a compiled function from a persisted artifact", async () => {

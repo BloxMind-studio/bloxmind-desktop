@@ -11,6 +11,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - Context compaction is now visible and controllable. Settings → AI Engine has an Automatic compaction switch for OpenCode's built-in summarization of older messages, and the chat header has a Compact button that summarizes the current conversation on demand; it appears only while automatic compaction is off. While a compaction runs — automatic or manual — a status row above the composer shows that the conversation is being summarized. Compaction parts still appear inline as "Context compacted", and a failed or empty compaction reports a toast instead of doing nothing.
 
+### Fixed
+
+- Project indexing works again. The indexer now passes the selected Studio target and a data model type to Studio, uses Studio's real `script_read` tool, and reports a real error with a Retry action instead of silently showing 0 scripts and 0 modules. Every discovered script is counted even when its source cannot be read, and source reading is bounded so a large place returns a partial map instead of timing out.
+- The project map is now useful to the assistant. It carries the scanned place's entry points, hub modules, dependency links and the exact `script_read` paths, warns when the map is partial, and tells the assistant to read the listed scripts instead of rescanning the place. The chat header shows the live script/module count and marks partial or unreadable indexes.
+
 ## [0.14.4] - 2026-10-27
 
 ### Added

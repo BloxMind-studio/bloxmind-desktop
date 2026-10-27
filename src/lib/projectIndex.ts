@@ -50,6 +50,21 @@ export const ProjectSkeletonSchema = Schema.Struct({
   circularDependencies: Schema.Array(Schema.Tuple(Schema.String, Schema.String)),
   totalScripts: Schema.Number.pipe(Schema.int(), Schema.nonNegative()),
   totalModuleScripts: Schema.Number.pipe(Schema.int(), Schema.nonNegative()),
+
+  /**
+   * Scripts discovered in the place whose source could not be read, so their
+   * dependencies are unknown. They are still counted in the totals; this only
+   * says the map is incomplete for them.
+   */
+  unreadableScripts: Schema.optionalWith(Schema.Number.pipe(Schema.int(), Schema.nonNegative()), {
+    default: () => 0,
+  }),
+
+  /**
+   * True when source reading stopped at the program's time budget before every
+   * script was read. The counts are complete; some dependencies may be missing.
+   */
+  partial: Schema.optionalWith(Schema.Boolean, { default: () => false }),
 });
 
 export type ProjectSkeleton = typeof ProjectSkeletonSchema.Type;

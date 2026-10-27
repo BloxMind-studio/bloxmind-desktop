@@ -68,7 +68,7 @@ export const BLOXBOT_PROGRAM_TOOLS: Record<BloxBotProgramName, readonly string[]
 export const PROJECT_INDEX_PROGRAM_NAME = "project-index";
 
 /** Studio MCP tools the project index program reads the place with. */
-export const PROJECT_INDEX_PROGRAM_TOOLS: readonly string[] = ["search_game_tree", "read_script"];
+export const PROJECT_INDEX_PROGRAM_TOOLS: readonly string[] = ["search_game_tree", "script_read"];
 
 /**
  * Every contract the app knows, with the tools it is known to use. A contract

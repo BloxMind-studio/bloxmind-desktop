@@ -199,7 +199,10 @@ export interface DesktopApi {
   compileProjectIndexProgram(
     program: ProjectIndexProgramEnvelope,
   ): Promise<GeneratedProgramArtifact>;
-  invokeProjectIndexProgram(artifact: GeneratedProgramArtifact): Promise<ProjectSkeleton>;
+  invokeProjectIndexProgram(
+    artifact: GeneratedProgramArtifact,
+    studioId: string,
+  ): Promise<ProjectSkeleton>;
   getOpenCodeInfo(): Promise<OpenCodeInfo>;
   /** The folder OpenCode installs into, for antivirus exclusions. Null outside the desktop app. */
   getOpenCodeInstallFolder(): Promise<string | null>;
