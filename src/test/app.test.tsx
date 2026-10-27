@@ -123,6 +123,7 @@ function createClient(overrides: Record<string, unknown> = {}) {
       status: vi.fn().mockResolvedValue({ data: {} }),
       todo: vi.fn().mockResolvedValue({ data: [] }),
       promptAsync: vi.fn().mockResolvedValue({}),
+      summarize: vi.fn().mockResolvedValue({ data: true }),
       ...overrides,
     },
     provider: {
@@ -225,6 +226,7 @@ function seedReadyState(
     soundEffects: true,
     temperature: 0.7,
     maxTokens: 0,
+    autoCompaction: true,
     systemPrompt: "",
     customApiEndpoint: null,
     verificationLevel: "quick",
@@ -500,6 +502,36 @@ describe("User journeys", () => {
     await waitFor(() => {
       expect(screen.getByText(/I'll create a Roblox obby for you!/)).toBeInTheDocument();
     });
+  });
+
+  it("compacts the active conversation from the chat header", async () => {
+    const session = makeSession("s1", "Compact Session");
+    const client = createClient({ get: vi.fn().mockResolvedValue({ data: session }) });
+    const queryClient = createQueryClient();
+    seedReadyState(queryClient, { sessions: [session] });
+
+    render(<TestApp client={client} queryClient={queryClient} />);
+    await act(async () => {
+      fireEvent.click(await screen.findByText("Compact Session"));
+    });
+
+    const compactButton = await screen.findByRole("button", { name: "Compact conversation" });
+    await waitFor(() => expect(compactButton).toBeEnabled());
+    await act(async () => {
+      fireEvent.click(compactButton);
+    });
+
+    await waitFor(() => {
+      expect(client.session.summarize).toHaveBeenCalledWith(
+        {
+          sessionID: "s1",
+          providerID: "anthropic",
+          modelID: "claude-3.5-sonnet",
+        },
+        { throwOnError: true },
+      );
+    });
+    expect(await screen.findByText("Conversation compacted")).toBeVisible();
   });
 
   it("keeps the todo panel inline with its task turn when a new message arrives", async () => {

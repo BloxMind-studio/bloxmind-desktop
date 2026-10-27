@@ -45,6 +45,15 @@ describe("buildEngineConfigPatch", () => {
     expect(buildEngineConfigPatch(input(), providers, [])).toBeNull();
   });
 
+  it("toggles automatic context compaction", () => {
+    expect(buildEngineConfigPatch(input({ autoCompaction: false }), providers, [])).toEqual({
+      compaction: { auto: false },
+    });
+    expect(buildEngineConfigPatch(input({ autoCompaction: true }), providers, [])).toEqual({
+      compaction: { auto: true },
+    });
+  });
+
   it("writes the endpoint override for every connected provider", () => {
     const patch = buildEngineConfigPatch(
       input({ customApiEndpoint: "https://example.test/api", maxTokens: 4_096 }),

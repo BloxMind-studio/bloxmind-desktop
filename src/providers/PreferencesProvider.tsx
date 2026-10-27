@@ -66,6 +66,8 @@ interface PreferencesContextValue {
   // AI engine
   temperature: number;
   maxTokens: number;
+  /** Summarize older messages automatically when the context window fills up. */
+  autoCompaction: boolean;
   systemPrompt: string;
   customApiEndpoint: string | null;
   // Behavior
@@ -90,6 +92,7 @@ interface PreferencesContextValue {
   setSoundEffects: (enabled: boolean) => void;
   setTemperature: (temp: number) => void;
   setMaxTokens: (tokens: number) => void;
+  setAutoCompaction: (enabled: boolean) => void;
   setSystemPrompt: (prompt: string) => void;
   setCustomApiEndpoint: (endpoint: string | null) => void;
   setAutoScroll: (enabled: boolean) => void;
@@ -138,6 +141,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   // AI engine
   const [temperature, setTemperatureState] = useState(0.7);
   const [maxTokens, setMaxTokensState] = useState(0);
+  const [autoCompaction, setAutoCompactionState] = useState(true);
   const [systemPrompt, setSystemPromptState] = useState("");
   const [customApiEndpoint, setCustomApiEndpointState] = useState<string | null>(null);
   // Behavior
@@ -225,6 +229,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     // AI engine
     setTemperatureState(configData.temperature);
     setMaxTokensState(configData.maxTokens);
+    setAutoCompactionState(configData.autoCompaction);
     setSystemPromptState(configData.systemPrompt);
     setCustomApiEndpointState(configData.customApiEndpoint);
     // Behavior
@@ -393,6 +398,13 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     },
     [queuePatch],
   );
+  const setAutoCompaction = useCallback(
+    (enabled: boolean) => {
+      setAutoCompactionState(enabled);
+      queuePatch({ autoCompaction: enabled });
+    },
+    [queuePatch],
+  );
   const setSystemPrompt = useCallback(
     (prompt: string) => {
       setSystemPromptState(prompt);
@@ -511,6 +523,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     const fingerprint = JSON.stringify([
       temperature,
       maxTokens,
+      autoCompaction,
       customApiEndpoint,
       selectedAgent,
       selectedModel,
@@ -525,6 +538,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
         {
           temperature,
           maxTokens,
+          autoCompaction,
           customApiEndpoint,
           agent: selectedAgent,
           modelKey: selectedModel,
@@ -543,6 +557,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     providerList,
     temperature,
     maxTokens,
+    autoCompaction,
     customApiEndpoint,
     selectedAgent,
     selectedModel,
@@ -561,6 +576,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       soundEffects,
       temperature,
       maxTokens,
+      autoCompaction,
       systemPrompt,
       customApiEndpoint,
       autoScroll,
@@ -581,6 +597,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       setSoundEffects,
       setTemperature,
       setMaxTokens,
+      setAutoCompaction,
       setSystemPrompt,
       setCustomApiEndpoint,
       setAutoScroll,
@@ -603,6 +620,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       soundEffects,
       temperature,
       maxTokens,
+      autoCompaction,
       systemPrompt,
       customApiEndpoint,
       autoScroll,
@@ -623,6 +641,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       setSoundEffects,
       setTemperature,
       setMaxTokens,
+      setAutoCompaction,
       setSystemPrompt,
       setCustomApiEndpoint,
       setAutoScroll,

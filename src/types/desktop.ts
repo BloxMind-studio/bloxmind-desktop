@@ -80,6 +80,8 @@ export const AppConfigSchema = Schema.mutable(
     temperature: Schema.Number.pipe(Schema.between(0, 1)),
     // Output-token cap for the selected model; 0 leaves the model's own limit.
     maxTokens: Schema.Number.pipe(Schema.int(), Schema.between(0, 128_000)),
+    // Summarize older messages when the context window fills up.
+    autoCompaction: Schema.Boolean,
     systemPrompt: Schema.String,
     customApiEndpoint: Schema.NullOr(Schema.String),
     // How much checking the assistant does after a change (Settings → Behavior).
@@ -114,6 +116,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   soundEffects: true,
   temperature: 0.7,
   maxTokens: 0,
+  autoCompaction: true,
   systemPrompt: "",
   customApiEndpoint: null,
   verificationLevel: DEFAULT_VERIFICATION_LEVEL,

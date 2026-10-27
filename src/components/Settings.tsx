@@ -1086,6 +1086,8 @@ function EngineTab() {
     setTemperature,
     maxTokens,
     setMaxTokens,
+    autoCompaction,
+    setAutoCompaction,
     systemPrompt,
     setSystemPrompt,
     customApiEndpoint,
@@ -1143,6 +1145,45 @@ function EngineTab() {
             Caps the response length for the selected model (up to 128,000; 0 uses the model's own
             limit). Very low caps can cut a long reply off mid-thought.
           </div>
+        </div>
+      </div>
+
+      {/* Context Compaction */}
+      <div className="mt-6">
+        <div className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Context Compaction
+        </div>
+        <div className="rounded-lg border bg-card p-3.5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-sm font-medium">Automatic compaction</div>
+              <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                When the conversation nears the model's context limit, older messages are summarized
+                so the session can keep going. Turn it off to keep the full history; long sessions
+                may then hit the context limit.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={autoCompaction}
+              aria-label="Automatic compaction"
+              onClick={() => setAutoCompaction(!autoCompaction)}
+              className={`relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                autoCompaction ? "bg-foreground" : "bg-border"
+              }`}
+            >
+              <span
+                className={`inline-block h-3.5 w-3.5 rounded-full bg-background transition-transform ${
+                  autoCompaction ? "translate-x-4" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+          </div>
+          <p className="mt-2 text-[10px] text-muted-foreground">
+            You can also compact the current conversation at any time with Compact in the chat
+            header.
+          </p>
         </div>
       </div>
 

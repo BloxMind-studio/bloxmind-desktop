@@ -126,6 +126,7 @@ function seedState(qc: QueryClient, session: Session) {
     soundEffects: true,
     temperature: 0.7,
     maxTokens: 0,
+    autoCompaction: true,
     systemPrompt: "",
     customApiEndpoint: null,
     verificationLevel: "quick",

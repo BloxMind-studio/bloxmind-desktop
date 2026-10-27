@@ -28,6 +28,8 @@ export interface EngineSettingsInput {
   temperature: number;
   /** Output-token cap for the selected model; `0` leaves the model's own limit. */
   maxTokens: number;
+  /** Whether OpenCode summarizes older messages when the context window fills up. */
+  autoCompaction?: boolean;
   customApiEndpoint: string | null;
   agent: string | null;
   modelKey: string | null;
@@ -47,6 +49,7 @@ interface EngineProviderPatch {
 interface EngineConfigPatch {
   agent?: Record<string, { temperature: number }>;
   provider?: Record<string, EngineProviderPatch>;
+  compaction?: { auto: boolean };
 }
 
 /**
@@ -65,6 +68,8 @@ interface EngineConfigPatch {
  *   override of the provider because the server only unsets one model at a
  *   time through its own `limit.output`, and reading the model's real limit
  *   back is no help — `provider.list` already reports the capped value.
+ * - `autoCompaction` → `compaction.auto`, which lets the engine summarize
+ *   older messages when the context window fills up.
  * - `customApiEndpoint` → `provider.<id>.options.baseURL` for every connected
  *   provider; an empty raw value or `null` removes a previously written
  *   override.
@@ -80,6 +85,10 @@ export function buildEngineConfigPatch(
 
   if (input.agent) {
     patch.agent = { [input.agent]: { temperature: input.temperature } };
+  }
+
+  if (input.autoCompaction !== undefined) {
+    patch.compaction = { auto: input.autoCompaction };
   }
 
   // `models: null` clears the model overrides of every connected provider, so
@@ -116,7 +125,7 @@ export function buildEngineConfigPatch(
     }
   }
 
-  if (!patch.agent && !patch.provider) return null;
+  if (!patch.agent && !patch.provider && !patch.compaction) return null;
   return patch as Config;
 }
 

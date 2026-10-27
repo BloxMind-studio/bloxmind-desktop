@@ -1,6 +1,7 @@
-import { Boxes, FolderTree, Play } from "lucide-react";
+import { Boxes, Combine, FolderTree, Play } from "lucide-react";
 import posthog from "posthog-js/dist/module.full.no-external.js";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import ChatInput from "@/components/ChatInput";
 import ChatMessages from "@/components/ChatMessages";
 import ChatSidebar from "@/components/ChatSidebar";
@@ -9,6 +10,7 @@ import LoadingScreen from "@/components/LoadingScreen";
 import PlaytestPanel from "@/components/PlaytestPanel";
 import StudioSetup from "@/components/StudioSetup";
 import StudioTargetPicker from "@/components/StudioTargetPicker";
+import { useCompactSession } from "@/hooks/mutations/useCompactSession";
 import { useCreateSession } from "@/hooks/mutations/useCreateSession";
 import { isSessionWorking, useSessionStatus } from "@/hooks/useSessionStatuses";
 import { useSessions } from "@/hooks/useSessions";
@@ -20,6 +22,7 @@ import {
   TOOLTIP_DURATION_MS,
   useOpenCodeClient,
 } from "@/providers/OpenCodeClientProvider";
+import { usePreferences } from "@/providers/PreferencesProvider";
 import { useProjectIndexContext } from "@/providers/ProjectIndexProvider";
 import { useStudioTargetOptional } from "@/providers/StudioTargetProvider";
 
@@ -92,6 +95,46 @@ function ProjectIndexButton() {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Summarize the current conversation through OpenCode's compaction endpoint.
+ * Sits beside the Studio controls so it is available in any session, not only
+ * when a Studio place is connected.
+ */
+function CompactButton({ disabled }: { disabled: boolean }) {
+  const compactSession = useCompactSession();
+  const { selectedModel } = usePreferences();
+  const compacting = compactSession.isPending;
+  const blocked = disabled || !selectedModel;
+
+  const handleClick = useCallback(() => {
+    compactSession.mutate(undefined, {
+      onSuccess: () => toast.success("Conversation compacted"),
+      onError: (error) =>
+        toast.error(error instanceof Error ? error.message : "Could not compact the conversation"),
+    });
+  }, [compactSession]);
+
+  const title = !selectedModel
+    ? "Select a model before compacting"
+    : disabled
+      ? "Wait for the agent to finish"
+      : "Summarize older messages to free context";
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      disabled={blocked || compacting}
+      className="inline-flex h-7 items-center rounded-md border bg-background px-2 text-[11px] font-medium text-muted-foreground transition-[background-color,color] hover:bg-accent hover:text-foreground disabled:opacity-40"
+      aria-label="Compact conversation"
+      title={title}
+    >
+      <Combine aria-hidden="true" size={13} />
+      <span className="ml-1.5 whitespace-nowrap">{compacting ? "Compacting..." : "Compact"}</span>
+    </button>
   );
 }
 
@@ -321,6 +364,7 @@ function Chat() {
                 )}
               </div>
               <div className="ml-2 flex min-w-0 items-center justify-end gap-1.5">
+                <CompactButton disabled={isBusy} />
                 <StudioTargetPicker />
                 {hasStudioTarget ? (
                   <div className="flex shrink-0 items-center gap-1.5">
