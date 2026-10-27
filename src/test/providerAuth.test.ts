@@ -4,12 +4,14 @@ import { describe, expect, it } from "vitest";
 import {
   authErrorMessage,
   authMethodOptions,
+  canDisconnect,
   connectHint,
   deviceCode,
   initialPromptInputs,
   oauthRecovery,
   providerDisplayName,
   submittedPromptInputs,
+  unremovableSourceLabel,
   visiblePrompts,
 } from "@/lib/providerAuth";
 
@@ -187,5 +189,38 @@ describe("providerDisplayName", () => {
       "OpenCode Zen",
     );
     expect(providerDisplayName({ id: "openai", name: "OpenAI", source: "api" })).toBe("OpenAI");
+  });
+});
+
+describe("canDisconnect", () => {
+  it("offers Disconnect for a provider whose key BloxMind stored", () => {
+    expect(canDisconnect({ id: "google", source: "api" })).toBe(true);
+  });
+
+  it("still offers Disconnect when the engine reports the provider as config", () => {
+    // BloxMind writes provider.<id>.options for the AI Engine settings, which
+    // makes the engine report "config" even for keys kept in the credential
+    // store, so this must not hide the button.
+    expect(canDisconnect({ id: "google", source: "config" })).toBe(true);
+    expect(canDisconnect({ id: "google", source: undefined })).toBe(true);
+  });
+
+  it("hides Disconnect for a key read from the environment", () => {
+    expect(canDisconnect({ id: "google", source: "env" })).toBe(false);
+  });
+
+  it("hides Disconnect for the free Zen models and for a Zen key it can't remove", () => {
+    expect(canDisconnect({ id: "opencode", source: "custom" })).toBe(false);
+    expect(canDisconnect({ id: "opencode", source: "env" })).toBe(false);
+    expect(canDisconnect({ id: "opencode", source: "config" })).toBe(false);
+    expect(canDisconnect({ id: "opencode", source: "api" })).toBe(true);
+  });
+});
+
+describe("unremovableSourceLabel", () => {
+  it("only explains the case BloxMind can't act on", () => {
+    expect(unremovableSourceLabel({ id: "google", source: "env" })).toBe("From environment");
+    expect(unremovableSourceLabel({ id: "google", source: "config" })).toBeNull();
+    expect(unremovableSourceLabel({ id: "google", source: "api" })).toBeNull();
   });
 });

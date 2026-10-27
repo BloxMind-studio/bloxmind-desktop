@@ -169,3 +169,35 @@ export function providerDisplayName(provider: { id: string; name: string; source
 export function isFreeTier(provider: { id: string; source?: string }): boolean {
   return provider.id === "opencode" && provider.source === "custom";
 }
+
+/** OpenCode Zen with a key added in BloxMind, which falls back to the free models when removed. */
+export function hasZenKey(provider: { id: string; source?: string }): boolean {
+  return provider.id === "opencode" && provider.source === "api";
+}
+
+/** OpenCode Zen with a key from the environment or config, which BloxMind can't remove. */
+export function hasOutsideZenKey(provider: { id: string; source?: string }): boolean {
+  return provider.id === "opencode" && !isFreeTier(provider) && !hasZenKey(provider);
+}
+
+/**
+ * Whether BloxMind can actually remove this provider's credential. A key read
+ * from the environment is not stored by BloxMind, so offering Disconnect for it
+ * just claims to do something it can't.
+ *
+ * `source: "config"` deliberately does not block it: the engine reports that for
+ * every provider present in `config.provider`, and BloxMind writes its own
+ * entries there (`provider.<id>.options` for the AI Engine settings), so it says
+ * nothing about where the credential came from. The key itself still lives in
+ * the credential store BloxMind removes from.
+ */
+export function canDisconnect(provider: { id: string; source?: string }): boolean {
+  if (isFreeTier(provider) || hasOutsideZenKey(provider)) return false;
+  return provider.source !== "env";
+}
+
+/** Why a connected provider has no Disconnect action, if that is the reason. */
+export function unremovableSourceLabel(provider: { id: string; source?: string }): string | null {
+  if (provider.source === "env") return "From environment";
+  return null;
+}

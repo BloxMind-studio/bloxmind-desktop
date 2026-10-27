@@ -27,7 +27,14 @@ import {
   validateMcpServer,
 } from "@/lib/mcpServers";
 import { OPENCODE_GO, shouldRecommendOpenCodeGo } from "@/lib/opencodeGo";
-import { connectHint, isFreeTier, providerDisplayName } from "@/lib/providerAuth";
+import {
+  canDisconnect,
+  connectHint,
+  hasZenKey,
+  isFreeTier,
+  providerDisplayName,
+  unremovableSourceLabel,
+} from "@/lib/providerAuth";
 import { checkModels, checkPreference, type ProviderCheckResult } from "@/lib/providerCheck";
 import { usePreferences } from "@/providers/PreferencesProvider";
 import type { ModelInfo, ProviderInfo } from "@/types";
@@ -47,16 +54,6 @@ const POPULAR_PROVIDERS = [
 
 /** OpenCode Zen with only the built-in free models. */
 const isFreeZen = isFreeTier;
-
-/** OpenCode Zen with a key added in BloxMind, which falls back to the free models when removed. */
-function hasZenKey(provider: ProviderInfo): boolean {
-  return provider.id === "opencode" && provider.source === "api";
-}
-
-/** OpenCode Zen with a key from the environment or config, which BloxMind can't remove. */
-function hasOutsideZenKey(provider: ProviderInfo): boolean {
-  return provider.id === "opencode" && !isFreeZen(provider) && !hasZenKey(provider);
-}
 
 const TECHNOLOGIES = [
   { name: "OpenCode", url: "https://opencode.ai", description: "AI coding engine" },
@@ -669,8 +666,10 @@ function ProvidersTab() {
                       onCheck={(model) => runCheck(provider, model)}
                     />
                     {/* The free models can't be disconnected, and BloxMind can't
-                        remove a Zen key it didn't store. */}
-                    {isFreeZen(provider) || hasOutsideZenKey(provider) ? null : (
+                        remove a Zen key it didn't store. A key taken from the
+                        environment isn't stored here either, so it is labelled
+                        instead of offering a no-op. */}
+                    {canDisconnect(provider) ? (
                       <button
                         onClick={() => handleDisconnect(provider)}
                         disabled={disconnecting === provider.id}
@@ -682,7 +681,11 @@ function ProvidersTab() {
                             ? "Remove key"
                             : "Disconnect"}
                       </button>
-                    )}
+                    ) : unremovableSourceLabel(provider) ? (
+                      <span className="shrink-0 whitespace-nowrap text-[11px] text-muted-foreground/70">
+                        {unremovableSourceLabel(provider)}
+                      </span>
+                    ) : null}
                   </div>
                   {check && check !== "checking" && (
                     <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground @md:pl-10">

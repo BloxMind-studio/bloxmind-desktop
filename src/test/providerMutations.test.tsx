@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useCheckProvider } from "@/hooks/mutations/useCheckProvider";
 import { useDisconnectProvider, useSetApiKey } from "@/hooks/mutations/useSetApiKey";
@@ -24,6 +24,36 @@ const client = {
 vi.mock("@/providers/OpenCodeClientProvider", () => ({
   useOpenCodeClient: () => ({ client }),
 }));
+
+type ProviderRow = { id: string; source: "env" | "config" | "custom" | "api" };
+
+/** A provider list response shaped like the engine's. */
+function providerList(connected: string[], providers: ProviderRow[]) {
+  return {
+    all: providers.map((provider) => ({
+      ...provider,
+      name: provider.id,
+      env: [],
+      models: {},
+      options: {},
+    })),
+    connected,
+    default: {},
+  };
+}
+
+function cachedProviders(qc: QueryClient) {
+  return qc.getQueryData<ReturnType<typeof providerList>>(qk.providers);
+}
+
+beforeEach(() => {
+  client.auth.set.mockReset();
+  client.auth.remove.mockReset();
+  client.instance.dispose.mockReset();
+  client.provider.list.mockReset();
+  client.provider.auth.mockReset();
+  client.provider.auth.mockResolvedValue({ data: {} });
+});
 
 const preferences = { selectedModel: null as string | null };
 
@@ -72,16 +102,77 @@ describe("useSetApiKey", () => {
 });
 
 describe("useDisconnectProvider", () => {
-  it("reports a removed credential as removed when the refresh afterwards fails", async () => {
+  it("keeps the provider out of the cache when the refresh afterwards fails", async () => {
     client.auth.remove.mockResolvedValue({ data: true });
     client.instance.dispose.mockRejectedValue(new Error("instance busy"));
     const qc = new QueryClient();
-    const invalidate = vi.spyOn(qc, "invalidateQueries").mockResolvedValue();
+    const list = providerList(["openai"], [{ id: "openai", source: "api" }]);
+    qc.setQueryData(qk.providers, list);
+
+    const { result } = renderHook(() => useDisconnectProvider(), { wrapper: wrapper(qc) });
+
+    await expect(result.current.mutateAsync("openai")).resolves.toBe("openai");
+    expect(cachedProviders(qc)?.connected).toEqual([]);
+    expect(cachedProviders(qc)?.all.map((provider) => provider.id)).toEqual(["openai"]);
+  });
+
+  it("ignores the engine's stale list while it reinitializes", async () => {
+    client.auth.remove.mockResolvedValue({ data: true });
+    client.instance.dispose.mockResolvedValue({ data: true });
+    // Every read — including the poll after dispose — still reports the key.
+    const stale = providerList(["openai"], [{ id: "openai", source: "api" }]);
+    client.provider.list.mockResolvedValue({ data: stale });
+    const qc = new QueryClient();
+    qc.setQueryData(qk.providers, stale);
+
+    const { result } = renderHook(() => useDisconnectProvider(), { wrapper: wrapper(qc) });
+
+    await expect(result.current.mutateAsync("openai")).resolves.toBe("openai");
+    expect(cachedProviders(qc)?.connected).toEqual([]);
+  });
+
+  it("keeps Zen connected without the account key", async () => {
+    client.auth.remove.mockResolvedValue({ data: true });
+    client.instance.dispose.mockResolvedValue({ data: true });
+    // Removing a Zen key leaves the free models connected, so a stale engine
+    // list is the only thing that would keep reading Zen as an account.
+    const stale = providerList(["opencode"], [{ id: "opencode", source: "api" }]);
+    client.provider.list.mockResolvedValue({ data: stale });
+    const qc = new QueryClient();
+    qc.setQueryData(qk.providers, stale);
 
     const { result } = renderHook(() => useDisconnectProvider(), { wrapper: wrapper(qc) });
 
     await expect(result.current.mutateAsync("opencode")).resolves.toBe("opencode");
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: qk.providers });
+    expect(cachedProviders(qc)?.connected).toEqual(["opencode"]);
+    expect(cachedProviders(qc)?.all[0].source).toBe("custom");
+  });
+
+  it("takes the engine's list once it reflects the removal", async () => {
+    client.auth.remove.mockResolvedValue({ data: true });
+    client.instance.dispose.mockResolvedValue({ data: true });
+    const stale = providerList(
+      ["openai", "anthropic"],
+      [
+        { id: "openai", source: "api" },
+        { id: "anthropic", source: "api" },
+      ],
+    );
+    const fresh = providerList(["anthropic"], [{ id: "anthropic", source: "api" }]);
+    client.provider.list
+      // First call after dispose only wakes the engine up.
+      .mockResolvedValueOnce({ data: stale })
+      .mockResolvedValueOnce({ data: stale })
+      .mockResolvedValue({ data: fresh });
+    const qc = new QueryClient();
+    qc.setQueryData(qk.providers, stale);
+
+    const { result } = renderHook(() => useDisconnectProvider(), { wrapper: wrapper(qc) });
+
+    await expect(result.current.mutateAsync("openai")).resolves.toBe("openai");
+    expect(cachedProviders(qc)?.connected).toEqual(["anthropic"]);
+    expect(cachedProviders(qc)?.all.map((provider) => provider.id)).toEqual(["anthropic"]);
+    expect(client.provider.list).toHaveBeenCalledTimes(3);
   });
 });
 
