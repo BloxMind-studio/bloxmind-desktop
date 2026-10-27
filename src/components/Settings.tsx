@@ -1181,8 +1181,8 @@ function EngineTab() {
             </button>
           </div>
           <p className="mt-2 text-[10px] text-muted-foreground">
-            You can also compact the current conversation at any time with Compact in the chat
-            header.
+            Automatic compaction keeps long sessions going without any action. To compact by hand
+            instead, turn this off and use Compact in the chat header.
           </p>
         </div>
       </div>

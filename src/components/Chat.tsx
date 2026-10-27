@@ -106,7 +106,7 @@ function ProjectIndexButton() {
  */
 function CompactButton({ disabled }: { disabled: boolean }) {
   const compactSession = useCompactSession();
-  const { selectedModel } = usePreferences();
+  const { selectedModel, autoCompaction } = usePreferences();
   const compacting = compactSession.isPending;
   const blocked = disabled || !selectedModel;
 
@@ -117,6 +117,10 @@ function CompactButton({ disabled }: { disabled: boolean }) {
         toast.error(error instanceof Error ? error.message : "Could not compact the conversation"),
     });
   }, [compactSession]);
+
+  // Automatic compaction already covers this session. Showing both would offer
+  // the same action twice, so the manual button belongs to the opt-out mode.
+  if (autoCompaction) return null;
 
   const title = !selectedModel
     ? "Select a model before compacting"

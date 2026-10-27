@@ -193,6 +193,7 @@ function seedReadyState(
     detailedAnalytics?: "unset" | "enabled" | "disabled";
     analyticsNoticeVersion?: number;
     layoutDensity?: "comfortable" | "compact";
+    autoCompaction?: boolean;
   } = {},
 ) {
   const sessions = opts.sessions ?? [];
@@ -226,7 +227,7 @@ function seedReadyState(
     soundEffects: true,
     temperature: 0.7,
     maxTokens: 0,
-    autoCompaction: true,
+    autoCompaction: opts.autoCompaction ?? true,
     systemPrompt: "",
     customApiEndpoint: null,
     verificationLevel: "quick",
@@ -508,7 +509,7 @@ describe("User journeys", () => {
     const session = makeSession("s1", "Compact Session");
     const client = createClient({ get: vi.fn().mockResolvedValue({ data: session }) });
     const queryClient = createQueryClient();
-    seedReadyState(queryClient, { sessions: [session] });
+    seedReadyState(queryClient, { sessions: [session], autoCompaction: false });
 
     render(<TestApp client={client} queryClient={queryClient} />);
     await act(async () => {
@@ -534,6 +535,21 @@ describe("User journeys", () => {
     expect(await screen.findByText("Conversation compacted")).toBeVisible();
   });
 
+  it("hides the manual Compact button while automatic compaction is on", async () => {
+    const session = makeSession("s1", "Compact Session");
+    const client = createClient({ get: vi.fn().mockResolvedValue({ data: session }) });
+    const queryClient = createQueryClient();
+    seedReadyState(queryClient, { sessions: [session] });
+
+    render(<TestApp client={client} queryClient={queryClient} />);
+    await act(async () => {
+      fireEvent.click(await screen.findByText("Compact Session"));
+    });
+
+    await screen.findByRole("heading", { level: 3 });
+    expect(screen.queryByRole("button", { name: "Compact conversation" })).toBeNull();
+  });
+
   it("shows an in-chat status while compaction runs", async () => {
     const session = makeSession("s1", "Compact Session");
     let finishSummarize: (value: { data: boolean }) => void = () => {};
@@ -547,7 +563,7 @@ describe("User journeys", () => {
       summarize,
     });
     const queryClient = createQueryClient();
-    seedReadyState(queryClient, { sessions: [session] });
+    seedReadyState(queryClient, { sessions: [session], autoCompaction: false });
 
     render(<TestApp client={client} queryClient={queryClient} />);
     await act(async () => {
