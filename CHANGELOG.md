@@ -7,6 +7,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.14.3] - 2026-10-27
+
+### Fixed
+
+- Disconnecting a provider now removes it from the Providers tab right away. Previously the row could stay in the connected list with a working Disconnect button, because the engine still reported the key while it was reinitializing.
+- Connected providers once again show Disconnect instead of a "From config" label. That label appeared for every provider BloxMind writes into the engine config for its AI Engine settings, including keys BloxMind stored itself and can remove. Only a key taken from the environment now says "From environment".
+- Checkpoints no longer add a saved badge or a Restore files button to turns that only talked or inspected. They now appear only after BloxMind confirms the turn actually changed files on disk.
+- Restoring an older turn now restores that turn's checkpoint instead of silently falling back to the newest one.
+
 ## [0.14.2] - 2026-10-27
 
 ### Changed
