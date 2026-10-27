@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-10-28
+
 ### Added
 
 - Context compaction is now visible and controllable. Settings → AI Engine has an Automatic compaction switch for OpenCode's built-in summarization of older messages, and the chat header has a Compact button that summarizes the current conversation on demand; it appears only while automatic compaction is off. While a compaction runs — automatic or manual — a status row above the composer shows that the conversation is being summarized. Compaction parts still appear inline as "Context compacted", and a failed or empty compaction reports a toast instead of doing nothing.
