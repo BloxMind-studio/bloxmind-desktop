@@ -18,6 +18,16 @@ export interface MessagesCache {
   messagesById: Record<string, MessageWithParts>;
 }
 
+/**
+ * Whether the engine is currently summarizing a session. `reason` separates
+ * automatic compaction (context window full) from the manual Compact button so
+ * the chat can explain why the conversation is being rewritten.
+ */
+export interface CompactionState {
+  active: boolean;
+  reason: "auto" | "manual";
+}
+
 export interface ModelUsageEvent {
   provider: string;
   model: string;
@@ -275,15 +285,47 @@ function dispatchEvent(
     }
     case "session.compacted": {
       const { sessionID } = event.properties;
+      queryClient.setQueryData<CompactionState | null>(qk.compaction(sessionID), (prev) =>
+        prev ? { ...prev, active: false } : prev,
+      );
       if (sessionID === currentSessionId) {
         void queryClient.invalidateQueries({ queryKey: qk.messages(sessionID) });
       }
+      break;
+    }
+    case "session.next.compaction.started": {
+      const { sessionID, reason } = event.properties;
+      queryClient.setQueryData<CompactionState>(qk.compaction(sessionID), {
+        active: true,
+        reason,
+      });
+      break;
+    }
+    case "session.next.compaction.delta": {
+      const { sessionID } = event.properties;
+      // A delta can outrun `started` when this window subscribed mid-stream.
+      // Assume automatic compaction then; the started event corrects the reason
+      // on the next compaction.
+      queryClient.setQueryData<CompactionState>(qk.compaction(sessionID), (prev) =>
+        prev?.active ? prev : { active: true, reason: "auto" },
+      );
+      break;
+    }
+    case "session.next.compaction.ended": {
+      const { sessionID, reason } = event.properties;
+      queryClient.setQueryData<CompactionState>(qk.compaction(sessionID), {
+        active: false,
+        reason,
+      });
       break;
     }
     case "session.error": {
       const sessionID = event.properties.sessionID ?? currentSessionId;
       if (!sessionID) break;
 
+      queryClient.setQueryData<CompactionState | null>(qk.compaction(sessionID), (prev) =>
+        prev ? { ...prev, active: false } : prev,
+      );
       queryClient.setQueryData<Record<string, SessionStatus>>(qk.statuses, (prev) => ({
         ...prev,
         [sessionID]: { type: "idle" } as SessionStatus,

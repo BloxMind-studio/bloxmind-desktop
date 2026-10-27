@@ -837,4 +837,78 @@ describe("sseDispatch", () => {
       expect(queue?.map((permission) => permission.id)).toEqual(["p2"]);
     });
   });
+
+  // ── Compaction events ──────────────────────────────────────────────
+
+  describe("session.next.compaction.*", () => {
+    it("marks the session as compacting when compaction starts", () => {
+      dispatch(
+        qc,
+        {
+          type: "session.next.compaction.started",
+          properties: { timestamp: 1, sessionID: "s1", messageID: "m1", reason: "auto" },
+        },
+        "s1",
+      );
+
+      expect(qc.getQueryData(qk.compaction("s1"))).toEqual({ active: true, reason: "auto" });
+    });
+
+    it("keeps the manual reason through the end event", () => {
+      qc.setQueryData(qk.compaction("s1"), { active: true, reason: "manual" });
+
+      dispatch(
+        qc,
+        {
+          type: "session.next.compaction.ended",
+          properties: {
+            timestamp: 2,
+            sessionID: "s1",
+            messageID: "m1",
+            reason: "manual",
+            text: "summary",
+            recent: "",
+          },
+        },
+        "s1",
+      );
+
+      expect(qc.getQueryData(qk.compaction("s1"))).toEqual({ active: false, reason: "manual" });
+    });
+
+    it("shows compaction when a delta arrives before started", () => {
+      dispatch(
+        qc,
+        {
+          type: "session.next.compaction.delta",
+          properties: { timestamp: 1, sessionID: "s1", messageID: "m1", text: "sum" },
+        },
+        "s1",
+      );
+
+      expect(qc.getQueryData(qk.compaction("s1"))).toEqual({ active: true, reason: "auto" });
+    });
+
+    it("clears the status when the session reports compacted", () => {
+      qc.setQueryData(qk.compaction("s1"), { active: true, reason: "auto" });
+
+      dispatch(qc, { type: "session.compacted", properties: { sessionID: "s1" } }, "s1");
+
+      expect(qc.getQueryData(qk.compaction("s1"))).toEqual({ active: false, reason: "auto" });
+    });
+
+    it("keeps sessions independent", () => {
+      dispatch(
+        qc,
+        {
+          type: "session.next.compaction.started",
+          properties: { timestamp: 1, sessionID: "s2", messageID: "m1", reason: "auto" },
+        },
+        "s1",
+      );
+
+      expect(qc.getQueryData(qk.compaction("s1"))).toBeUndefined();
+      expect(qc.getQueryData(qk.compaction("s2"))).toEqual({ active: true, reason: "auto" });
+    });
+  });
 });

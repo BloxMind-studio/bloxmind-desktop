@@ -4,6 +4,7 @@ import posthog from "posthog-js/dist/module.full.no-external.js";
 import { analyticsProperties, errorAnalyticsProperties } from "@/lib/analytics";
 import { qk } from "@/lib/queryKeys";
 import { splitModelKey } from "@/lib/splitModelKey";
+import type { CompactionState } from "@/lib/sseDispatch";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
@@ -37,13 +38,32 @@ export function useCompactSession() {
 
       await queryClient.invalidateQueries({ queryKey: qk.messages(activeSessionId) });
     },
+    onMutate: () => {
+      if (!activeSessionId) return;
+      // Show the in-chat status immediately; the SSE started/ended events take
+      // over once the engine starts and finishes the summary.
+      queryClient.setQueryData<CompactionState>(qk.compaction(activeSessionId), {
+        active: true,
+        reason: "manual",
+      });
+    },
     onSuccess: () => {
+      if (activeSessionId) {
+        queryClient.setQueryData<CompactionState | null>(qk.compaction(activeSessionId), (prev) =>
+          prev ? { ...prev, active: false } : prev,
+        );
+      }
       posthog.capture(
         "session_compacted",
         analyticsProperties("sessions", { outcome: "success", source: "manual" }),
       );
     },
     onError: (error) => {
+      if (activeSessionId) {
+        queryClient.setQueryData<CompactionState | null>(qk.compaction(activeSessionId), (prev) =>
+          prev ? { ...prev, active: false } : prev,
+        );
+      }
       posthog.capture(
         "session_compacted",
         errorAnalyticsProperties("sessions", "compaction", error, { source: "manual" }),

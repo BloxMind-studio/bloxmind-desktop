@@ -534,6 +534,98 @@ describe("User journeys", () => {
     expect(await screen.findByText("Conversation compacted")).toBeVisible();
   });
 
+  it("shows an in-chat status while compaction runs", async () => {
+    const session = makeSession("s1", "Compact Session");
+    let finishSummarize: (value: { data: boolean }) => void = () => {};
+    const summarize = vi.fn().mockReturnValue(
+      new Promise<{ data: boolean }>((resolve) => {
+        finishSummarize = resolve;
+      }),
+    );
+    const client = createClient({
+      get: vi.fn().mockResolvedValue({ data: session }),
+      summarize,
+    });
+    const queryClient = createQueryClient();
+    seedReadyState(queryClient, { sessions: [session] });
+
+    render(<TestApp client={client} queryClient={queryClient} />);
+    await act(async () => {
+      fireEvent.click(await screen.findByText("Compact Session"));
+    });
+
+    const compactButton = await screen.findByRole("button", { name: "Compact conversation" });
+    await waitFor(() => expect(compactButton).toBeEnabled());
+    await act(async () => {
+      fireEvent.click(compactButton);
+    });
+
+    expect(await screen.findByText("Compacting conversation...")).toBeVisible();
+    expect(screen.getByText("Summarizing older messages")).toBeVisible();
+
+    await act(async () => {
+      finishSummarize({ data: true });
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText("Compacting conversation...")).toBeNull();
+    });
+  });
+
+  it("shows the status when the engine compacts automatically", async () => {
+    const session = makeSession("s1", "Compact Session");
+    const client = createClient({ get: vi.fn().mockResolvedValue({ data: session }) });
+    const queryClient = createQueryClient();
+    seedReadyState(queryClient, { sessions: [session] });
+    const activeRef = { current: "s1" };
+
+    render(<TestApp client={client} queryClient={queryClient} />);
+    await act(async () => {
+      fireEvent.click(await screen.findByText("Compact Session"));
+    });
+
+    act(() => {
+      sseDispatch(
+        queryClient,
+        {
+          type: "session.next.compaction.started",
+          properties: {
+            timestamp: Date.now(),
+            sessionID: "s1",
+            messageID: "msg_1",
+            reason: "auto",
+          },
+        } as never,
+        activeRef,
+      );
+    });
+
+    expect(await screen.findByText("Compacting conversation...")).toBeVisible();
+    expect(screen.getByText("Context window is nearly full")).toBeVisible();
+
+    act(() => {
+      sseDispatch(
+        queryClient,
+        {
+          type: "session.next.compaction.ended",
+          properties: {
+            timestamp: Date.now(),
+            sessionID: "s1",
+            messageID: "msg_1",
+            reason: "auto",
+            text: "summary",
+            recent: "",
+          },
+        } as never,
+        activeRef,
+      );
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText("Compacting conversation...")).toBeNull();
+    });
+  });
+
   it("keeps the todo panel inline with its task turn when a new message arrives", async () => {
     const session = makeSession("s1", "Todo Session");
     const time = { created: Date.now(), updated: Date.now() };

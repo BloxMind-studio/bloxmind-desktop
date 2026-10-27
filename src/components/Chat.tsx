@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import ChatInput from "@/components/ChatInput";
 import ChatMessages from "@/components/ChatMessages";
 import ChatSidebar from "@/components/ChatSidebar";
+import CompactionStatus from "@/components/CompactionStatus";
 import Explorer from "@/components/Explorer";
 import LoadingScreen from "@/components/LoadingScreen";
 import PlaytestPanel from "@/components/PlaytestPanel";
@@ -403,6 +404,7 @@ function Chat() {
             </div>
 
             <ChatMessages />
+            <CompactionStatus />
             <ChatInput />
           </>
         )}
