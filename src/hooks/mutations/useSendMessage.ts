@@ -10,6 +10,7 @@ import {
 } from "@/lib/analytics";
 import { qk } from "@/lib/queryKeys";
 import { splitModelKey } from "@/lib/splitModelKey";
+import { verificationGuidance } from "@/lib/verification";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
@@ -55,7 +56,7 @@ interface SendMessageContext {
 export function useSendMessage(options?: { onError?: (error: Error) => void }) {
   const { client } = useOpenCodeClient();
   const { activeSessionId } = useActiveSession();
-  const { selectedModel, selectedAgent, selectedVariant } = usePreferences();
+  const { selectedModel, selectedAgent, selectedVariant, verificationLevel } = usePreferences();
   const queryClient = useQueryClient();
 
   return useMutation<void, Error, SendMessageInput, SendMessageContext | undefined>({
@@ -76,9 +77,12 @@ export function useSendMessage(options?: { onError?: (error: Error) => void }) {
         parts,
       };
 
-      // System prompt: explicit systemPrompt takes priority over studioTargetReference.
-      if (systemPrompt) opts.system = systemPrompt;
-      else if (studioTargetReference) opts.system = studioTargetReference;
+      // System prompt: explicit systemPrompt takes priority over
+      // studioTargetReference. The verification guidance is appended to either,
+      // so every send carries the level the user picked without a restart.
+      const baseSystemPrompt = systemPrompt || studioTargetReference || "";
+      const guidance = verificationGuidance(verificationLevel);
+      opts.system = baseSystemPrompt ? `${baseSystemPrompt}\n\n${guidance}` : guidance;
 
       // Resolve provider/model from the selected model key (e.g. "anthropic/claude-3.5-sonnet").
       let provider: string | undefined;

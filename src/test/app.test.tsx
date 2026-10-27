@@ -227,6 +227,7 @@ function seedReadyState(
     maxTokens: 0,
     systemPrompt: "",
     customApiEndpoint: null,
+    verificationLevel: "quick",
     autoScroll: true,
     enterToSend: true,
     notificationsEnabled: true,
@@ -452,6 +453,7 @@ describe("User journeys", () => {
     expect(client.session.promptAsync).toHaveBeenCalled();
     const callArgs = client.session.promptAsync.mock.calls[0][0];
     expect(callArgs.parts[0].text).toBe("Build me a Roblox game");
+    expect(callArgs.system).toContain("## Verification level: Quick check");
 
     // Simulate SSE: assistant message comes in
     const activeRef = { current: "s1" };

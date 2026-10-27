@@ -23,6 +23,7 @@ import { applyMcpServers, type McpServerConfig } from "@/lib/mcpServers";
 import { qk } from "@/lib/queryKeys";
 import { setSoundEffectsEnabled } from "@/lib/soundEffects";
 import { splitModelKey } from "@/lib/splitModelKey";
+import { DEFAULT_VERIFICATION_LEVEL, type VerificationLevel } from "@/lib/verification";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 import type { AccentColor, LayoutDensity } from "@/types/desktop";
 
@@ -71,6 +72,8 @@ interface PreferencesContextValue {
   autoScroll: boolean;
   enterToSend: boolean;
   notificationsEnabled: boolean;
+  /** How thoroughly the assistant verifies a change before reporting. */
+  verificationLevel: VerificationLevel;
   // SSE connection
   sseReconnectDelay: number;
   sseHeartbeatTimeout: number;
@@ -92,6 +95,7 @@ interface PreferencesContextValue {
   setAutoScroll: (enabled: boolean) => void;
   setEnterToSend: (enabled: boolean) => void;
   setNotificationsEnabled: (enabled: boolean) => void;
+  setVerificationLevel: (level: VerificationLevel) => void;
   setSseReconnectDelay: (delay: number) => void;
   setSseHeartbeatTimeout: (timeout: number) => void;
   setMcpServers: (servers: McpServerConfig[]) => void;
@@ -140,6 +144,9 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [autoScroll, setAutoScrollState] = useState(true);
   const [enterToSend, setEnterToSendState] = useState(true);
   const [notificationsEnabled, setNotificationsEnabledState] = useState(true);
+  const [verificationLevel, setVerificationLevelState] = useState<VerificationLevel>(
+    DEFAULT_VERIFICATION_LEVEL,
+  );
   // SSE connection
   const [sseReconnectDelay, setSseReconnectDelayState] = useState(3_000);
   const [sseHeartbeatTimeout, setSseHeartbeatTimeoutState] = useState(30_000);
@@ -224,6 +231,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setAutoScrollState(configData.autoScroll);
     setEnterToSendState(configData.enterToSend);
     setNotificationsEnabledState(configData.notificationsEnabled);
+    setVerificationLevelState(configData.verificationLevel);
     // SSE connection
     setSseReconnectDelayState(configData.sseReconnectDelay);
     setSseHeartbeatTimeoutState(configData.sseHeartbeatTimeout);
@@ -422,6 +430,13 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     },
     [queuePatch],
   );
+  const setVerificationLevel = useCallback(
+    (level: VerificationLevel) => {
+      setVerificationLevelState(level);
+      queuePatch({ verificationLevel: level });
+    },
+    [queuePatch],
+  );
 
   // SSE connection setters
   const setSseReconnectDelay = useCallback(
@@ -551,6 +566,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       autoScroll,
       enterToSend,
       notificationsEnabled,
+      verificationLevel,
       sseReconnectDelay,
       sseHeartbeatTimeout,
       mcpServers,
@@ -570,6 +586,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       setAutoScroll,
       setEnterToSend,
       setNotificationsEnabled,
+      setVerificationLevel,
       setSseReconnectDelay,
       setSseHeartbeatTimeout,
       setMcpServers,
@@ -591,6 +608,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       autoScroll,
       enterToSend,
       notificationsEnabled,
+      verificationLevel,
       sseReconnectDelay,
       sseHeartbeatTimeout,
       mcpServers,
@@ -610,6 +628,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       setAutoScroll,
       setEnterToSend,
       setNotificationsEnabled,
+      setVerificationLevel,
       setSseReconnectDelay,
       setSseHeartbeatTimeout,
       setMcpServers,

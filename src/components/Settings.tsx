@@ -36,6 +36,7 @@ import {
   unremovableSourceLabel,
 } from "@/lib/providerAuth";
 import { checkModels, checkPreference, type ProviderCheckResult } from "@/lib/providerCheck";
+import { VERIFICATION_OPTIONS } from "@/lib/verification";
 import { usePreferences } from "@/providers/PreferencesProvider";
 import type { ModelInfo, ProviderInfo } from "@/types";
 import { type AppConfig, DEFAULT_APP_CONFIG, type UpdateInfo } from "@/types/desktop";
@@ -1617,6 +1618,8 @@ function BehaviorTab() {
     setEnterToSend,
     notificationsEnabled,
     setNotificationsEnabled,
+    verificationLevel,
+    setVerificationLevel,
   } = usePreferences();
 
   return (
@@ -1625,6 +1628,41 @@ function BehaviorTab() {
       <p className="mt-1 text-xs text-muted-foreground">
         Control how BloxMind behaves during conversations.
       </p>
+
+      <div className="mt-6">
+        <div className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Verification
+        </div>
+        <p className="mb-2 px-1 text-[11px] leading-relaxed text-muted-foreground">
+          How much the assistant checks its work in Studio before reporting back. Less checking is
+          faster; more checking catches broken changes.
+        </p>
+        <div className="space-y-2">
+          {VERIFICATION_OPTIONS.map((option) => {
+            const selected = verificationLevel === option.value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                aria-pressed={selected}
+                onClick={() => setVerificationLevel(option.value)}
+                className={`w-full rounded-lg border p-3 text-left transition-colors ${
+                  selected
+                    ? "border-foreground bg-accent text-foreground"
+                    : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground"
+                }`}
+              >
+                <span className={`block text-sm ${selected ? "font-medium" : ""}`}>
+                  {option.label}
+                </span>
+                <span className="mt-0.5 block text-[11px] leading-relaxed text-muted-foreground">
+                  {option.description}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       <div className="mt-6 space-y-3">
         {/* Auto-scroll */}

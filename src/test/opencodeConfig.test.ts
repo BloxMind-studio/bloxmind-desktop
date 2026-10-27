@@ -53,7 +53,7 @@ describe("OpenCode configuration", () => {
     expect(prompt.trim().split(/\s+/).length).toBeLessThanOrEqual(125);
     expect(prompt).toMatch(/inspect before editing/i);
     expect(prompt).toContain("smallest coherent change");
-    expect(prompt).toContain("most relevant Studio check");
+    expect(prompt).toContain("verification level");
     expect(prompt).toContain("stop retrying");
     expect(prompt).toContain("pass studio_id");
     expect(prompt).toContain("never call set_active_studio");

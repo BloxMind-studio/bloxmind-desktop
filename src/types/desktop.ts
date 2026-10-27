@@ -2,6 +2,7 @@ import { Schema } from "effect";
 import type { BloxBotProgramManifest } from "../lib/bloxbotProgramManifest";
 import type { ExplorerProgramEnvelope, ExplorerSnapshot } from "../lib/explorer";
 import type { ProjectIndexProgramEnvelope, ProjectSkeleton } from "../lib/projectIndex";
+import { DEFAULT_VERIFICATION_LEVEL, VerificationLevelSchema } from "../lib/verification";
 import type {
   CaptureContext,
   Checkpoint,
@@ -81,6 +82,8 @@ export const AppConfigSchema = Schema.mutable(
     maxTokens: Schema.Number.pipe(Schema.int(), Schema.between(0, 128_000)),
     systemPrompt: Schema.String,
     customApiEndpoint: Schema.NullOr(Schema.String),
+    // How much checking the assistant does after a change (Settings → Behavior).
+    verificationLevel: VerificationLevelSchema,
     // Behavior
     autoScroll: Schema.Boolean,
     enterToSend: Schema.Boolean,
@@ -113,6 +116,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   maxTokens: 0,
   systemPrompt: "",
   customApiEndpoint: null,
+  verificationLevel: DEFAULT_VERIFICATION_LEVEL,
   autoScroll: true,
   enterToSend: true,
   notificationsEnabled: true,

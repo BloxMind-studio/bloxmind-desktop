@@ -128,6 +128,7 @@ function seedState(qc: QueryClient, session: Session) {
     maxTokens: 0,
     systemPrompt: "",
     customApiEndpoint: null,
+    verificationLevel: "quick",
     autoScroll: true,
     enterToSend: true,
     notificationsEnabled: true,
@@ -230,6 +231,7 @@ describe("ChatInput", () => {
     const args = client.session.promptAsync.mock.calls[0][0];
     expect(args.parts[0].text).toBe("Build a game");
     expect(args.sessionID).toBe("s1");
+    expect(args.system).toContain("## Verification level: Quick check");
   });
 
   it("sends message on Enter key (without Shift)", async () => {
