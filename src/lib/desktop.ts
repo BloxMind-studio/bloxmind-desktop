@@ -107,6 +107,10 @@ interface DesktopEffects {
     checkpointId: string,
     sessionId: string,
   ) => Effect.Effect<RestorePreview, DesktopError>;
+  readonly checkpointChanged: (
+    checkpointId: string,
+    sessionId: string,
+  ) => Effect.Effect<boolean, DesktopError>;
   readonly checkpointList: (
     sessionId: string,
   ) => Effect.Effect<readonly Checkpoint[], DesktopError>;
@@ -195,6 +199,8 @@ const browserEffects: DesktopEffects = {
   checkpointRestore: () =>
     Effect.fail(new DesktopError({ message: "Checkpointing requires the desktop app." })),
   checkpointPreview: () =>
+    Effect.fail(new DesktopError({ message: "Checkpointing requires the desktop app." })),
+  checkpointChanged: () =>
     Effect.fail(new DesktopError({ message: "Checkpointing requires the desktop app." })),
   checkpointList: () =>
     Effect.fail(new DesktopError({ message: "Checkpointing requires the desktop app." })),
@@ -305,6 +311,10 @@ function makeBridgeEffects(api: DesktopApi): DesktopEffects {
       invoke("Failed to preview checkpoint", () =>
         api.checkpointPreview(checkpointId, sessionId),
       ).pipe(decodeBridgeValue("Checkpoint preview is invalid", RestorePreviewSchema)),
+    checkpointChanged: (checkpointId, sessionId) =>
+      invoke("Failed to compare checkpoint", () =>
+        api.checkpointChanged(checkpointId, sessionId),
+      ).pipe(decodeBridgeValue("Checkpoint comparison is invalid", Schema.Boolean)),
     checkpointList: (sessionId) =>
       invoke("Failed to list checkpoints", () => api.checkpointList(sessionId)).pipe(
         decodeBridgeValue("Checkpoint list is invalid", Schema.Array(CheckpointSchema)),
@@ -359,6 +369,8 @@ export const desktop: DesktopApi = {
   checkpointRestore: (input) => runPromise(desktopEffects.checkpointRestore(input)),
   checkpointPreview: (checkpointId, sessionId) =>
     runPromise(desktopEffects.checkpointPreview(checkpointId, sessionId)),
+  checkpointChanged: (checkpointId, sessionId) =>
+    runPromise(desktopEffects.checkpointChanged(checkpointId, sessionId)),
   checkpointList: async (sessionId) => [
     ...(await runPromise(desktopEffects.checkpointList(sessionId))),
   ],

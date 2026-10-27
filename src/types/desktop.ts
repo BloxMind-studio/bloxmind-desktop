@@ -226,6 +226,8 @@ export interface DesktopApi {
   checkpointCapture(context: CaptureContext): Promise<Checkpoint>;
   checkpointRestore(input: CheckpointRestoreInput): Promise<CheckpointRestoreResult>;
   checkpointPreview(checkpointId: string, sessionId: string): Promise<RestorePreview>;
+  /** Whether the workspace differs from what this checkpoint captured. */
+  checkpointChanged(checkpointId: string, sessionId: string): Promise<boolean>;
   checkpointList(sessionId: string): Promise<Checkpoint[]>;
   checkpointValidate(): Promise<ValidationResult>;
 }

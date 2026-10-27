@@ -34,6 +34,10 @@ export function useCheckpointHistory(sessionId: string | undefined) {
   // "Restore files". Resets when a new checkpoint is captured or the user
   // switches sessions.
   const [restoredMessageId, setRestoredMessageId] = useState<string | null>(null);
+  // Whether the workspace actually changed during a turn, keyed by checkpoint
+  // id. Unknown until the engine finishes the turn and the main process
+  // compares the workspace with the captured pre-state.
+  const [turnChanges, setTurnChanges] = useState<Record<string, boolean>>({});
 
   const syncFromRam = useCallback((id: string | undefined) => {
     setLiveCheckpoints(id ? (liveCheckpointsRef.current.get(id) ?? []) : []);
@@ -56,8 +60,21 @@ export function useCheckpointHistory(sessionId: string | undefined) {
       const existingIndex = list.findIndex(
         (entry) => entry.messageId !== null && entry.messageId === checkpoint.messageId,
       );
-      if (existingIndex >= 0) list[existingIndex] = checkpoint;
-      else list.push(checkpoint);
+      if (existingIndex >= 0) {
+        const previous = list[existingIndex];
+        list[existingIndex] = checkpoint;
+        // A re-capture for the same message replaces the old checkpoint, so its
+        // outcome no longer describes anything on screen.
+        if (previous.id !== checkpoint.id) {
+          setTurnChanges((prev) => {
+            if (!(previous.id in prev)) return prev;
+            const { [previous.id]: _stale, ...rest } = prev;
+            return rest;
+          });
+        }
+      } else {
+        list.push(checkpoint);
+      }
       liveCheckpointsRef.current.set(checkpoint.sessionId, list);
       if (checkpoint.sessionId !== sessionId) return;
       setLiveCheckpoints([...list]);
@@ -66,6 +83,30 @@ export function useCheckpointHistory(sessionId: string | undefined) {
       setRestoredMessageId(null);
     },
     [sessionId],
+  );
+
+  /**
+   * Record whether the turn behind a checkpoint actually changed the workspace.
+   * Called once the turn finishes; until then the checkpoint shows no UI.
+   */
+  const recordTurnChange = useCallback((checkpointId: string, changed: boolean) => {
+    setTurnChanges((prev) =>
+      prev[checkpointId] === changed ? prev : { ...prev, [checkpointId]: changed },
+    );
+  }, []);
+
+  /**
+   * The checkpoint captured for a turn (keyed by the user message that started
+   * it), and whether it has anything worth restoring. A turn that only talked
+   * or inspected reports `changed: false`, so no badge is shown.
+   */
+  const checkpointForTurn = useCallback(
+    (turnMessageId: string) => {
+      const entry = liveCheckpoints.find((c) => c.messageId === turnMessageId);
+      if (!entry) return null;
+      return { checkpoint: entry, changed: turnChanges[entry.id] === true };
+    },
+    [liveCheckpoints, turnChanges],
   );
 
   /** Restore the latest live checkpoint for a specific message (full file rollback). */
@@ -81,8 +122,7 @@ export function useCheckpointHistory(sessionId: string | undefined) {
         // Find the checkpoint whose messageId matches the target, so clicking
         // "Restore" on an older message restores that specific checkpoint
         // instead of always restoring the latest one.
-        const targetCheckpoint =
-          live.find((c) => c.messageId === targetMessageId) ?? live[live.length - 1];
+        const targetCheckpoint = live.find((c) => c.messageId === targetMessageId);
         if (!targetCheckpoint) {
           setRestoredMessageId(null);
           return null;
@@ -134,6 +174,9 @@ export function useCheckpointHistory(sessionId: string | undefined) {
         void queryClient.invalidateQueries({ queryKey: qk.messages(sessionId) });
         void queryClient.invalidateQueries({ queryKey: qk.todos(sessionId) });
         if (result) {
+          // The workspace is back at this checkpoint's state, so it has nothing
+          // left to restore; only the "Restored" marker stays.
+          setTurnChanges((prev) => ({ ...prev, [targetCheckpoint.id]: false }));
           toast.success(result.message ?? `Reverted to Checkpoint ${result.restoredId}`);
           setRestoredMessageId(targetCheckpoint.messageId ?? null);
         }
@@ -155,12 +198,18 @@ export function useCheckpointHistory(sessionId: string | undefined) {
     () => ({
       liveCheckpoints,
       recordCapturedCheckpoint,
+      recordTurnChange,
+      checkpointForTurn,
       restoreLatestFileCheckpoint,
-      fsCheckpointCount: liveCheckpoints.length,
-      latestFsCheckpoint:
-        liveCheckpoints.length > 0 ? liveCheckpoints[liveCheckpoints.length - 1] : null,
       restoredMessageId,
     }),
-    [liveCheckpoints, recordCapturedCheckpoint, restoreLatestFileCheckpoint, restoredMessageId],
+    [
+      liveCheckpoints,
+      recordCapturedCheckpoint,
+      recordTurnChange,
+      checkpointForTurn,
+      restoreLatestFileCheckpoint,
+      restoredMessageId,
+    ],
   );
 }

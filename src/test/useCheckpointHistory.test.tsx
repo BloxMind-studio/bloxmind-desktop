@@ -25,6 +25,7 @@ vi.mock("@/hooks/useCheckpoints", () => ({
     capture: vi.fn(),
     restore: restoreMock,
     preview: vi.fn(),
+    changed: vi.fn(),
     list: listMock,
     validate: vi.fn(),
   }),
@@ -68,27 +69,22 @@ describe("useCheckpointHistory (RAM-scoped)", () => {
     listMock.mockResolvedValue([makeCheckpoint("cp_disk", "s1", "m0")]);
     const { result } = renderHook(() => useCheckpointHistory("s1"), { wrapper: makeWrapper() });
 
-    expect(result.current.fsCheckpointCount).toBe(0);
-    expect(result.current.latestFsCheckpoint).toBeNull();
     expect(result.current.liveCheckpoints).toEqual([]);
     // The hook never asks the main process for older checkpoints.
     expect(listMock).not.toHaveBeenCalled();
   });
 
-  it("records captured checkpoints and derives count/latest", () => {
+  it("records captured checkpoints in order", () => {
     const { result } = renderHook(() => useCheckpointHistory("s1"), { wrapper: makeWrapper() });
 
     act(() => {
       result.current.recordCapturedCheckpoint(makeCheckpoint("cp1", "s1", "m1"));
     });
-    expect(result.current.fsCheckpointCount).toBe(1);
-    expect(result.current.latestFsCheckpoint?.id).toBe("cp1");
+    expect(result.current.liveCheckpoints.map((c) => c.id)).toEqual(["cp1"]);
 
     act(() => {
       result.current.recordCapturedCheckpoint(makeCheckpoint("cp2", "s1", "m2"));
     });
-    expect(result.current.fsCheckpointCount).toBe(2);
-    expect(result.current.latestFsCheckpoint?.id).toBe("cp2");
     expect(result.current.liveCheckpoints.map((c) => c.id)).toEqual(["cp1", "cp2"]);
   });
 
@@ -112,15 +108,13 @@ describe("useCheckpointHistory (RAM-scoped)", () => {
     act(() => {
       result.current.recordCapturedCheckpoint(makeCheckpoint("cp1", "s1", "m1"));
     });
-    expect(result.current.fsCheckpointCount).toBe(1);
+    expect(result.current.liveCheckpoints).toHaveLength(1);
 
     rerender({ sessionId: "s2" });
-    expect(result.current.fsCheckpointCount).toBe(0);
-    expect(result.current.latestFsCheckpoint).toBeNull();
+    expect(result.current.liveCheckpoints).toEqual([]);
 
     rerender({ sessionId: "s1" });
-    expect(result.current.fsCheckpointCount).toBe(1);
-    expect(result.current.latestFsCheckpoint?.id).toBe("cp1");
+    expect(result.current.liveCheckpoints.map((c) => c.id)).toEqual(["cp1"]);
   });
 
   it("ignores captures belonging to a different session", () => {
@@ -128,7 +122,7 @@ describe("useCheckpointHistory (RAM-scoped)", () => {
     act(() => {
       result.current.recordCapturedCheckpoint(makeCheckpoint("cp_other", "s2", "m9"));
     });
-    expect(result.current.fsCheckpointCount).toBe(0);
+    expect(result.current.liveCheckpoints).toEqual([]);
   });
 
   it("does not restore when no checkpoint was captured this run", async () => {
@@ -141,7 +135,7 @@ describe("useCheckpointHistory (RAM-scoped)", () => {
     expect(restoreMock).not.toHaveBeenCalled();
   });
 
-  it("restores the live checkpoint matching the message, falling back to the latest", async () => {
+  it("restores the live checkpoint captured for that message", async () => {
     restoreMock.mockResolvedValue({
       restoredId: "cp1",
       message: "Restored 2 files",
@@ -163,16 +157,101 @@ describe("useCheckpointHistory (RAM-scoped)", () => {
       preserveUserEdits: false,
     });
     expect(result.current.restoredMessageId).toBe("m1");
+  });
+
+  it("does not restore another turn's checkpoint when the message has none", async () => {
+    restoreMock.mockResolvedValue({ restoredId: "cp2", message: "ok", filesChanged: [] });
+    const { result } = renderHook(() => useCheckpointHistory("s1"), { wrapper: makeWrapper() });
+    act(() => {
+      result.current.recordCapturedCheckpoint(makeCheckpoint("cp1", "s1", "m1"));
+      result.current.recordCapturedCheckpoint(makeCheckpoint("cp2", "s1", "m2"));
+    });
+
+    let restored: unknown = "unset";
+    await act(async () => {
+      restored = await result.current.restoreLatestFileCheckpoint("m_unknown");
+    });
+    expect(restored).toBeNull();
+    expect(restoreMock).not.toHaveBeenCalled();
+    expect(result.current.restoredMessageId).toBeNull();
+  });
+
+  it("marks a turn as changed only once the check says so", () => {
+    const { result } = renderHook(() => useCheckpointHistory("s1"), { wrapper: makeWrapper() });
+    act(() => {
+      result.current.recordCapturedCheckpoint(makeCheckpoint("cp1", "s1", "m1"));
+    });
+
+    // Nothing is known about the turn yet, so it earns no badge.
+    expect(result.current.checkpointForTurn("m1")).toMatchObject({ changed: false });
+
+    act(() => {
+      result.current.recordTurnChange("cp1", true);
+    });
+    expect(result.current.checkpointForTurn("m1")).toMatchObject({ changed: true });
+
+    act(() => {
+      result.current.recordTurnChange("cp1", false);
+    });
+    expect(result.current.checkpointForTurn("m1")).toMatchObject({ changed: false });
+  });
+
+  it("has no checkpoint for a message that never started a turn", () => {
+    const { result } = renderHook(() => useCheckpointHistory("s1"), { wrapper: makeWrapper() });
+    act(() => {
+      result.current.recordCapturedCheckpoint(makeCheckpoint("cp1", "s1", "m1"));
+    });
+    expect(result.current.checkpointForTurn("m_other")).toBeNull();
+  });
+
+  it("forgets a turn's outcome when the same message is re-captured", () => {
+    const { result } = renderHook(() => useCheckpointHistory("s1"), { wrapper: makeWrapper() });
+    act(() => {
+      result.current.recordCapturedCheckpoint(makeCheckpoint("cp1", "s1", "m1"));
+      result.current.recordTurnChange("cp1", true);
+    });
+    expect(result.current.checkpointForTurn("m1")?.changed).toBe(true);
+
+    act(() => {
+      result.current.recordCapturedCheckpoint(makeCheckpoint("cp1b", "s1", "m1"));
+    });
+    expect(result.current.checkpointForTurn("m1")).toMatchObject({
+      checkpoint: { id: "cp1b" },
+      changed: false,
+    });
+  });
+
+  it("clears the outcome after a successful restore", async () => {
+    restoreMock.mockResolvedValue({ restoredId: "cp1", message: "ok", filesChanged: [] });
+    const { result } = renderHook(() => useCheckpointHistory("s1"), { wrapper: makeWrapper() });
+    act(() => {
+      result.current.recordCapturedCheckpoint(makeCheckpoint("cp1", "s1", "m1"));
+      result.current.recordTurnChange("cp1", true);
+    });
 
     await act(async () => {
-      await result.current.restoreLatestFileCheckpoint("m_unknown");
+      await result.current.restoreLatestFileCheckpoint("m1");
     });
-    expect(restoreMock).toHaveBeenLastCalledWith({
-      checkpointId: "cp2",
-      sessionId: "s1",
-      dryRun: false,
-      preserveUserEdits: false,
+
+    // Files are back at the checkpoint, so only the "Restored" marker remains.
+    expect(result.current.checkpointForTurn("m1")?.changed).toBe(false);
+    expect(result.current.restoredMessageId).toBe("m1");
+  });
+
+  it("keeps a failed restore pending", async () => {
+    restoreMock.mockRejectedValue(new Error("journal missing"));
+    const { result } = renderHook(() => useCheckpointHistory("s1"), { wrapper: makeWrapper() });
+    act(() => {
+      result.current.recordCapturedCheckpoint(makeCheckpoint("cp1", "s1", "m1"));
+      result.current.recordTurnChange("cp1", true);
     });
+
+    await act(async () => {
+      await result.current.restoreLatestFileCheckpoint("m1");
+    });
+
+    expect(result.current.checkpointForTurn("m1")?.changed).toBe(true);
+    expect(result.current.restoredMessageId).toBeNull();
   });
 
   it("clears the Restored marker when a new checkpoint is captured", async () => {

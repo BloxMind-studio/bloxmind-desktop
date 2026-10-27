@@ -72,6 +72,14 @@ export interface CheckpointService {
     checkpointId: string,
     sessionId: string,
   ) => Effect.Effect<RestorePreview, CheckpointError>;
+  /**
+   * Whether the workspace differs from the state this checkpoint captured:
+   * `true` means there is something a restore would actually undo.
+   */
+  readonly changed: (
+    checkpointId: string,
+    sessionId: string,
+  ) => Effect.Effect<boolean, CheckpointError>;
   readonly list: (sessionId: string) => Effect.Effect<readonly Checkpoint[], CheckpointError>;
   readonly validate: () => Effect.Effect<ValidationResult, CheckpointError>;
 }
@@ -339,6 +347,17 @@ function isGitRepo(workspace: string): Effect.Effect<boolean, CheckpointError> {
 }
 
 /**
+ * Whether a workspace-relative path lives in a directory the checkpoints never
+ * journal (engine caches, build output). `git status` lists those files too, so
+ * without this every scoped capture would journal the engine's own cache.
+ */
+function isSkippedWorkspacePath(relativePath: string): boolean {
+  const segments = toPosixPath(relativePath).split("/");
+  // The last segment is the file itself; only directory segments are skipped.
+  return segments.slice(0, -1).some((segment) => SKIP_DIRS.has(segment));
+}
+
+/**
  * Workspace-relative paths that differ from HEAD: modifications, deletions and
  * every untracked file.
  *
@@ -354,10 +373,12 @@ function workspaceStatusPaths(workspace: string): Effect.Effect<string[], Checkp
       workspace,
     );
     const paths = parseGitStatusPaths(stdout);
-    if (!prefix) return paths;
-    return paths
-      .filter((path) => path.startsWith(prefix))
-      .map((path) => path.slice(prefix.length));
+    const rebased = prefix
+      ? paths
+          .filter((path) => path.startsWith(prefix))
+          .map((path) => path.slice(prefix.length))
+      : paths;
+    return rebased.filter((path) => !isSkippedWorkspacePath(path));
   });
 }
 
@@ -952,6 +973,63 @@ function makePreview(
     );
 }
 
+/** Read a workspace file's current bytes, or null when it no longer exists. */
+function readBytesForChange(
+  workspace: string,
+  relativePath: string,
+): Effect.Effect<Buffer | null, CheckpointError> {
+  return Effect.tryPromise({
+    try: () => readBytesSafe(resolve(workspace, relativePath)),
+    catch: (cause) => new CheckpointError({ message: `Failed to read ${relativePath}`, cause }),
+  });
+}
+
+/**
+ * Whether a checkpoint's captured state differs from the workspace right now.
+ *
+ * Checkpoints are captured before a turn, so this answers "did this turn
+ * actually change anything?" — the difference between a turn that edited files
+ * and one that only talked or inspected. Journaled paths are compared by hash;
+ * files the capture did not journal were unchanged then, so any that are dirty
+ * or new now count as a change.
+ */
+function makeChanged(
+  options: CheckpointServiceOptions,
+): (checkpointId: string, sessionId: string) => Effect.Effect<boolean, CheckpointError> {
+  return (checkpointId, sessionId) =>
+    storeMutex.withPermits(1)(
+      Effect.gen(function* () {
+        const index = yield* loadSessionIndex(options.storeRoot, sessionId);
+        const checkpoint = index.history.find((c) => c.id === checkpointId);
+        if (!checkpoint) return false;
+
+        const journaled = checkpoint.paths.map((change) => toPosixPath(change.path));
+        yield* validateWorkspacePaths(options.workspace, journaled);
+        const journaledPaths = new Set(journaled);
+        for (const change of checkpoint.paths) {
+          const current = yield* readBytesForChange(options.workspace, change.path);
+          if (change.operation === "create") {
+            // Nothing existed here at capture time; a file now means the turn
+            // created it (this entry is what a restore would delete).
+            if (current !== null) return true;
+            continue;
+          }
+          if (current === null || hashBytes(current) !== change.preHash) return true;
+        }
+
+        const currentPaths = checkpoint.fullSnapshot
+          ? yield* listWorkspaceFilesEffect(options.workspace)
+          : yield* workspaceStatusPaths(options.workspace).pipe(
+              // Without a usable change list the answer is unknown; keeping the
+              // restore available is safer than hiding one that may be needed.
+              Effect.catchAll(() => Effect.succeed<string[] | null>(null)),
+            );
+        if (currentPaths === null) return true;
+        return currentPaths.some((path) => !journaledPaths.has(toPosixPath(path)));
+      }),
+    );
+}
+
 function makeList(
   options: CheckpointServiceOptions,
 ): (sessionId: string) => Effect.Effect<readonly Checkpoint[], CheckpointError> {
@@ -1143,6 +1221,7 @@ export function makeCheckpointServiceLayer(options: CheckpointServiceOptions) {
         capture: makeCapture(options),
         restore: makeRestore(options),
         preview: makePreview(options),
+        changed: makeChanged(options),
         list: makeList(options),
         validate: makeValidate(options),
       };

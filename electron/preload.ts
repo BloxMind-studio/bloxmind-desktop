@@ -60,6 +60,8 @@ const api: DesktopApi = {
   checkpointRestore: (input) => ipcRenderer.invoke(channels.checkpointRestore, input),
   checkpointPreview: (checkpointId, sessionId) =>
     ipcRenderer.invoke(channels.checkpointPreview, checkpointId, sessionId),
+  checkpointChanged: (checkpointId, sessionId) =>
+    ipcRenderer.invoke(channels.checkpointChanged, checkpointId, sessionId),
   checkpointList: (sessionId) => ipcRenderer.invoke(channels.checkpointList, sessionId),
   checkpointValidate: () => ipcRenderer.invoke(channels.checkpointValidate),
 };

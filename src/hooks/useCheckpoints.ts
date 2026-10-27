@@ -37,6 +37,10 @@ export function useCheckpoints() {
     [],
   );
 
+  const changed = useCallback(async (checkpointId: string, sessionId: string): Promise<boolean> => {
+    return desktop.checkpointChanged(checkpointId, sessionId);
+  }, []);
+
   const list = useCallback(async (sessionId: string): Promise<Checkpoint[]> => {
     return desktop.checkpointList(sessionId);
   }, []);
@@ -46,7 +50,7 @@ export function useCheckpoints() {
   }, []);
 
   return useMemo(
-    () => ({ capture, restore, preview, list, validate }),
-    [capture, restore, preview, list, validate],
+    () => ({ capture, restore, preview, changed, list, validate }),
+    [capture, restore, preview, changed, list, validate],
   );
 }

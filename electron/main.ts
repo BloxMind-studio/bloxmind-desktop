@@ -642,6 +642,16 @@ const registerIpcHandlers = Effect.sync(() => {
       }),
     ),
   );
+  ipcMain.handle(channels.checkpointChanged, (_event, checkpointId: unknown, sessionId: unknown) =>
+    openCodeRuntime.runPromise(
+      Effect.gen(function* () {
+        const id = yield* Schema.decodeUnknown(CheckpointIdSchema)(checkpointId);
+        const sid = yield* Schema.decodeUnknown(SessionIdSchema)(sessionId);
+        const service = yield* CheckpointServiceTag;
+        return yield* service.changed(id, sid);
+      }),
+    ),
+  );
   ipcMain.handle(channels.checkpointList, (_event, sessionId: unknown) =>
     openCodeRuntime.runPromise(
       Effect.gen(function* () {

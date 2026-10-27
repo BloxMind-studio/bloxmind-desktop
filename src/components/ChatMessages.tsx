@@ -115,6 +115,7 @@ import { baseToolName } from "@/lib/toolName";
 import { getOpenCodeUsageAction, type OpenCodeUsageAction } from "@/lib/usageLimit";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
+import type { Checkpoint } from "@/types/checkpoints";
 
 // ── Image lightbox ───────────────────────────────────────────────────────
 
@@ -1741,30 +1742,24 @@ const UserPartsView = memo(
 // ── Restore checkpoint button ─────────────────────────────────────────────
 
 function RestoreCheckpointButton({
-  checkpoint,
   isBusy,
-  messageId,
+  restored,
+  onRestore,
 }: {
-  checkpoint: ReturnType<typeof useCheckpointHistory>;
   isBusy: boolean;
-  messageId: string;
+  restored: boolean;
+  onRestore: () => void;
 }) {
-  // Only offer a restore when a checkpoint captured during this app run
-  // still exists in RAM — never for checkpoints from a previous run.
-  if (checkpoint.fsCheckpointCount === 0) return null;
-
   // Only the specific message/task that was restored shows "Restored".
   // All other tasks show "Restore files" regardless of restore state.
-  const restored = checkpoint.restoredMessageId === messageId;
-
   const syncTitle = restored
     ? "This checkpoint has been restored"
-    : "Restore files to the last checkpoint";
+    : "Restore files to this checkpoint";
 
   return (
     <button
       type="button"
-      onClick={() => void checkpoint.restoreLatestFileCheckpoint(messageId)}
+      onClick={onRestore}
       disabled={isBusy || restored}
       className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] transition-all duration-200 disabled:opacity-60 ${
         restored
@@ -1811,17 +1806,8 @@ function RestoreCheckpointButton({
 // for this turn. Clicking it only reveals metadata (timestamp + affected
 // files); it never triggers a save or restore action.
 
-function CheckpointStatusBadge({
-  checkpoint,
-}: {
-  checkpoint: ReturnType<typeof useCheckpointHistory>;
-}) {
+function CheckpointStatusBadge({ captured }: { captured: Checkpoint }) {
   const [open, setOpen] = useState(false);
-  // Only surface the badge while a checkpoint captured during this app run
-  // lives in RAM; nothing persists across restarts.
-  if (checkpoint.fsCheckpointCount === 0) return null;
-  const latest = checkpoint.latestFsCheckpoint;
-  if (!latest) return null;
 
   return (
     <div className="relative">
@@ -1865,14 +1851,14 @@ function CheckpointStatusBadge({
             Checkpoint saved
           </div>
           <div className="text-muted-foreground">
-            Captured {new Date(latest.timestamp).toLocaleTimeString()}
-            {latest.paths.length > 0
-              ? ` · ${latest.paths.length} file(s) tracked`
+            Captured {new Date(captured.timestamp).toLocaleTimeString()}
+            {captured.paths.length > 0
+              ? ` · ${captured.paths.length} file(s) tracked`
               : " · full workspace snapshot"}
           </div>
-          {latest.paths.length > 0 && (
+          {captured.paths.length > 0 && (
             <div className="mt-1 space-y-0.5 border-t border-border/50 pt-1">
-              {latest.paths.slice(0, 4).map((change) => (
+              {captured.paths.slice(0, 4).map((change) => (
                 <div
                   key={change.path}
                   className="truncate font-mono text-[9px] text-muted-foreground/60"
@@ -1880,9 +1866,9 @@ function CheckpointStatusBadge({
                   {change.operation === "create" ? "+" : "~"} {change.path}
                 </div>
               ))}
-              {latest.paths.length > 4 && (
+              {captured.paths.length > 4 && (
                 <div className="text-[9px] text-muted-foreground/50">
-                  +{latest.paths.length - 4} more
+                  +{captured.paths.length - 4} more
                 </div>
               )}
             </div>
@@ -1897,12 +1883,15 @@ function CheckpointStatusBadge({
 
 const MessageBubble = memo(function MessageBubble({
   messageId,
+  turnMessageId,
   showControls = false,
   checkpoint,
   showRestore = true,
   isLastIndex = false,
 }: {
   messageId: string;
+  /** The user message that started this turn; checkpoints are keyed by it. */
+  turnMessageId: string;
   showControls?: boolean;
   checkpoint: ReturnType<typeof useCheckpointHistory>;
   showRestore?: boolean;
@@ -1913,6 +1902,13 @@ const MessageBubble = memo(function MessageBubble({
   const { activeSessionId } = useActiveSession();
   const sessionStatus = useSessionStatus(activeSessionId);
   const isBusy = isSessionWorking(sessionStatus);
+  // A checkpoint belongs to the turn that started it. It only earns UI once the
+  // main process has confirmed the turn actually changed the workspace — a turn
+  // that only talked or inspected has nothing to restore.
+  const turn = checkpoint.checkpointForTurn(turnMessageId);
+  const turnRestored = checkpoint.restoredMessageId === turnMessageId;
+  const showCheckpointBadge = turn?.changed === true;
+  const showRestoreButton = showRestore && turn !== null && (turn.changed || turnRestored);
 
   const handleCopy = useCallback(() => {
     if (!msg) return;
@@ -1981,16 +1977,16 @@ const MessageBubble = memo(function MessageBubble({
             )}
             {!isBusy && showControls && (
               <div className="flex select-none items-center justify-end gap-1 pt-1">
-                {/* Checkpoint badge: RAM-only — shown once a checkpoint captured this run exists */}
-                {checkpoint.fsCheckpointCount > 0 && (
-                  <CheckpointStatusBadge checkpoint={checkpoint} />
+                {/* Checkpoint badge: only for turns that changed the workspace */}
+                {showCheckpointBadge && turn && (
+                  <CheckpointStatusBadge captured={turn.checkpoint} />
                 )}
-                {/* Restore button: only on non-last turns when a checkpoint exists */}
-                {showRestore && !isLastIndex && checkpoint.fsCheckpointCount > 0 && (
+                {/* Restore button: only when this turn has something to undo */}
+                {showRestoreButton && turn && (
                   <RestoreCheckpointButton
-                    checkpoint={checkpoint}
                     isBusy={isBusy}
-                    messageId={messageId}
+                    restored={turnRestored}
+                    onRestore={() => void checkpoint.restoreLatestFileCheckpoint(turnMessageId)}
                   />
                 )}
                 {/* Copy button: always visible on finished messages with text */}
@@ -2086,6 +2082,7 @@ function ChatMessages() {
   const checkpoint = useCheckpointHistory(activeSessionId ?? undefined);
   const {
     capture: captureCheckpoint,
+    changed: checkpointChanged,
     validate: validateWorkspace,
     restore: restoreCheckpoint,
   } = useCheckpoints();
@@ -2098,6 +2095,14 @@ function ChatMessages() {
   // reads as a busy→idle transition of the newly active session.
   const previousStatusSessionRef = useRef<string | null>(null);
   const capturedForMessageRef = useRef<string | null>(null);
+  // The turn whose checkpoint still needs a "did anything change?" verdict.
+  // State (not a ref) so a capture that resolves after the turn already went
+  // idle still triggers the check it needs.
+  const [pendingChange, setPendingChange] = useState<{
+    sessionId: string;
+    checkpointId: string;
+  } | null>(null);
+  const changeCheckGenerationRef = useRef(0);
   // Session whose most recent busy→idle transition still needs validation.
   // Set when a task goes busy, consumed by the auto-rollback effect. Without
   // this, validation ran on every idle render — including app start and
@@ -2125,12 +2130,24 @@ function ChatMessages() {
     // → the service snapshots the whole workspace on the session's first turn,
     // then journals only the files git reports as changed.
     if (prev?.type !== "busy" && sessionStatusType === "busy") {
-      const lastId = messageIds[messageIds.length - 1];
+      // A new turn invalidates a change check that may still be comparing the
+      // workspace against the previous turn's pre-state.
+      changeCheckGenerationRef.current += 1;
+      setPendingChange(null);
+      const lastMessageId = messageIds[messageIds.length - 1];
+      // Key the capture to the user message that started the turn, so the
+      // badge/restore UI can find the checkpoint for the assistant reply that
+      // follows it.
+      const cache = queryClient.getQueryData<MessagesCache>(qk.messages(activeSessionId));
+      const lastId =
+        [...messageIds].reverse().find((id) => cache?.messagesById[id]?.info.role === "user") ??
+        lastMessageId;
       if (!lastId || capturedForMessageRef.current === lastId) return;
       capturedForMessageRef.current = lastId;
       // A turn is actually running in this session: arm auto-validation for
       // the upcoming idle transition.
       armedSessionRef.current = activeSessionId;
+      const captureGeneration = changeCheckGenerationRef.current;
       void captureCheckpoint({
         sessionId: activeSessionId,
         messageId: lastId,
@@ -2141,6 +2158,16 @@ function ChatMessages() {
           // Record the checkpoint in RAM so the badge/restore UI only ever
           // reflects checkpoints captured during this app run.
           checkpoint.recordCapturedCheckpoint(captured);
+          // A later turn started while this capture ran; its pre-state is the
+          // one that describes the workspace now.
+          if (changeCheckGenerationRef.current !== captureGeneration) return;
+          // The badge waits for a verdict: a turn that only talked or inspected
+          // changed nothing, so it must not claim there is something to undo.
+          setPendingChange(
+            captured.messageId
+              ? { sessionId: captured.sessionId, checkpointId: captured.id }
+              : null,
+          );
         })
         .catch((err: unknown) => {
           console.error("Pre-execution checkpoint capture failed:", err);
@@ -2150,9 +2177,37 @@ function ChatMessages() {
     sessionStatusType,
     activeSessionId,
     messageIds,
+    queryClient,
     captureCheckpoint,
     sessionStatus,
     checkpoint.recordCapturedCheckpoint,
+  ]);
+
+  // Did the turn actually change the workspace? Runs once the turn finishes, so
+  // a chat-only or inspect-only turn never claims there is something to undo.
+  useEffect(() => {
+    if (sessionStatusType !== "idle" || !activeSessionId) return;
+    if (!pendingChange || pendingChange.sessionId !== activeSessionId) return;
+    const { checkpointId } = pendingChange;
+    setPendingChange(null);
+    changeCheckGenerationRef.current += 1;
+    const generation = changeCheckGenerationRef.current;
+    void checkpointChanged(checkpointId, activeSessionId)
+      .then((changed) => {
+        // A newer turn started editing while this check ran; its answer no
+        // longer describes this turn.
+        if (changeCheckGenerationRef.current !== generation) return;
+        checkpoint.recordTurnChange(checkpointId, changed);
+      })
+      .catch((err: unknown) => {
+        console.warn("Checkpoint change check failed:", err);
+      });
+  }, [
+    sessionStatusType,
+    activeSessionId,
+    pendingChange,
+    checkpointChanged,
+    checkpoint.recordTurnChange,
   ]);
 
   // Automatic Rollback (Validation Failure): when the agent finishes a task,
@@ -2201,6 +2256,9 @@ function ChatMessages() {
             preserveUserEdits: !latest.fullSnapshot,
           });
           if (cancelled) return;
+          // The files are back at the checkpoint, so this turn no longer has
+          // anything to restore.
+          checkpoint.recordTurnChange(latest.id, false);
           toast.error("Revalidating workspace…", {
             description:
               validation.logs.length > 0
@@ -2227,6 +2285,7 @@ function ChatMessages() {
     messageIds.length,
     queryClient,
     checkpoint.liveCheckpoints,
+    checkpoint.recordTurnChange,
     restoreCheckpoint,
     validateWorkspace,
   ]);
@@ -2241,6 +2300,18 @@ function ChatMessages() {
     });
     return roles;
   }, [activeSessionId, messageIds, queryClient]);
+
+  // The user message that started each message's turn. Checkpoints are keyed by
+  // that message, so an assistant reply can find the turn it belongs to.
+  const turnStartByIndex = useMemo(() => {
+    const starts: string[] = [];
+    let current = "";
+    messageIds.forEach((id, index) => {
+      if (rolesByIndex.get(index) === "user") current = id;
+      starts[index] = current || id;
+    });
+    return starts;
+  }, [messageIds, rolesByIndex]);
 
   // The scroll feed is the message list with the todo panel inserted after
   // the anchored task turn — the newest turn that wrote the todos. Anchoring
@@ -2492,6 +2563,7 @@ function ChatMessages() {
                   <div className="pb-4">
                     <MessageBubble
                       messageId={msgId}
+                      turnMessageId={turnStartByIndex[messageIndex] ?? msgId}
                       showControls={isLastOfTask && isTaskIdle}
                       checkpoint={checkpoint}
                       showRestore={showRestore}

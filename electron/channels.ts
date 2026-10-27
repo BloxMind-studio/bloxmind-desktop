@@ -27,6 +27,7 @@ export const channels = {
   checkpointCapture: "checkpoint:capture",
   checkpointRestore: "checkpoint:restore",
   checkpointPreview: "checkpoint:preview",
+  checkpointChanged: "checkpoint:changed",
   checkpointList: "checkpoint:list",
   checkpointValidate: "checkpoint:validate",
 } as const;

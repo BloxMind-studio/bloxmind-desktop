@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -124,6 +124,129 @@ describe("CheckpointService capture scope", () => {
     );
 
     expect(checkpoints.map((checkpoint) => checkpoint.fullSnapshot)).toEqual([true, true]);
+  });
+});
+
+describe("CheckpointService change detection", () => {
+  /** A git workspace with one committed file, so captures get a change list. */
+  async function gitWorkspace() {
+    const workspace = await makeTemporaryDirectory("bloxmind-cp-workspace-");
+    const storeRoot = await makeTemporaryDirectory("bloxmind-cp-store-");
+    await execFileAsync("git", ["init", "-q"], { cwd: workspace });
+    await execFileAsync("git", ["config", "user.email", "test@example.com"], { cwd: workspace });
+    await execFileAsync("git", ["config", "user.name", "Test"], { cwd: workspace });
+    await writeFile(join(workspace, "tracked.lua"), "print('v1')\n");
+    await execFileAsync("git", ["add", "."], { cwd: workspace });
+    await execFileAsync("git", ["commit", "-qm", "initial"], { cwd: workspace });
+    return { workspace, storeRoot };
+  }
+
+  function captureAndCompare(
+    workspace: string,
+    storeRoot: string,
+    between?: (workspace: string) => Promise<void>,
+  ) {
+    return Effect.runPromise(
+      withService(workspace, storeRoot, (service) =>
+        Effect.gen(function* () {
+          const checkpoint = yield* service.capture({
+            sessionId: "session-1",
+            messageId: "message-1",
+            tool: null,
+            paths: [],
+          });
+          if (between) yield* Effect.tryPromise(() => between(workspace));
+          return {
+            checkpoint,
+            changed: yield* service.changed(checkpoint.id, "session-1"),
+          };
+        }),
+      ),
+    );
+  }
+
+  it("reports no change when a turn only read the workspace", async () => {
+    const { workspace, storeRoot } = await gitWorkspace();
+    const { changed } = await captureAndCompare(workspace, storeRoot);
+    expect(changed).toBe(false);
+  });
+
+  it("reports a change when a journaled file was edited", async () => {
+    const { workspace, storeRoot } = await gitWorkspace();
+    const { changed } = await captureAndCompare(workspace, storeRoot, (root) =>
+      writeFile(join(root, "tracked.lua"), "print('v2')\n"),
+    );
+    expect(changed).toBe(true);
+  });
+
+  it("reports a change when a file was created", async () => {
+    const { workspace, storeRoot } = await gitWorkspace();
+    const { changed } = await captureAndCompare(workspace, storeRoot, (root) =>
+      writeFile(join(root, "new.lua"), "print('new')\n"),
+    );
+    expect(changed).toBe(true);
+  });
+
+  it("reports no change when an edit put the original bytes back", async () => {
+    const { workspace, storeRoot } = await gitWorkspace();
+    const { changed } = await captureAndCompare(workspace, storeRoot, async (root) => {
+      const path = join(root, "tracked.lua");
+      await writeFile(path, "print('scratch')\n");
+      await writeFile(path, "print('v1')\n");
+    });
+    expect(changed).toBe(false);
+  });
+
+  it("reports no change for an unknown checkpoint", async () => {
+    const { workspace, storeRoot } = await gitWorkspace();
+    const changed = await Effect.runPromise(
+      withService(workspace, storeRoot, (service) => service.changed("cp_missing", "session-1")),
+    );
+    expect(changed).toBe(false);
+  });
+
+  it("ignores engine caches written by the turn", async () => {
+    const { workspace, storeRoot } = await gitWorkspace();
+
+    const result = await Effect.runPromise(
+      withService(workspace, storeRoot, (service) =>
+        Effect.gen(function* () {
+          const full = yield* service.capture({
+            sessionId: "session-1",
+            messageId: "message-1",
+            tool: null,
+            paths: [],
+          });
+          // The engine rewrites its own caches during every turn; they are not
+          // workspace edits and a restore must not roll them back.
+          yield* Effect.tryPromise(() =>
+            mkdir(join(workspace, ".opencode", "cache"), { recursive: true }),
+          );
+          yield* Effect.tryPromise(() => mkdir(join(workspace, ".bloxmind"), { recursive: true }));
+          yield* Effect.tryPromise(() =>
+            writeFile(join(workspace, ".opencode", "cache", "models.json"), "{}"),
+          );
+          yield* Effect.tryPromise(() =>
+            writeFile(join(workspace, ".bloxmind", "api-dump.json"), "{}"),
+          );
+          const scoped = yield* service.capture({
+            sessionId: "session-1",
+            messageId: "message-2",
+            tool: null,
+            paths: [],
+          });
+          return {
+            scopedChanged: yield* service.changed(scoped.id, "session-1"),
+            scopedPaths: scoped.paths.map((change) => change.path),
+            fullChanged: yield* service.changed(full.id, "session-1"),
+          };
+        }),
+      ),
+    );
+
+    expect(result.scopedPaths).toEqual([]);
+    expect(result.scopedChanged).toBe(false);
+    expect(result.fullChanged).toBe(false);
   });
 });
 
