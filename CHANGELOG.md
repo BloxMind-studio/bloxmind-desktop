@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.14.4] - 2026-10-27
+
 ### Added
 
 - Settings → Behavior now has a verification level. Choose Off to make changes without any checking, Ask me to have the assistant ask you to try the change in Studio, Quick check to re-read the change and take one screenshot, or Full test to playtest and read the logs before reporting. Quick never simulates clicks or playtests, so it stays fast and cannot mistake a mis-aimed click for a broken feature; all levels now say that a missed click or wrong target is a test mistake, not a bug, and that a failed check is retried at most once before being reported as unverified. Every message carries the chosen level, and you can still ask for a specific test in your own message.
