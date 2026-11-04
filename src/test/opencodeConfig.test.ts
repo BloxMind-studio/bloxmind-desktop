@@ -50,7 +50,7 @@ describe("OpenCode configuration", () => {
   it("keeps Studio instructions concise and action-oriented", () => {
     const prompt = createOpenCodeConfig(broker).agent.studio.prompt;
 
-    expect(prompt.trim().split(/\s+/).length).toBeLessThanOrEqual(125);
+    expect(prompt.trim().split(/\s+/).length).toBeLessThanOrEqual(165);
     expect(prompt).toMatch(/inspect before editing/i);
     expect(prompt).toContain("smallest coherent change");
     expect(prompt).toContain("verification level");
@@ -58,6 +58,15 @@ describe("OpenCode configuration", () => {
     expect(prompt).toContain("pass studio_id");
     expect(prompt).toContain("never call set_active_studio");
     expect(prompt).toContain("stop");
+  });
+
+  it("requires maps to close their world instead of ending in empty space", () => {
+    const prompt = createOpenCodeConfig(broker).agent.studio.prompt;
+
+    expect(prompt).toContain("roblox-world-boundaries");
+    expect(prompt).toContain("distant backdrop");
+    expect(prompt).toContain("sealed perimeter");
+    expect(prompt).toContain("never ends in visible empty space");
   });
 
   it("rules out Rojo and filesystem-sync assumptions", () => {
