@@ -1,13 +1,15 @@
 import type { SessionStatus } from "@opencode-ai/sdk/v2/client";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import posthog from "posthog-js/dist/module.full.no-external.js";
-
+import { useAllModels } from "@/hooks/useProviders";
 import {
   aiTracer,
   analyticsProperties,
   detailedAnalyticsProperties,
   errorAnalyticsProperties,
 } from "@/lib/analytics";
+import { IMAGE_INPUT_UNAVAILABLE_NOTE, modelAcceptsImages } from "@/lib/imageSupport";
+import { findModelInfo } from "@/lib/modelSpecs";
 import { qk } from "@/lib/queryKeys";
 import { splitModelKey } from "@/lib/splitModelKey";
 import { verificationGuidance } from "@/lib/verification";
@@ -57,16 +59,25 @@ export function useSendMessage(options?: { onError?: (error: Error) => void }) {
   const { client } = useOpenCodeClient();
   const { activeSessionId } = useActiveSession();
   const { selectedModel, selectedAgent, selectedVariant, verificationLevel } = usePreferences();
+  const allModels = useAllModels();
   const queryClient = useQueryClient();
+
+  // The provider tells us whether this model can read images. `undefined`
+  // means "unknown", so only a confident `false` changes the request.
+  const acceptsImages = modelAcceptsImages(findModelInfo(selectedModel ?? undefined, allModels));
 
   return useMutation<void, Error, SendMessageInput, SendMessageContext | undefined>({
     mutationFn: async ({ text, images, studioTargetReference, systemPrompt }: SendMessageInput) => {
       if (!client || !activeSessionId) throw new Error("No client or session");
 
+      // Never attach images to a model that cannot read them: one screenshot
+      // otherwise makes every later request fail upstream.
+      const sentImages = acceptsImages === false ? undefined : images;
+
       // Assemble message parts: text first, then any image attachments.
       const parts: Array<{ type: string; [k: string]: unknown }> = [{ type: "text", text }];
-      if (images) {
-        for (const img of images) {
+      if (sentImages) {
+        for (const img of sentImages) {
           parts.push({ type: "file", mime: img.mime, url: img.url, filename: img.filename });
         }
       }
@@ -82,7 +93,9 @@ export function useSendMessage(options?: { onError?: (error: Error) => void }) {
       // so every send carries the level the user picked without a restart.
       const baseSystemPrompt = systemPrompt || studioTargetReference || "";
       const guidance = verificationGuidance(verificationLevel);
-      opts.system = baseSystemPrompt ? `${baseSystemPrompt}\n\n${guidance}` : guidance;
+      const notes = [guidance];
+      if (acceptsImages === false) notes.push(IMAGE_INPUT_UNAVAILABLE_NOTE);
+      opts.system = [baseSystemPrompt, ...notes].filter(Boolean).join("\n\n");
 
       // Resolve provider/model from the selected model key (e.g. "anthropic/claude-3.5-sonnet").
       let provider: string | undefined;
@@ -103,7 +116,7 @@ export function useSendMessage(options?: { onError?: (error: Error) => void }) {
       aiTracer.beginTurn({
         sessionID: activeSessionId,
         text,
-        imageCount: images?.length ?? 0,
+        imageCount: sentImages?.length ?? 0,
         provider,
         model,
         agent: selectedAgent ?? undefined,
@@ -125,7 +138,8 @@ export function useSendMessage(options?: { onError?: (error: Error) => void }) {
           "chat",
           detailedAnalyticsProperties({
             outcome: "success",
-            has_images: Boolean(images?.length),
+            has_images: Boolean(sentImages?.length),
+            images_blocked: acceptsImages === false && Boolean(images?.length),
             has_studio_target: Boolean(studioTargetReference),
             has_system_prompt: Boolean(systemPrompt),
             provider,

@@ -3,7 +3,7 @@ import type { AssistantMessage } from "@opencode-ai/sdk/v2/client";
 export type ModelError = NonNullable<AssistantMessage["error"]>;
 
 export interface ModelErrorPresentation {
-  kind: "context" | "auth" | "aborted" | "generic";
+  kind: "context" | "auth" | "aborted" | "image" | "generic";
   title: string;
   description: string;
   detail?: string;
@@ -20,6 +20,14 @@ export function modelErrorDetail(error: ModelError): string | undefined {
     (value): value is string => typeof value === "string" && value.trim() !== "",
   );
   return detail?.trim();
+}
+
+export function isImageInputError(error: ModelError): boolean {
+  const detail = modelErrorDetail(error);
+  if (!detail) return false;
+  return /image input is not available|image input (?:is )?not supported|does not support image input/i.test(
+    detail,
+  );
 }
 
 export function presentModelError(error: ModelError): ModelErrorPresentation {
@@ -49,6 +57,19 @@ export function presentModelError(error: ModelError): ModelErrorPresentation {
       kind: "aborted",
       title: "Response stopped",
       description: detail ?? "The response was stopped before it finished.",
+    };
+  }
+
+  // A screenshot or attached image reached a model that only accepts text.
+  // Recognize it here so the UI can offer to remove the image instead of
+  // showing raw provider jargon that looks like an unrecoverable failure.
+  if (isImageInputError(error)) {
+    return {
+      kind: "image",
+      title: "This model can't read images",
+      description:
+        "A screenshot or image reached a model that only accepts text. Remove the image from this conversation and retry, or switch to a vision-capable model.",
+      detail,
     };
   }
 

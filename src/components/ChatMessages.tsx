@@ -91,7 +91,9 @@ type FeedItem =
   | { key: string; messageId: null; messageIndex: null };
 
 import { useAnswerQuestion, useRejectQuestion } from "@/hooks/mutations/useAnswerQuestion";
+import { useRepairImageHistory } from "@/hooks/mutations/useRepairImageHistory";
 import { useReplyPermission } from "@/hooks/mutations/useReplyPermission";
+import { useSendMessage } from "@/hooks/mutations/useSendMessage";
 import { useCheckpointHistory } from "@/hooks/useCheckpointHistory";
 import { useCheckpoints } from "@/hooks/useCheckpoints";
 import {
@@ -1232,6 +1234,55 @@ const CompactionPartView = memo(function CompactionPartView() {
   );
 });
 
+const ImageRecoveryActions = memo(function ImageRecoveryActions() {
+  const repair = useRepairImageHistory();
+  const sendMessage = useSendMessage();
+  const [phase, setPhase] = useState<"idle" | "removing" | "retrying">("idle");
+
+  const handleRepair = async () => {
+    setPhase("removing");
+    try {
+      const removed = await repair.mutateAsync();
+      if (removed === 0) {
+        toast.error("No images left to remove", {
+          description: "Switch to a vision-capable model, or start a new session.",
+        });
+        return;
+      }
+      toast.success(`Removed ${removed} image${removed === 1 ? "" : "s"} from this conversation`);
+      // Continue after the payload is gone, so the same turn can finish.
+      setPhase("retrying");
+      await sendMessage.mutateAsync({ text: "Continue." }).catch(() => undefined);
+    } catch (error) {
+      toast.error("Couldn't remove the images", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setPhase("idle");
+    }
+  };
+
+  const busy = phase !== "idle";
+
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        onClick={() => void handleRepair()}
+        disabled={busy}
+        className="rounded-md border border-border px-3 py-1 text-[11px] text-foreground transition-colors hover:bg-accent disabled:opacity-50"
+      >
+        {phase === "removing"
+          ? "Removing images…"
+          : phase === "retrying"
+            ? "Retrying…"
+            : "Remove images & retry"}
+      </button>
+      <span className="text-[11px] opacity-60">or switch to a vision-capable model</span>
+    </div>
+  );
+});
+
 const ModelErrorCard = memo(function ModelErrorCard({ error }: { error: ModelError }) {
   const presentation = presentModelError(error);
 
@@ -1257,6 +1308,7 @@ const ModelErrorCard = memo(function ModelErrorCard({ error }: { error: ModelErr
         <div className="min-w-0">
           <div className="text-[13px] font-medium leading-relaxed">{presentation.title}</div>
           <div className="text-[13px] leading-relaxed opacity-80">{presentation.description}</div>
+          {presentation.kind === "image" && <ImageRecoveryActions />}
           {presentation.detail && presentation.detail !== presentation.description && (
             <details className="mt-1">
               <summary className="cursor-pointer text-[13px] opacity-55 transition-opacity hover:opacity-100">

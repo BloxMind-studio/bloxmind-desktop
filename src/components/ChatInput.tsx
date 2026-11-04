@@ -11,6 +11,7 @@ import { useAgents } from "@/hooks/useAgents";
 import { useCommands } from "@/hooks/useCommands";
 import { useAllModels, useConnectedProviders } from "@/hooks/useProviders";
 import { useIsBusy } from "@/hooks/useSessionStatuses";
+import { modelAcceptsImages } from "@/lib/imageSupport";
 import { findModelInfo, formatTokens, modelSpecs, reasoningLabel } from "@/lib/modelSpecs";
 import { resolveVariantForModel } from "@/lib/modelVariant";
 import { playMessageSent } from "@/lib/soundEffects";
@@ -369,8 +370,21 @@ function ChatInput() {
     };
   }, []);
 
+  const selectedModelInfo = useMemo(
+    () => findModelInfo(selectedModel ?? undefined, allModels),
+    [selectedModel, allModels],
+  );
+  const acceptsImages = modelAcceptsImages(selectedModelInfo);
+
   const addImageFiles = useCallback(
     async (files: FileList | File[]) => {
+      if (acceptsImages === false) {
+        toast.error("This model can't read images", {
+          description: "Switch to a vision-capable model to attach screenshots.",
+        });
+        triggerRejectShake();
+        return;
+      }
       const toAdd: File[] = [];
       for (const file of Array.from(files)) {
         if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
@@ -425,7 +439,7 @@ function ChatInput() {
         ];
       });
     },
-    [triggerRejectShake],
+    [acceptsImages, triggerRejectShake],
   );
 
   const removeAttachment = useCallback((id: string) => {
@@ -544,6 +558,13 @@ function ChatInput() {
     const trimmed = editorText.trim();
     if (!trimmed && attachments.length === 0) return;
     if (isBusy) return;
+    if (attachments.length > 0 && acceptsImages === false) {
+      toast.error("This model can't read images", {
+        description: "Remove the attachments or switch to a vision-capable model.",
+      });
+      triggerRejectShake();
+      return;
+    }
     const submittedText = editorText;
     const submittedAttachments = attachments;
     failedSendRef.current = {
@@ -932,8 +953,8 @@ function ChatInput() {
               <ContextUsageIndicator />
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className={`flex h-7 w-7 items-center justify-center rounded-lg border border-border bg-background transition-colors hover:bg-accent hover:text-foreground ${rejectShake ? "animate-reject-shake text-red-500" : "text-muted-foreground/60"}`}
-                title="Attach images"
+                title={acceptsImages === false ? "This model can't read images" : "Attach images"}
+                className={`flex h-7 w-7 items-center justify-center rounded-lg border border-border bg-background transition-colors hover:bg-accent hover:text-foreground ${rejectShake ? "animate-reject-shake text-red-500" : acceptsImages === false ? "text-muted-foreground/35" : "text-muted-foreground/60"}`}
               >
                 <svg
                   width="15"

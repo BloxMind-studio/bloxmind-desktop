@@ -87,7 +87,7 @@ function createQueryClient() {
   });
 }
 
-function seedState(qc: QueryClient, session: Session) {
+function seedState(qc: QueryClient, session: Session, textOnly = false) {
   qc.setQueryData(qk.sessions, [session]);
   qc.setQueryData(qk.statuses, {});
   qc.setQueryData(qk.agents, []);
@@ -104,8 +104,14 @@ function seedState(qc: QueryClient, session: Session) {
             limit: { context: 200_000, output: 64_000 },
             capabilities: {
               reasoning: true,
-              attachment: true,
-              input: { text: true, image: true, audio: false, video: false, pdf: false },
+              attachment: !textOnly,
+              input: {
+                text: true,
+                image: !textOnly,
+                audio: false,
+                video: false,
+                pdf: false,
+              },
             },
           },
         },
@@ -152,18 +158,20 @@ function TestChatInput({
   queryClient,
   sessionId = "s1",
   clientStatus = "ready",
+  textOnly = false,
 }: {
   client: ReturnType<typeof createClient>;
   queryClient: QueryClient;
   sessionId?: string;
   clientStatus?: string;
+  textOnly?: boolean;
 }) {
   const activeSessionIdRef = useRef<string | null>(sessionId);
   useEffect(() => {
     activeSessionIdRef.current = sessionId;
   }, [sessionId]);
   const session = makeSession(sessionId, "Test Session");
-  seedState(queryClient, session);
+  seedState(queryClient, session, textOnly);
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -497,5 +505,42 @@ describe("ChatInput", () => {
       }),
       { throwOnError: true },
     );
+  });
+
+  it("rejects image attachments when the model has no image input", async () => {
+    const client = createClient();
+    const qc = createQueryClient();
+    const { container } = render(<TestChatInput client={client} queryClient={qc} textOnly />);
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]');
+    if (!fileInput) throw new Error("Image file input was not rendered");
+
+    const image = new File(["image contents"], "reference.png", { type: "image/png" });
+    await act(async () => {
+      fireEvent.change(fileInput, { target: { files: [image] } });
+    });
+
+    expect(await screen.findByText(/This model can't read images/)).toBeInTheDocument();
+    expect(screen.queryByText("reference.png")).not.toBeInTheDocument();
+    expect(client.session.promptAsync).not.toHaveBeenCalled();
+  });
+
+  it("tells a text-only model not to capture screenshots", async () => {
+    const client = createClient();
+    const qc = createQueryClient();
+    render(<TestChatInput client={client} queryClient={qc} textOnly />);
+
+    const textarea = await screen.findByRole("textbox", { name: "Message" });
+    await act(async () => {
+      fireEvent.input(textarea, { target: { textContent: "Build a track" } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTitle("Send"));
+    });
+
+    await waitFor(() => expect(client.session.promptAsync).toHaveBeenCalledOnce());
+    const args = client.session.promptAsync.mock.calls[0][0];
+    expect(args.parts).toEqual([{ type: "text", text: "Build a track" }]);
+    expect(args.system).toContain("cannot accept image input");
+    expect(args.system).toContain("screen-capture");
   });
 });

@@ -7,6 +7,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Fixed
+
+- A Studio screenshot no longer bricks a text-only model. The composer refuses image attachments when the selected model reports no image input, every send to such a model carries an instruction to avoid screen-capture tools, and an image rejection now shows a "Remove images & retry" action that deletes the image payloads from the conversation and continues the turn.
+
 ### Changed
 
 - Map-building requests now have to close the world. The assistant loads a new `roblox-world-boundaries` skill whenever it creates or extends a map, which sets playable bounds, a themed sky and atmosphere, a layered distant backdrop, and a visible plus invisible perimeter with server-side out-of-bounds handling, so maps no longer end in visible empty space.

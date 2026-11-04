@@ -33,4 +33,21 @@ describe("model error presentation", () => {
       title: "This conversation is too large",
     });
   });
+
+  it("recognizes a screenshot sent to a text-only model", () => {
+    const error: ModelError = {
+      name: "APIError",
+      data: {
+        message:
+          "Upstream request failed: [invalid_request_error] image input is not available on this engine",
+        statusCode: 400,
+        isRetryable: false,
+      },
+    };
+
+    expect(presentModelError(error)).toMatchObject({
+      kind: "image",
+      title: "This model can't read images",
+    });
+  });
 });
