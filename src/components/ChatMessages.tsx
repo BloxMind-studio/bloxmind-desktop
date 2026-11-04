@@ -2575,7 +2575,18 @@ function ChatMessages() {
               const isSystemNotification = cacheMsg?.parts?.some(
                 (p) => p.type === "text" && p.text.startsWith("[SYSTEM_NOTIFICATION"),
               );
-              if (isSystemNotification) {
+              // Compaction rewrites the transcript silently: the engine injects
+              // a synthetic user prompt to resume the turn and an assistant
+              // message holding only the summary. Both stay in the session for
+              // the agent's context, but the slim CompactionStatus marker at
+              // the top of the feed is the visible signal — the bubbles would
+              // only add noise.
+              const info = cacheMsg?.info;
+              const isSyntheticPrompt =
+                info?.role === "user" &&
+                (cacheMsg?.parts.some((p) => p.type === "text" && p.synthetic === true) ?? false);
+              const isSummaryMessage = info?.role === "assistant" && info.summary === true;
+              if (isSystemNotification || isSyntheticPrompt || isSummaryMessage) {
                 return (
                   <div
                     key={msgId}

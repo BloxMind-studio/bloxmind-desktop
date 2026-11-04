@@ -642,6 +642,62 @@ describe("User journeys", () => {
     });
   });
 
+  it("keeps the engine's compaction transcript out of the feed", async () => {
+    const session = makeSession("s1", "Quiet Compaction");
+    const time = { created: Date.now(), updated: Date.now() };
+    const textPart = (id: string, messageID: string, text: string, extra?: object) => ({
+      id,
+      messageID,
+      sessionID: "s1",
+      type: "text",
+      text,
+      time,
+      ...extra,
+    });
+    const client = createClient({
+      get: vi.fn().mockResolvedValue({ data: session }),
+      messages: vi.fn().mockResolvedValue({
+        data: [
+          {
+            info: { id: "msg_u1", sessionID: "s1", role: "user", time },
+            parts: [textPart("part_u1", "msg_u1", "Build a market stall")],
+          },
+          {
+            // The summary message the engine stores while compacting.
+            info: { id: "msg_a1", sessionID: "s1", role: "assistant", time, summary: true },
+            parts: [textPart("part_s1", "msg_a1", "Objective: ship the market stall")],
+          },
+          {
+            // The synthetic prompt the engine sends to resume the turn.
+            info: { id: "msg_u2", sessionID: "s1", role: "user", time },
+            parts: [
+              textPart("part_c1", "msg_u2", "Continue if you have next steps...", {
+                synthetic: true,
+              }),
+            ],
+          },
+          {
+            info: { id: "msg_a2", sessionID: "s1", role: "assistant", time },
+            parts: [textPart("part_v1", "msg_a2", "Market stall finished")],
+          },
+        ],
+      }),
+    });
+    const queryClient = createQueryClient();
+    seedReadyState(queryClient, { sessions: [session] });
+
+    render(<TestApp client={client} queryClient={queryClient} />);
+    await act(async () => {
+      fireEvent.click(await screen.findByText("Quiet Compaction"));
+    });
+
+    // The real conversation shows; the engine's internal plumbing does not.
+    expect(await screen.findByText("Market stall finished")).toBeVisible();
+    expect(screen.queryByText(/Objective: ship the market stall/)).toBeNull();
+    expect(screen.queryByText("Continue if you have next steps...")).toBeNull();
+    expect(screen.getByText("Build a market stall")).toBeVisible();
+  });
+
   it("keeps the todo panel inline with its task turn when a new message arrives", async () => {
     const session = makeSession("s1", "Todo Session");
     const time = { created: Date.now(), updated: Date.now() };

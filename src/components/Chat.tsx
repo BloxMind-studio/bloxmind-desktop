@@ -18,11 +18,7 @@ import { useSessions } from "@/hooks/useSessions";
 import { useStudioConnection } from "@/hooks/useStudioConnection";
 import { analyticsProperties, POSTHOG_PROJECT_TOKEN } from "@/lib/analytics";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
-import {
-  SIDE_PANEL_EXIT_MS,
-  TOOLTIP_DURATION_MS,
-  useOpenCodeClient,
-} from "@/providers/OpenCodeClientProvider";
+import { SIDE_PANEL_EXIT_MS, useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
 import { useProjectIndexContext } from "@/providers/ProjectIndexProvider";
 import { useStudioTargetOptional } from "@/providers/StudioTargetProvider";
@@ -30,94 +26,55 @@ import { useStudioTargetOptional } from "@/providers/StudioTargetProvider";
 const Settings = lazy(() => import("@/components/Settings"));
 
 /**
- * Project index button that shows the live script count and triggers a
- * re-index. Placed next to the Explorer/Playtest buttons in the header toolbar.
+ * Project index status marker. A compact icon with a colored dot that shows
+ * whether the index is working (green ok, amber partial, red failed) plus the
+ * total number of indexed scripts; the native tooltip carries the details.
+ * Clicking triggers a re-index.
  */
 function ProjectIndexButton() {
   const { skeleton, isLoading, isFetching, error, refresh } = useProjectIndexContext();
-  const [showTooltip, setShowTooltip] = useState(false);
-  const tooltipTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const indexed = skeleton !== null;
   const busy = isLoading || isFetching;
-  const scriptCount = skeleton?.totalScripts ?? 0;
-  const moduleCount = skeleton?.totalModuleScripts ?? 0;
-  const circularCount = skeleton?.circularDependencies.length ?? 0;
-  const unreadableCount = skeleton?.unreadableScripts ?? 0;
-  const hubCount = skeleton?.modules.filter((m) => m.dependentsCount >= 3).length ?? 0;
-  const total = scriptCount + moduleCount;
+  const total = (skeleton?.totalScripts ?? 0) + (skeleton?.totalModuleScripts ?? 0);
+  const partial =
+    skeleton?.partial === true ||
+    (skeleton?.circularDependencies.length ?? 0) > 0 ||
+    (skeleton?.unreadableScripts ?? 0) > 0;
 
-  const handleClick = useCallback(() => {
-    refresh();
-    setShowTooltip(true);
-    clearTimeout(tooltipTimer.current);
-    tooltipTimer.current = setTimeout(() => setShowTooltip(false), TOOLTIP_DURATION_MS);
-  }, [refresh]);
-
-  useEffect(() => () => clearTimeout(tooltipTimer.current), []);
-
-  const summary =
-    total === 0
-      ? "No scripts found"
-      : `${scriptCount} scripts · ${moduleCount} modules${circularCount > 0 ? ` · ${circularCount} cycles` : ""}`;
-  const label = busy
-    ? indexed
-      ? "Refreshing..."
-      : "Indexing..."
-    : error
-      ? "Retry index"
+  const title = error
+    ? `Index failed: ${error}. Click to retry.`
+    : busy
+      ? "Reading the script map from Studio..."
       : indexed
-        ? total === 0
-          ? "No scripts"
-          : `${total} ${total === 1 ? "script" : "scripts"}`
+        ? `${total} ${total === 1 ? "script" : "scripts"} indexed${partial ? " with issues" : ""}. Click to refresh.`
         : "Index project";
-  const title =
-    error ?? (busy ? "Reading the script map from Studio" : `${summary}. Click to refresh.`);
 
   return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={handleClick}
-        disabled={busy}
-        aria-label={
-          error ? `Project index failed: ${error}. Retry` : indexed ? summary : "Index project"
-        }
-        className={`inline-flex h-7 items-center rounded-md border bg-background px-2 text-[11px] font-medium transition-[background-color,color] hover:bg-accent hover:text-foreground disabled:opacity-50 ${error ? "text-red-500" : "text-muted-foreground"}`}
-        title={title}
-      >
-        <div className="relative">
-          <FolderTree aria-hidden="true" size={13} />
-          {indexed && !busy && (
-            <span
-              className={`absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full ${circularCount > 0 || unreadableCount > 0 ? "bg-amber-500" : "bg-emerald-500"}`}
-            />
-          )}
-          {busy && (
-            <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 animate-ping rounded-full bg-amber-400" />
-          )}
-        </div>
-        <span className="ml-1.5 whitespace-nowrap">{label}</span>
-      </button>
-
-      {showTooltip && !busy && (
-        <div className="animate-fade-in-up absolute right-0 top-9 z-50 max-w-64 whitespace-normal rounded-md border bg-popover px-3 py-1.5 text-[11px] text-popover-foreground shadow-lg">
-          {error ? (
-            <>Index failed: {error}</>
-          ) : indexed ? (
-            <>
-              Indexed: {scriptCount} scripts · {moduleCount} modules
-              {hubCount > 0 && ` · ${hubCount} hubs`}
-              {circularCount > 0 && ` · ${circularCount} cycles`}
-              {unreadableCount > 0 && ` · ${unreadableCount} unreadable`}
-              {skeleton?.partial && " · partial"}
-            </>
-          ) : (
-            "No scripts found"
-          )}
-        </div>
-      )}
-    </div>
+    <button
+      type="button"
+      onClick={() => refresh()}
+      disabled={busy}
+      title={title}
+      className={`inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border bg-background px-2 text-[11px] font-medium tabular-nums transition-[background-color,color] hover:bg-accent hover:text-foreground disabled:opacity-50 ${
+        error ? "text-red-500" : "text-muted-foreground"
+      }`}
+    >
+      <span className="relative flex items-center" aria-hidden="true">
+        <FolderTree size={13} />
+        <span
+          className={`absolute -right-1 -top-1 rounded-full ${
+            busy
+              ? "h-1.5 w-1.5 animate-ping bg-amber-400"
+              : partial
+                ? "h-1.5 w-1.5 bg-amber-500"
+                : "h-1.5 w-1.5 bg-emerald-500"
+          }`}
+        />
+        {error && <span className="absolute -right-1 -top-1 h-1.5 w-1.5 rounded-full bg-red-500" />}
+      </span>
+      {indexed && <span className="whitespace-nowrap">{total}</span>}
+    </button>
   );
 }
 
@@ -429,8 +386,8 @@ function Chat() {
               </div>
             </div>
 
-            <ChatMessages />
             <CompactionStatus />
+            <ChatMessages />
             <ChatInput />
           </>
         )}

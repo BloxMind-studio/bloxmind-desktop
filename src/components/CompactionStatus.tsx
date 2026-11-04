@@ -4,9 +4,10 @@ import { useCompactionState } from "@/hooks/useCompactionState";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 
 /**
- * Live status row shown above the composer while OpenCode rewrites the
+ * Slim marker at the top of the feed shown while OpenCode rewrites the
  * conversation. Automatic compaction can start on its own mid-turn, so this is
- * the only signal that the message list is being replaced by a summary.
+ * the only signal that the message list is being replaced by a summary — the
+ * summary itself and the synthetic continuation prompt stay out of the feed.
  */
 const CompactionStatus = memo(function CompactionStatus() {
   const { activeSessionId } = useActiveSession();
@@ -17,16 +18,14 @@ const CompactionStatus = memo(function CompactionStatus() {
   const automatic = compaction.reason === "auto";
 
   return (
-    <div role="status" aria-live="polite" className="shrink-0 px-4 pt-1">
-      <div className="animate-fade-in-up mx-auto flex max-w-2xl items-center gap-2 rounded-lg border bg-card px-3 py-1.5 shadow-sm">
+    <div role="status" aria-live="polite" className="shrink-0 px-4 pb-1">
+      <div className="animate-fade-in-up mx-auto flex max-w-2xl items-center gap-2 px-3 py-1 text-[11px] text-muted-foreground">
         <span
-          className="h-3 w-3 shrink-0 animate-spin rounded-full border border-amber-500 border-t-transparent"
+          className="h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-[1.5px] border-muted-foreground/70 border-t-transparent"
           aria-hidden="true"
         />
-        <span className="text-[11px] font-medium text-foreground/80">
-          Compacting conversation...
-        </span>
-        <span className="ml-auto truncate text-[10px] text-muted-foreground">
+        <span className="font-medium text-foreground/80">Compacting conversation...</span>
+        <span className="truncate opacity-70">
           {automatic ? "Context window is nearly full" : "Summarizing older messages"}
         </span>
       </div>

@@ -14,6 +14,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Changed
 
 - Map-building requests now have to close the world. The assistant loads a new `roblox-world-boundaries` skill whenever it creates or extends a map, which sets playable bounds, a themed sky and atmosphere, a layered distant backdrop, and a visible plus invisible perimeter with server-side out-of-bounds handling, so maps no longer end in visible empty space.
+- Compaction is a quiet background step. The engine's summary message and synthetic "continue" prompt no longer appear in the feed; instead a slim live marker at the top of the conversation shows that auto-compaction is running while the agent resumes its task undisturbed.
+- The project-index button is now a compact status marker: a colored dot that reads ok (green), partial (amber), or failed (red), the total number of indexed scripts, and a native tooltip with details.
 
 ## [0.15.0] - 2026-10-28
 

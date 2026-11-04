@@ -27,7 +27,6 @@ export const SSE_HEARTBEAT_INTERVAL = 5_000; // Check every 5s
 export const SSE_POLL_INTERVAL = 1_000; // Server health-check poll interval
 export const SSE_POLL_TIMEOUT = 3_000; // Per-poll request timeout
 export const SIDE_PANEL_EXIT_MS = 180; // Side panel exit animation duration
-export const TOOLTIP_DURATION_MS = 2_500; // Project index tooltip display duration
 
 type AppStatus = "waiting" | "ready" | "error";
 export type StartupPhase = "engine" | "connection" | "workspace";
