@@ -1759,21 +1759,25 @@ const UserPartsView = memo(
       else if (p.type === "text") textParts.push(p as Extract<Part, { type: "text" }>);
     }
     const fileUrls = fileParts.map((p) => p.url);
+    // The thumb row is capped at two columns so the fit-content bubble isn't
+    // sized for a single unwrapped line of every image at once — that made the
+    // card far wider than its content and left a large empty area under the
+    // last row of wrapped thumbnails.
     return (
       <div className="select-text text-[13px] leading-relaxed">
         {fileParts.length > 0 && (
-          <div className="mb-1.5 flex flex-wrap gap-1.5">
+          <div className="mb-1.5 flex max-w-[354px] flex-wrap gap-1.5">
             {fileParts.map((p, i) => (
               <button
                 key={p.id}
                 type="button"
                 onClick={() => open(fileUrls, i)}
-                className="block cursor-zoom-in overflow-hidden rounded-lg border border-white/20 transition-opacity hover:opacity-80"
+                className="block h-28 w-[172px] cursor-zoom-in overflow-hidden rounded-lg border border-white/20 transition-opacity hover:opacity-80"
               >
                 <img
                   src={p.url}
                   alt={p.filename ?? "attachment"}
-                  className="max-h-32 max-w-[200px] object-cover"
+                  className="h-full w-full object-cover"
                 />
               </button>
             ))}

@@ -10,6 +10,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Fixed
 
 - A Studio screenshot no longer bricks a text-only model. The composer refuses image attachments when the selected model reports no image input, every send to such a model carries an instruction to avoid screen-capture tools, and an image rejection now shows a "Remove images & retry" action that deletes the image payloads from the conversation and continues the turn.
+- Image attachments in a user message now render as a tidy two-column grid of uniform thumbnails. Previously each image kept its natural aspect ratio and the bubble was sized for all images on one line, which stretched the card far wider than its content and left a large empty area.
 
 ### Changed
 
