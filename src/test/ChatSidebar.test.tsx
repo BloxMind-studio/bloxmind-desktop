@@ -91,7 +91,7 @@ function seedState(qc: QueryClient, opts: { sessions?: Session[] } = {}) {
     hiddenModels: [],
     theme: "system",
     detailedAnalytics: "disabled",
-    analyticsNoticeVersion: 2,
+    analyticsNoticeVersion: 3,
   });
 }
 

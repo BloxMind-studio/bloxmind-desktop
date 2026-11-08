@@ -125,7 +125,7 @@ function seedState(qc: QueryClient, session: Session, textOnly = false) {
     hiddenModels: [],
     theme: "system",
     detailedAnalytics: "disabled",
-    analyticsNoticeVersion: 2,
+    analyticsNoticeVersion: 3,
     accentColor: "blue",
     layoutDensity: "comfortable",
     fontSize: 1,

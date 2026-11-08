@@ -255,29 +255,32 @@ afterEach(() => {
 // ── Tests ──────────────────────────────────────────────────────────────────
 
 describe("User journeys", () => {
-  it("enables usage metrics by default, notifies once, and keeps opting out toggleable", async () => {
+  it("keeps AI usage data off by default and only shares after opt-in", async () => {
     const client = createClient();
     const queryClient = createQueryClient();
-    // An old clickaway ("disabled" without a notice version) does not carry over.
+    // Users who had it on under the old opt-out policy are asked again and
+    // start from off until they accept.
     seedReadyState(queryClient, {
-      detailedAnalytics: "disabled",
-      analyticsNoticeVersion: 0,
+      detailedAnalytics: "enabled",
+      analyticsNoticeVersion: 2,
       layoutDensity: "compact",
     });
 
     render(<TestApp client={client} queryClient={queryClient} />);
 
-    const noticeTitle = await screen.findByText("BloxMind shares AI usage data");
+    const noticeTitle = await screen.findByText("Share AI usage data?");
     expect(noticeTitle).toBeVisible();
     expect(noticeTitle.closest("[data-sonner-toast]")).toHaveClass("analytics-consent-toast");
     // Settings saved before the notice appeared still apply while it is shown;
     // the effect used to return early and leave them at their defaults.
     expect(document.documentElement.classList.contains("layout-compact")).toBe(true);
     await expect(desktop.loadConfig()).resolves.toMatchObject({
-      detailedAnalytics: "enabled",
-      analyticsNoticeVersion: 2,
+      detailedAnalytics: "disabled",
+      analyticsNoticeVersion: 3,
     });
-    fireEvent.click(screen.getByRole("button", { name: "Got it" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Share" }));
+    await expect(desktop.loadConfig()).resolves.toMatchObject({ detailedAnalytics: "enabled" });
 
     fireEvent.click(await screen.findByText("Settings"));
     fireEvent.click(await screen.findByRole("button", { name: "Privacy" }));
@@ -292,7 +295,7 @@ describe("User journeys", () => {
     await expect(desktop.loadConfig()).resolves.toMatchObject({ detailedAnalytics: "disabled" });
   });
 
-  it("keeps an earlier opt-out without showing the AI usage notice", async () => {
+  it("keeps an earlier opt-out without asking again", async () => {
     const client = createClient();
     const queryClient = createQueryClient();
     seedReadyState(queryClient, { detailedAnalytics: "disabled", analyticsNoticeVersion: 1 });
@@ -300,25 +303,25 @@ describe("User journeys", () => {
     render(<TestApp client={client} queryClient={queryClient} />);
 
     await waitFor(() =>
-      expect(desktop.loadConfig()).resolves.toMatchObject({ analyticsNoticeVersion: 2 }),
+      expect(desktop.loadConfig()).resolves.toMatchObject({ analyticsNoticeVersion: 3 }),
     );
-    expect(screen.queryByText("BloxMind shares AI usage data")).not.toBeInTheDocument();
+    expect(screen.queryByText("Share AI usage data?")).not.toBeInTheDocument();
     await expect(desktop.loadConfig()).resolves.toMatchObject({
       detailedAnalytics: "disabled",
-      analyticsNoticeVersion: 2,
+      analyticsNoticeVersion: 3,
     });
   });
 
-  it("respects a recorded opt-out without renotifying", async () => {
+  it("respects a recorded opt-in without notifying again", async () => {
     const client = createClient();
     const queryClient = createQueryClient();
-    seedReadyState(queryClient, { detailedAnalytics: "disabled", analyticsNoticeVersion: 2 });
+    seedReadyState(queryClient, { detailedAnalytics: "enabled", analyticsNoticeVersion: 3 });
 
     render(<TestApp client={client} queryClient={queryClient} />);
 
     fireEvent.click(await screen.findByText("Settings"));
     fireEvent.click(await screen.findByRole("button", { name: "Privacy" }));
-    expect(screen.queryByText("BloxMind shares AI usage data")).not.toBeInTheDocument();
+    expect(screen.queryByText("Share AI usage data?")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Privacy Policy" })).toHaveAttribute(
       "href",
       "https://bloxmindai.netlify.app/",
@@ -329,7 +332,7 @@ describe("User journeys", () => {
     );
     expect(screen.getByRole("switch", { name: "Share AI usage data" })).toHaveAttribute(
       "aria-checked",
-      "false",
+      "true",
     );
   });
 

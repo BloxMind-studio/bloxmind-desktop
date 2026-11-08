@@ -58,7 +58,7 @@ describe("ThemeProvider", () => {
       hiddenModels: [],
       theme: "system",
       detailedAnalytics: "disabled",
-      analyticsNoticeVersion: 2,
+      analyticsNoticeVersion: 3,
     });
 
     renderThemeProvider(queryClient);
@@ -84,7 +84,7 @@ describe("ThemeProvider", () => {
       hiddenModels: [],
       theme: "dark",
       detailedAnalytics: "disabled",
-      analyticsNoticeVersion: 2,
+      analyticsNoticeVersion: 3,
     });
 
     renderThemeProvider(queryClient);
@@ -118,7 +118,7 @@ describe("ThemeProvider", () => {
       hiddenModels: [],
       theme: "system",
       detailedAnalytics: "disabled",
-      analyticsNoticeVersion: 2,
+      analyticsNoticeVersion: 3,
     });
 
     renderThemeProvider(queryClient);

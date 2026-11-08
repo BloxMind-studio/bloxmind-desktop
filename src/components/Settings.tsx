@@ -2003,9 +2003,8 @@ function PrivacyTab() {
             <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
               Shares your prompts, AI responses and reasoning, tool calls and their results, code
               changes, instruction files like AGENTS.md, timings, provider and model names, token
-              counts, and Roblox place IDs and names, on by default. Turn this off to keep
-              conversations and model usage out of analytics. Basic app health events and error
-              reports remain enabled.
+              counts, and Roblox place IDs and names. Off by default: turn this on to share them.
+              Basic app health events and error reports are sent regardless.
             </p>
           </div>
           <button

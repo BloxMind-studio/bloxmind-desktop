@@ -22,7 +22,9 @@ export const ANALYTICS_SCHEMA_VERSION = 1;
 // Bump when the analytics policy changes enough that users must be re-notified.
 // Version 1 introduced opt-out model usage metrics with anonymized collection.
 // Version 2 added prompts, responses, tool calls, and Roblox place IDs (AI traces).
-export const ANALYTICS_NOTICE_VERSION = 2;
+// Version 3 made those AI traces opt-in: nothing beyond basic health events is
+// sent until the user turns sharing on.
+export const ANALYTICS_NOTICE_VERSION = 3;
 
 export function setDetailedAnalyticsEnabled(enabled: boolean): void {
   detailedAnalyticsEnabled = enabled;

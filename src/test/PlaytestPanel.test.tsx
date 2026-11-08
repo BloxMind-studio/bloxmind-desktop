@@ -67,7 +67,7 @@ function Harness({
     hiddenModels: [],
     theme: "system",
     detailedAnalytics,
-    analyticsNoticeVersion: 2,
+    analyticsNoticeVersion: 3,
   });
   queryClient.setQueryData<MessagesCache>(qk.messages("active"), {
     messageIds: messages.map((m) => m.info.id),

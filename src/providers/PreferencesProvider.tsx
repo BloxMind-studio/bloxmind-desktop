@@ -243,43 +243,42 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     // Extra MCP servers
     setMcpServersState(configData.mcpServers);
 
-    // Model usage metrics moved from opt-in to opt-out in notice version 1. Choices
-    // recorded under the old consent prompt (including clickaways) do not carry
-    // over; opt-outs made since then do and skip the notice, since nothing is sent.
-    // The notice stays short; Settings → Privacy lists everything that is shared.
+    // Detailed AI traces are opt-in as of notice version 3: nothing beyond basic
+    // app health events leaves the device until the user turns sharing on. Users
+    // who already declined are not asked again; anyone else gets one prompt and
+    // stays off unless they accept it (or enable the switch later).
     if (configData.analyticsNoticeVersion < ANALYTICS_NOTICE_VERSION) {
-      const enabled =
-        configData.analyticsNoticeVersion < 1 || configData.detailedAnalytics !== "disabled";
-      detailedAnalyticsEnabledRef.current = enabled;
-      setDetailedAnalyticsEnabledState(enabled);
-      setDetailedAnalyticsCollection(enabled);
-      if (enabled) {
-        toast("BloxMind shares AI usage data", {
-          id: "analytics-optout-notice",
+      const alreadyDeclined = configData.detailedAnalytics === "disabled";
+      detailedAnalyticsEnabledRef.current = false;
+      setDetailedAnalyticsEnabledState(false);
+      setDetailedAnalyticsCollection(false);
+      if (!alreadyDeclined) {
+        toast("Share AI usage data?", {
+          id: "analytics-optin-notice",
           className: "analytics-consent-toast",
           description:
-            "Your chats and tool activity help improve BloxMind. Details in Settings → Privacy.",
+            "Off by default. Turn on to share your prompts, AI responses and tool activity to improve BloxMind. Details in Settings → Privacy.",
           duration: Number.POSITIVE_INFINITY,
           action: {
-            label: "Got it",
-            onClick: () => {},
+            label: "Share",
+            onClick: () => setDetailedAnalyticsEnabled(true),
           },
           cancel: {
-            label: "Disable",
-            onClick: () => setDetailedAnalyticsEnabled(false),
+            label: "No thanks",
+            onClick: () => {},
           },
         });
       }
       // Persist only after the notice is on screen, so a failure to show it
       // leaves the version behind and the notice fires again next launch.
       patchConfig({
-        detailedAnalytics: enabled ? "enabled" : "disabled",
+        detailedAnalytics: "disabled",
         analyticsNoticeVersion: ANALYTICS_NOTICE_VERSION,
       }).catch(() => {});
       return;
     }
 
-    const detailedEnabled = configData.detailedAnalytics !== "disabled";
+    const detailedEnabled = configData.detailedAnalytics === "enabled";
     detailedAnalyticsEnabledRef.current = detailedEnabled;
     setDetailedAnalyticsEnabledState(detailedEnabled);
     setDetailedAnalyticsCollection(detailedEnabled);
