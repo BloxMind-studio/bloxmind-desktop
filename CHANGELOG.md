@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-11-08
+
 ### Fixed
 
 - Engine downloads survive a bad connection. A download stops only after a minute with no data and carries on from where it stopped, even after BloxMind restarts, so a slow or cut-off connection no longer starts over.
@@ -417,7 +419,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - OpenCode downloads are restricted to official GitHub release assets and verified with SHA-256 digests before installation and on every cache reuse.
 - Electron runs with context isolation, renderer sandboxing, Node.js integration disabled, validated IPC payloads, and external navigation blocked.
 
-[Unreleased]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.14.2...HEAD
+[Unreleased]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.15.0...v0.16.0
+[0.15.0]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.14.4...v0.15.0
+[0.14.4]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.14.3...v0.14.4
+[0.14.3]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.14.2...v0.14.3
 [0.14.2]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.14.1...v0.14.2
 [0.14.1]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.13.8...v0.14.0
