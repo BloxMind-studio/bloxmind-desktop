@@ -173,8 +173,8 @@ describe("Studio MCP broker", () => {
   });
 
   it("creates the workspace directory before spawning the upstream (#76)", async () => {
-    const tmp = await mkdtemp(join(tmpdir(), "bloxbot-test-"));
-    const workspace = join(tmp, "nested", "BloxBot");
+    const tmp = await mkdtemp(join(tmpdir(), "bloxmind-test-"));
+    const workspace = join(tmp, "nested", "BloxMind");
     try {
       const layer = makeStudioMcpBrokerLayer({ workspace, platform: "linux" });
       await Effect.runPromise(Effect.scoped(Layer.build(layer)));
@@ -185,8 +185,8 @@ describe("Studio MCP broker", () => {
   });
 
   it("moves a file named like the workspace aside and creates the folder", async () => {
-    const tmp = await mkdtemp(join(tmpdir(), "bloxbot-test-"));
-    const workspace = join(tmp, "BloxBot");
+    const tmp = await mkdtemp(join(tmpdir(), "bloxmind-test-"));
+    const workspace = join(tmp, "BloxMind");
     try {
       await writeFile(workspace, "not a folder");
       const layer = makeStudioMcpBrokerLayer({ workspace, platform: "linux" });
@@ -194,7 +194,7 @@ describe("Studio MCP broker", () => {
         Effect.scoped(Layer.build(layer)).pipe(Logger.withMinimumLogLevel(LogLevel.None)),
       );
       expect((await stat(workspace)).isDirectory()).toBe(true);
-      const backups = (await readdir(tmp)).filter((name) => name.startsWith("BloxBot.bak-"));
+      const backups = (await readdir(tmp)).filter((name) => name.startsWith("BloxMind.bak-"));
       expect(backups).toHaveLength(1);
       expect(await readFile(join(tmp, backups[0] ?? ""), "utf8")).toBe("not a folder");
     } finally {
@@ -308,7 +308,7 @@ describe("Studio MCP startup (#106)", () => {
   });
 
   it("says to open or update Studio, once and without retrying, when StudioMCP.exe is missing", async () => {
-    const tmp = await mkdtemp(join(tmpdir(), "bloxbot-test-"));
+    const tmp = await mkdtemp(join(tmpdir(), "bloxmind-test-"));
     const onStartFailure = vi.fn();
     // Studio has set up MCP, but the version its mcp.bat names is gone and there's no other.
     const local = "C:\\Users\\Jane Doe\\AppData\\Local";
@@ -320,7 +320,7 @@ describe("Studio MCP startup (#106)", () => {
           Effect.gen(function* () {
             const context = yield* Layer.build(
               makeStudioMcpBrokerLayer({
-                workspace: join(tmp, "BloxBot"),
+                workspace: join(tmp, "BloxMind"),
                 platform: "win32",
                 localAppData: local,
                 helperProbe: {
@@ -383,7 +383,7 @@ describe("Studio MCP startup (#106)", () => {
   });
 
   it("keeps the app usable and reports Studio isn't installed when the helper is missing", async () => {
-    const tmp = await mkdtemp(join(tmpdir(), "bloxbot-test-"));
+    const tmp = await mkdtemp(join(tmpdir(), "bloxmind-test-"));
     const onStartFailure = vi.fn();
     try {
       const status = await Effect.runPromise(
@@ -391,7 +391,7 @@ describe("Studio MCP startup (#106)", () => {
           Effect.gen(function* () {
             const context = yield* Layer.build(
               makeStudioMcpBrokerLayer({
-                workspace: join(tmp, "BloxBot"),
+                workspace: join(tmp, "BloxMind"),
                 // No Roblox\mcp.bat under this LOCALAPPDATA, as on a PC without Studio.
                 platform: "win32",
                 localAppData: tmp,

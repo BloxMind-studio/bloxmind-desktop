@@ -1,8 +1,8 @@
-name: BloxBot programs
+name: BloxMind programs
 
-# Signs bloxbot-programs/manifest.json and publishes it to the rolling
-# `bloxbot-programs` prerelease, where BloxBot downloads it (see
-# electron/services/BloxBotProgramStore.ts). A prerelease is never the
+# Signs bloxmind-programs/manifest.json and publishes it to the rolling
+# `bloxmind-programs` prerelease, where BloxMind downloads it (see
+# electron/services/BloxMindProgramStore.ts). A prerelease is never the
 # repository's "latest" release, so electron-updater never mistakes it for an
 # app update.
 
@@ -10,14 +10,14 @@ on:
   push:
     branches: [main]
     paths:
-      - "bloxbot-programs/**"
+      - "bloxmind-programs/**"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: bloxbot-programs
+  group: bloxmind-programs
   cancel-in-progress: false
 
 jobs:
@@ -31,7 +31,7 @@ jobs:
       - name: Require the default branch
         if: ${{ github.ref != 'refs/heads/main' }}
         run: |
-          echo "BloxBot programs are only published from main, not ${GITHUB_REF}."
+          echo "BloxMind programs are only published from main, not ${GITHUB_REF}."
           exit 1
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -50,18 +50,18 @@ jobs:
 
       - name: Sign the manifest
         env:
-          BLOXBOT_PROGRAMS_SIGNING_KEY: ${{ secrets.BLOXBOT_PROGRAMS_SIGNING_KEY }}
-        run: pnpm bloxbot-programs sign signed
+          BLOXMIND_PROGRAMS_SIGNING_KEY: ${{ secrets.BLOXMIND_PROGRAMS_SIGNING_KEY }}
+        run: pnpm bloxmind-programs sign signed
 
-      - name: Publish to the bloxbot-programs prerelease
+      - name: Publish to the bloxmind-programs prerelease
         run: |
           if [ ! -f signed/manifest.json ]; then
             echo "Nothing new to publish."
             exit 0
           fi
-          if ! gh release view bloxbot-programs >/dev/null 2>&1; then
-            gh release create bloxbot-programs --prerelease --latest=false \
-              --title "BloxBot programs" \
-              --notes "Signed BloxBot programs that BloxBot downloads. Published automatically from bloxbot-programs/ on main; not an app release."
+          if ! gh release view bloxmind-programs >/dev/null 2>&1; then
+            gh release create bloxmind-programs --prerelease --latest=false \
+              --title "BloxMind programs" \
+              --notes "Signed BloxMind programs that BloxMind downloads. Published automatically from bloxmind-programs/ on main; not an app release."
           fi
-          gh release upload bloxbot-programs signed/manifest.json signed/manifest.json.sig --clobber
+          gh release upload bloxmind-programs signed/manifest.json signed/manifest.json.sig --clobber

@@ -4,32 +4,32 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  BLOXBOT_PROGRAM_NAMES,
-  type BloxBotProgramManifest,
-  type BloxBotProgramName,
-  buildBloxBotProgramManifest,
-  isBloxBotProgramContract,
-  isBloxBotProgramToolAllowed,
-  knownBloxBotProgramTools,
-  serializeBloxBotProgramManifest,
-  usableBloxBotPrograms,
-} from "@/lib/bloxbotProgramManifest";
-import { signBloxBotProgramManifest } from "../../electron/bloxbotProgramSignature";
-import { createBloxBotProgramStore } from "../../electron/services/BloxBotProgramStore";
+  BLOXMIND_PROGRAM_NAMES,
+  type BloxMindProgramManifest,
+  type BloxMindProgramName,
+  buildBloxMindProgramManifest,
+  isBloxMindProgramContract,
+  isBloxMindProgramToolAllowed,
+  knownBloxMindProgramTools,
+  serializeBloxMindProgramManifest,
+  usableBloxMindPrograms,
+} from "@/lib/bloxmindProgramManifest";
+import { signBloxMindProgramManifest } from "../../electron/bloxmindProgramSignature";
+import { createBloxMindProgramStore } from "../../electron/services/BloxMindProgramStore";
 import {
   expectedManifest,
   readProgramFile,
   validated,
-} from "../../scripts/bloxbot-programs/manifestFiles";
+} from "../../scripts/bloxmind-programs/manifestFiles";
 
-const getBloxBotPrograms = vi.hoisted(() => vi.fn());
-vi.mock("@/lib/desktop", () => ({ desktop: { getBloxBotPrograms } }));
+const getBloxMindPrograms = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/desktop", () => ({ desktop: { getBloxMindPrograms } }));
 
 function sources(body = "async function run() { return {}; }") {
   return {
     lib: "function helper() {}",
-    programs: Object.fromEntries(BLOXBOT_PROGRAM_NAMES.map((name) => [name, body])) as Record<
-      BloxBotProgramName,
+    programs: Object.fromEntries(BLOXMIND_PROGRAM_NAMES.map((name) => [name, body])) as Record<
+      BloxMindProgramName,
       string
     >,
   };
@@ -45,7 +45,7 @@ function keys() {
 
 describe("studio program manifest", () => {
   it("prepends the shared helpers and pins each program's contract", () => {
-    const manifest = buildBloxBotProgramManifest(sources(), 3);
+    const manifest = buildBloxMindProgramManifest(sources(), 3);
 
     expect(manifest.sequence).toBe(3);
     expect(manifest.programs["explorer-snapshot"]?.source).toBe(
@@ -60,16 +60,16 @@ describe("studio program manifest", () => {
     // Under the 100,000-character envelope limit alone, over it with the helpers.
     const nearLimit = `async function run() { return "${"x".repeat(99_950)}"; }`;
 
-    expect(() => validated(buildBloxBotProgramManifest(sources(nearLimit), 1))).toThrow(
+    expect(() => validated(buildBloxMindProgramManifest(sources(nearLimit), 1))).toThrow(
       "would be rejected by the app",
     );
   });
 
   it("only uses published programs whose contract this app understands", () => {
-    const manifest = buildBloxBotProgramManifest(sources(), 2);
+    const manifest = buildBloxMindProgramManifest(sources(), 2);
     const discovery = manifest.programs["studio-target-discovery"];
     if (!discovery) throw new Error("missing discovery");
-    const altered: BloxBotProgramManifest = {
+    const altered: BloxMindProgramManifest = {
       ...manifest,
       programs: {
         ...manifest.programs,
@@ -80,7 +80,7 @@ describe("studio program manifest", () => {
       },
     };
 
-    const usable = usableBloxBotPrograms(altered);
+    const usable = usableBloxMindPrograms(altered);
 
     expect(Object.keys(usable).sort()).toEqual(["explorer-snapshot", "studio-target-selection"]);
   });
@@ -88,57 +88,57 @@ describe("studio program manifest", () => {
   it("lets programs use their known tools and any tool Studio marks read-only", () => {
     // Annotations as Roblox Studio's MCP reports them (2026-09-28).
     const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
-    expect(isBloxBotProgramToolAllowed("explorer-snapshot", "search_game_tree")).toBe(true);
-    expect(isBloxBotProgramToolAllowed("explorer-snapshot", "renamed_tree_tool", readOnly)).toBe(
+    expect(isBloxMindProgramToolAllowed("explorer-snapshot", "search_game_tree")).toBe(true);
+    expect(isBloxMindProgramToolAllowed("explorer-snapshot", "renamed_tree_tool", readOnly)).toBe(
       true,
     );
     expect(
-      isBloxBotProgramToolAllowed("explorer-snapshot", "execute_luau", {
+      isBloxMindProgramToolAllowed("explorer-snapshot", "execute_luau", {
         readOnlyHint: false,
         destructiveHint: true,
         openWorldHint: true,
       }),
     ).toBe(false);
     expect(
-      isBloxBotProgramToolAllowed("explorer-snapshot", "http_get", {
+      isBloxMindProgramToolAllowed("explorer-snapshot", "http_get", {
         ...readOnly,
         openWorldHint: true,
       }),
     ).toBe(false);
-    expect(isBloxBotProgramToolAllowed("explorer-snapshot", "unlabelled_tool")).toBe(false);
+    expect(isBloxMindProgramToolAllowed("explorer-snapshot", "unlabelled_tool")).toBe(false);
     // MCP treats a missing openWorldHint as open-world, so it doesn't count as read-only.
     expect(
-      isBloxBotProgramToolAllowed("explorer-snapshot", "maybe_network", { readOnlyHint: true }),
+      isBloxMindProgramToolAllowed("explorer-snapshot", "maybe_network", { readOnlyHint: true }),
     ).toBe(false);
-    expect(isBloxBotProgramToolAllowed("something-else", "list_roblox_studios", readOnly)).toBe(
+    expect(isBloxMindProgramToolAllowed("something-else", "list_roblox_studios", readOnly)).toBe(
       false,
     );
   });
 
   it("lets the project index program read the place tree and scripts", () => {
-    expect(isBloxBotProgramToolAllowed("project-index", "search_game_tree")).toBe(true);
-    expect(isBloxBotProgramToolAllowed("project-index", "script_read")).toBe(true);
+    expect(isBloxMindProgramToolAllowed("project-index", "search_game_tree")).toBe(true);
+    expect(isBloxMindProgramToolAllowed("project-index", "script_read")).toBe(true);
     // Still read-only: it may not mutate the place or reach the network.
     expect(
-      isBloxBotProgramToolAllowed("project-index", "execute_luau", {
+      isBloxMindProgramToolAllowed("project-index", "execute_luau", {
         readOnlyHint: false,
         destructiveHint: true,
         openWorldHint: true,
       }),
     ).toBe(false);
     expect(
-      isBloxBotProgramToolAllowed("project-index", "http_get", {
+      isBloxMindProgramToolAllowed("project-index", "http_get", {
         readOnlyHint: true,
         openWorldHint: true,
       }),
     ).toBe(false);
-    expect(isBloxBotProgramContract("project-index")).toBe(true);
-    expect(knownBloxBotProgramTools("project-index")).toEqual(["search_game_tree", "script_read"]);
+    expect(isBloxMindProgramContract("project-index")).toBe(true);
+    expect(knownBloxMindProgramTools("project-index")).toEqual(["search_game_tree", "script_read"]);
   });
 
-  it("ships a manifest.json that matches bloxbot-programs/ (run `pnpm bloxbot-programs build`)", async () => {
-    // The same check as `pnpm bloxbot-programs check`, including the sequence bump.
-    expect(serializeBloxBotProgramManifest(await expectedManifest())).toBe(
+  it("ships a manifest.json that matches bloxmind-programs/ (run `pnpm bloxmind-programs build`)", async () => {
+    // The same check as `pnpm bloxmind-programs check`, including the sequence bump.
+    expect(serializeBloxMindProgramManifest(await expectedManifest())).toBe(
       await readProgramFile("manifest.json"),
     );
   });
@@ -147,24 +147,24 @@ describe("studio program manifest", () => {
 describe("studio program store", () => {
   const { publicKey, privateKey } = keys();
 
-  function published(manifest: BloxBotProgramManifest, signWith = privateKey) {
-    const raw = serializeBloxBotProgramManifest(manifest);
-    const signature = signBloxBotProgramManifest(raw, signWith);
+  function published(manifest: BloxMindProgramManifest, signWith = privateKey) {
+    const raw = serializeBloxMindProgramManifest(manifest);
+    const signature = signBloxMindProgramManifest(raw, signWith);
     return vi.fn(
       async (url: string) => new Response(url.endsWith(".sig") ? signature : raw, { status: 200 }),
     ) as unknown as typeof fetch;
   }
 
   async function store(fetchImpl: typeof fetch, directory?: string) {
-    const dir = directory ?? (await mkdtemp(join(tmpdir(), "bloxbot-programs-")));
+    const dir = directory ?? (await mkdtemp(join(tmpdir(), "bloxmind-programs-")));
     return {
       dir,
-      store: createBloxBotProgramStore({ directory: dir, fetch: fetchImpl, publicKey }),
+      store: createBloxMindProgramStore({ directory: dir, fetch: fetchImpl, publicKey }),
     };
   }
 
   it("keeps a validly signed manifest and reloads it from the cache", async () => {
-    const manifest = buildBloxBotProgramManifest(sources(), 5);
+    const manifest = buildBloxMindProgramManifest(sources(), 5);
     const first = await store(published(manifest));
 
     expect(await first.store.refresh()).toBe("updated");
@@ -178,7 +178,7 @@ describe("studio program store", () => {
   it("rejects a manifest signed with any other key", async () => {
     const other = keys();
     const { store: rejecting } = await store(
-      published(buildBloxBotProgramManifest(sources(), 5), other.privateKey),
+      published(buildBloxMindProgramManifest(sources(), 5), other.privateKey),
     );
 
     expect(await rejecting.refresh()).toBe("rejected");
@@ -186,11 +186,13 @@ describe("studio program store", () => {
   });
 
   it("never goes back to an older sequence, even when it is signed", async () => {
-    const { dir, store: newer } = await store(published(buildBloxBotProgramManifest(sources(), 7)));
+    const { dir, store: newer } = await store(
+      published(buildBloxMindProgramManifest(sources(), 7)),
+    );
     await newer.refresh();
 
     const { store: older } = await store(
-      published(buildBloxBotProgramManifest(sources("async function run() { return 1; }"), 6)),
+      published(buildBloxMindProgramManifest(sources("async function run() { return 1; }"), 6)),
       dir,
     );
     await older.load();
@@ -200,13 +202,15 @@ describe("studio program store", () => {
   });
 
   it("ignores a cached manifest that was changed on disk", async () => {
-    const { dir, store: first } = await store(published(buildBloxBotProgramManifest(sources(), 4)));
+    const { dir, store: first } = await store(
+      published(buildBloxMindProgramManifest(sources(), 4)),
+    );
     await first.refresh();
     const path = join(dir, "cache.json");
     await writeFile(path, (await readFile(path, "utf8")).replace("return {}", "return evil()"));
 
     const { store: reloaded } = await store(
-      published(buildBloxBotProgramManifest(sources(), 4)),
+      published(buildBloxMindProgramManifest(sources(), 4)),
       dir,
     );
     await reloaded.load();
@@ -215,10 +219,10 @@ describe("studio program store", () => {
   });
 
   it("reports a failed cache write instead of throwing", async () => {
-    const blocked = join(await mkdtemp(join(tmpdir(), "bloxbot-programs-")), "file");
+    const blocked = join(await mkdtemp(join(tmpdir(), "bloxmind-programs-")), "file");
     await writeFile(blocked, "not a directory");
     const { store: unwritable } = await store(
-      published(buildBloxBotProgramManifest(sources(), 5)),
+      published(buildBloxMindProgramManifest(sources(), 5)),
       join(blocked, "cache"),
     );
 
@@ -227,7 +231,7 @@ describe("studio program store", () => {
   });
 
   it("runs one refresh at a time and lets a concurrent refresh join it (#118)", async () => {
-    const fetchImpl = published(buildBloxBotProgramManifest(sources(), 5));
+    const fetchImpl = published(buildBloxMindProgramManifest(sources(), 5));
     const { dir, store: shared } = await store(fetchImpl);
 
     const results = await Promise.all([shared.refresh(), shared.refresh(), shared.refresh()]);
@@ -242,13 +246,13 @@ describe("studio program store", () => {
   });
 
   it("lets separate stores write the same cache at once without a rename race (#118)", async () => {
-    const manifest = buildBloxBotProgramManifest(sources(), 5);
+    const manifest = buildBloxMindProgramManifest(sources(), 5);
     const { dir } = await store(published(manifest));
     const writers = await Promise.all(
       Array.from({ length: 5 }, () => store(published(manifest), dir)),
     );
     const onError = vi.fn();
-    const reporting = createBloxBotProgramStore({
+    const reporting = createBloxMindProgramStore({
       directory: dir,
       fetch: published(manifest),
       publicKey,
@@ -277,25 +281,28 @@ describe("studio program store", () => {
   });
 });
 
-describe("resolveBloxBotPrograms", () => {
+describe("resolveBloxMindPrograms", () => {
   beforeEach(() => {
     vi.resetModules();
-    getBloxBotPrograms.mockReset();
+    getBloxMindPrograms.mockReset();
   });
 
   async function resolve() {
-    const { resolveBloxBotPrograms } = await import("@/lib/bloxbotPrograms");
-    const { BUILTIN_BLOXBOT_PROGRAM_MANIFEST } = await import("@/lib/builtinBloxBotPrograms");
-    return { resolved: await resolveBloxBotPrograms(), builtin: BUILTIN_BLOXBOT_PROGRAM_MANIFEST };
+    const { resolveBloxMindPrograms } = await import("@/lib/bloxmindPrograms");
+    const { BUILTIN_BLOXMIND_PROGRAM_MANIFEST } = await import("@/lib/builtinBloxMindPrograms");
+    return {
+      resolved: await resolveBloxMindPrograms(),
+      builtin: BUILTIN_BLOXMIND_PROGRAM_MANIFEST,
+    };
   }
 
   it("uses published programs that are newer than the built-in ones", async () => {
-    const { BUILTIN_BLOXBOT_PROGRAM_MANIFEST } = await import("@/lib/builtinBloxBotPrograms");
-    const newer = buildBloxBotProgramManifest(
+    const { BUILTIN_BLOXMIND_PROGRAM_MANIFEST } = await import("@/lib/builtinBloxMindPrograms");
+    const newer = buildBloxMindProgramManifest(
       sources("async function run() { return { roots: [] }; }"),
-      BUILTIN_BLOXBOT_PROGRAM_MANIFEST.sequence + 1,
+      BUILTIN_BLOXMIND_PROGRAM_MANIFEST.sequence + 1,
     );
-    getBloxBotPrograms.mockResolvedValue(newer);
+    getBloxMindPrograms.mockResolvedValue(newer);
 
     const { resolved } = await resolve();
 
@@ -305,25 +312,25 @@ describe("resolveBloxBotPrograms", () => {
   });
 
   it("keeps the built-in programs when the published copy isn't newer or can't be read", async () => {
-    const { BUILTIN_BLOXBOT_PROGRAM_MANIFEST } = await import("@/lib/builtinBloxBotPrograms");
-    getBloxBotPrograms.mockResolvedValue(
-      buildBloxBotProgramManifest(sources(), BUILTIN_BLOXBOT_PROGRAM_MANIFEST.sequence),
+    const { BUILTIN_BLOXMIND_PROGRAM_MANIFEST } = await import("@/lib/builtinBloxMindPrograms");
+    getBloxMindPrograms.mockResolvedValue(
+      buildBloxMindProgramManifest(sources(), BUILTIN_BLOXMIND_PROGRAM_MANIFEST.sequence),
     );
     expect((await resolve()).resolved.explorer.source).toBe("builtin");
 
-    getBloxBotPrograms.mockRejectedValue(new Error("bridge unavailable"));
+    getBloxMindPrograms.mockRejectedValue(new Error("bridge unavailable"));
     expect((await resolve()).resolved.explorer.source).toBe("builtin");
   });
 
   it("falls back to the built-in program when a published one doesn't fit the app's schema", async () => {
-    const { BUILTIN_BLOXBOT_PROGRAM_MANIFEST } = await import("@/lib/builtinBloxBotPrograms");
-    const newer = buildBloxBotProgramManifest(
+    const { BUILTIN_BLOXMIND_PROGRAM_MANIFEST } = await import("@/lib/builtinBloxMindPrograms");
+    const newer = buildBloxMindProgramManifest(
       sources(),
-      BUILTIN_BLOXBOT_PROGRAM_MANIFEST.sequence + 1,
+      BUILTIN_BLOXMIND_PROGRAM_MANIFEST.sequence + 1,
     );
     const explorer = newer.programs["explorer-snapshot"];
     if (!explorer) throw new Error("missing explorer");
-    getBloxBotPrograms.mockResolvedValue({
+    getBloxMindPrograms.mockResolvedValue({
       ...newer,
       programs: {
         ...newer.programs,
@@ -338,14 +345,14 @@ describe("resolveBloxBotPrograms", () => {
   });
 
   it("records each program's own origin when only some published programs are usable", async () => {
-    const { BUILTIN_BLOXBOT_PROGRAM_MANIFEST } = await import("@/lib/builtinBloxBotPrograms");
-    const newer = buildBloxBotProgramManifest(
+    const { BUILTIN_BLOXMIND_PROGRAM_MANIFEST } = await import("@/lib/builtinBloxMindPrograms");
+    const newer = buildBloxMindProgramManifest(
       sources(),
-      BUILTIN_BLOXBOT_PROGRAM_MANIFEST.sequence + 1,
+      BUILTIN_BLOXMIND_PROGRAM_MANIFEST.sequence + 1,
     );
     const explorer = newer.programs["explorer-snapshot"];
     if (!explorer) throw new Error("missing explorer");
-    getBloxBotPrograms.mockResolvedValue({
+    getBloxMindPrograms.mockResolvedValue({
       ...newer,
       programs: {
         ...newer.programs,

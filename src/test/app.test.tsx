@@ -302,7 +302,7 @@ describe("User journeys", () => {
     await waitFor(() =>
       expect(desktop.loadConfig()).resolves.toMatchObject({ analyticsNoticeVersion: 2 }),
     );
-    expect(screen.queryByText("BloxBot shares AI usage data")).not.toBeInTheDocument();
+    expect(screen.queryByText("BloxMind shares AI usage data")).not.toBeInTheDocument();
     await expect(desktop.loadConfig()).resolves.toMatchObject({
       detailedAnalytics: "disabled",
       analyticsNoticeVersion: 2,
@@ -318,7 +318,7 @@ describe("User journeys", () => {
 
     fireEvent.click(await screen.findByText("Settings"));
     fireEvent.click(await screen.findByRole("button", { name: "Privacy" }));
-    expect(screen.queryByText("BloxBot shares AI usage data")).not.toBeInTheDocument();
+    expect(screen.queryByText("BloxMind shares AI usage data")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Privacy Policy" })).toHaveAttribute(
       "href",
       "https://bloxmindai.netlify.app/",

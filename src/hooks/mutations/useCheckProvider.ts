@@ -48,7 +48,7 @@ export function useCheckProvider() {
 
       const created = await client.session.create(
         {
-          title: "BloxBot connection check",
+          title: "BloxMind connection check",
           metadata: { BloxMindHidden: true, purpose: "provider-check" },
           permission: ASK_ALL_PERMISSIONS,
         },

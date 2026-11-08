@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import type { BloxBotProgramManifest } from "../lib/bloxbotProgramManifest";
+import type { BloxMindProgramManifest } from "../lib/bloxmindProgramManifest";
 import type { ExplorerProgramEnvelope, ExplorerSnapshot } from "../lib/explorer";
 import type { ProjectIndexProgramEnvelope, ProjectSkeleton } from "../lib/projectIndex";
 import { DEFAULT_VERIFICATION_LEVEL, VerificationLevelSchema } from "../lib/verification";
@@ -171,7 +171,7 @@ export const UpdateInfoSchema = Schema.mutable(
 export type UpdateInfo = typeof UpdateInfoSchema.Type;
 
 /**
- * Whether BloxBot could start Roblox Studio's MCP helper. `not_installed` means the helper
+ * Whether BloxMind could start Roblox Studio's MCP helper. `not_installed` means the helper
  * isn't on this computer, `unavailable` means it started but closed before it connected.
  */
 export const StudioMcpStatusSchema = Schema.Struct({
@@ -224,10 +224,10 @@ export interface DesktopApi {
     programs: StudioTargetPrograms,
     targetKey: string,
   ): Promise<StudioTargetSelection>;
-  /** The newest verified published BloxBot programs, or null to use the built-in ones. */
-  getBloxBotPrograms(): Promise<BloxBotProgramManifest | null>;
-  /** Called when newer published BloxBot programs arrive; returns an unsubscribe. */
-  onBloxBotProgramsUpdated(listener: () => void): () => void;
+  /** The newest verified published BloxMind programs, or null to use the built-in ones. */
+  getBloxMindPrograms(): Promise<BloxMindProgramManifest | null>;
+  /** Called when newer published BloxMind programs arrive; returns an unsubscribe. */
+  onBloxMindProgramsUpdated(listener: () => void): () => void;
   /**
    * Receives errors from the main process so the renderer can report them. Subscribing
    * tells the main process the window is ready, which flushes errors buffered until then.

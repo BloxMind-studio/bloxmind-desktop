@@ -1,4 +1,4 @@
-﻿import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import {
   chmod,
@@ -829,7 +829,7 @@ async function lockCacheNotes(lock: string): Promise<boolean> {
     } catch (cause) {
       if (errorCode(cause) !== "EEXIST") return false;
     }
-    // A BloxBot that quit while holding the lock would otherwise block every change after it.
+    // A BloxMind that quit while holding the lock would otherwise block every change after it.
     const held = await stat(lock).then(
       ({ mtimeMs }) => Date.now() - mtimeMs,
       () => 0,
@@ -841,7 +841,7 @@ async function lockCacheNotes(lock: string): Promise<boolean> {
 }
 
 /**
- * Another running BloxBot can change the notes at the same moment, so a change reads and writes
+ * Another running BloxMind can change the notes at the same moment, so a change reads and writes
  * under a lock file, or a stale read could drop a version the other one just distrusted. The new
  * notes land through a rename, so a read without the lock never sees half a file.
  */
@@ -1130,7 +1130,7 @@ function extractWithRetry(
 
 /**
  * Windows can lock a new directory while security software scans it. `findPublished` looks for a
- * copy another running BloxBot installed in the meantime, since a rename can't replace that.
+ * copy another running BloxMind installed in the meantime, since a rename can't replace that.
  */
 function publishWithRetry(
   context: InstallContext,
@@ -1178,7 +1178,7 @@ function replaceWithRetry(
   const retryDelays = context.delays.renameRetryMs;
   const attempt = (number: number): Effect.Effect<void, OpenCodeBinaryError> =>
     Effect.gen(function* () {
-      // Another BloxBot may have put a working copy there while this one waited, and it stays.
+      // Another BloxMind may have put a working copy there while this one waited, and it stays.
       if (number > 1 && (yield* findPublished)) return;
       const result = yield* Effect.either(
         Effect.tryPromise(() => context.fileSystem.remove(versionDirectory)),
@@ -1310,7 +1310,7 @@ function installRelease(
               spec,
               release,
             );
-            // Another running BloxBot may have just installed this version, and may be using it.
+            // Another running BloxMind may have just installed this version, and may be using it.
             const published = yield* findPublished;
             if (published) return published;
 
@@ -1508,7 +1508,7 @@ export function ensureOpenCodeBinary(
     }
 
     // Newer releases come from the API. When it fails (rate limit, timeout, DNS), the pinned release
-    // keeps BloxBot working. One that has already refused to run here is passed over for the newest
+    // keeps BloxMind working. One that has already refused to run here is passed over for the newest
     // that hasn't.
     const updated = yield* Effect.either(
       findCompatibleRelease(fetchFn, spec.archiveName, notes.distrusted).pipe(

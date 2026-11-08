@@ -5,24 +5,24 @@ import { join } from "node:path";
 import { Schema } from "effect";
 
 import {
-  type BloxBotProgramManifest,
-  BloxBotProgramManifestSchema,
-} from "../../src/lib/bloxbotProgramManifest";
-import { verifyBloxBotProgramManifest } from "../bloxbotProgramSignature";
+  type BloxMindProgramManifest,
+  BloxMindProgramManifestSchema,
+} from "../../src/lib/bloxmindProgramManifest";
+import { verifyBloxMindProgramManifest } from "../bloxmindProgramSignature";
 
 // Published as prerelease assets on a rolling release, so electron-updater (which
 // follows the repository's latest release) never mistakes it for an app update.
-// Intentionally still the upstream publishing repo: the signed manifest lives
-// only there, so moving this URL requires republishing (and re-signing) the
-// programs release somewhere else first.
+// The signed manifest is published from the upstream repository, where the pinned
+// signing key belongs, so the URL stays there until BloxMind republishes and
+// re-signs the programs release itself.
 const RELEASE_URL = "https://github.com/paralov/app-bloxbot-ai/releases/download/bloxbot-programs";
-export const BLOXBOT_PROGRAMS_MANIFEST_URL = `${RELEASE_URL}/manifest.json`;
-export const BLOXBOT_PROGRAMS_SIGNATURE_URL = `${RELEASE_URL}/manifest.json.sig`;
+export const BLOXMIND_PROGRAMS_MANIFEST_URL = `${RELEASE_URL}/manifest.json`;
+export const BLOXMIND_PROGRAMS_SIGNATURE_URL = `${RELEASE_URL}/manifest.json.sig`;
 
 const FETCH_TIMEOUT_MS = 15_000;
 const MAX_DOWNLOAD_BYTES = 1_000_000;
 
-export interface BloxBotProgramStoreOptions {
+export interface BloxMindProgramStoreOptions {
   /** Where the last verified manifest and its signature are kept. */
   directory: string;
   fetch?: typeof fetch;
@@ -32,15 +32,15 @@ export interface BloxBotProgramStoreOptions {
   onError?: (error: unknown) => void;
 }
 
-export type BloxBotProgramRefresh = "updated" | "unchanged" | "rejected" | "unavailable";
+export type BloxMindProgramRefresh = "updated" | "unchanged" | "rejected" | "unavailable";
 
-export interface BloxBotProgramStore {
+export interface BloxMindProgramStore {
   /** The newest verified manifest, if any has been downloaded or cached. */
-  current(): BloxBotProgramManifest | null;
+  current(): BloxMindProgramManifest | null;
   /** Loads the cached copy; call once at startup. */
   load(): Promise<void>;
   /** Downloads the published manifest and keeps it if it verifies and isn't older. Never throws. */
-  refresh(): Promise<BloxBotProgramRefresh>;
+  refresh(): Promise<BloxMindProgramRefresh>;
 }
 
 // The manifest and its signature are cached together in one file, swapped in
@@ -65,17 +65,17 @@ async function renameReplacing(from: string, to: string): Promise<void> {
   }
 }
 
-export function createBloxBotProgramStore(options: BloxBotProgramStoreOptions): BloxBotProgramStore {
+export function createBloxMindProgramStore(options: BloxMindProgramStoreOptions): BloxMindProgramStore {
   const fetchImpl = options.fetch ?? fetch;
   const log = options.log ?? (() => {});
   const onError = options.onError ?? (() => {});
   const cachePath = join(options.directory, "cache.json");
-  let current: BloxBotProgramManifest | null = null;
+  let current: BloxMindProgramManifest | null = null;
 
-  function accept(raw: string, signature: string): BloxBotProgramManifest | null {
-    if (!verifyBloxBotProgramManifest(raw, signature, options.publicKey)) return null;
+  function accept(raw: string, signature: string): BloxMindProgramManifest | null {
+    if (!verifyBloxMindProgramManifest(raw, signature, options.publicKey)) return null;
     try {
-      return Schema.decodeUnknownSync(BloxBotProgramManifestSchema)(JSON.parse(raw));
+      return Schema.decodeUnknownSync(BloxMindProgramManifestSchema)(JSON.parse(raw));
     } catch {
       return null;
     }
@@ -124,39 +124,39 @@ export function createBloxBotProgramStore(options: BloxBotProgramStoreOptions): 
     }
   }
 
-  async function refreshOnce(): Promise<BloxBotProgramRefresh> {
+  async function refreshOnce(): Promise<BloxMindProgramRefresh> {
     try {
       const [raw, signature] = await Promise.all([
-        download(BLOXBOT_PROGRAMS_MANIFEST_URL),
-        download(BLOXBOT_PROGRAMS_SIGNATURE_URL),
+        download(BLOXMIND_PROGRAMS_MANIFEST_URL),
+        download(BLOXMIND_PROGRAMS_SIGNATURE_URL),
       ]);
       if (raw === null || signature === null) return "unavailable";
       const manifest = accept(raw, signature);
       if (!manifest) {
-        log("[bloxbot-programs] rejected a published manifest that failed verification");
-        onError(new Error("Published BloxBot programs manifest failed verification"));
+        log("[bloxmind-programs] rejected a published manifest that failed verification");
+        onError(new Error("Published BloxMind programs manifest failed verification"));
         return "rejected";
       }
       // Never go back to an older manifest, even a validly signed one.
       if (current && manifest.sequence < current.sequence) {
-        log(`[bloxbot-programs] rejected sequence ${manifest.sequence} < ${current.sequence}`);
+        log(`[bloxmind-programs] rejected sequence ${manifest.sequence} < ${current.sequence}`);
         return "rejected";
       }
       if (current && manifest.sequence === current.sequence) return "unchanged";
       await save(raw, signature);
       current = manifest;
-      log(`[bloxbot-programs] using published sequence ${manifest.sequence}`);
+      log(`[bloxmind-programs] using published sequence ${manifest.sequence}`);
       return "updated";
     } catch (error) {
       // A failed cache write (read-only or full disk) leaves the app on what it has.
-      log(`[bloxbot-programs] refresh failed: ${error instanceof Error ? error.message : error}`);
+      log(`[bloxmind-programs] refresh failed: ${error instanceof Error ? error.message : error}`);
       onError(error);
       return "unavailable";
     }
   }
 
   // Only one refresh runs at a time. A refresh asked for while one runs joins it.
-  let running: Promise<BloxBotProgramRefresh> | null = null;
+  let running: Promise<BloxMindProgramRefresh> | null = null;
 
   return {
     current: () => current,
@@ -168,7 +168,7 @@ export function createBloxBotProgramStore(options: BloxBotProgramStoreOptions): 
         );
         // Re-verify on every load, so a tampered cache is never trusted.
         current = accept(cached.manifest, cached.signature);
-        if (!current) log("[bloxbot-programs] ignoring cached manifest that failed verification");
+        if (!current) log("[bloxmind-programs] ignoring cached manifest that failed verification");
       } catch {
         current = null;
       }

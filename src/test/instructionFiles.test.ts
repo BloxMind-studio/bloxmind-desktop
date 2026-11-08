@@ -14,9 +14,9 @@ afterEach(async () => {
 
 describe("instruction files", () => {
   it("finds the global file and every project match of the first file name, like OpenCode", async () => {
-    root = await mkdtemp(join(tmpdir(), "bloxbot-instructions-"));
+    root = await mkdtemp(join(tmpdir(), "bloxmind-instructions-"));
     const home = join(root, "home");
-    const workspace = join(home, "BloxBot");
+    const workspace = join(home, "BloxMind");
     const globalConfigDirectory = join(workspace, ".opencode", "config", "opencode");
     await mkdir(join(root, ".git"), { recursive: true });
     await mkdir(globalConfigDirectory, { recursive: true });
@@ -31,12 +31,12 @@ describe("instruction files", () => {
 
     expect(files).toEqual([
       {
-        path: "~/BloxBot/.opencode/config/opencode/AGENTS.md",
+        path: "~/BloxMind/.opencode/config/opencode/AGENTS.md",
         scope: "global",
         chars: 12,
         content: "global rules",
       },
-      { path: "~/BloxBot/AGENTS.md", scope: "project", chars: 15, content: "workspace rules" },
+      { path: "~/BloxMind/AGENTS.md", scope: "project", chars: 15, content: "workspace rules" },
       { path: "~/AGENTS.md", scope: "project", chars: 10, content: "home rules" },
     ]);
   });
@@ -44,7 +44,7 @@ describe("instruction files", () => {
 
 describe("legacy managed AGENTS.md block", () => {
   it("deletes a file that holds only the generated heading and managed block", async () => {
-    root = await mkdtemp(join(tmpdir(), "bloxbot-instructions-"));
+    root = await mkdtemp(join(tmpdir(), "bloxmind-instructions-"));
     const workspace = join(root, "home", "BloxMind");
     await mkdir(workspace, { recursive: true });
     await writeFile(
@@ -57,7 +57,7 @@ describe("legacy managed AGENTS.md block", () => {
   });
 
   it("keeps user-authored content around the managed block", async () => {
-    root = await mkdtemp(join(tmpdir(), "bloxbot-instructions-"));
+    root = await mkdtemp(join(tmpdir(), "bloxmind-instructions-"));
     const workspace = join(root, "home", "BloxMind");
     await mkdir(workspace, { recursive: true });
     await writeFile(
@@ -72,7 +72,7 @@ describe("legacy managed AGENTS.md block", () => {
   });
 
   it("leaves files without the managed markers untouched", async () => {
-    root = await mkdtemp(join(tmpdir(), "bloxbot-instructions-"));
+    root = await mkdtemp(join(tmpdir(), "bloxmind-instructions-"));
     const workspace = join(root, "home", "BloxMind");
     await mkdir(workspace, { recursive: true });
     await writeFile(join(workspace, "AGENTS.md"), "# My rules\n");

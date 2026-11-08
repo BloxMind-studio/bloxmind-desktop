@@ -83,11 +83,11 @@ describe("PostHog analytics", () => {
       errorAnalyticsProperties(
         "explorer",
         "sync",
-        new TypeError("cannot open /Users/oscar/BloxBot/place.rbxl"),
+        new TypeError("cannot open /Users/oscar/BloxMind/place.rbxl"),
       ),
     ).toEqual({
       analytics_schema_version: 1,
-      error_message: "cannot open ~/BloxBot/place.rbxl",
+      error_message: "cannot open ~/BloxMind/place.rbxl",
       error_type: "TypeError",
       feature: "explorer",
       outcome: "failure",

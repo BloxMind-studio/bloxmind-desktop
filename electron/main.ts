@@ -35,7 +35,7 @@ import {
   GeneratedProgramRuntime,
   GeneratedProgramRuntimeLive,
 } from "./services/GeneratedProgramRuntime";
-import { createBloxBotProgramStore } from "./services/BloxBotProgramStore";
+import { createBloxMindProgramStore } from "./services/BloxMindProgramStore";
 import { makeStudioMcpBrokerLayer, StudioMcpBroker } from "./services/StudioMcpBroker";
 import {
   CheckpointServiceTag,
@@ -174,13 +174,13 @@ const openCodeRuntime = ManagedRuntime.make(
   ).pipe(Layer.provideMerge(studioMcpBrokerLayer)),
 );
 
-// Published BloxBot programs: downloaded, signature-checked and cached here so a
+// Published BloxMind programs: downloaded, signature-checked and cached here so a
 // Roblox Studio MCP change can be fixed without an app release.
-const BLOXBOT_PROGRAMS_REFRESH_MS = 6 * 60 * 60 * 1000;
-const bloxbotProgramStore = createBloxBotProgramStore({
-  directory: join(app.getPath("userData"), "bloxbot-programs"),
+const BLOXMIND_PROGRAMS_REFRESH_MS = 6 * 60 * 60 * 1000;
+const bloxmindProgramStore = createBloxMindProgramStore({
+  directory: join(app.getPath("userData"), "bloxmind-programs"),
   log: (message) => console.log(message),
-  onError: (error) => reportMainError("bloxbot_programs_refresh", error),
+  onError: (error) => reportMainError("bloxmind_programs_refresh", error),
 });
 
 const expectedContract = (name: string) => ({
@@ -403,7 +403,7 @@ const registerIpcHandlers = Effect.sync(() => {
       home: app.getPath("home"),
     }),
   );
-  ipcMain.handle(channels.getBloxBotPrograms, () => bloxbotProgramStore.current());
+  ipcMain.handle(channels.getBloxMindPrograms, () => bloxmindProgramStore.current());
   ipcMain.handle(channels.loadConfig, () => runMain(loadConfig));
   ipcMain.handle(channels.patchConfig, (_event, patch: unknown) => runMain(patchConfig(patch)));
   ipcMain.handle(channels.installStudioTargetPrograms, (_event, input: unknown) =>
@@ -856,18 +856,18 @@ if (!hasSingleInstanceLock) {
       );
       // The cached copy is ready before the window asks for it; the download
       // happens in the background and applies from the next time a program loads.
-      yield* Effect.promise(() => bloxbotProgramStore.load());
+      yield* Effect.promise(() => bloxmindProgramStore.load());
       yield* registerIpcHandlers;
       yield* Effect.sync(() => {
         // Tell the window when newer programs arrive, so they apply without a restart.
         const refresh = () =>
-          void bloxbotProgramStore.refresh().then((result) => {
+          void bloxmindProgramStore.refresh().then((result) => {
             if (result === "updated" && mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send(channels.bloxbotProgramsUpdated);
+              mainWindow.webContents.send(channels.bloxmindProgramsUpdated);
             }
           });
         refresh();
-        setInterval(refresh, BLOXBOT_PROGRAMS_REFRESH_MS).unref();
+        setInterval(refresh, BLOXMIND_PROGRAMS_REFRESH_MS).unref();
       });
       yield* Effect.sync(() => Menu.setApplicationMenu(null));
       yield* createWindow();

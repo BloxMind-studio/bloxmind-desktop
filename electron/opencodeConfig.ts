@@ -1,6 +1,6 @@
 import { join, win32 } from "node:path";
 
-import { STUDIO_MCP_SERVER_NAME } from "../src/lib/bloxbotProgramManifest";
+import { STUDIO_MCP_SERVER_NAME } from "../src/lib/bloxmindProgramManifest";
 import { type McpServerConfig, toEngineMcpConfig, validateMcpServer } from "../src/lib/mcpServers";
 
 export interface StudioMcpWindowsEnvironment {

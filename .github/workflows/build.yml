@@ -104,9 +104,9 @@ jobs:
             echo "::warning title=macOS signing skipped::APPLE_CERTIFICATE is not set for this repository; the macOS build will be unsigned."
             exit 0
           fi
-          keychain="$RUNNER_TEMP/bloxbot-signing.keychain-db"
+          keychain="$RUNNER_TEMP/bloxmind-signing.keychain-db"
           keychain_password="$(openssl rand -base64 32)"
-          certificate="$RUNNER_TEMP/bloxbot-signing.p12"
+          certificate="$RUNNER_TEMP/bloxmind-signing.p12"
           printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$certificate"
           security create-keychain -p "$keychain_password" "$keychain"
           security set-keychain-settings -lut 21600 "$keychain"

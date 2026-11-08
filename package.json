@@ -31,8 +31,8 @@
     "check:opencode-pin": "cross-env OPENCODE_PIN_CHECK=1 vitest run src/test/opencodePinnedRelease.test.ts",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
-    "typecheck": "tsc --noEmit && tsc -p electron/tsconfig.json --noEmit && tsc -p scripts/tsconfig.json --noEmit && tsc -p scripts/bloxbot-programs/tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
-    "bloxbot-programs": "jiti scripts/bloxbot-programs/cli.ts"
+    "typecheck": "tsc --noEmit && tsc -p electron/tsconfig.json --noEmit && tsc -p scripts/tsconfig.json --noEmit && tsc -p scripts/bloxmind-programs/tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "bloxmind-programs": "jiti scripts/bloxmind-programs/cli.ts"
   },
   "dependencies": {
     "@lexical/react": "^0.48.0",

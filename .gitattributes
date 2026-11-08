@@ -3,6 +3,6 @@
 # every file. Binary files are left alone by text=auto.
 * text=auto eol=lf
 
-# BloxBot programs are signed and compared byte for byte, so they must have the
+# BloxMind programs are signed and compared byte for byte, so they must have the
 # same line endings on every platform (Windows checkouts would otherwise use CRLF).
-bloxbot-programs/** text eol=lf
+bloxmind-programs/** text eol=lf

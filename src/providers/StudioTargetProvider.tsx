@@ -15,7 +15,7 @@ import {
   errorAnalyticsProperties,
   setStudioAnalyticsContext,
 } from "@/lib/analytics";
-import { BUILTIN_BLOXBOT_PROGRAMS, resolveBloxBotPrograms } from "@/lib/bloxbotPrograms";
+import { BUILTIN_BLOXMIND_PROGRAMS, resolveBloxMindPrograms } from "@/lib/bloxmindPrograms";
 import { desktop } from "@/lib/desktop";
 import { splitModelKey } from "@/lib/splitModelKey";
 import { generateStudioTargetPrograms } from "@/lib/studioTargetPrograms";
@@ -126,11 +126,11 @@ export function StudioTargetProvider({ children }: { children: ReactNode }) {
     }
     if (programsRef.current) return programsRef.current;
     if (!builtinInstallRef.current) {
-      // Published programs when newer than the built-in ones (see bloxbotPrograms.ts).
+      // Published programs when newer than the built-in ones (see bloxmindPrograms.ts).
       builtinInstallRef.current = (
         publishedFailedRef.current
-          ? Promise.resolve(BUILTIN_BLOXBOT_PROGRAMS)
-          : resolveBloxBotPrograms()
+          ? Promise.resolve(BUILTIN_BLOXMIND_PROGRAMS)
+          : resolveBloxMindPrograms()
       )
         .then((resolved) => {
           programsSourceRef.current = resolved.targets.source;
@@ -151,7 +151,7 @@ export function StudioTargetProvider({ children }: { children: ReactNode }) {
   // working model-written pair is kept. A new version gets a fresh chance.
   useEffect(
     () =>
-      desktop.onBloxBotProgramsUpdated(() => {
+      desktop.onBloxMindProgramsUpdated(() => {
         publishedFailedRef.current = false;
         // Applied on the next getPrograms, so an install already running
         // can't put the old programs back afterwards.

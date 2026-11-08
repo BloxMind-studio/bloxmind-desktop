@@ -2140,8 +2140,8 @@ function PrivacyDetails() {
         </div>
       )}
       <p>
-        Include your device ID when asking Paralov AS to access or delete your data at{" "}
-        <span className="select-text text-foreground">hello@paralov.com</span>. Read the{" "}
+        Include your device ID when asking BloxMind to access or delete your data at{" "}
+        <span className="select-text text-foreground">aiden00iu@gmail.com</span>. Read the{" "}
         <a
           href={PRIVACY_POLICY_URL}
           target="_blank"

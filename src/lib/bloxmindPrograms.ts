@@ -1,10 +1,10 @@
 import { Schema } from "effect";
-import { usableBloxBotPrograms } from "@/lib/bloxbotProgramManifest";
+import { usableBloxMindPrograms } from "@/lib/bloxmindProgramManifest";
 import {
-  BUILTIN_BLOXBOT_PROGRAM_MANIFEST,
+  BUILTIN_BLOXMIND_PROGRAM_MANIFEST,
   BUILTIN_EXPLORER_PROGRAM,
   BUILTIN_STUDIO_TARGET_PROGRAMS,
-} from "@/lib/builtinBloxBotPrograms";
+} from "@/lib/builtinBloxMindPrograms";
 import { desktop } from "@/lib/desktop";
 import { type ExplorerProgramEnvelope, ExplorerProgramEnvelopeSchema } from "@/lib/explorer";
 import {
@@ -13,22 +13,22 @@ import {
 } from "@/types/studioTarget";
 
 /** Where a program came from, recorded in analytics so broken ones are traceable. */
-export interface BloxBotProgramOrigin {
+export interface BloxMindProgramOrigin {
   source: "published" | "builtin";
   sequence: number;
 }
 
-export interface ResolvedBloxBotPrograms {
-  explorer: BloxBotProgramOrigin & { program: ExplorerProgramEnvelope };
-  targets: BloxBotProgramOrigin & { programs: StudioTargetProgramEnvelopes };
+export interface ResolvedBloxMindPrograms {
+  explorer: BloxMindProgramOrigin & { program: ExplorerProgramEnvelope };
+  targets: BloxMindProgramOrigin & { programs: StudioTargetProgramEnvelopes };
 }
 
-const BUILTIN_ORIGIN: BloxBotProgramOrigin = {
+const BUILTIN_ORIGIN: BloxMindProgramOrigin = {
   source: "builtin",
-  sequence: BUILTIN_BLOXBOT_PROGRAM_MANIFEST.sequence,
+  sequence: BUILTIN_BLOXMIND_PROGRAM_MANIFEST.sequence,
 };
 
-export const BUILTIN_BLOXBOT_PROGRAMS: ResolvedBloxBotPrograms = {
+export const BUILTIN_BLOXMIND_PROGRAMS: ResolvedBloxMindPrograms = {
   explorer: { ...BUILTIN_ORIGIN, program: BUILTIN_EXPLORER_PROGRAM },
   targets: { ...BUILTIN_ORIGIN, programs: BUILTIN_STUDIO_TARGET_PROGRAMS },
 };
@@ -44,21 +44,21 @@ function decodeOrNull<A, I>(schema: Schema.Schema<A, I>, value: unknown): A | nu
 }
 
 /**
- * The BloxBot programs to run: a published copy when it is newer than the one
+ * The BloxMind programs to run: a published copy when it is newer than the one
  * this app shipped with, program by program, falling back to the built-in
  * programs for anything missing or written for a different contract.
  */
-export async function resolveBloxBotPrograms(): Promise<ResolvedBloxBotPrograms> {
-  let published: Awaited<ReturnType<typeof desktop.getBloxBotPrograms>> = null;
+export async function resolveBloxMindPrograms(): Promise<ResolvedBloxMindPrograms> {
+  let published: Awaited<ReturnType<typeof desktop.getBloxMindPrograms>> = null;
   try {
-    published = await desktop.getBloxBotPrograms();
+    published = await desktop.getBloxMindPrograms();
   } catch {
     // Anything wrong with the published copy just means the built-in programs.
   }
-  if (!published || published.sequence <= BUILTIN_ORIGIN.sequence) return BUILTIN_BLOXBOT_PROGRAMS;
+  if (!published || published.sequence <= BUILTIN_ORIGIN.sequence) return BUILTIN_BLOXMIND_PROGRAMS;
 
-  const origin: BloxBotProgramOrigin = { source: "published", sequence: published.sequence };
-  const usable = usableBloxBotPrograms(published);
+  const origin: BloxMindProgramOrigin = { source: "published", sequence: published.sequence };
+  const usable = usableBloxMindPrograms(published);
   const explorer = decodeOrNull(ExplorerProgramEnvelopeSchema, usable["explorer-snapshot"]);
   // Discovery and selection work as a pair, so they come from one place.
   const targets =
@@ -69,7 +69,7 @@ export async function resolveBloxBotPrograms(): Promise<ResolvedBloxBotPrograms>
         })
       : null;
   return {
-    explorer: explorer ? { ...origin, program: explorer } : BUILTIN_BLOXBOT_PROGRAMS.explorer,
-    targets: targets ? { ...origin, programs: targets } : BUILTIN_BLOXBOT_PROGRAMS.targets,
+    explorer: explorer ? { ...origin, program: explorer } : BUILTIN_BLOXMIND_PROGRAMS.explorer,
+    targets: targets ? { ...origin, programs: targets } : BUILTIN_BLOXMIND_PROGRAMS.targets,
   };
 }

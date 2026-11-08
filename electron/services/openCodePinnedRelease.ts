@@ -1,11 +1,11 @@
 /**
- * The known-good OpenCode release BloxBot installs when there is no cached copy and
+ * The known-good OpenCode release BloxMind installs when there is no cached copy and
  * GitHub's release API can't be reached (for example when it rate-limits a shared IP).
  * It downloads straight from github.com/.../releases/download/..., which the API limit
  * does not cover, and is verified against the SHA-256 below.
  *
  * To bump it:
- * 1. Pick a stable 1.x.x release that BloxBot has run with.
+ * 1. Pick a stable 1.x.x release that BloxMind has run with.
  * 2. Copy each asset's `digest` (without the `sha256:` prefix) from
  *    `gh api repos/anomalyco/opencode/releases/tags/<tag>`.
  * 3. Run `pnpm check:opencode-pin` to confirm the hashes match GitHub's published digests.
@@ -19,7 +19,7 @@ export interface PinnedOpenCodeAsset {
 
 export interface PinnedOpenCodeRelease {
   readonly version: string;
-  /** Keyed by `${platform}-${arch}`, one entry per platform BloxBot supports. */
+  /** Keyed by `${platform}-${arch}`, one entry per platform BloxMind supports. */
   readonly assets: Readonly<Record<string, PinnedOpenCodeAsset>>;
 }
 

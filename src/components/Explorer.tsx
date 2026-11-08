@@ -26,8 +26,8 @@ import {
   errorAnalyticsProperties,
   explorerAnalyticsProperties,
 } from "@/lib/analytics";
-import { BLOXBOT_PROGRAM_TOOLS } from "@/lib/bloxbotProgramManifest";
-import { BUILTIN_BLOXBOT_PROGRAMS, resolveBloxBotPrograms } from "@/lib/bloxbotPrograms";
+import { BLOXMIND_PROGRAM_TOOLS } from "@/lib/bloxmindProgramManifest";
+import { BUILTIN_BLOXMIND_PROGRAMS, resolveBloxMindPrograms } from "@/lib/bloxmindPrograms";
 import { desktop } from "@/lib/desktop";
 import {
   createExplorerReference,
@@ -352,7 +352,7 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
             // known ones are still allowed.
             const allowedTools = await desktop
               .listExplorerProgramTools()
-              .catch(() => BLOXBOT_PROGRAM_TOOLS["explorer-snapshot"]);
+              .catch(() => BLOXMIND_PROGRAM_TOOLS["explorer-snapshot"]);
             const written = await generateExplorerProgram(activeClient, {
               model,
               agent: selectedAgent,
@@ -363,7 +363,7 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
             generated = { program: written.program, ...written.result, origin };
           } else {
             const { explorer } =
-              reason === "initial" ? await resolveBloxBotPrograms() : BUILTIN_BLOXBOT_PROGRAMS;
+              reason === "initial" ? await resolveBloxMindPrograms() : BUILTIN_BLOXMIND_PROGRAMS;
             if (reason === "initial") initialSource = explorer.source;
             origin = explorer.source;
             programProperties = {
@@ -592,7 +592,7 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
   // sync (a working model-written one is kept), and retry a setup that failed.
   useEffect(
     () =>
-      desktop.onBloxBotProgramsUpdated(() => {
+      desktop.onBloxMindProgramsUpdated(() => {
         if (collectionRef.current?.origin === "model") return;
         // Applied at the start of the next sync, so a sync already running
         // can't put the old program back afterwards.

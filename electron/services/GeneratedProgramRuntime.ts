@@ -16,14 +16,14 @@ import {
   GeneratedProgramResultSchema,
 } from "../../src/types/generatedProgram";
 import {
-  allowedBloxBotProgramTools,
-  isBloxBotProgramContract,
-  isKnownBloxBotProgramTool,
+  allowedBloxMindProgramTools,
+  isBloxMindProgramContract,
+  isKnownBloxMindProgramTool,
   isReadOnlyStudioTool,
-  knownBloxBotProgramTools,
+  knownBloxMindProgramTools,
   type StudioToolAnnotations,
   studioToolName,
-} from "../../src/lib/bloxbotProgramManifest";
+} from "../../src/lib/bloxmindProgramManifest";
 import { StudioMcpBroker } from "./StudioMcpBroker";
 
 export type CallTool = (name: string, args: Record<string, unknown>) => Promise<CallToolResult>;
@@ -425,8 +425,8 @@ export function startGeneratedProgramRuntime(
       Effect.promise(async () => {
         const listed = await listTools().catch(() => []);
         return listed.length > 0
-          ? allowedBloxBotProgramTools(program, listed).map((tool) => tool.name)
-          : [...knownBloxBotProgramTools(program)];
+          ? allowedBloxMindProgramTools(program, listed).map((tool) => tool.name)
+          : [...knownBloxMindProgramTools(program)];
       }),
     compile: (envelope) =>
       Effect.tryPromise({
@@ -474,8 +474,8 @@ export function startGeneratedProgramRuntime(
           let allowed = false;
           try {
             allowed =
-              isKnownBloxBotProgramTool(contractName, name) ||
-              (isBloxBotProgramContract(contractName) &&
+              isKnownBloxMindProgramTool(contractName, name) ||
+              (isBloxMindProgramContract(contractName) &&
                 isReadOnlyStudioTool((await describeTool(name))?.annotations));
           } catch (cause) {
             toolContractFailed = true;

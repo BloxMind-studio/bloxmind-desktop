@@ -35,9 +35,9 @@ test("public/ icon copies never drift from the canonical electron/icons", () => 
   // electron/icons is canonical; public/ may carry copies for the renderer,
   // but they must stay byte-identical so a drifted copy can never ship.
   const pairs: Array<[canonical: string, copy: string]> = [
-    ["electron/icons/icon.ico", "public/bloxbot-svg.ico"],
-    ["electron/icons/icon.png", "public/bloxbot-svg.png"],
-    ["electron/icons/icon.icns", "public/bloxbot-svg.icns"],
+    ["electron/icons/icon.ico", "public/bloxmind-svg.ico"],
+    ["electron/icons/icon.png", "public/bloxmind-svg.png"],
+    ["electron/icons/icon.icns", "public/bloxmind-svg.icns"],
   ];
 
   for (const [canonical, copy] of pairs) {

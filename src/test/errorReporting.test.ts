@@ -13,16 +13,16 @@ import { createMainErrorReporter, type MainErrorTarget } from "../../electron/er
 
 describe("scrubErrorText", () => {
   it("replaces home directories on macOS, Linux and Windows", () => {
-    expect(scrubErrorText("ENOENT: open '/Users/oscar/BloxBot/opencode.json'")).toBe(
-      "ENOENT: open '~/BloxBot/opencode.json'",
+    expect(scrubErrorText("ENOENT: open '/Users/oscar/BloxMind/opencode.json'")).toBe(
+      "ENOENT: open '~/BloxMind/opencode.json'",
     );
     expect(scrubErrorText("at /home/jane/app/index.js:1:2")).toBe("at ~/app/index.js:1:2");
     expect(scrubErrorText("EPERM C:\\Users\\Jane Doe\\AppData\\Local\\x")).toBe(
       "EPERM ~\\AppData\\Local\\x",
     );
-    expect(scrubErrorText("path C:\\Users\\jdoe\\BloxBot")).toBe("path ~\\BloxBot");
-    expect(scrubErrorText('{"path":"C:\\\\Users\\\\jdoe\\\\BloxBot"}')).toBe(
-      '{"path":"~\\\\BloxBot"}',
+    expect(scrubErrorText("path C:\\Users\\jdoe\\BloxMind")).toBe("path ~\\BloxMind");
+    expect(scrubErrorText('{"path":"C:\\\\Users\\\\jdoe\\\\BloxMind"}')).toBe(
+      '{"path":"~\\\\BloxMind"}',
     );
     expect(scrubErrorText("EPERM C:/Users/Jane Doe/AppData/x")).toBe("EPERM ~/AppData/x");
     expect(scrubErrorText("profile at C:\\Users\\Jane Doe")).toBe("profile at ~");
@@ -42,8 +42,8 @@ describe("scrubErrorText", () => {
   });
 
   it("replaces a known home directory", () => {
-    expect(scrubErrorText("/opt/homes/os/BloxBot missing", { home: "/opt/homes/os" })).toBe(
-      "~/BloxBot missing",
+    expect(scrubErrorText("/opt/homes/os/BloxMind missing", { home: "/opt/homes/os" })).toBe(
+      "~/BloxMind missing",
     );
   });
 
@@ -130,8 +130,8 @@ describe("scrubEventProperties", () => {
             type: "raw",
             frames: [
               {
-                filename: "/Users/oscar/BloxBot/app.js",
-                abs_path: "file:///Users/oscar/BloxBot/app.js",
+                filename: "/Users/oscar/BloxMind/app.js",
+                abs_path: "file:///Users/oscar/BloxMind/app.js",
                 function: "load",
                 lineno: 3,
                 in_app: true,
@@ -153,8 +153,8 @@ describe("scrubEventProperties", () => {
     if (exception === undefined) throw new Error("expected a sanitized exception in the payload");
     const stacktrace = exception.stacktrace as { frames: Array<Record<string, unknown>> };
     expect(stacktrace.frames[0]).toEqual({
-      filename: "~/BloxBot/app.js",
-      abs_path: "file://~/BloxBot/app.js",
+      filename: "~/BloxMind/app.js",
+      abs_path: "file://~/BloxMind/app.js",
       function: "load",
       lineno: 3,
       in_app: true,
@@ -268,13 +268,13 @@ describe("createMainErrorReporter", () => {
     });
     const target = fakeTarget();
     reporter.attach(target);
-    const error = new Error("cannot open /srv/people/oscar/BloxBot as oscar");
+    const error = new Error("cannot open /srv/people/oscar/BloxMind as oscar");
     reporter.report("opencode_start", error);
     const [, report] = target.send.mock.calls[0] ?? [];
     expect(report).toMatchObject({
       source: "opencode_start",
       name: "Error",
-      message: "cannot open ~/BloxBot as <user>",
+      message: "cannot open ~/BloxMind as <user>",
     });
     expect(report.stack).not.toContain("oscar");
   });

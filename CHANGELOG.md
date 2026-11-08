@@ -16,6 +16,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Startup no longer hangs on Windows machines where the usual network lookup fails. The engine's port is read from its own output, and a real startup failure now shows what the engine printed instead of only timing out.
 - BloxMind now starts even when a stray file is in the way of one of its workspace folders. The file is kept, renamed, next to it, and a full drive or blocked folder is named on the startup screen with what to do.
 - When Roblox Studio has been updated and its MCP helper is missing, BloxMind asks you to open or update Studio once, instead of retrying quietly and showing a bare error.
+- Data access and deletion requests in Settings → Privacy now point to BloxMind's own contact instead of the previous publisher's address.
 - A Studio screenshot no longer bricks a text-only model. The composer refuses image attachments when the selected model reports no image input, every send to such a model carries an instruction to avoid screen-capture tools, and an image rejection now shows a "Remove images & retry" action that deletes the image payloads from the conversation and continues the turn.
 - Image attachments in a user message now render as a tidy two-column grid of uniform thumbnails. Previously each image kept its natural aspect ratio and the bubble was sized for all images on one line, which stretched the card far wider than its content and left a large empty area.
 
@@ -148,18 +149,18 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
-- BloxBot no longer stops at setup when GitHub refuses or doesn't answer the check for OpenCode updates. It downloads a known-good OpenCode version directly instead, and the error says what went wrong if even that download fails.
+- BloxMind no longer stops at setup when GitHub refuses or doesn't answer the check for OpenCode updates. It downloads a known-good OpenCode version directly instead, and the error says what went wrong if even that download fails.
 - When OpenCode stops during startup or never finishes starting, the error now includes the last lines OpenCode printed, so reports show why.
-- When Explorer has the model write its own program and the model returns nothing, BloxBot now reports the model's own error instead of a generic decode error. The model is also kept from calling Studio tools while it writes the program, so it can't stall waiting for an approval.
-- BloxBot now finds Studio's MCP helper in the newer Roblox Studio install folder on Windows, so fewer people end up on Studio's broken launcher.
-- Updating the BloxBot programs no longer fails when two updates run at the same time, and the saved copy can't be read half written.
-- Generating a playtest plan fails less often. When the model answers without a plan, BloxBot reminds it once to return the plan and tries again.
+- When Explorer has the model write its own program and the model returns nothing, BloxMind now reports the model's own error instead of a generic decode error. The model is also kept from calling Studio tools while it writes the program, so it can't stall waiting for an approval.
+- BloxMind now finds Studio's MCP helper in the newer Roblox Studio install folder on Windows, so fewer people end up on Studio's broken launcher.
+- Updating the BloxMind programs no longer fails when two updates run at the same time, and the saved copy can't be read half written.
+- Generating a playtest plan fails less often. When the model answers without a plan, BloxMind reminds it once to return the plan and tries again.
 
 ## [0.13.4] - 2026-09-29
 
 ### Fixed
 
-- BloxBot now connects to Roblox Studio on Windows even when Studio's own MCP launcher is broken after a Studio update. It finds and starts Studio's MCP helper itself.
+- BloxMind now connects to Roblox Studio on Windows even when Studio's own MCP launcher is broken after a Studio update. It finds and starts Studio's MCP helper itself.
 
 ## [0.13.3] - 2026-09-29
 
@@ -170,8 +171,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
-- When Explorer has the model write its own program, that program works more often. It can call Studio's tools by the names the model sees, the model is told exactly which tools it may use, and BloxBot tries each program once before using it and gives the model one chance to fix a program that fails.
-- BloxBot no longer stops at a setup error when it can't reach Roblox Studio's MCP helper at launch. It retries for about 30 seconds, keeps working while it waits, and the Studio setup screen says how to fix it when Studio's MCP helper is missing or keeps closing.
+- When Explorer has the model write its own program, that program works more often. It can call Studio's tools by the names the model sees, the model is told exactly which tools it may use, and BloxMind tries each program once before using it and gives the model one chance to fix a program that fails.
+- BloxMind no longer stops at a setup error when it can't reach Roblox Studio's MCP helper at launch. It retries for about 30 seconds, keeps working while it waits, and the Studio setup screen says how to fix it when Studio's MCP helper is missing or keeps closing.
 - Generating a playtest plan now works, including on OpenCode's free models. Before, it failed almost every time.
 - When plan generation fails, the Playtest panel shows the provider's error instead of saying the plan was invalid.
 - Generate from chat is turned off in a chat with no messages yet, with a note that plans are built from the conversation. Write my own still works.
@@ -187,7 +188,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
-- BloxBot reports errors from the app and its background process so we can find and fix them. Personal file paths, usernames and API keys are removed before anything is sent.
+- BloxMind reports errors from the app and its background process so we can find and fix them. Personal file paths, usernames and API keys are removed before anything is sent.
 
 ### Fixed
 
@@ -197,18 +198,18 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
-- BloxBot downloads signed updates to the small programs it runs against Roblox Studio (Explorer, and finding and checking the Studio to work in), so a change in Studio's MCP can be fixed without a new BloxBot release. It keeps the last verified copy and falls back to the programs it shipped with.
+- BloxMind downloads signed updates to the small programs it runs against Roblox Studio (Explorer, and finding and checking the Studio to work in), so a change in Studio's MCP can be fixed without a new BloxMind release. It keeps the last verified copy and falls back to the programs it shipped with.
 
 ### Changed
 
-- Programs BloxBot runs against Studio, including ones the model writes, can only use read-only Studio tools.
+- Programs BloxMind runs against Studio, including ones the model writes, can only use read-only Studio tools.
 
 ## [0.12.1] - 2026-09-28
 
 ### Fixed
 
-- Explorer loads the Studio place tree again. Roblox Studio's MCP now requires a data model for `search_game_tree`, which BloxBot didn't send, so Explorer had failed for everyone since mid-August. During a playtest it shows the server data model, and it names the place.
-- When the built-in Explorer setup fails on first load, BloxBot has the model write one against Studio's current tools instead of giving up.
+- Explorer loads the Studio place tree again. Roblox Studio's MCP now requires a data model for `search_game_tree`, which BloxMind didn't send, so Explorer had failed for everyone since mid-August. During a playtest it shows the server data model, and it names the place.
+- When the built-in Explorer setup fails on first load, BloxMind has the model write one against Studio's current tools instead of giving up.
 - Reopening Explorer retries a setup that failed, and a failing Explorer backs off to a retry every few minutes at most instead of every few seconds.
 
 ## [0.12.0] - 2026-09-28
@@ -218,7 +219,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Sign in to OpenAI with a device code as well as in the browser, so a ChatGPT Plus or Pro plan still connects when the browser sign-in can't finish.
 - Settings → Providers shows provider logos, says how each provider connects, and has a search box.
 - Providers that ask a question before signing in, such as GitHub Enterprise for Copilot, now ask it.
-- Check any connected provider from Settings → Providers. BloxBot sends one short test message through its cheapest model and shows whether the key or sign-in works, with a Reconnect link when the key is rejected. The toast after connecting offers the same check.
+- Check any connected provider from Settings → Providers. BloxMind sends one short test message through its cheapest model and shows whether the key or sign-in works, with a Reconnect link when the key is rejected. The toast after connecting offers the same check.
 - OpenCode Zen is listed as its own provider in Settings → Providers, separate from the free models. Connect it with a Zen key, and remove the key to go back to the free models.
 - Settings → Providers recommends OpenCode Go ($10/month, or Go Plus at $40/month) to people using only the free models, and walks through setting it up.
 
@@ -229,7 +230,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Signing in, saving a key or removing one no longer shows as failed when refreshing the provider list afterwards fails.
 - Closing the dialog or going back while a sign-in is starting no longer opens the browser or resumes the abandoned sign-in.
 - Replacing the key of an already connected provider closes the dialog instead of leaving it open.
-- The models BloxBot includes for free show as "Free models" in Settings and the model picker, rather than "OpenCode Zen", until a Zen key is added.
+- The models BloxMind includes for free show as "Free models" in Settings and the model picker, rather than "OpenCode Zen", until a Zen key is added.
 - Settings no longer squeezes its content into a sliver in narrow windows. When space is tight, its sections become a row of tabs on top.
 
 ## [0.11.1] - 2026-09-24
@@ -242,13 +243,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
-- Usage data now includes your AI chats and tool activity to help improve BloxBot. Turn it off in Settings → Privacy.
+- Usage data now includes your AI chats and tool activity to help improve BloxMind. Turn it off in Settings → Privacy.
 
 ## [0.10.0] - 2026-08-20
 
 ### Added
 
-- Updated multi-Studio routing for Roblox Studio MCP's stateless `studio_id` contract, including Place ID disambiguation, per-session target restoration, and BloxBot identification in Studio's connected AI client list.
+- Updated multi-Studio routing for Roblox Studio MCP's stateless `studio_id` contract, including Place ID disambiguation, per-session target restoration, and BloxMind identification in Studio's connected AI client list.
 
 ### Fixed
 
@@ -258,7 +259,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
-- Fixed first-run setup failing with `StudioMcpBrokerError` (`spawn cmd.exe ENOENT`) by creating the `~/BloxBot` workspace before launching the Roblox Studio MCP helper; on fresh installs the workspace did not exist yet and Node reports a missing spawn `cwd` as ENOENT on the executable. ([#76](https://github.com/paralov/app-bloxbot-ai/issues/76))
+- Fixed first-run setup failing with `StudioMcpBrokerError` (`spawn cmd.exe ENOENT`) by creating the `~/BloxMind` workspace before launching the Roblox Studio MCP helper; on fresh installs the workspace did not exist yet and Node reports a missing spawn `cwd` as ENOENT on the executable. ([#76](https://github.com/paralov/app-bloxbot-ai/issues/76))
 
 ## [0.9.0] - 2026-08-07
 

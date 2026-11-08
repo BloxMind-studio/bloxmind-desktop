@@ -1,7 +1,7 @@
 import type { OpencodeClient } from "@opencode-ai/sdk/v2/client";
 import { Effect, Schema } from "effect";
 import type { GeneratedProgramArtifact, GeneratedProgramEnvelope } from "../types/generatedProgram";
-import { STUDIO_MCP_SERVER_NAME } from "./bloxbotProgramManifest";
+import { STUDIO_MCP_SERVER_NAME } from "./bloxmindProgramManifest";
 import { ASK_ALL_PERMISSIONS, rejectPermissions } from "./hiddenSession";
 import { type ModelError, modelErrorDetail } from "./modelError";
 
@@ -21,7 +21,7 @@ export const ExplorerNodeSchema = Schema.Struct({
   attributes: Schema.Array(ExplorerFieldSchema),
   children: Schema.Array(Schema.suspend((): Schema.Schema<ExplorerNode> => ExplorerNodeSchema)),
   // The identifier lets the recursive schema be written out as JSON Schema
-  // (for `pnpm bloxbot-programs brief`).
+  // (for `pnpm bloxmind-programs brief`).
 }).annotations({ identifier: "ExplorerNode" });
 
 export interface ExplorerNode {

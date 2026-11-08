@@ -5,17 +5,17 @@ import { fileURLToPath } from "node:url";
 import { Schema } from "effect";
 
 import {
-  BLOXBOT_PROGRAM_NAMES,
-  type BloxBotProgramManifest,
-  BloxBotProgramManifestSchema,
-  type BloxBotProgramName,
-  type BloxBotProgramSources,
-  buildBloxBotProgramManifest,
-} from "../../src/lib/bloxbotProgramManifest";
+  BLOXMIND_PROGRAM_NAMES,
+  type BloxMindProgramManifest,
+  BloxMindProgramManifestSchema,
+  type BloxMindProgramName,
+  type BloxMindProgramSources,
+  buildBloxMindProgramManifest,
+} from "../../src/lib/bloxmindProgramManifest";
 
 export const PROGRAMS_DIR = join(
   resolve(dirname(fileURLToPath(import.meta.url)), "../.."),
-  "bloxbot-programs",
+  "bloxmind-programs",
 );
 export const MANIFEST_PATH = join(PROGRAMS_DIR, "manifest.json");
 
@@ -24,15 +24,15 @@ export async function readProgramFile(path: string): Promise<string> {
   return (await readFile(join(PROGRAMS_DIR, path), "utf8")).replace(/\r\n/g, "\n");
 }
 
-export async function readSources(): Promise<BloxBotProgramSources> {
-  const programs = {} as Record<BloxBotProgramName, string>;
-  for (const name of BLOXBOT_PROGRAM_NAMES) programs[name] = await readProgramFile(`${name}.ts`);
+export async function readSources(): Promise<BloxMindProgramSources> {
+  const programs = {} as Record<BloxMindProgramName, string>;
+  for (const name of BLOXMIND_PROGRAM_NAMES) programs[name] = await readProgramFile(`${name}.ts`);
   return { lib: await readProgramFile("lib/mcp.ts"), programs };
 }
 
-export async function readShippedManifest(): Promise<BloxBotProgramManifest | null> {
+export async function readShippedManifest(): Promise<BloxMindProgramManifest | null> {
   try {
-    return Schema.decodeUnknownSync(BloxBotProgramManifestSchema)(
+    return Schema.decodeUnknownSync(BloxMindProgramManifestSchema)(
       JSON.parse(await readProgramFile("manifest.json")),
     );
   } catch {
@@ -49,13 +49,13 @@ export function samePrograms(a: { programs: unknown }, b: { programs: unknown })
  * change, and then past the published one too, so programs an app ships are
  * never outranked by an older published copy (for example after a revert).
  */
-export async function expectedManifest(publishedSequence = 0): Promise<BloxBotProgramManifest> {
+export async function expectedManifest(publishedSequence = 0): Promise<BloxMindProgramManifest> {
   const sources = await readSources();
   const shipped = await readShippedManifest();
-  const unchanged = validated(buildBloxBotProgramManifest(sources, shipped?.sequence ?? 1));
+  const unchanged = validated(buildBloxMindProgramManifest(sources, shipped?.sequence ?? 1));
   if (shipped && samePrograms(shipped, unchanged)) return shipped;
   return validated(
-    buildBloxBotProgramManifest(sources, Math.max(shipped?.sequence ?? 0, publishedSequence) + 1),
+    buildBloxMindProgramManifest(sources, Math.max(shipped?.sequence ?? 0, publishedSequence) + 1),
   );
 }
 
@@ -64,9 +64,9 @@ export async function expectedManifest(publishedSequence = 0): Promise<BloxBotPr
  * program that only fails once the shared helpers are prepended (the envelope
  * size limit) is caught here rather than shipped or published.
  */
-export function validated(manifest: BloxBotProgramManifest): BloxBotProgramManifest {
+export function validated(manifest: BloxMindProgramManifest): BloxMindProgramManifest {
   try {
-    return Schema.decodeUnknownSync(BloxBotProgramManifestSchema)(manifest);
+    return Schema.decodeUnknownSync(BloxMindProgramManifestSchema)(manifest);
   } catch (error) {
     throw new Error(
       `The built manifest would be rejected by the app: ${error instanceof Error ? error.message : error}`,

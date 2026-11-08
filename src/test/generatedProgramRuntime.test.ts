@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   BUILTIN_EXPLORER_PROGRAM,
   BUILTIN_STUDIO_TARGET_PROGRAMS,
-} from "@/lib/builtinBloxBotPrograms";
+} from "@/lib/builtinBloxMindPrograms";
 import { BUILTIN_PROJECT_INDEX_PROGRAM } from "@/lib/builtinProjectPrograms";
 import { ExplorerSnapshotSchema } from "@/lib/explorer";
 import { ProjectSkeletonSchema } from "@/lib/projectIndex";

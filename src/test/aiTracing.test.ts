@@ -217,7 +217,7 @@ describe("AI tracing", () => {
   it("sends instruction files once and references them by id", async () => {
     const { tracer, send, events } = setup();
     const files = [
-      { path: "~/BloxBot/AGENTS.md", scope: "project" as const, chars: 5, content: "Use Luau" },
+      { path: "~/BloxMind/AGENTS.md", scope: "project" as const, chars: 5, content: "Use Luau" },
     ];
     tracer.configure({ loadInstructions: async () => files });
 
@@ -245,7 +245,7 @@ describe("AI tracing", () => {
     ]);
     expect(generations[0].$ai_input[0]).toEqual({
       role: "system",
-      content: `[User instructions ${snapshot.instructions_id}: ~/BloxBot/AGENTS.md]`,
+      content: `[User instructions ${snapshot.instructions_id}: ~/BloxMind/AGENTS.md]`,
     });
     expect(events("$ai_trace")[0]).toMatchObject({ instructions_id: snapshot.instructions_id });
   });

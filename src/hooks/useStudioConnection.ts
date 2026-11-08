@@ -1,7 +1,7 @@
 import type { OpencodeClient } from "@opencode-ai/sdk/v2/client";
 import { useQuery } from "@tanstack/react-query";
 
-import { STUDIO_MCP_SERVER_NAME } from "@/lib/bloxbotProgramManifest";
+import { STUDIO_MCP_SERVER_NAME } from "@/lib/bloxmindProgramManifest";
 import { desktop } from "@/lib/desktop";
 import { qk } from "@/lib/queryKeys";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
@@ -11,7 +11,7 @@ const STUDIO_MCP_NAME = STUDIO_MCP_SERVER_NAME;
 
 export type StudioConnectionState = "checking" | "connected" | "waiting";
 
-/** Why Studio's MCP helper can't be reached, when BloxBot knows. */
+/** Why Studio's MCP helper can't be reached, when BloxMind knows. */
 export type StudioMcpProblem = Extract<StudioMcpStatus["state"], "not_installed" | "unavailable">;
 
 export function studioMcpProblem(status: StudioMcpStatus | undefined): StudioMcpProblem | null {

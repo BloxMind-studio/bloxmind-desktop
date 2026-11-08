@@ -32,8 +32,8 @@ vi.mock("@/lib/desktop", () => ({
     loadConfig,
     patchConfig,
     installStudioTargetPrograms,
-    getBloxBotPrograms: vi.fn().mockResolvedValue(null),
-    onBloxBotProgramsUpdated: vi.fn(() => () => {}),
+    getBloxMindPrograms: vi.fn().mockResolvedValue(null),
+    onBloxMindProgramsUpdated: vi.fn(() => () => {}),
   },
 }));
 

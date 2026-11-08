@@ -1,8 +1,8 @@
 import { Data, Effect, Schema } from "effect";
 import {
-  type BloxBotProgramManifest,
-  BloxBotProgramManifestSchema,
-} from "@/lib/bloxbotProgramManifest";
+  type BloxMindProgramManifest,
+  BloxMindProgramManifestSchema,
+} from "@/lib/bloxmindProgramManifest";
 import { migrateStoredConfig } from "@/lib/configMigration";
 import { type ExplorerSnapshot, ExplorerSnapshotSchema } from "@/lib/explorer";
 import { type ProjectSkeleton, ProjectSkeletonSchema } from "@/lib/projectIndex";
@@ -97,7 +97,7 @@ interface DesktopEffects {
     programs: StudioTargetPrograms,
     targetKey: string,
   ) => Effect.Effect<StudioTargetSelection, DesktopError>;
-  readonly getBloxBotPrograms: Effect.Effect<BloxBotProgramManifest | null, DesktopError>;
+  readonly getBloxMindPrograms: Effect.Effect<BloxMindProgramManifest | null, DesktopError>;
   readonly checkpointCapture: (context: CaptureContext) => Effect.Effect<Checkpoint, DesktopError>;
   readonly checkpointRestore: (
     input: CheckpointRestoreInput,
@@ -192,7 +192,7 @@ const browserEffects: DesktopEffects = {
     Effect.fail(
       new DesktopError({ message: "Studio targets are only available in the desktop app." }),
     ),
-  getBloxBotPrograms: Effect.succeed(null),
+  getBloxMindPrograms: Effect.succeed(null),
   checkpointCapture: () =>
     Effect.fail(new DesktopError({ message: "Checkpointing requires the desktop app." })),
   checkpointRestore: () =>
@@ -290,12 +290,12 @@ function makeBridgeEffects(api: DesktopApi): DesktopEffects {
       invoke("Failed to select the Studio target", () =>
         api.selectStudioTarget(programs, targetKey),
       ).pipe(decodeBridgeValue("Studio target selection is invalid", StudioTargetSelectionSchema)),
-    getBloxBotPrograms: invoke("Failed to read published BloxMind programs", () =>
-      api.getBloxBotPrograms(),
+    getBloxMindPrograms: invoke("Failed to read published BloxMind programs", () =>
+      api.getBloxMindPrograms(),
     ).pipe(
       decodeBridgeValue(
         "Published BloxMind programs are invalid",
-        Schema.NullOr(BloxBotProgramManifestSchema),
+        Schema.NullOr(BloxMindProgramManifestSchema),
       ),
     ),
     checkpointCapture: (context) =>
@@ -360,9 +360,9 @@ export const desktop: DesktopApi = {
   discoverStudioTargets: (programs) => runPromise(desktopEffects.discoverStudioTargets(programs)),
   selectStudioTarget: (programs, targetKey) =>
     runPromise(desktopEffects.selectStudioTarget(programs, targetKey)),
-  getBloxBotPrograms: () => runPromise(desktopEffects.getBloxBotPrograms),
-  onBloxBotProgramsUpdated: (listener) =>
-    window.BloxMind?.onBloxBotProgramsUpdated(listener) ?? (() => {}),
+  getBloxMindPrograms: () => runPromise(desktopEffects.getBloxMindPrograms),
+  onBloxMindProgramsUpdated: (listener) =>
+    window.BloxMind?.onBloxMindProgramsUpdated(listener) ?? (() => {}),
   onMainError: (listener) => window.BloxMind?.onMainError(listener) ?? (() => {}),
   checkpointCapture: (context) => runPromise(desktopEffects.checkpointCapture(context)),
   checkpointRestore: (input) => runPromise(desktopEffects.checkpointRestore(input)),

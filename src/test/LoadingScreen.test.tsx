@@ -85,8 +85,8 @@ describe("startup progress", () => {
     "Unable to download a verified OpenCode 1.x.x release and no cached copy is available. " +
     `Release check: GitHub release lookup failed with HTTP 403. Pinned v1.18.33: Failed to extract the OpenCode archive (reason: ${reason})`;
 
-  it("tells people to allow BloxBot in their antivirus and shows the folder to exclude", () => {
-    const folder = "C:\\Users\\example\\AppData\\Roaming\\BloxBot\\opencode";
+  it("tells people to allow BloxMind in their antivirus and shows the folder to exclude", () => {
+    const folder = "C:\\Users\\example\\AppData\\Roaming\\BloxMind\\opencode";
     const technicalDetail = installFailure("blocked_by_security");
     const presentation = getStartupErrorPresentation(technicalDetail, folder);
 

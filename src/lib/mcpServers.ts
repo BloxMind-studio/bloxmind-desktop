@@ -1,6 +1,6 @@
 import type { Config, OpencodeClient } from "@opencode-ai/sdk/v2/client";
 
-import { STUDIO_MCP_SERVER_NAME } from "./bloxbotProgramManifest";
+import { STUDIO_MCP_SERVER_NAME } from "./bloxmindProgramManifest";
 
 /** One extra MCP server the user configured in Settings → Integrations. */
 export interface McpServerConfig {

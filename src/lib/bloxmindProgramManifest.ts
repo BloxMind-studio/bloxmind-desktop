@@ -6,20 +6,20 @@ import {
   GeneratedProgramEnvelopeSchema,
 } from "../types/generatedProgram";
 
-// BloxBot programs are the small TypeScript programs BloxBot runs against the
+// BloxMind programs are the small TypeScript programs BloxMind runs against the
 // Studio MCP (Explorer, Studio discovery and selection). Their sources live in
-// bloxbot-programs/, are built into bloxbot-programs/manifest.json (shipped with
-// the app as the built-in fallback), and are published signed so BloxBot can
+// bloxmind-programs/, are built into bloxmind-programs/manifest.json (shipped with
+// the app as the built-in fallback), and are published signed so BloxMind can
 // pick up fixes for Studio MCP changes without an app release.
 
-export const BLOXBOT_PROGRAM_MANIFEST_FORMAT = 1 as const;
+export const BLOXMIND_PROGRAM_MANIFEST_FORMAT = 1 as const;
 
 /**
  * The program contracts this app version can run. A published program is only
  * used when its contract matches exactly, so a program written for a newer
  * contract never runs in an app that doesn't understand its output.
  */
-export const BLOXBOT_PROGRAM_CONTRACTS = {
+export const BLOXMIND_PROGRAM_CONTRACTS = {
   "explorer-snapshot": {
     name: "explorer-snapshot",
     version: "1",
@@ -40,16 +40,18 @@ export const BLOXBOT_PROGRAM_CONTRACTS = {
   },
 } as const;
 
-export type BloxBotProgramName = keyof typeof BLOXBOT_PROGRAM_CONTRACTS;
+export type BloxMindProgramName = keyof typeof BLOXMIND_PROGRAM_CONTRACTS;
 
-export const BLOXBOT_PROGRAM_NAMES = Object.keys(BLOXBOT_PROGRAM_CONTRACTS) as BloxBotProgramName[];
+export const BLOXMIND_PROGRAM_NAMES = Object.keys(
+  BLOXMIND_PROGRAM_CONTRACTS,
+) as BloxMindProgramName[];
 
 /**
  * Studio MCP tools each program is known to use. Beyond these, a program may
- * call any tool Studio itself marks read-only (see isBloxBotProgramToolAllowed),
+ * call any tool Studio itself marks read-only (see isBloxMindProgramToolAllowed),
  * so a renamed or new read-only tool works without an app release.
  */
-export const BLOXBOT_PROGRAM_TOOLS: Record<BloxBotProgramName, readonly string[]> = {
+export const BLOXMIND_PROGRAM_TOOLS: Record<BloxMindProgramName, readonly string[]> = {
   "explorer-snapshot": [
     "list_roblox_studios",
     "get_studio_state",
@@ -63,7 +65,7 @@ export const BLOXBOT_PROGRAM_TOOLS: Record<BloxBotProgramName, readonly string[]
 /**
  * The project-index contract. Its programs are compiled by the app itself
  * (the built-in indexer, or one the AI generates) rather than published
- * through the manifest, so it is not part of {@link BLOXBOT_PROGRAM_CONTRACTS}.
+ * through the manifest, so it is not part of {@link BLOXMIND_PROGRAM_CONTRACTS}.
  */
 export const PROJECT_INDEX_PROGRAM_NAME = "project-index";
 
@@ -73,46 +75,46 @@ export const PROJECT_INDEX_PROGRAM_TOOLS: readonly string[] = ["search_game_tree
 /**
  * Every contract the app knows, with the tools it is known to use. A contract
  * outside this map gets no tools at all; each one here may additionally call
- * any tool Studio itself marks read-only (see isBloxBotProgramToolAllowed).
+ * any tool Studio itself marks read-only (see isBloxMindProgramToolAllowed).
  */
 const PROGRAM_TOOLS: Record<string, readonly string[]> = {
-  ...BLOXBOT_PROGRAM_TOOLS,
+  ...BLOXMIND_PROGRAM_TOOLS,
   [PROJECT_INDEX_PROGRAM_NAME]: PROJECT_INDEX_PROGRAM_TOOLS,
 };
 
-export const BloxBotProgramManifestSchema = Schema.Struct({
-  format: Schema.Literal(BLOXBOT_PROGRAM_MANIFEST_FORMAT),
+export const BloxMindProgramManifestSchema = Schema.Struct({
+  format: Schema.Literal(BLOXMIND_PROGRAM_MANIFEST_FORMAT),
   /** Increases with every published change; the app never goes back to a lower one. */
   sequence: Schema.Number.pipe(Schema.int(), Schema.positive()),
   programs: Schema.Record({ key: Schema.String, value: GeneratedProgramEnvelopeSchema }),
 });
 
-export type BloxBotProgramManifest = typeof BloxBotProgramManifestSchema.Type;
+export type BloxMindProgramManifest = typeof BloxMindProgramManifestSchema.Type;
 
-export interface BloxBotProgramSources {
+export interface BloxMindProgramSources {
   /** Helpers shared by every program, prepended to each source. */
   lib: string;
-  programs: Record<BloxBotProgramName, string>;
+  programs: Record<BloxMindProgramName, string>;
 }
 
 /** Builds the manifest the app ships and the release workflow signs. */
-export function buildBloxBotProgramManifest(
-  sources: BloxBotProgramSources,
+export function buildBloxMindProgramManifest(
+  sources: BloxMindProgramSources,
   sequence: number,
-): BloxBotProgramManifest {
+): BloxMindProgramManifest {
   const programs: Record<string, GeneratedProgramEnvelope> = {};
-  for (const name of BLOXBOT_PROGRAM_NAMES) {
+  for (const name of BLOXMIND_PROGRAM_NAMES) {
     programs[name] = {
       version: GENERATED_PROGRAM_VERSION,
-      contract: { ...BLOXBOT_PROGRAM_CONTRACTS[name] },
+      contract: { ...BLOXMIND_PROGRAM_CONTRACTS[name] },
       source: `${sources.lib.trimEnd()}\n\n${sources.programs[name].trim()}\n`,
     };
   }
-  return { format: BLOXBOT_PROGRAM_MANIFEST_FORMAT, sequence, programs };
+  return { format: BLOXMIND_PROGRAM_MANIFEST_FORMAT, sequence, programs };
 }
 
 /** Same bytes every time for the same manifest, so signatures are stable. */
-export function serializeBloxBotProgramManifest(manifest: BloxBotProgramManifest): string {
+export function serializeBloxMindProgramManifest(manifest: BloxMindProgramManifest): string {
   return `${JSON.stringify(manifest, null, 2)}\n`;
 }
 
@@ -120,14 +122,14 @@ export function serializeBloxBotProgramManifest(manifest: BloxBotProgramManifest
  * The programs in a manifest this app can run: known names whose contract
  * matches exactly. Anything else is ignored, and the caller falls back.
  */
-export function usableBloxBotPrograms(
-  manifest: BloxBotProgramManifest,
-): Partial<Record<BloxBotProgramName, GeneratedProgramEnvelope>> {
-  const usable: Partial<Record<BloxBotProgramName, GeneratedProgramEnvelope>> = {};
-  for (const name of BLOXBOT_PROGRAM_NAMES) {
+export function usableBloxMindPrograms(
+  manifest: BloxMindProgramManifest,
+): Partial<Record<BloxMindProgramName, GeneratedProgramEnvelope>> {
+  const usable: Partial<Record<BloxMindProgramName, GeneratedProgramEnvelope>> = {};
+  for (const name of BLOXMIND_PROGRAM_NAMES) {
     const envelope = manifest.programs[name];
     if (!envelope) continue;
-    const expected = BLOXBOT_PROGRAM_CONTRACTS[name];
+    const expected = BLOXMIND_PROGRAM_CONTRACTS[name];
     const actual = envelope.contract;
     if (
       actual.name === expected.name &&
@@ -149,18 +151,18 @@ export interface StudioToolAnnotations {
 }
 
 /** Whether the app recognizes this program contract at all. */
-export function isBloxBotProgramContract(contractName: string): boolean {
+export function isBloxMindProgramContract(contractName: string): boolean {
   return contractName in PROGRAM_TOOLS;
 }
 
 /** The tools a known contract may call without asking Studio for annotations. */
-export function knownBloxBotProgramTools(contractName: string): readonly string[] {
+export function knownBloxMindProgramTools(contractName: string): readonly string[] {
   return PROGRAM_TOOLS[contractName] ?? [];
 }
 
 /** Whether a program may call a tool without asking Studio for its annotations. */
-export function isKnownBloxBotProgramTool(contractName: string, toolName: string): boolean {
-  return knownBloxBotProgramTools(contractName).includes(toolName);
+export function isKnownBloxMindProgramTool(contractName: string, toolName: string): boolean {
+  return knownBloxMindProgramTools(contractName).includes(toolName);
 }
 
 /**
@@ -177,13 +179,13 @@ export function isReadOnlyStudioTool(annotations?: StudioToolAnnotations): boole
  * only read: they get the tools they're known to use, plus any tool Studio marks
  * read-only. Programs for contracts this app doesn't know get nothing.
  */
-export function isBloxBotProgramToolAllowed(
+export function isBloxMindProgramToolAllowed(
   contractName: string,
   toolName: string,
   annotations?: StudioToolAnnotations,
 ): boolean {
-  if (!isBloxBotProgramContract(contractName)) return false;
-  return isKnownBloxBotProgramTool(contractName, toolName) || isReadOnlyStudioTool(annotations);
+  if (!isBloxMindProgramContract(contractName)) return false;
+  return isKnownBloxMindProgramTool(contractName, toolName) || isReadOnlyStudioTool(annotations);
 }
 
 /**
@@ -205,8 +207,8 @@ export function studioToolName(name: string): string {
  * plus any Studio marks read-only. The brief and the Explorer generation prompt
  * both list these.
  */
-export function allowedBloxBotProgramTools<
+export function allowedBloxMindProgramTools<
   T extends { name: string; annotations?: StudioToolAnnotations },
 >(program: string, tools: readonly T[]): T[] {
-  return tools.filter((tool) => isBloxBotProgramToolAllowed(program, tool.name, tool.annotations));
+  return tools.filter((tool) => isBloxMindProgramToolAllowed(program, tool.name, tool.annotations));
 }
