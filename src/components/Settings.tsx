@@ -2336,7 +2336,7 @@ function AboutTab({ appVersion }: { appVersion: string | null }) {
         <div className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
           Built With
         </div>
-        <div className="rounded-lg border bg-card">
+        <div className="rounded-lg border bg-card overflow-hidden">
           {TECHNOLOGIES.map((tech, idx) => (
             <div key={tech.name}>
               {idx > 0 && <div className="mx-3.5 h-px bg-border" />}

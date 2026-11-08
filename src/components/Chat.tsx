@@ -27,9 +27,9 @@ const Settings = lazy(() => import("@/components/Settings"));
 
 /**
  * Project index status marker. A compact icon with a colored dot that shows
- * whether the index is working (green ok, amber partial, red failed) plus the
- * total number of indexed scripts; the native tooltip carries the details.
- * Clicking triggers a re-index.
+ * whether the index is working (green ok, amber partial, red failed); the button
+ * shows only the icon and dot and reveals the indexed-script count on hover.
+ * The native tooltip carries the details. Clicking triggers a re-index.
  */
 function ProjectIndexButton() {
   const { skeleton, isLoading, isFetching, error, refresh } = useProjectIndexContext();
@@ -56,7 +56,7 @@ function ProjectIndexButton() {
       onClick={() => refresh()}
       disabled={busy}
       title={title}
-      className={`inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border bg-background px-2 text-[11px] font-medium tabular-nums transition-[background-color,color] hover:bg-accent hover:text-foreground disabled:opacity-50 ${
+      className={`group inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border bg-background px-2 text-[11px] font-medium tabular-nums transition-[background-color,color] hover:bg-accent hover:text-foreground disabled:opacity-50 ${
         error ? "text-red-500" : "text-muted-foreground"
       }`}
     >
@@ -73,7 +73,11 @@ function ProjectIndexButton() {
         />
         {error && <span className="absolute -right-1 -top-1 h-1.5 w-1.5 rounded-full bg-red-500" />}
       </span>
-      {indexed && <span className="whitespace-nowrap">{total}</span>}
+      {indexed && total > 0 && (
+        <span className="inline-flex max-w-0 overflow-hidden whitespace-nowrap opacity-0 tabular-nums transition-[max-width,opacity] duration-200 group-hover:max-w-[6rem] group-hover:opacity-100">
+          {total}
+        </span>
+      )}
     </button>
   );
 }

@@ -7,6 +7,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Fixed
+
+- The project-index button no longer shows any number by default — just the folder icon and status dot — and reveals the indexed-script count on hover.
+- The chat input no longer shows a spinning "reload" mark next to the token-context indicator, and the hover ring no longer flickers in and out when the pointer crosses it: the text stays in place (invisible on hover instead of being swapped) while the ring overlays it at a fixed position instead of resizing the area.
+- The hover background on the About tab's "Built With" rows no longer shows square corners over the rounded container, which now clips its children.
+
 ### Changed
 
 - OpenCode SDK updated from 1.18.10 to 1.19.5, and the fallback engine pin is now OpenCode v1.19.5 with SHA-256 digests verified against GitHub's published release digests (`pnpm check:opencode-pin` passes). If GitHub's API is unreachable, BloxMind installs a v1.19.x engine instead of the older 1.18.x.

@@ -2,7 +2,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { memo, useMemo, useRef } from "react";
 import { EMPTY_CACHE, fetchMessages } from "@/hooks/useMessages";
 import { useAllModels } from "@/hooks/useProviders";
-import { useSessionStatus } from "@/hooks/useSessionStatuses";
 import {
   findModelInfo,
   formatTokens,
@@ -41,10 +40,6 @@ const ContextUsageIndicator = memo(function ContextUsageIndicator({
   const queryClient = useQueryClient();
   const { client, ready } = useOpenCodeClient();
 
-  // Session status tells us if the agent is actively generating.
-  const sessionStatus = useSessionStatus(activeSessionId ?? "");
-  const isGenerating = activeSessionId ? sessionStatus?.type !== "idle" : false;
-
   const { data: messagesCache } = useQuery<MessagesCache, Error, MessagesCache | undefined>({
     queryKey: activeSessionId ? qk.messages(activeSessionId) : ["no-session"],
     queryFn: () =>
@@ -69,12 +64,11 @@ const ContextUsageIndicator = memo(function ContextUsageIndicator({
     pct: number;
     total: number;
     max: number;
-    loading: boolean;
   }
 
   const usage = useMemo<UsageResult>(() => {
     const max = resolveContextWindow(selectedModel ?? undefined, allModels);
-    if (!messagesCache) return { pct: 0, total: 0, max, loading: false };
+    if (!messagesCache) return { pct: 0, total: 0, max };
 
     let hasTokens = false;
     let total = 0;
@@ -120,15 +114,12 @@ const ContextUsageIndicator = memo(function ContextUsageIndicator({
       total = previousTotalRef.current;
     }
 
-    const loading = isGenerating && !hasTokens;
-
     return {
       pct: Math.min(100, Math.round((total / max) * 100)),
       total,
       max,
-      loading,
     };
-  }, [messagesCache, selectedModel, allModels, isGenerating]);
+  }, [messagesCache, selectedModel, allModels]);
 
   const tone =
     usage.pct >= 90 ? "text-red-500" : usage.pct >= 70 ? "text-amber-500" : "text-muted-foreground";
@@ -160,32 +151,18 @@ const ContextUsageIndicator = memo(function ContextUsageIndicator({
       className={`group relative inline-flex items-center gap-1.5 ${className}`}
       title={specsTitle}
     >
-      {/* Default text view (hidden on hover) */}
-      <div className="group-hover:hidden inline-flex items-center gap-1">
-        {usage.loading && (
-          <svg
-            width="10"
-            height="10"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="animate-spin text-muted-foreground"
-          >
-            <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
-            <path d="M21 3v5h-5" />
-          </svg>
-        )}
+      {/* The text stays in the layout (invisible on hover rather than removed) so the
+          hover target never changes size — swapping the two views used to collapse the
+          width and make the tooltip/ring flicker on and off. */}
+      <span className="inline-flex items-center gap-1 transition-opacity duration-150 group-hover:opacity-0">
         <span className={`text-[10px] font-mono tabular-nums ${tone}`}>
           {fmt(usage.total)} / {fmt(usage.max)}
         </span>
-      </div>
+      </span>
 
-      {/* Hover view: circular progress ring */}
-      <div className="hidden group-hover:block">
-        <svg width="28" height="28" viewBox="0 0 48 48" className="-ml-0.5">
+      {/* Hover view: circular progress ring, overlaid so it cannot shift the layout */}
+      <div className="pointer-events-none absolute inset-0 hidden items-center justify-center group-hover:flex">
+        <svg width="28" height="28" viewBox="0 0 48 48">
           <circle
             cx="24"
             cy="24"
