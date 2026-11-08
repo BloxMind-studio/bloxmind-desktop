@@ -1,4 +1,5 @@
-import { access, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { existsSync, mkdirSync, copyFileSync, readFileSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 
 import type { InstructionFile } from "../src/types/desktop";
@@ -35,9 +36,11 @@ function displayPath(path: string, home: string): string {
 }
 
 /**
- * Mirrors OpenCode's system instruction lookup: the first global file that exists,
- * plus every ancestor match of the first project file name that exists.
- * Nested instruction files are attached by OpenCode to read tool output instead.
+ * Mirrors OpenCode's instruction lookup for analytics snapshots: the first global file that exists,
+ * plus every ancestor match of the first project file name that exists. The engine itself runs with
+ * project-config isolation (see OPENCODE_DISABLE_PROJECT_CONFIG), so ancestor matches are not what the
+ * engine reads — this reports what is on disk. Nested instruction files are attached by OpenCode to
+ * read tool output instead.
  */
 export async function findInstructionFiles(options: {
   workspace: string;
@@ -84,6 +87,66 @@ export async function findInstructionFiles(options: {
     }),
   );
   return files.filter((file) => file.content.length > 0);
+}
+
+/** Max size of the engine-global AGENTS.md, same limit the engine itself enforces. */
+export const GLOBAL_INSTRUCTIONS_MAX_LENGTH = 32_000;
+
+/** Absolute path of the AGENTS.md the engine reads from its global config directory. */
+export function globalInstructionFilePath(globalConfigDirectory: string): string {
+  return join(globalConfigDirectory, "AGENTS.md");
+}
+
+export async function readGlobalInstructions(globalConfigDirectory: string): Promise<string> {
+  const content = await readFile(globalInstructionFilePath(globalConfigDirectory), "utf8").catch(
+    () => "",
+  );
+  return content.length > GLOBAL_INSTRUCTIONS_MAX_LENGTH
+    ? content.slice(0, GLOBAL_INSTRUCTIONS_MAX_LENGTH)
+    : content;
+}
+
+export async function writeGlobalInstructions(
+  globalConfigDirectory: string,
+  content: unknown,
+): Promise<void> {
+  if (typeof content !== "string") throw new Error("Global instructions must be a string.");
+  if (content.length > GLOBAL_INSTRUCTIONS_MAX_LENGTH) {
+    throw new Error(
+      `Global instructions must be at most ${GLOBAL_INSTRUCTIONS_MAX_LENGTH.toLocaleString("en-US")} characters.`,
+    );
+  }
+  const target = globalInstructionFilePath(globalConfigDirectory);
+  await mkdir(dirname(target), { recursive: true });
+  // Write next to the target and rename, so a crash mid-write never leaves a torn file.
+  const temp = `${target}.tmp-${process.pid}-${Date.now()}`;
+  await writeFile(temp, content, "utf8");
+  await rename(temp, target);
+}
+
+/**
+ * One-time seed: the engine used to load `~/BloxMind/AGENTS.md`, and BloxMind purged the
+ * legacy-generated sections from it. Now that project files are off the table for the
+ * engine, that file's content would be silently ignored — carry it over into the
+ * engine-global AGENTS.md the first time this runs. Returns whether it migrated anything.
+ */
+/** One-time seed: the engine used to load `~/BloxMind/AGENTS.md`, and BloxMind purged the
+ * legacy-generated sections from it. Now that project files are off the table for the
+ * engine, that file's content would be silently ignored — carry it over into the
+ * engine-global AGENTS.md the first time this runs. Returns whether it migrated anything. */
+export function migrateWorkspaceInstructionsToGlobalSync(
+  workspace: string,
+  globalConfigDirectory: string,
+): boolean {
+  const target = globalInstructionFilePath(globalConfigDirectory);
+  if (existsSync(target)) return false;
+  const source = join(workspace, "AGENTS.md");
+  if (!existsSync(source)) return false;
+  const content = readFileSync(source, "utf8");
+  if (content.trim() === "") return false;
+  mkdirSync(dirname(target), { recursive: true });
+  copyFileSync(source, target);
+  return true;
 }
 
 const MANAGED_BLOCK_BEGIN = "<!-- bloxmind-managed:begin -->";

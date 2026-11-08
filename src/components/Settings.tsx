@@ -37,6 +37,7 @@ import {
 } from "@/lib/providerAuth";
 import { checkModels, checkPreference, type ProviderCheckResult } from "@/lib/providerCheck";
 import { VERIFICATION_OPTIONS } from "@/lib/verification";
+import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
 import type { ModelInfo, ProviderInfo } from "@/types";
 import { type AppConfig, DEFAULT_APP_CONFIG, type UpdateInfo } from "@/types/desktop";
@@ -1093,6 +1094,49 @@ function EngineTab() {
     customApiEndpoint,
     setCustomApiEndpoint,
   } = usePreferences();
+  const { client } = useOpenCodeClient();
+  const [instructionsDraft, setInstructionsDraft] = useState<string | null>(null);
+  const [instructionsSaved, setInstructionsSaved] = useState("");
+  const [instructionsSaving, setInstructionsSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    desktop.getInstructions().then(
+      (text) => {
+        if (cancelled) return;
+        setInstructionsDraft(text);
+        setInstructionsSaved(text);
+      },
+      () => {
+        if (cancelled) return;
+        setInstructionsDraft("");
+        setInstructionsSaved("");
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function handleSaveInstructions() {
+    if (instructionsDraft === null) return;
+    if (instructionsDraft.length > 32_000) {
+      toast.error("Global instructions must be at most 32,000 characters.");
+      return;
+    }
+    setInstructionsSaving(true);
+    try {
+      await desktop.saveInstructions(instructionsDraft);
+      setInstructionsSaved(instructionsDraft);
+      // Ask the engine to drop its cached config so the new instructions apply on the next prompt.
+      await client?.instance.dispose({}).catch(() => undefined);
+      toast.success("Global instructions saved — they apply on the next message.");
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Failed to save global instructions");
+    } finally {
+      setInstructionsSaving(false);
+    }
+  }
 
   return (
     <div className="mx-auto w-full max-w-md px-6 py-8">
@@ -1230,6 +1274,41 @@ function EngineTab() {
           />
           <div className="mt-1 text-[10px] text-muted-foreground">
             Custom instructions prepended to every conversation.
+          </div>
+        </div>
+      </div>
+
+      {/* Global Instructions */}
+      <div className="mt-6">
+        <div className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Global Instructions
+        </div>
+        <div className="rounded-lg border bg-card p-3.5">
+          <textarea
+            value={instructionsDraft ?? ""}
+            disabled={instructionsDraft === null}
+            onChange={(e) => setInstructionsDraft(e.target.value)}
+            placeholder="Run the build before committing. Do not create files without asking."
+            rows={4}
+            className="h-24 w-full resize-y rounded border bg-background px-2 py-1.5 text-xs font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+          />
+          <div className="mt-1 flex items-center justify-between gap-3">
+            <p className="text-[10px] leading-relaxed text-muted-foreground">
+              Written to the engine-global AGENTS.md and applied to every session in any project.
+              Saving reloads the engine.
+            </p>
+            <button
+              type="button"
+              onClick={handleSaveInstructions}
+              disabled={
+                instructionsSaving ||
+                instructionsDraft === null ||
+                instructionsDraft === instructionsSaved
+              }
+              className="h-7 shrink-0 rounded-md border bg-background px-3 text-[11px] font-medium text-foreground transition-colors hover:bg-accent disabled:opacity-50"
+            >
+              {instructionsSaving ? "Saving…" : "Save"}
+            </button>
           </div>
         </div>
       </div>

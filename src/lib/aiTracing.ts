@@ -434,7 +434,11 @@ export class AiTracer {
         const tracked = this.messages.get(messageID);
         const part = tracked?.parts.get(partID) as Record<string, unknown> | undefined;
         const key = field || "text";
-        if (part && typeof part[key] === "string") part[key] = (part[key] as string) + delta;
+        if (part && typeof part[key] === "string") {
+          // Own copy: the SSE dispatcher stores and mutates the same object by
+          // reference, so mutating it here would append the delta twice.
+          tracked?.parts.set(partID, { ...part, [key]: (part[key] as string) + delta } as Part);
+        }
         if (tracked) this.markOutput(tracked);
         break;
       }

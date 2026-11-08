@@ -9,6 +9,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
+- Streamed output no longer comes out with duplicated chunks in the AI trace when detailed AI traces are on — the tracer was appending deltas into the same message-part object the SSE dispatcher was mutating, so every token chunk landed twice.
+- Settings → AI Engine now has a Global Instructions editor that writes the engine-global AGENTS.md directly. BloxMind's engine now starts with project-config isolation, so instructions from your personal OpenCode setup (~/.claude, ~/opencode.json, ~/AGENTS.md) no longer leak into engine sessions; the file you edit there is the only one the model sees. On first run after updating, any existing ~/BloxMind/AGENTS.md content is carried over automatically.
+- The Studio status check no longer piles up stuck requests: calls are deduplicated across polls and a check that hasn't answered after 10 seconds is abandoned instead of leaving the connection state stuck on "Checking Studios".
+- "Reconnect" now recovers dead engine sessions: if the engine is unreachable it relaunches the app instead of reloading into the same dead state.
+- Windowless ResizeObserver loop errors are no longer reported as analytics errors; real exceptions beside them are kept.
+- The error report sent when Netstat misses the engine on Windows is now visible to the error reporter (no user data), so this class of failure is diagnosable without a build with `--log-level DEBUG`.
 - The project-index button no longer shows any number by default — just the folder icon and status dot — and reveals the indexed-script count on hover.
 - The chat input no longer shows a spinning "reload" mark next to the token-context indicator, and the hover ring no longer flickers in and out when the pointer crosses it: the text stays in place (invisible on hover instead of being swapped) while the ring overlays it at a fixed position instead of resizing the area.
 - The hover background on the About tab's "Built With" rows no longer shows square corners over the rounded container, which now clips its children.

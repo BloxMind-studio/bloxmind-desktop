@@ -67,8 +67,31 @@ export function errorAnalyticsProperties(
 }
 
 /** PostHog `before_send` hook: scrubs error text from every event before it leaves the device. */
+// ResizeObserver loop errors fire on every layout pass in browsers and carry no
+// signal; dropping them removes the noise they add to error tracking.
+const RESIZE_OBSERVER_EXCEPTION =
+  /^ResizeObserver loop (completed with undelivered notifications|limit exceeded)\.?$/;
+
+function isResizeObserverNoise(properties: Properties): boolean {
+  const texts: string[] = [];
+  const record = (properties ?? {}) as Record<string, unknown>;
+  const list = record.$exception_list;
+  if (Array.isArray(list)) {
+    for (const entry of list) {
+      const item = (entry ?? {}) as Record<string, unknown>;
+      if (typeof item.value === "string") texts.push(item.value);
+      else if (typeof item.message === "string") texts.push(item.message);
+    }
+  } else {
+    if (typeof record.$exception === "string") texts.push(record.$exception);
+    else if (typeof record.exception_message === "string") texts.push(record.exception_message);
+  }
+  return texts.length > 0 && texts.every((text) => RESIZE_OBSERVER_EXCEPTION.test(text.trim()));
+}
+
 export function scrubAnalyticsEvent(event: CaptureResult | null): CaptureResult | null {
   if (!event) return event;
+  if (event.event === "$exception" && isResizeObserverNoise(event.properties)) return null;
   return { ...event, properties: scrubEventProperties(event.properties) };
 }
 

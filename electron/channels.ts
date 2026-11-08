@@ -6,6 +6,8 @@ export const channels = {
   getStudioMcpStatus: "studio-mcp:get-status",
   openCodeStartupProgress: "opencode:startup-progress",
   getInstructionFiles: "opencode:get-instruction-files",
+  getInstructions: "opencode:get-instructions",
+  saveInstructions: "opencode:save-instructions",
   getVersion: "app:get-version",
   installUpdate: "app:install-update",
   invokeExplorerProgram: "explorer:invoke-program",

@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { checkStudioConnection, studioMcpProblem } from "@/hooks/useStudioConnection";
+import {
+  checkStudioConnection,
+  STUDIO_CHECK_TIMEOUT_MS,
+  studioMcpProblem,
+} from "@/hooks/useStudioConnection";
 
 describe("studioMcpProblem", () => {
   it("only surfaces states that need the user to act", () => {
@@ -62,5 +66,46 @@ describe("checkStudioConnection", () => {
     };
 
     await expect(checkStudioConnection(client as never)).resolves.toBe("waiting");
+  });
+});
+
+describe("checkStudioConnection concurrency", () => {
+  it("shares one in-flight check instead of piling up calls on the client", async () => {
+    vi.useFakeTimers();
+    try {
+      const status = vi.fn().mockReturnValue(new Promise(() => {}));
+      const client = { mcp: { status, connect: vi.fn() } };
+
+      const first = checkStudioConnection(client as never);
+      const second = checkStudioConnection(client as never);
+
+      expect(client.mcp.status).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(STUDIO_CHECK_TIMEOUT_MS);
+      await expect(first).resolves.toBe("waiting");
+      await expect(second).resolves.toBe("waiting");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("gives up waiting after the timeout and lets the next poll start fresh", async () => {
+    vi.useFakeTimers();
+    try {
+      const status = vi.fn().mockReturnValue(new Promise(() => {}));
+      const client = { mcp: { status, connect: vi.fn() } };
+
+      const first = checkStudioConnection(client as never);
+      await vi.advanceTimersByTimeAsync(STUDIO_CHECK_TIMEOUT_MS);
+      await expect(first).resolves.toBe("waiting");
+
+      const second = checkStudioConnection(client as never);
+      await vi.advanceTimersByTimeAsync(STUDIO_CHECK_TIMEOUT_MS);
+      await expect(second).resolves.toBe("waiting");
+
+      expect(status).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

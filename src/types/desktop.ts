@@ -210,6 +210,10 @@ export interface DesktopApi {
   onOpenCodeStartupProgress(listener: (progress: OpenCodeStartupProgress) => void): () => void;
   getVersion(): Promise<string>;
   getInstructionFiles(): Promise<readonly InstructionFile[]>;
+  /** The engine-global AGENTS.md — applies to every session in any project. */
+  getInstructions(): Promise<string>;
+  /** Saves the engine-global AGENTS.md; the engine picks it up on the next prompt. */
+  saveInstructions(content: string): Promise<void>;
   openUrl(url: string): Promise<void>;
   loadConfig(): Promise<AppConfig>;
   patchConfig(patch: Partial<AppConfig>): Promise<void>;

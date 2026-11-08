@@ -4,7 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { findInstructionFiles, stripLegacyManagedBlock } from "../../electron/instructionFiles";
+import {
+  findInstructionFiles,
+  GLOBAL_INSTRUCTIONS_MAX_LENGTH,
+  migrateWorkspaceInstructionsToGlobalSync,
+  readGlobalInstructions,
+  stripLegacyManagedBlock,
+  writeGlobalInstructions,
+} from "../../electron/instructionFiles";
 
 let root: string;
 
@@ -80,5 +87,84 @@ describe("legacy managed AGENTS.md block", () => {
     await expect(stripLegacyManagedBlock(workspace)).resolves.toBe(false);
     expect(await readFile(join(workspace, "AGENTS.md"), "utf8")).toBe("# My rules\n");
     await expect(stripLegacyManagedBlock(join(workspace, "missing"))).resolves.toBe(false);
+  });
+});
+
+describe("global engine instructions", () => {
+  it("round-trips AGENTS.md through read/write", async () => {
+    root = await mkdtemp(join(tmpdir(), "bloxmind-instructions-"));
+    const globalConfigDirectory = join(root, "config", "opencode");
+    await expect(readGlobalInstructions(globalConfigDirectory)).resolves.toBe("");
+
+    await writeGlobalInstructions(globalConfigDirectory, "Run the build before committing.\n");
+
+    await expect(readGlobalInstructions(globalConfigDirectory)).resolves.toBe(
+      "Run the build before committing.\n",
+    );
+  });
+
+  it("rejects non-string content and content over the size limit", async () => {
+    root = await mkdtemp(join(tmpdir(), "bloxmind-instructions-"));
+    const globalConfigDirectory = join(root, "config", "opencode");
+
+    await expect(writeGlobalInstructions(globalConfigDirectory, 42 as never)).rejects.toThrow(
+      /string/,
+    );
+    await expect(
+      writeGlobalInstructions(
+        globalConfigDirectory,
+        "x".repeat(GLOBAL_INSTRUCTIONS_MAX_LENGTH + 1),
+      ),
+    ).rejects.toThrow(/32,000/);
+  });
+
+  it("truncates reads longer than the engine limit", async () => {
+    root = await mkdtemp(join(tmpdir(), "bloxmind-instructions-"));
+    const globalConfigDirectory = join(root, "config", "opencode");
+    await mkdir(globalConfigDirectory, { recursive: true });
+    await writeFile(
+      join(globalConfigDirectory, "AGENTS.md"),
+      "x".repeat(GLOBAL_INSTRUCTIONS_MAX_LENGTH + 10),
+    );
+
+    const content = await readGlobalInstructions(globalConfigDirectory);
+    expect(content.length).toBe(GLOBAL_INSTRUCTIONS_MAX_LENGTH);
+  });
+
+  it("migrates a workspace AGENTS.md into the global location once", async () => {
+    root = await mkdtemp(join(tmpdir(), "bloxmind-instructions-"));
+    const workspace = join(root, "home", "BloxMind");
+    const globalConfigDirectory = join(root, "config", "opencode");
+    await mkdir(workspace, { recursive: true });
+    await writeFile(join(workspace, "AGENTS.md"), "workspace rules\n");
+
+    expect(migrateWorkspaceInstructionsToGlobalSync(workspace, globalConfigDirectory)).toBe(true);
+    expect(migrateWorkspaceInstructionsToGlobalSync(workspace, globalConfigDirectory)).toBe(false);
+
+    const content = await readFile(join(globalConfigDirectory, "AGENTS.md"), "utf8");
+    expect(content).toBe("workspace rules\n");
+  });
+
+  it("migrates nothing when the global file already exists or there is no workspace file", async () => {
+    root = await mkdtemp(join(tmpdir(), "bloxmind-instructions-"));
+    const workspace = join(root, "home", "BloxMind");
+    const globalConfigDirectory = join(root, "config", "opencode");
+    await mkdir(globalConfigDirectory, { recursive: true });
+    await writeFile(join(globalConfigDirectory, "AGENTS.md"), "existing rules\n");
+    expect(migrateWorkspaceInstructionsToGlobalSync(workspace, globalConfigDirectory)).toBe(false);
+
+    await rm(join(globalConfigDirectory, "AGENTS.md"));
+    expect(migrateWorkspaceInstructionsToGlobalSync(workspace, globalConfigDirectory)).toBe(false);
+  });
+
+  it("migrates nothing for an empty workspace AGENTS.md", async () => {
+    root = await mkdtemp(join(tmpdir(), "bloxmind-instructions-"));
+    const workspace = join(root, "home", "BloxMind");
+    const globalConfigDirectory = join(root, "config", "opencode");
+    await mkdir(workspace, { recursive: true });
+    await writeFile(join(workspace, "AGENTS.md"), "   \n");
+
+    expect(migrateWorkspaceInstructionsToGlobalSync(workspace, globalConfigDirectory)).toBe(false);
+    expect(existsSync(join(workspace, "AGENTS.md"))).toBe(true);
   });
 });

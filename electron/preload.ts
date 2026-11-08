@@ -24,6 +24,8 @@ const api: DesktopApi = {
   },
   getVersion: () => ipcRenderer.invoke(channels.getVersion),
   getInstructionFiles: () => ipcRenderer.invoke(channels.getInstructionFiles),
+  getInstructions: () => ipcRenderer.invoke(channels.getInstructions),
+  saveInstructions: (content: string) => ipcRenderer.invoke(channels.saveInstructions, content),
   openUrl: (url) => ipcRenderer.invoke(channels.openUrl, url),
   loadConfig: () => ipcRenderer.invoke(channels.loadConfig),
   patchConfig: (patch: Partial<AppConfig>) => ipcRenderer.invoke(channels.patchConfig, patch),

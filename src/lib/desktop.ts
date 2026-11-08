@@ -49,6 +49,7 @@ import {
 } from "@/types/studioTarget";
 
 const CONFIG_KEY = "BloxMind-config";
+const INSTRUCTIONS_KEY = "BloxMind-instructions";
 const DEFAULT_CONFIG: AppConfig = DEFAULT_APP_CONFIG;
 
 export class DesktopError extends Data.TaggedError("DesktopError")<{
@@ -81,6 +82,8 @@ interface DesktopEffects {
   readonly getStudioMcpStatus: Effect.Effect<StudioMcpStatus, DesktopError>;
   readonly getVersion: Effect.Effect<string, DesktopError>;
   readonly getInstructionFiles: Effect.Effect<readonly InstructionFile[], DesktopError>;
+  readonly getInstructions: Effect.Effect<string, DesktopError>;
+  readonly saveInstructions: (content: string) => Effect.Effect<void, DesktopError>;
   readonly openUrl: (url: string) => Effect.Effect<void, DesktopError>;
   readonly loadConfig: Effect.Effect<AppConfig, DesktopError>;
   readonly patchConfig: (patch: Partial<AppConfig>) => Effect.Effect<void, DesktopError>;
@@ -150,6 +153,12 @@ const browserEffects: DesktopEffects = {
   getStudioMcpStatus: Effect.succeed({ state: "starting" }),
   getVersion: Effect.succeed("0.5.2"),
   getInstructionFiles: Effect.succeed([]),
+  getInstructions: Effect.succeed(window.localStorage.getItem(INSTRUCTIONS_KEY) ?? ""),
+  saveInstructions: (content) =>
+    Effect.try({
+      try: () => window.localStorage.setItem(INSTRUCTIONS_KEY, content),
+      catch: (cause) => new DesktopError({ message: "Failed to save browser instructions", cause }),
+    }),
   openUrl: (url) =>
     Effect.sync(() => window.open(url, "_blank", "noopener,noreferrer")).pipe(Effect.asVoid),
   loadConfig: loadBrowserConfig,
@@ -257,6 +266,11 @@ function makeBridgeEffects(api: DesktopApi): DesktopEffects {
     getInstructionFiles: invoke("Failed to read instruction files", () =>
       api.getInstructionFiles(),
     ).pipe(decodeBridgeValue("Instruction files are invalid", Schema.Array(InstructionFileSchema))),
+    getInstructions: invoke("Failed to read global instructions", () => api.getInstructions()).pipe(
+      decodeBridgeValue("Global instructions are invalid", Schema.String),
+    ),
+    saveInstructions: (content) =>
+      invoke("Failed to save global instructions", () => api.saveInstructions(content)),
     openUrl: (url) => invoke("Failed to open the URL", () => api.openUrl(url)),
     loadConfig: invoke("Failed to load configuration", () => api.loadConfig()).pipe(
       decodeBridgeValue("Desktop configuration is invalid", AppConfigSchema),
@@ -344,6 +358,8 @@ export const desktop: DesktopApi = {
     window.BloxMind?.onOpenCodeStartupProgress(listener) ?? (() => {}),
   getVersion: () => runPromise(desktopEffects.getVersion),
   getInstructionFiles: () => runPromise(desktopEffects.getInstructionFiles),
+  getInstructions: () => runPromise(desktopEffects.getInstructions),
+  saveInstructions: (content) => runPromise(desktopEffects.saveInstructions(content)),
   openUrl: (url) => runPromise(desktopEffects.openUrl(url)),
   loadConfig: () => runPromise(desktopEffects.loadConfig),
   patchConfig: (patch) => runPromise(desktopEffects.patchConfig(patch)),

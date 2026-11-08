@@ -27,7 +27,13 @@ import {
 import { handleLastWindowClosed } from "./appLifecycle";
 import { createMainErrorReporter } from "./errorReporter";
 import { engineFolder } from "./machineFolders";
-import { findInstructionFiles, stripLegacyManagedBlock } from "./instructionFiles";
+import {
+  findInstructionFiles,
+  migrateWorkspaceInstructionsToGlobalSync,
+  readGlobalInstructions,
+  stripLegacyManagedBlock,
+  writeGlobalInstructions,
+} from "./instructionFiles";
 import { skillDirectories } from "./opencodeConfig";
 import { channels } from "./channels";
 import { makeOpenCodeLayer, OpenCode } from "./services/OpenCode";
@@ -124,6 +130,15 @@ class DesktopMainError extends Data.TaggedError("DesktopMainError")<{
   cause?: unknown;
 }> {}
 
+// OpenCode runs with XDG_CONFIG_HOME inside the workspace (see services/OpenCode.ts).
+const globalConfigDirectory = join(
+  app.getPath("home"),
+  "BloxMind",
+  ".opencode",
+  "config",
+  "opencode",
+);
+
 const studioMcpBrokerLayer = makeStudioMcpBrokerLayer({
   workspace: join(app.getPath("home"), "BloxMind"),
   localAppData: process.env.LOCALAPPDATA,
@@ -159,6 +174,7 @@ const openCodeRuntime = ManagedRuntime.make(
         // the engine's config API instead).
         mcpServers: () => loadConfig.pipe(Effect.map((config) => config.mcpServers)),
         workspace: join(app.getPath("home"), "BloxMind"),
+        onNetstatMiss: (message) => reportMainError("opencode_netstat_miss", new Error(message)),
         onStartupProgress: (progress: OpenCodeStartupProgress) => {
           if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send(channels.openCodeStartupProgress, progress);
@@ -392,16 +408,15 @@ const registerIpcHandlers = Effect.sync(() => {
   ipcMain.handle(channels.getInstructionFiles, () =>
     findInstructionFiles({
       workspace: join(app.getPath("home"), "BloxMind"),
-      // OpenCode runs with XDG_CONFIG_HOME inside the workspace (see services/OpenCode.ts).
-      globalConfigDirectory: join(
-        app.getPath("home"),
-        "BloxMind",
-        ".opencode",
-        "config",
-        "opencode",
-      ),
+      globalConfigDirectory,
       home: app.getPath("home"),
     }),
+  );
+  ipcMain.handle(channels.getInstructions, () =>
+    readGlobalInstructions(globalConfigDirectory),
+  );
+  ipcMain.handle(channels.saveInstructions, (_event, content: unknown) =>
+    writeGlobalInstructions(globalConfigDirectory, content),
   );
   ipcMain.handle(channels.getBloxMindPrograms, () => bloxmindProgramStore.current());
   ipcMain.handle(channels.loadConfig, () => runMain(loadConfig));
@@ -854,6 +869,18 @@ if (!hasSingleInstanceLock) {
       yield* Effect.promise(() =>
         stripLegacyManagedBlock(join(app.getPath("home"), "BloxMind")).catch(() => false),
       );
+      // Now that project files are off the table for the engine, carry the workspace
+      // AGENTS.md (where instructions used to live) into the engine-global AGENTS.md.
+      yield* Effect.sync(() => {
+        try {
+          migrateWorkspaceInstructionsToGlobalSync(
+            join(app.getPath("home"), "BloxMind"),
+            globalConfigDirectory,
+          );
+        } catch (error) {
+          console.warn("[bloxmind] Failed to seed global engine instructions:", error);
+        }
+      });
       // The cached copy is ready before the window asks for it; the download
       // happens in the background and applies from the next time a program loads.
       yield* Effect.promise(() => bloxmindProgramStore.load());

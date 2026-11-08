@@ -245,6 +245,8 @@ export interface OpenCodeOptions {
    */
   fetchWithSystemCertificates?: OpenCodeBinaryOptions["fetchWithSystemCertificates"];
   workspace: string;
+  /** A netstat view that doesn't agree with the running engine, when one can be gathered. */
+  onNetstatMiss?: (message: string) => void;
   onStartupProgress?: (progress: OpenCodeStartupProgress) => void;
 }
 
@@ -718,6 +720,11 @@ function spawnOpenCode(prepared: PreparedOpenCode): Effect.Effect<OpenCodeProces
               XDG_STATE_HOME: prepared.xdgState,
               OPENCODE_SERVER_PASSWORD: prepared.password,
               OPENCODE_SERVER_USERNAME: SERVER_USERNAME,
+              // BloxMind's engine runs as the user, so the user's own OpenCode setup would
+              // otherwise leak into engine sessions: their instructions, config, commands and
+              // agents. Engine-global AGENTS.md (the one at the engine's config dir) still
+              // loads, and that's the file Settings → AI Engine edits.
+              OPENCODE_DISABLE_PROJECT_CONFIG: "1",
             },
             stdio: "pipe",
             windowsHide: true,
@@ -859,6 +866,14 @@ export function makeOpenCodeLayer(options: OpenCodeOptions) {
       if (pid !== undefined && globalThis.process.platform === "win32") {
         yield* explainNetstatMiss(pid, resource.port).pipe(
           Effect.tap((message) => (message ? Effect.logInfo(`[opencode] ${message}`) : Effect.void)),
+          Effect.tap((message) =>
+            message !== null
+              ? Effect.try({
+                  try: () => options.onNetstatMiss?.(message),
+                  catch: () => undefined,
+                })
+              : Effect.void,
+          ),
           Effect.forkScoped,
         );
       }

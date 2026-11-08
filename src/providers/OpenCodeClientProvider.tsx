@@ -356,7 +356,15 @@ export function OpenCodeClientProvider({
         duration: Number.POSITIVE_INFINITY,
         action: {
           label: "Reconnect",
-          onClick: () => window.location.reload(),
+          onClick: () => {
+            // A reload only reaches a living engine; a dead one needs an app relaunch.
+            desktop.getOpenCodeInfo().then(
+              () => window.location.reload(),
+              () => {
+                desktop.relaunch().catch(() => window.location.reload());
+              },
+            );
+          },
         },
       });
     }
