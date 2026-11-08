@@ -9,11 +9,19 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
+- Engine downloads survive a bad connection. A download stops only after a minute with no data and carries on from where it stopped, even after BloxMind restarts, so a slow or cut-off connection no longer starts over.
+- Downloads refused by an unknown certificate — as behind some company networks and antivirus software — retry with your system's certificates. The file still has to match the same checksum.
+- Antivirus software no longer makes engine installs fail outright. BloxMind waits longer for a new file to be released, keeps a downloaded archive instead of fetching it again, and clears out unfinished installs left by an earlier attempt.
+- BloxMind no longer gets stuck at startup with "database is locked" after it closes unexpectedly. The engine left behind by the crashed run is stopped first, and a database that stays busy says which folder to check.
+- Startup no longer hangs on Windows machines where the usual network lookup fails. The engine's port is read from its own output, and a real startup failure now shows what the engine printed instead of only timing out.
+- BloxMind now starts even when a stray file is in the way of one of its workspace folders. The file is kept, renamed, next to it, and a full drive or blocked folder is named on the startup screen with what to do.
+- When Roblox Studio has been updated and its MCP helper is missing, BloxMind asks you to open or update Studio once, instead of retrying quietly and showing a bare error.
 - A Studio screenshot no longer bricks a text-only model. The composer refuses image attachments when the selected model reports no image input, every send to such a model carries an instruction to avoid screen-capture tools, and an image rejection now shows a "Remove images & retry" action that deletes the image payloads from the conversation and continues the turn.
 - Image attachments in a user message now render as a tidy two-column grid of uniform thumbnails. Previously each image kept its natural aspect ratio and the bubble was sized for all images on one line, which stretched the card far wider than its content and left a large empty area.
 
 ### Changed
 
+- Windows: BloxMind keeps the AI engine in a folder that stays on this computer, so it isn't copied around when you sign in on a school or work network. The engine you already have is moved over, so nothing needs downloading again.
 - Map-building requests now have to close the world. The assistant loads a new `roblox-world-boundaries` skill whenever it creates or extends a map, which sets playable bounds, a themed sky and atmosphere, a layered distant backdrop, and a visible plus invisible perimeter with server-side out-of-bounds handling, so maps no longer end in visible empty space.
 - Compaction is a quiet background step. The engine's summary message and synthetic "continue" prompt no longer appear in the feed; instead a slim live marker at the top of the conversation shows that auto-compaction is running while the agent resumes its task undisturbed.
 - The project-index button is now a compact status marker: a colored dot that reads ok (green), partial (amber), or failed (red), the total number of indexed scripts, and a native tooltip with details.

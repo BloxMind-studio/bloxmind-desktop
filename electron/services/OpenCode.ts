@@ -1,15 +1,27 @@
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
+import { type ChildProcessWithoutNullStreams, exec, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { Context, Data, Duration, Effect, Layer } from "effect";
+import { Context, Data, Duration, Effect, Layer, Option, Schedule, type Scope } from "effect";
 import { networkConnections, type Systeminformation } from "systeminformation";
 
 import type { McpServerConfig } from "../../src/lib/mcpServers";
 import type { OpenCodeInfo, OpenCodeStartupProgress } from "../../src/types/desktop";
 import { createOpenCodeConfig } from "../opencodeConfig";
-import { ensureOpenCodeBinary } from "./OpenCodeBinary";
+import { loadShellPath } from "../shellEnv";
+import { ensureFolder, workspaceFailureReason } from "../workspaceFolders";
+import {
+  forgetOpenCodeProcess,
+  recordOpenCodeProcess,
+  stopLeftoverOpenCode,
+} from "./openCodeLeftover";
+import {
+  distrustOpenCodeVersion,
+  ensureOpenCodeBinary,
+  findOpenCodeFallback,
+  type OpenCodeBinaryOptions,
+} from "./OpenCodeBinary";
 import { StudioMcpBroker } from "./StudioMcpBroker";
 
 const LOOPBACK = "127.0.0.1";
@@ -19,6 +31,8 @@ const SERVER_USERNAME = "opencode";
 export class OpenCodeError extends Data.TaggedError("OpenCodeError")<{
   message: string;
   cause?: unknown;
+  /** The binary itself failed: it couldn't start, or it exited. A timeout doesn't say that. */
+  couldNotRun?: boolean;
 }> {}
 
 interface OpenCodeProcess {
@@ -37,6 +51,8 @@ export interface OpenCodeOutputTail {
   readonly stdout: () => string;
   /** Resolves once the process has exited and its output streams are flushed. */
   readonly closed: Promise<void>;
+  /** Resolves with the port OpenCode says it is listening on. It may never settle. */
+  readonly announcedPort: Promise<number>;
 }
 
 function appendBounded(current: string, chunk: string): string {
@@ -44,33 +60,74 @@ function appendBounded(current: string, chunk: string): string {
   return next.length > OUTPUT_TAIL_MAX_CHARS ? next.slice(-OUTPUT_TAIL_MAX_CHARS) : next;
 }
 
-/** Logs OpenCode's output and keeps a bounded tail of each stream. */
+function stripAnsi(text: string): string {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: strips ANSI color codes.
+  return text.replace(/\u001b\[[\d;]*m/g, "");
+}
+
+// The address we told OpenCode to bind, so nothing else it might print can be mistaken for it.
+const LISTENING_LINE = /\bserver listening on http:\/\/127\.0\.0\.1:(\d{1,5})\/?$/;
+
+/** The port in OpenCode's "server listening on" line, or null for any other line. */
+export function parseListeningPort(line: string): number | null {
+  const port = Number(LISTENING_LINE.exec(stripAnsi(line).trimEnd())?.[1]);
+  return port >= 1 && port <= 65_535 ? port : null;
+}
+
+/**
+ * Calls onLine with whole lines only: a port cut off by a chunk boundary would read as valid. A lone
+ * carriage return ends a line too, as some Windows programs write it.
+ */
+function lineSplitter(onLine: (line: string) => void): (chunk: string) => void {
+  let partial = "";
+  return (chunk) => {
+    const lines = (partial + chunk).split(/\r\n|\r|\n/);
+    partial = (lines.pop() ?? "").slice(-OUTPUT_TAIL_MAX_CHARS);
+    lines.forEach(onLine);
+  };
+}
+
+/** Logs OpenCode's output, keeps a bounded tail of each stream and watches for its port. */
 export function trackOpenCodeOutput(child: ChildProcessWithoutNullStreams): OpenCodeOutputTail {
   let stderr = "";
   let stdout = "";
+  let announce: (port: number) => void = () => {};
+  const announcedPort = new Promise<number>((resolve) => {
+    announce = resolve;
+  });
+  const onLine = (line: string) => {
+    const port = parseListeningPort(line);
+    if (port !== null) announce(port);
+  };
+  const scanStdout = lineSplitter(onLine);
+  const scanStderr = lineSplitter(onLine);
   child.stdout.on("data", (data: Buffer) => {
     const text = data.toString();
     stdout = appendBounded(stdout, text);
+    scanStdout(text);
     Effect.runSync(Effect.logInfo(`[opencode] ${text.trimEnd()}`));
   });
   child.stderr.on("data", (data: Buffer) => {
     const text = data.toString();
     stderr = appendBounded(stderr, text);
+    scanStderr(text);
     Effect.runSync(Effect.logError(`[opencode] ${text.trimEnd()}`));
   });
   return {
     stderr: () => stderr,
     stdout: () => stdout,
     closed: new Promise((resolve) => child.once("close", () => resolve())),
+    announcedPort,
   };
 }
 
 /** Appends the end of OpenCode's stderr (or stdout when stderr is empty) to a message. */
-export function withOutputTail(message: string, output: OpenCodeOutputTail): string {
+export function withOutputTail(
+  message: string,
+  output: Pick<OpenCodeOutputTail, "stderr" | "stdout">,
+): string {
   const raw = output.stderr().trim() ? output.stderr() : output.stdout();
-  const tail = raw
-    // biome-ignore lint/suspicious/noControlCharactersInRegex: strips ANSI color codes.
-    .replace(/\u001b\[[\d;]*m/g, "")
+  const tail = stripAnsi(raw)
     .replace(/\s+/g, " ")
     .trim()
     .slice(-OUTPUT_TAIL_IN_ERROR_CHARS);
@@ -89,13 +146,69 @@ function exitedDuringStartup(
       Effect.fail(
         new OpenCodeError({
           message: withOutputTail(
-            `OpenCode exited during startup with code ${child.exitCode}`,
+            `OpenCode exited during startup with code ${child.exitCode ?? child.signalCode}`,
             output,
           ),
+          couldNotRun: true,
         }),
       ),
     ),
   );
+}
+
+/**
+ * A database problem in OpenCode's output, which no other copy of OpenCode would get past:
+ * - locked: another OpenCode still has the database open
+ * - disk_io: the drive is full, or antivirus or a sync app is holding the file
+ */
+export function databaseProblem(message: string): "locked" | "disk_io" | null {
+  if (/database is locked|SQLITE_BUSY/i.test(message)) return "locked";
+  if (/disk I\/O error|SQLITE_IOERR/i.test(message)) return "disk_io";
+  return null;
+}
+
+/** Retries for a locked database: three tries, 1 then 2 seconds apart. */
+export const databaseLockedSchedule = Schedule.exponential("1 second").pipe(
+  Schedule.intersect(Schedule.recurs(2)),
+);
+
+/**
+ * Starts OpenCode again while its database is locked. The OpenCode holding it is often one that
+ * is still shutting down, so a short wait is usually all it needs.
+ */
+export function retryWhileDatabaseLocked<A, R>(
+  start: Effect.Effect<A, OpenCodeError, R>,
+  schedule: Schedule.Schedule<unknown, OpenCodeError> = databaseLockedSchedule,
+): Effect.Effect<A, OpenCodeError, R> {
+  return start.pipe(
+    Effect.tapError((error) =>
+      databaseProblem(error.message) === "locked"
+        ? Effect.logWarning("[opencode] Its database is locked; trying again shortly")
+        : Effect.void,
+    ),
+    Effect.retry({ schedule, while: (error) => databaseProblem(error.message) === "locked" }),
+  );
+}
+
+/**
+ * Swaps OpenCode's raw database error for one that says what to do. The original stays as the
+ * cause, so a report still carries it.
+ */
+export function describeDatabaseFailure(error: OpenCodeError, dataFolder: string): OpenCodeError {
+  const problem = databaseProblem(error.message);
+  if (problem === "locked") {
+    return new OpenCodeError({
+      message: `OpenCode's database in ${dataFolder} is in use by another program. Close any other copy of BloxMind or OpenCode, or restart your computer, then try again (reason: database_locked)`,
+      cause: error,
+    });
+  }
+  if (problem === "disk_io") {
+    return new OpenCodeError({
+      message: `OpenCode couldn't read or write its database in ${dataFolder}. Make sure the drive has free space and that antivirus or a sync app isn't holding that folder, then try again (reason: database_io)`,
+      cause: error,
+    });
+  }
+  return error;
 }
 
 interface OpenCodeResource extends OpenCodeProcess {
@@ -103,10 +216,13 @@ interface OpenCodeResource extends OpenCodeProcess {
 }
 
 interface PreparedOpenCode {
+  version: string;
   authorization: string;
   executable: string;
   password: string;
   workspace: string;
+  /** Where the running OpenCode's process ID is kept. */
+  processFile: string;
   xdgCache: string;
   xdgConfig: string;
   xdgData: string;
@@ -123,6 +239,11 @@ export interface OpenCodeOptions {
    * spawn time; a read failure starts the engine without extra servers.
    */
   mcpServers?: () => Effect.Effect<readonly McpServerConfig[], unknown>;
+  /**
+   * Downloads with certificates installed on the system, for when Node doesn't trust the
+   * issuer (corporate or antivirus HTTPS interception).
+   */
+  fetchWithSystemCertificates?: OpenCodeBinaryOptions["fetchWithSystemCertificates"];
   workspace: string;
   onStartupProgress?: (progress: OpenCodeStartupProgress) => void;
 }
@@ -165,7 +286,15 @@ export function findOpenCodeListeningPort(
   return Effect.succeed(ports.values().next().value ?? null);
 }
 
-function waitForSpawn(child: ChildProcessWithoutNullStreams): Effect.Effect<void, OpenCodeError> {
+/**
+ * Waits until the process has started. A process with a pid has started: Node gives one that
+ * couldn't start no pid and an error event instead. Checking the pid matters because "spawn" fires
+ * on the next tick, before anything that awaits between spawning and waiting can listen for it.
+ */
+export function waitForSpawn(
+  child: ChildProcessWithoutNullStreams,
+): Effect.Effect<void, OpenCodeError> {
+  if (child.pid !== undefined) return Effect.void;
   return Effect.async<void, OpenCodeError>((resume) => {
     const cleanup = () => {
       child.off("spawn", onSpawn);
@@ -177,7 +306,16 @@ function waitForSpawn(child: ChildProcessWithoutNullStreams): Effect.Effect<void
     };
     const onError = (cause: Error) => {
       cleanup();
-      resume(Effect.fail(new OpenCodeError({ message: "Failed to spawn OpenCode", cause })));
+      const reason = (cause as NodeJS.ErrnoException).code ?? cause.message;
+      resume(
+        Effect.fail(
+          new OpenCodeError({
+            message: `Failed to spawn OpenCode: ${reason}`,
+            cause,
+            couldNotRun: true,
+          }),
+        ),
+      );
     };
 
     child.once("spawn", onSpawn);
@@ -187,46 +325,226 @@ function waitForSpawn(child: ChildProcessWithoutNullStreams): Effect.Effect<void
   });
 }
 
-function pollListeningPort(
+/** Fails as soon as the process exits, however the rest of startup is getting on. */
+function failOnExit(
   child: ChildProcessWithoutNullStreams,
   output: OpenCodeOutputTail,
-  pid: number,
-): Effect.Effect<number, OpenCodeError> {
-  return Effect.gen(function* () {
-    if (child.exitCode !== null) return yield* exitedDuringStartup(child, output);
+): Effect.Effect<never, OpenCodeError> {
+  return Effect.async<void>((resume) => {
+    const onExit = () => resume(Effect.void);
+    if (child.exitCode !== null || child.signalCode !== null) return onExit();
+    child.once("exit", onExit);
+    return Effect.sync(() => child.off("exit", onExit));
+  }).pipe(Effect.flatMap(() => exitedDuringStartup(child, output)));
+}
 
-    const connections = yield* Effect.tryPromise({
-      try: () => networkConnections(),
-      catch: (cause) =>
-        new OpenCodeError({ message: "Failed to inspect OpenCode network listeners", cause }),
-    });
-    const port = yield* findOpenCodeListeningPort(connections, pid);
-    if (port !== null) return port;
-    yield* Effect.sleep("500 millis");
-    return yield* Effect.suspend(() => pollListeningPort(child, output, pid));
+export interface PortLookup {
+  /**
+   * The system's network connections. On Windows, systeminformation never settles this if
+   * netstat can't start or exits with an error, so a call that stays pending is what such a
+   * failure looks like from here.
+   */
+  readonly connections: () => Promise<readonly NetworkConnection[]>;
+  /** Runs netstat directly and says how it went, or null where that would tell us nothing. */
+  readonly probe: (pid: number) => Promise<string | null>;
+}
+
+const NETSTAT_CHECK_TIMEOUT = "15 seconds";
+const PROBE_TIMEOUT_MS = 5_000;
+const PROBE_DETAIL_MAX_CHARS = 120;
+
+/** Runs the command systeminformation runs on Windows, but keeps the error it would swallow. */
+function probeNetstat(pid: number): Promise<string> {
+  return new Promise((resolve) => {
+    exec(
+      "netstat -nao",
+      { maxBuffer: 1024 * 102400, timeout: PROBE_TIMEOUT_MS, windowsHide: true },
+      (error, stdout, stderr) => {
+        if (error) {
+          const detail = (stderr.trim() || error.message).replace(/\s+/g, " ");
+          resolve(
+            `failed with ${error.code ?? error.signal}: ${detail.slice(0, PROBE_DETAIL_MAX_CHARS)}`,
+          );
+          return;
+        }
+        const rows = stdout.split("\n").filter((line) => /^\s*(TCP|UDP)\s/i.test(line));
+        const owned = rows.filter((line) => line.trim().endsWith(` ${pid}`));
+        resolve(`ok with ${rows.length} rows, ${owned.length} for the pid`);
+      },
+    );
   });
 }
 
+const systemPortLookup: PortLookup = {
+  connections: () => networkConnections(),
+  probe: (pid) => (process.platform === "win32" ? probeNetstat(pid) : Promise.resolve(null)),
+};
+
+/** What the netstat lookups have seen so far, for when the port never turns up. */
+interface NetstatSightings {
+  started: number;
+  returned: number;
+  rows: number;
+  listening: number;
+  rowsForPid: number;
+  listenersForPid: string[];
+  problem: string | null;
+}
+
+const noSightings = (): NetstatSightings => ({
+  started: 0,
+  returned: 0,
+  rows: 0,
+  listening: 0,
+  rowsForPid: 0,
+  listenersForPid: [],
+  problem: null,
+});
+
+function recordNetstatRows(
+  sightings: NetstatSightings,
+  connections: readonly NetworkConnection[],
+  pid: number,
+): void {
+  const owned = connections.filter((connection) => connection.pid === pid);
+  sightings.returned += 1;
+  sightings.rows = connections.length;
+  sightings.listening = connections.filter((connection) => connection.state === "LISTEN").length;
+  sightings.rowsForPid = owned.length;
+  sightings.listenersForPid = owned
+    .filter((connection) => connection.state === "LISTEN")
+    .map((connection) => {
+      // Telling our own bind from a wildcard is all this is for; a LAN address stays private.
+      const local = /^(127\.|0\.0\.0\.0$|::1?$)/.test(connection.localAddress);
+      return `${local ? connection.localAddress : "other"}:${connection.localPort}`;
+    });
+}
+
+/** Says what the lookups saw, asking netstat directly if none of them ever came back. */
+function describeNetstat(
+  sightings: NetstatSightings,
+  lookup: PortLookup,
+  pid: number,
+): Effect.Effect<string> {
+  const calls = `netstat ${sightings.returned} of ${sightings.started} calls returned`;
+  const problem = sightings.problem ? `, ${sightings.problem}` : "";
+  if (sightings.returned > 0) {
+    const listeners = sightings.listenersForPid.slice(0, 3).join(" ") || "none";
+    return Effect.succeed(
+      `${calls}, last ${sightings.rows} rows, ${sightings.listening} listening, ${sightings.rowsForPid} for pid ${pid}, its listeners ${listeners}${problem}`,
+    );
+  }
+  return Effect.tryPromise(() => lookup.probe(pid)).pipe(
+    // Killing the shell at the timeout can leave netstat holding the pipes open.
+    Effect.timeoutTo({
+      duration: PROBE_TIMEOUT_MS + 1_000,
+      onSuccess: (probe) => (probe ? `, direct netstat ${probe}` : ""),
+      onTimeout: () => ", direct netstat hung",
+    }),
+    Effect.orElseSucceed(() => ", direct netstat could not run"),
+    Effect.map((probe) => `${calls}${problem}${probe}`),
+  );
+}
+
+function pollListeningPort(
+  lookup: PortLookup,
+  pid: number,
+  sightings: NetstatSightings,
+): Effect.Effect<number> {
+  return Effect.gen(function* () {
+    sightings.started += 1;
+    const port = yield* Effect.tryPromise(() => lookup.connections()).pipe(
+      Effect.tap((connections) => recordNetstatRows(sightings, connections, pid)),
+      // OpenCode's output may still name the port, so a bad answer here doesn't end startup.
+      Effect.flatMap((connections) => findOpenCodeListeningPort(connections, pid)),
+      Effect.catchAll((error) =>
+        Effect.sync(() => {
+          sightings.problem = error.message;
+          return null;
+        }),
+      ),
+    );
+    if (port !== null) return port;
+    yield* Effect.sleep("500 millis");
+    return yield* Effect.suspend(() => pollListeningPort(lookup, pid, sightings));
+  });
+}
+
+/**
+ * OpenCode's output is the answer and netstat the fallback, in case that line ever changes. It
+ * doesn't matter which gets there first: the port still has to pass the authenticated health check.
+ */
 export function waitForListeningPort(
   child: ChildProcessWithoutNullStreams,
   output: OpenCodeOutputTail,
   timeout: Duration.DurationInput = STARTUP_TIMEOUT,
-) {
-  if (child.pid === undefined) {
-    return Effect.fail(new OpenCodeError({ message: "OpenCode started without a process ID" }));
+  lookup: PortLookup = systemPortLookup,
+): Effect.Effect<number, OpenCodeError> {
+  const { pid } = child;
+  if (pid === undefined) {
+    return Effect.fail(
+      new OpenCodeError({ message: "OpenCode started without a process ID", couldNotRun: true }),
+    );
   }
-  return pollListeningPort(child, output, child.pid).pipe(
-    Effect.timeoutFail({
-      duration: timeout,
-      onTimeout: () =>
-        new OpenCodeError({
-          message: withOutputTail(
-            `OpenCode did not open a listening port within ${Math.round(Duration.toSeconds(timeout))} seconds`,
-            output,
-          ),
-        }),
-    }),
-  );
+  return Effect.gen(function* () {
+    const sightings = noSightings();
+    const port = yield* Effect.raceFirst(
+      Effect.promise(() => output.announcedPort),
+      pollListeningPort(lookup, pid, sightings),
+    ).pipe(Effect.raceFirst(failOnExit(child, output)), Effect.timeoutOption(timeout));
+    if (Option.isSome(port)) return port.value;
+
+    const netstat = yield* describeNetstat(sightings, lookup, pid);
+    return yield* Effect.fail(
+      new OpenCodeError({
+        // Reports keep the first 500 characters, so what we saw goes ahead of OpenCode's output.
+        message: withOutputTail(
+          `OpenCode did not open a listening port within ${Math.round(Duration.toSeconds(timeout))} seconds. No port in its output, ${netstat}`,
+          output,
+        ),
+      }),
+    );
+  });
+}
+
+/**
+ * With OpenCode confirmed on a port, says how netstat's view differs, or null if it agrees. Reading
+ * the port from the output means affected machines no longer time out, so this only goes in the
+ * local log: nothing is wrong, and the reports it used to send have told us what we needed.
+ */
+export function explainNetstatMiss(
+  pid: number,
+  port: number,
+  lookup: PortLookup = systemPortLookup,
+  timeout: Duration.DurationInput = NETSTAT_CHECK_TIMEOUT,
+): Effect.Effect<string | null> {
+  return Effect.gen(function* () {
+    const sightings = noSightings();
+    sightings.started = 1;
+    const connections = yield* Effect.tryPromise(() => lookup.connections()).pipe(
+      Effect.timeoutOption(timeout),
+      Effect.orElseSucceed(() => Option.none<readonly NetworkConnection[]>()),
+    );
+    const rows = Option.getOrElse(connections, (): readonly NetworkConnection[] => []);
+    const holders = rows.filter(
+      (row) =>
+        Number(row.localPort) === port && row.state === "LISTEN" && row.protocol.startsWith("tcp"),
+    );
+    if (holders.some((row) => row.pid === pid && row.localAddress === LOOPBACK)) return null;
+
+    if (Option.isSome(connections)) recordNetstatRows(sightings, rows, pid);
+    const netstat = yield* describeNetstat(sightings, lookup, pid);
+    const pids = holders.map((row) => row.pid).join(" ") || "nobody";
+    return `OpenCode is on port ${port} but netstat doesn't show it for pid ${pid}: ${netstat}, port held by ${pids}`;
+  });
+}
+
+/** Why a health check got no response, in a form that holds no credentials. */
+function describeHealthFailure(cause: unknown): string {
+  const inner = cause instanceof Error ? cause.cause : undefined;
+  const code = inner && typeof inner === "object" && "code" in inner ? inner.code : undefined;
+  if (typeof code === "string") return code;
+  return cause instanceof Error ? cause.name : "unknown error";
 }
 
 function pollHealth(
@@ -234,6 +552,7 @@ function pollHealth(
   output: OpenCodeOutputTail,
   healthUrl: string,
   authorization: string,
+  lastFailure: { current: string },
 ): Effect.Effect<void, OpenCodeError> {
   return Effect.gen(function* () {
     if (child.exitCode !== null) return yield* exitedDuringStartup(child, output);
@@ -244,28 +563,42 @@ function pollHealth(
           headers: { Authorization: authorization },
           signal: AbortSignal.any([signal, AbortSignal.timeout(2_000)]),
         }),
-      catch: (cause) =>
-        new OpenCodeError({ message: "OpenCode health check did not respond", cause }),
-    }).pipe(Effect.catchAll(() => Effect.succeed(null)));
+      catch: (cause) => cause,
+    }).pipe(
+      Effect.catchAll((cause) =>
+        Effect.sync(() => {
+          lastFailure.current = describeHealthFailure(cause);
+          return null;
+        }),
+      ),
+    );
     if (response?.ok) return;
+    if (response) lastFailure.current = `HTTP ${response.status}`;
     yield* Effect.sleep("500 millis");
-    return yield* Effect.suspend(() => pollHealth(child, output, healthUrl, authorization));
+    return yield* Effect.suspend(() =>
+      pollHealth(child, output, healthUrl, authorization, lastFailure),
+    );
   });
 }
 
-function waitForHealth(
+export function waitForHealth(
   child: ChildProcessWithoutNullStreams,
   output: OpenCodeOutputTail,
   port: number,
   authorization: string,
+  timeout: Duration.DurationInput = STARTUP_TIMEOUT,
 ): Effect.Effect<void, OpenCodeError> {
   const healthUrl = `http://${LOOPBACK}:${port}/global/health`;
-  return pollHealth(child, output, healthUrl, authorization).pipe(
+  const lastFailure = { current: "no response yet" };
+  return pollHealth(child, output, healthUrl, authorization, lastFailure).pipe(
     Effect.timeoutFail({
-      duration: STARTUP_TIMEOUT,
+      duration: timeout,
       onTimeout: () =>
         new OpenCodeError({
-          message: withOutputTail("OpenCode did not become healthy within 60 seconds", output),
+          message: withOutputTail(
+            `OpenCode did not become healthy on port ${port} within ${Math.round(Duration.toSeconds(timeout))} seconds. Last check: ${lastFailure.current}`,
+            output,
+          ),
         }),
     }),
   );
@@ -278,6 +611,7 @@ function prepareOpenCode(
     const broker = yield* StudioMcpBroker;
     const { executable, version } = yield* ensureOpenCodeBinary({
       cacheDirectory: options.binaryCacheDirectory,
+      fetchWithSystemCertificates: options.fetchWithSystemCertificates,
       onStartupProgress: options.onStartupProgress,
     }).pipe(
       Effect.mapError(
@@ -296,14 +630,30 @@ function prepareOpenCode(
     const fileOperation = <A>(message: string, evaluate: () => PromiseLike<A>) =>
       Effect.tryPromise({
         try: evaluate,
-        catch: (cause) => new OpenCodeError({ message, cause }),
+        catch: (cause) => {
+          // A full drive, or Windows refusing access, is something someone can act on.
+          const reason = workspaceFailureReason(cause);
+          return new OpenCodeError({
+            message: reason ? `${message} (reason: ${reason})` : message,
+            cause,
+          });
+        },
       });
 
-    yield* Effect.all(
-      [options.workspace, xdgData, configDirectory, xdgCache, xdgState].map((directory) =>
-        fileOperation(`Failed to create ${directory}`, () => mkdir(directory, { recursive: true })),
-      ),
-      { concurrency: "unbounded", discard: true },
+    // One at a time, so a file in the way of them all is only moved aside once.
+    yield* Effect.forEach(
+      [options.workspace, xdgData, configDirectory, xdgCache, xdgState],
+      (directory) =>
+        fileOperation(`Failed to create ${directory}`, () =>
+          ensureFolder(options.workspace, directory),
+        ).pipe(
+          Effect.tap((movedAside) =>
+            movedAside
+              ? Effect.logWarning(`[opencode] Moved a file in the way to ${movedAside}`)
+              : Effect.void,
+          ),
+        ),
+      { discard: true },
     );
     let mcpServers: readonly McpServerConfig[] = [];
     if (options.mcpServers) {
@@ -338,7 +688,9 @@ function prepareOpenCode(
       authorization,
       executable,
       password,
+      version,
       workspace: options.workspace,
+      processFile: join(opencodeHome, "server.pid"),
       xdgCache,
       xdgConfig,
       xdgData,
@@ -349,6 +701,7 @@ function prepareOpenCode(
 
 function spawnOpenCode(prepared: PreparedOpenCode): Effect.Effect<OpenCodeProcess, OpenCodeError> {
   return Effect.gen(function* () {
+    const shellPath = yield* Effect.promise(loadShellPath);
     const child = yield* Effect.try({
       try: () =>
         spawn(
@@ -358,6 +711,7 @@ function spawnOpenCode(prepared: PreparedOpenCode): Effect.Effect<OpenCodeProces
             cwd: prepared.workspace,
             env: {
               ...process.env,
+              ...(shellPath ? { PATH: shellPath } : {}),
               XDG_CACHE_HOME: prepared.xdgCache,
               XDG_CONFIG_HOME: prepared.xdgConfig,
               XDG_DATA_HOME: prepared.xdgData,
@@ -381,28 +735,37 @@ function spawnOpenCode(prepared: PreparedOpenCode): Effect.Effect<OpenCodeProces
   });
 }
 
-function stopOpenCode(resource: OpenCodeProcess): Effect.Effect<void> {
-  return Effect.suspend(() => {
-    if (resource.child.exitCode !== null || resource.child.pid === undefined) return Effect.void;
+const hasExited = (child: ChildProcessWithoutNullStreams) =>
+  child.exitCode !== null || child.signalCode !== null;
 
-    const exitedAfterTerminate = Effect.async<void>((resume) => {
-      const cleanup = () => resource.child.off("exit", onExit);
-      const onExit = () => {
-        cleanup();
-        resume(Effect.void);
-      };
-      resource.child.once("exit", onExit);
-      if (resource.child.exitCode !== null) {
-        onExit();
-      } else if (!resource.child.killed) {
-        resource.child.kill("SIGTERM");
-      }
-      return Effect.sync(cleanup);
+/**
+ * Stops OpenCode and waits until it has exited, as only then has it let go of its database. One
+ * that ignores the request is killed after the grace period, and that is waited for too.
+ */
+export function stopOpenCode(
+  resource: Pick<OpenCodeProcess, "child">,
+  grace: Duration.DurationInput = "5 seconds",
+): Effect.Effect<void> {
+  return Effect.suspend(() => {
+    const { child } = resource;
+    if (hasExited(child) || child.pid === undefined) return Effect.void;
+
+    const exited = Effect.async<void>((resume) => {
+      const onExit = () => resume(Effect.void);
+      child.once("exit", onExit);
+      if (hasExited(child)) onExit();
+      return Effect.sync(() => child.off("exit", onExit));
     });
-    const forceKill = Effect.sleep("5 seconds").pipe(
-      Effect.tap(() => Effect.sync(() => resource.child.kill("SIGKILL"))),
+    const kill = (signal: NodeJS.Signals) =>
+      Effect.sync(() => {
+        if (!hasExited(child)) child.kill(signal);
+      });
+    return (child.killed ? Effect.void : kill("SIGTERM")).pipe(
+      Effect.zipRight(exited.pipe(Effect.timeout(grace))),
+      Effect.catchAll(() =>
+        kill("SIGKILL").pipe(Effect.zipRight(exited.pipe(Effect.timeout(grace), Effect.ignore))),
+      ),
     );
-    return Effect.race(exitedAfterTerminate, forceKill);
   });
 }
 
@@ -415,6 +778,41 @@ function awaitOpenCode(process: OpenCodeProcess): Effect.Effect<OpenCodeResource
   });
 }
 
+/**
+ * Starts one OpenCode and waits until it's ready. Its process ID is noted while it runs, so a
+ * later start can stop it if BloxMind crashes. One that fails is stopped before this returns, so
+ * it can't hold the database while the next try starts.
+ */
+function startOpenCode(
+  prepared: PreparedOpenCode,
+  executable: string,
+): Effect.Effect<OpenCodeResource, OpenCodeError, Scope.Scope> {
+  return Effect.gen(function* () {
+    const release = (started: OpenCodeProcess) =>
+      stopOpenCode(started).pipe(
+        Effect.zipRight(
+          Effect.promise(async () => {
+            const { pid } = started.child;
+            if (pid !== undefined) await forgetOpenCodeProcess(prepared.processFile, pid);
+          }),
+        ),
+      );
+    const started = yield* Effect.acquireRelease(
+      spawnOpenCode({ ...prepared, executable }).pipe(
+        Effect.tap(({ child }) =>
+          Effect.promise(async () => {
+            if (child.pid !== undefined) {
+              await recordOpenCodeProcess(prepared.processFile, child.pid, executable);
+            }
+          }),
+        ),
+      ),
+      release,
+    );
+    return yield* awaitOpenCode(started).pipe(Effect.tapError(() => release(started)));
+  });
+}
+
 export function makeOpenCodeLayer(options: OpenCodeOptions) {
   return Layer.scoped(
     OpenCode,
@@ -422,8 +820,48 @@ export function makeOpenCodeLayer(options: OpenCodeOptions) {
       // Downloading and readiness polling remain interruptible. Only the short spawn
       // operation is masked, and its finalizer is registered before any waiting begins.
       const prepared = yield* prepareOpenCode(options);
-      const process = yield* Effect.acquireRelease(spawnOpenCode(prepared), stopOpenCode);
-      const resource = yield* awaitOpenCode(process);
+      const leftover = yield* Effect.promise(() => stopLeftoverOpenCode(prepared.processFile));
+      if (leftover !== null) {
+        yield* Effect.logWarning(`[opencode] Stopped OpenCode ${leftover} left by an earlier run`);
+      }
+      const dataFolder = join(prepared.xdgData, "opencode");
+      // A copy can pass every check and still not run. An older one is worth one more try, and if
+      // that runs, the newer one isn't chosen again. A timeout can be a slow machine rather than a
+      // broken copy, so only a copy that couldn't start or exited is set aside.
+      const resource = yield* retryWhileDatabaseLocked(
+        startOpenCode(prepared, prepared.executable),
+      ).pipe(
+        Effect.catchAll((failure) =>
+          Effect.gen(function* () {
+            // The database is the problem, not this copy, so another copy would fail the same way.
+            if (databaseProblem(failure.message)) {
+              return yield* Effect.fail(describeDatabaseFailure(failure, dataFolder));
+            }
+            const fallback = yield* findOpenCodeFallback(
+              { cacheDirectory: options.binaryCacheDirectory },
+              prepared.version,
+            );
+            if (!fallback) return yield* Effect.fail(failure);
+            const started = yield* startOpenCode(prepared, fallback.executable).pipe(
+              Effect.mapError(() => failure),
+            );
+            if (failure.couldNotRun) {
+              yield* distrustOpenCodeVersion(
+                { cacheDirectory: options.binaryCacheDirectory },
+                prepared.version,
+              );
+            }
+            return started;
+          }),
+        ),
+      );
+      const { pid } = resource.child;
+      if (pid !== undefined && globalThis.process.platform === "win32") {
+        yield* explainNetstatMiss(pid, resource.port).pipe(
+          Effect.tap((message) => (message ? Effect.logInfo(`[opencode] ${message}`) : Effect.void)),
+          Effect.forkScoped,
+        );
+      }
       return {
         info: Effect.suspend(() => {
           if (resource.child.exitCode !== null) {

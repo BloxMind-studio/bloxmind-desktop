@@ -3,7 +3,7 @@ import { userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, net, shell } from "electron";
 import { autoUpdater } from "electron-updater";
 import { Cause, Data, Effect, Layer, ManagedRuntime, Schema } from "effect";
 
@@ -26,6 +26,7 @@ import {
 } from "../src/types/studioTarget";
 import { handleLastWindowClosed } from "./appLifecycle";
 import { createMainErrorReporter } from "./errorReporter";
+import { engineFolder } from "./machineFolders";
 import { findInstructionFiles, stripLegacyManagedBlock } from "./instructionFiles";
 import { skillDirectories } from "./opencodeConfig";
 import { channels } from "./channels";
@@ -132,13 +133,20 @@ const studioMcpBrokerLayer = makeStudioMcpBrokerLayer({
   onStartFailure: (error) => reportMainError("studio_mcp_broker_start", error),
 }).pipe(Layer.tapErrorCause(reportLayerFailure("studio_mcp_broker_start")));
 
-const openCodeBinaryDirectory = join(app.getPath("userData"), "opencode");
+const openCodeBinaryDirectory = engineFolder({
+  platform: process.platform,
+  userData: app.getPath("userData"),
+  localAppData: process.env.LOCALAPPDATA,
+});
 
 const openCodeRuntime = ManagedRuntime.make(
   Layer.merge(
     Layer.merge(
       makeOpenCodeLayer({
         binaryCacheDirectory: openCodeBinaryDirectory,
+        // Chromium's network stack trusts the certificates installed on the system, which Node
+        // doesn't when corporate or antivirus software intercepts HTTPS.
+        fetchWithSystemCertificates: (url, init) => net.fetch(url, init),
         // The bundled Roblox skill sits next to the app's resources once
         // packaged, and in the repository during development.
         skillsPaths: skillDirectories({

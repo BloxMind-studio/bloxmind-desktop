@@ -1,13 +1,45 @@
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
-import { Effect, Either, Logger, LogLevel } from "effect";
-import { afterEach, describe, expect, it } from "vitest";
-
+﻿import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
+import { EventEmitter } from "node:events";
+import { existsSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
+  Effect,
+  Either,
+  Exit,
+  Fiber,
+  Logger,
+  LogLevel,
+  Schedule,
+  TestClock,
+  TestContext,
+} from "effect";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  databaseProblem,
+  describeDatabaseFailure,
+  explainNetstatMiss,
   findOpenCodeListeningPort,
+  OpenCodeError,
+  parseListeningPort,
+  retryWhileDatabaseLocked,
+  stopOpenCode,
   trackOpenCodeOutput,
+  waitForHealth,
   waitForListeningPort,
+  waitForSpawn,
   withOutputTail,
 } from "../../electron/services/OpenCode";
+import {
+  forgetOpenCodeProcess,
+  parseTasklistName,
+  recordOpenCodeProcess,
+  stopLeftoverOpenCode,
+} from "../../electron/services/openCodeLeftover";
+import { parseShellEnv } from "../../electron/shellEnv";
 
 describe("OpenCode server startup", () => {
   const connection = {
@@ -97,9 +129,9 @@ describe("OpenCode startup output", () => {
 
     const message = Either.isLeft(result) ? result.left.message : "";
     expect(message).toMatch(
-      /^OpenCode did not open a listening port within 1 seconds\. Output: x+ waiting on migration$/,
+      /^OpenCode did not open a listening port within 1 seconds\. .* Output: x+ waiting on migration$/,
     );
-    expect(message.length).toBeLessThan(500);
+    expect(message.length).toBeLessThan(800);
     expect(output.stderr().length).toBeLessThanOrEqual(2048);
   });
 
@@ -107,7 +139,6 @@ describe("OpenCode startup output", () => {
     const output = {
       stderr: () => " \n",
       stdout: () => "listening\nready\n",
-      closed: Promise.resolve(),
     };
     expect(withOutputTail("OpenCode exited", output)).toBe(
       "OpenCode exited. Output: listening ready",
@@ -115,5 +146,560 @@ describe("OpenCode startup output", () => {
     expect(withOutputTail("OpenCode exited", { ...output, stdout: () => "" })).toBe(
       "OpenCode exited",
     );
+  });
+});
+
+describe("finding OpenCode's port", () => {
+  const PID = 1234;
+  const LINE = "server listening on http://127.0.0.1:51078";
+  const listener = {
+    localAddress: "127.0.0.1",
+    localPort: "54321",
+    pid: PID,
+    protocol: "tcp",
+    state: "LISTEN",
+  };
+  const never = () => new Promise<never>(() => {});
+  const noProbe = { probe: async (): Promise<string | null> => null };
+
+  /** A child whose streams and exit are driven by the test, one exact chunk at a time. */
+  const fakeChild = () => {
+    const child = Object.assign(new EventEmitter(), {
+      pid: PID,
+      exitCode: null as number | null,
+      signalCode: null,
+      stdout: new EventEmitter(),
+      stderr: new EventEmitter(),
+    });
+    const typed = child as unknown as ChildProcessWithoutNullStreams;
+    return { child, typed, output: trackOpenCodeOutput(typed) };
+  };
+  const quietly = <A, E>(effect: Effect.Effect<A, E>) =>
+    Effect.runPromise(Effect.either(effect).pipe(Logger.withMinimumLogLevel(LogLevel.None)));
+  const isPending = async (promise: Promise<unknown>) => {
+    const pending = Symbol();
+    await new Promise((resolve) => setImmediate(resolve));
+    return (await Promise.race([promise, Promise.resolve(pending)])) === pending;
+  };
+
+  it.each([
+    [LINE, 51078],
+    [`${LINE}/`, 51078],
+    [`${LINE}\r`, 51078],
+    [`\u001b[32m${LINE}\u001b[0m`, 51078],
+    [`opencode ${LINE}`, 51078],
+  ])("reads the port from %j", (line, port) => {
+    expect(parseListeningPort(line)).toBe(port);
+  });
+
+  it.each([
+    "server listening on http://0.0.0.0:4096",
+    "server listening on http://192.168.1.20:4096",
+    "server listening on http://example.com:4096",
+    "server listening on http://127.0.0.1.example.com:4096",
+    "server listening on http://127.0.0.1:4096@example.com",
+    "server listening on http://127.0.0.1:4096/path",
+    "server listening on https://127.0.0.1:4096",
+    "server listening on http://127.0.0.1:0",
+    "server listening on http://127.0.0.1:70000",
+    "server listening on http://127.0.0.1",
+    "listening on http://127.0.0.1:4096",
+    "Error: could not connect to http://127.0.0.1:4096",
+  ])("rejects %j", (line) => {
+    expect(parseListeningPort(line)).toBeNull();
+  });
+
+  it("waits for the whole line when a chunk ends in the middle of the port", async () => {
+    const { child, output } = fakeChild();
+
+    child.stdout.emit("data", Buffer.from("server listening on http://127.0.0.1:510"));
+    expect(await isPending(output.announcedPort)).toBe(true);
+
+    child.stdout.emit("data", Buffer.from("78\r\n"));
+    await expect(output.announcedPort).resolves.toBe(51078);
+  });
+
+  it("splits lines on a lone carriage return too", async () => {
+    const { child, output } = fakeChild();
+
+    child.stdout.emit("data", Buffer.from(`starting\r${LINE}\r`));
+    await expect(output.announcedPort).resolves.toBe(51078);
+  });
+
+  it("keeps stdout and stderr lines apart when their chunks interleave", async () => {
+    const { child, output } = fakeChild();
+
+    child.stdout.emit("data", Buffer.from("server listening on http:"));
+    child.stderr.emit("data", Buffer.from("a warning\n"));
+    child.stdout.emit("data", Buffer.from("//127.0.0.1:51078\n"));
+
+    await expect(output.announcedPort).resolves.toBe(51078);
+  });
+
+  it("finds the port on stderr, and after more output than the tail keeps", async () => {
+    const { child, output } = fakeChild();
+
+    child.stderr.emit("data", Buffer.from(`${"noise ".repeat(2000)}\n${LINE}\n`));
+    child.stderr.emit("data", Buffer.from(`${"noise\n".repeat(2000)}`));
+
+    await expect(output.announcedPort).resolves.toBe(51078);
+    expect(output.stderr()).not.toContain(LINE);
+  });
+
+  it("uses the port from the output when netstat returns nothing", async () => {
+    const { child, typed, output } = fakeChild();
+    const connections = vi.fn(async () => []);
+    child.stdout.emit("data", Buffer.from(`${LINE}\n`));
+
+    const result = await quietly(
+      waitForListeningPort(typed, output, "20 seconds", { connections, ...noProbe }),
+    );
+
+    expect(result).toEqual(Either.right(51078));
+  });
+
+  it("uses the port from the output when netstat never comes back", async () => {
+    const { child, typed, output } = fakeChild();
+    const run = quietly(
+      waitForListeningPort(typed, output, "20 seconds", { connections: never, ...noProbe }),
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+    child.stdout.emit("data", Buffer.from(`${LINE}\n`));
+
+    expect(await run).toEqual(Either.right(51078));
+  });
+
+  it("falls back to netstat when the output never names the port", async () => {
+    const { typed, output } = fakeChild();
+
+    const result = await quietly(
+      waitForListeningPort(typed, output, "20 seconds", {
+        connections: async () => [listener],
+        ...noProbe,
+      }),
+    );
+
+    expect(result).toEqual(Either.right(54321));
+  });
+
+  it("doesn't let an ambiguous netstat answer end startup before the output arrives", async () => {
+    const { child, typed, output } = fakeChild();
+    const run = quietly(
+      waitForListeningPort(typed, output, "20 seconds", {
+        connections: async () => [listener, { ...listener, localPort: "54322" }],
+        ...noProbe,
+      }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    child.stdout.emit("data", Buffer.from(`${LINE}\n`));
+
+    expect(await run).toEqual(Either.right(51078));
+  });
+
+  it("reports an exit straight away even though netstat never comes back", async () => {
+    const { child, typed, output } = fakeChild();
+    const run = quietly(
+      waitForListeningPort(typed, output, "20 seconds", { connections: never, ...noProbe }),
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+    child.exitCode = 7;
+    child.emit("exit");
+    child.emit("close");
+
+    expect(await run).toMatchObject({
+      left: { message: "OpenCode exited during startup with code 7" },
+    });
+  });
+
+  it("says the copy couldn't run when it exits, but not when startup only timed out", async () => {
+    const exited = fakeChild();
+    const run = quietly(
+      waitForListeningPort(exited.typed, exited.output, "20 seconds", {
+        connections: never,
+        ...noProbe,
+      }),
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+    exited.child.exitCode = 1;
+    exited.child.emit("exit");
+    exited.child.emit("close");
+    const { typed, output } = fakeChild();
+
+    const noPort = await quietly(
+      waitForListeningPort(typed, output, "100 millis", {
+        connections: async () => [],
+        ...noProbe,
+      }),
+    );
+    // Nothing listens on port 1, so the check never passes.
+    const unhealthy = await quietly(
+      waitForHealth(typed, output, 1, "Basic c2VjcmV0", "100 millis"),
+    );
+
+    expect(await run).toMatchObject({ left: { couldNotRun: true } });
+    expect(Either.isLeft(noPort) && noPort.left.couldNotRun).toBeFalsy();
+    expect(Either.isLeft(unhealthy) && unhealthy.left.couldNotRun).toBeFalsy();
+    expect(Either.isLeft(noPort)).toBe(true);
+    expect(Either.isLeft(unhealthy)).toBe(true);
+  });
+
+  it("doesn't take a non-loopback address, and says what netstat saw at the timeout", async () => {
+    const { child, typed, output } = fakeChild();
+    child.stdout.emit("data", Buffer.from("server listening on http://0.0.0.0:51078\n"));
+
+    const result = await quietly(
+      waitForListeningPort(typed, output, "100 millis", {
+        connections: async () => [
+          { ...listener, localAddress: "0.0.0.0" },
+          { ...listener, localAddress: "192.168.1.20", localPort: "9000" },
+          { ...listener, pid: 999 },
+          { ...listener, pid: 999, state: "ESTABLISHED" },
+          { ...listener, state: "ESTABLISHED" },
+        ],
+        ...noProbe,
+      }),
+    );
+
+    expect(Either.isLeft(result) ? result.left.message : "").toBe(
+      "OpenCode did not open a listening port within 0 seconds. No port in its output, " +
+        "netstat 1 of 1 calls returned, last 5 rows, 3 listening, 3 for pid 1234, " +
+        "its listeners 0.0.0.0:54321 other:9000. " +
+        "Output: server listening on http://0.0.0.0:51078",
+    );
+  });
+
+  it("says netstat came back empty", async () => {
+    const { typed, output } = fakeChild();
+    const probe = vi.fn(async () => "should not run");
+
+    const result = await quietly(
+      waitForListeningPort(typed, output, "100 millis", { connections: async () => [], probe }),
+    );
+
+    expect(Either.isLeft(result) ? result.left.message : "").toBe(
+      "OpenCode did not open a listening port within 0 seconds. No port in its output, " +
+        "netstat 1 of 1 calls returned, last 0 rows, 0 listening, 0 for pid 1234, its listeners none",
+    );
+    expect(probe).not.toHaveBeenCalled();
+  });
+
+  it("asks netstat directly when the lookup never comes back, and says why it failed", async () => {
+    const { typed, output } = fakeChild();
+    const probe = vi.fn(async () => "failed with 1: 'netstat' is not recognized");
+
+    const result = await quietly(
+      waitForListeningPort(typed, output, "100 millis", { connections: never, probe }),
+    );
+
+    expect(Either.isLeft(result) ? result.left.message : "").toBe(
+      "OpenCode did not open a listening port within 0 seconds. No port in its output, " +
+        "netstat 0 of 1 calls returned, direct netstat failed with 1: 'netstat' is not recognized",
+    );
+    expect(probe).toHaveBeenCalledWith(PID);
+  });
+
+  describe("explaining a netstat miss once OpenCode is up", () => {
+    const row = { ...listener, localPort: "51078" };
+    const explain = (connections: () => Promise<(typeof row)[]>, probe = noProbe.probe) =>
+      Effect.runPromise(explainNetstatMiss(PID, 51078, { connections, probe }, "100 millis"));
+
+    it("stays quiet when netstat shows the port under the spawned pid", async () => {
+      expect(await explain(async () => [row])).toBeNull();
+    });
+
+    it("names the pid that holds the port when it isn't the spawned one", async () => {
+      expect(await explain(async () => [{ ...row, pid: 999 }])).toBe(
+        "OpenCode is on port 51078 but netstat doesn't show it for pid 1234: " +
+          "netstat 1 of 1 calls returned, last 1 rows, 1 listening, 0 for pid 1234, " +
+          "its listeners none, port held by 999",
+      );
+    });
+
+    it("says when netstat returned no rows", async () => {
+      expect(await explain(async () => [])).toBe(
+        "OpenCode is on port 51078 but netstat doesn't show it for pid 1234: " +
+          "netstat 1 of 1 calls returned, last 0 rows, 0 listening, 0 for pid 1234, " +
+          "its listeners none, port held by nobody",
+      );
+    });
+
+    it("asks netstat directly when the lookup never comes back", async () => {
+      expect(await explain(never, async () => "failed with 1: not recognized")).toBe(
+        "OpenCode is on port 51078 but netstat doesn't show it for pid 1234: " +
+          "netstat 0 of 1 calls returned, direct netstat failed with 1: not recognized, " +
+          "port held by nobody",
+      );
+    });
+  });
+
+  it("names the port and the last response when the health check never passes", async () => {
+    const { typed, output } = fakeChild();
+    const server = createServer((_request, response) => {
+      response.writeHead(401).end();
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as AddressInfo;
+
+    const unauthorized = await quietly(
+      waitForHealth(typed, output, port, "Basic c2VjcmV0", "1 second"),
+    );
+    await new Promise((resolve) => server.close(resolve));
+    const refused = await quietly(waitForHealth(typed, output, port, "Basic c2VjcmV0", "1 second"));
+
+    expect(Either.isLeft(unauthorized) ? unauthorized.left.message : "").toBe(
+      `OpenCode did not become healthy on port ${port} within 1 seconds. Last check: HTTP 401`,
+    );
+    expect(Either.isLeft(refused) ? refused.left.message : "").toBe(
+      `OpenCode did not become healthy on port ${port} within 1 seconds. Last check: ECONNREFUSED`,
+    );
+  });
+});
+
+describe("OpenCode's database", () => {
+  const exitedWith = (output: string) =>
+    new OpenCodeError({
+      message: `OpenCode exited during startup with code 1. Output: ${output}`,
+      couldNotRun: true,
+    });
+  const LOCKED = exitedWith(
+    "SqlError/LockTimeoutError: Failed to execute statement (cause: SQLiteError: database is locked)",
+  );
+  const DISK_IO = exitedWith("SQLiteError: disk I/O error");
+  const quietly = <A, E>(effect: Effect.Effect<A, E>) =>
+    Effect.runPromise(Effect.either(effect).pipe(Logger.withMinimumLogLevel(LogLevel.None)));
+
+  it("tells a locked database and a disk error from anything else", () => {
+    expect(databaseProblem(LOCKED.message)).toBe("locked");
+    expect(databaseProblem(DISK_IO.message)).toBe("disk_io");
+    expect(databaseProblem("OpenCode exited during startup with code 3")).toBeNull();
+  });
+
+  it("starts again while the database is locked, then gives up after three tries", async () => {
+    const start = vi.fn(() => Effect.fail(LOCKED));
+    const result = await quietly(
+      retryWhileDatabaseLocked(Effect.suspend(start), Schedule.recurs(2)),
+    );
+
+    expect(start).toHaveBeenCalledTimes(3);
+    expect(result).toMatchObject({ left: LOCKED });
+  });
+
+  it("gets going once whatever held the database lets go", async () => {
+    let tries = 0;
+    const start = Effect.suspend(() => (++tries < 2 ? Effect.fail(LOCKED) : Effect.succeed(51078)));
+
+    expect(await quietly(retryWhileDatabaseLocked(start, Schedule.recurs(2)))).toEqual(
+      Either.right(51078),
+    );
+  });
+
+  it("waits a second, then two, between tries", async () => {
+    let tries = 0;
+    const run = Effect.gen(function* () {
+      const fiber = yield* Effect.fork(
+        retryWhileDatabaseLocked(
+          Effect.suspend(() => {
+            tries += 1;
+            return Effect.fail(LOCKED);
+          }),
+        ),
+      );
+      yield* TestClock.adjust("999 millis");
+      expect(tries).toBe(1);
+      yield* TestClock.adjust("1 millis");
+      expect(tries).toBe(2);
+      yield* TestClock.adjust("2 seconds");
+      expect(tries).toBe(3);
+      return yield* Fiber.await(fiber);
+    }).pipe(Effect.provide(TestContext.TestContext), Logger.withMinimumLogLevel(LogLevel.None));
+
+    expect(Exit.isFailure(await Effect.runPromise(run))).toBe(true);
+    expect(tries).toBe(3);
+  });
+
+  it("doesn't start again for any other failure", async () => {
+    const start = vi.fn(() => Effect.fail(DISK_IO));
+    await quietly(retryWhileDatabaseLocked(Effect.suspend(start), Schedule.recurs(2)));
+
+    expect(start).toHaveBeenCalledOnce();
+  });
+
+  it("says what to do instead of showing SQLite's error, and keeps that as the cause", () => {
+    const folder = "C:\\Users\\Jane\\BloxMind\\.opencode\\data\\opencode";
+    const locked = describeDatabaseFailure(LOCKED, folder);
+    const diskIo = describeDatabaseFailure(DISK_IO, folder);
+
+    expect(locked.message).toBe(
+      `OpenCode's database in ${folder} is in use by another program. Close any other copy of BloxMind or OpenCode, or restart your computer, then try again (reason: database_locked)`,
+    );
+    expect(diskIo.message).toBe(
+      `OpenCode couldn't read or write its database in ${folder}. Make sure the drive has free space and that antivirus or a sync app isn't holding that folder, then try again (reason: database_io)`,
+    );
+    expect(diskIo.message).not.toContain("SQLiteError");
+    expect(diskIo.cause).toBe(DISK_IO);
+    const other = new OpenCodeError({ message: "OpenCode exited during startup with code 3" });
+    expect(describeDatabaseFailure(other, folder)).toBe(other);
+  });
+});
+
+describe.skipIf(process.platform === "win32")("stopping OpenCode", () => {
+  it("waits for one that ignores the request to stop until it has really gone", async () => {
+    // Ignores SIGTERM, as a busy process can, so only the forced kill stops it.
+    const child = spawn(
+      process.execPath,
+      ["-e", "process.on('SIGTERM', () => {}); console.log('ready'); setInterval(() => {}, 1000)"],
+      { stdio: "pipe" },
+    );
+    try {
+      await new Promise((resolve) => child.stdout.once("data", resolve));
+      await Effect.runPromise(stopOpenCode({ child }, "200 millis"));
+
+      expect(child.signalCode).toBe("SIGKILL");
+    } finally {
+      child.kill("SIGKILL");
+    }
+  });
+
+  it("does nothing for one that has already exited", async () => {
+    const child = spawn(process.execPath, ["-e", "process.exit(0)"], { stdio: "pipe" });
+    await new Promise((resolve) => child.once("exit", resolve));
+    const kill = vi.spyOn(child, "kill");
+
+    await Effect.runPromise(stopOpenCode({ child }, "200 millis"));
+    expect(kill).not.toHaveBeenCalled();
+  });
+});
+
+describe("waitForSpawn", () => {
+  it("sees a start that happened before it was called", async () => {
+    const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 5000)"], { stdio: "pipe" });
+    try {
+      // Starting records the pid first, which awaits a file write: "spawn" has fired by then.
+      await new Promise((resolve) => child.once("spawn", resolve));
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      await Effect.runPromise(waitForSpawn(child).pipe(Effect.timeout("1 second")));
+    } finally {
+      child.kill("SIGKILL");
+    }
+  });
+
+  it("fails for a program that can't start", async () => {
+    const child = spawn(join(tmpdir(), "BloxMind-no-such-program"), [], { stdio: "pipe" });
+    const error = await Effect.runPromise(Effect.flip(waitForSpawn(child)));
+    expect(error.message).toContain("Failed to spawn OpenCode");
+    expect(error.couldNotRun).toBe(true);
+  });
+});
+
+describe("an OpenCode left by an earlier run", () => {
+  let folder = "";
+  afterEach(async () => {
+    if (folder) await rm(folder, { recursive: true, force: true });
+  });
+  const processFile = async () => {
+    folder = await mkdtemp(join(tmpdir(), "BloxMind-leftover-"));
+    return join(folder, "server.pid");
+  };
+  const table = (name: string | null) => {
+    let alive = name !== null;
+    return {
+      name: vi.fn(async () => name),
+      alive: vi.fn(() => alive),
+      kill: vi.fn(() => {
+        alive = false;
+      }),
+    };
+  };
+
+  it("is stopped before a new one starts, and then forgotten", async () => {
+    const file = await processFile();
+    await recordOpenCodeProcess(file, 4321, "C:\\BloxMind\\opencode\\2.2.5\\opencode.exe");
+    const running = table("OpenCode.exe");
+
+    expect(await stopLeftoverOpenCode(file, running, 1_000)).toBe(4321);
+    expect(running.kill).toHaveBeenCalledWith(4321);
+    expect(existsSync(file)).toBe(false);
+  });
+
+  it("isn't confused with another program that now has its process ID", async () => {
+    const file = await processFile();
+    await recordOpenCodeProcess(file, 4321, "/cache/opencode");
+    const other = table("chrome");
+
+    expect(await stopLeftoverOpenCode(file, other, 1_000)).toBeNull();
+    expect(other.kill).not.toHaveBeenCalled();
+  });
+
+  it("is nothing to do after a clean quit", async () => {
+    const file = await processFile();
+    await recordOpenCodeProcess(file, 4321, "/cache/opencode");
+    await forgetOpenCodeProcess(file, 1111);
+    expect(existsSync(file)).toBe(true);
+    await forgetOpenCodeProcess(file, 4321);
+    const running = table("opencode");
+
+    expect(await stopLeftoverOpenCode(file, running, 1_000)).toBeNull();
+    expect(running.name).not.toHaveBeenCalled();
+  });
+
+  it("reads the program name from tasklist", () => {
+    expect(parseTasklistName('"opencode.exe","4321","Console","1","152,340 K"\r\n')).toBe(
+      "opencode.exe",
+    );
+    expect(
+      parseTasklistName("INFO: No tasks are running which match the specified criteria.\r\n"),
+    ).toBeNull();
+  });
+});
+
+// Run against a real binary, this catches OpenCode changing the line that startup relies on:
+//   OPENCODE_LIVE_BIN=/path/to/opencode pnpm vitest run src/test/opencode.test.ts
+describe.skipIf(!process.env.OPENCODE_LIVE_BIN)("a real OpenCode server", () => {
+  it("is found from its output alone and passes the health check", async () => {
+    const home = await mkdtemp(join(tmpdir(), "BloxMind-opencode-port-"));
+    const password = "port-test";
+    const child = spawn(
+      process.env.OPENCODE_LIVE_BIN as string,
+      ["serve", "--port", "0", "--hostname", "127.0.0.1"],
+      {
+        cwd: home,
+        env: {
+          ...process.env,
+          XDG_CONFIG_HOME: join(home, "config"),
+          XDG_DATA_HOME: join(home, "data"),
+          XDG_STATE_HOME: join(home, "state"),
+          XDG_CACHE_HOME: join(home, "cache"),
+          OPENCODE_PASSWORD: password,
+        },
+        stdio: "pipe",
+      },
+    );
+    try {
+      const output = trackOpenCodeOutput(child);
+      const authorization = `Basic ${Buffer.from(`opencode:${password}`).toString("base64")}`;
+      const result = await Effect.runPromise(
+        waitForListeningPort(child, output, "60 seconds", {
+          connections: async () => [],
+          probe: async () => null,
+        }).pipe(
+          Effect.tap((port) => waitForHealth(child, output, port, authorization, "60 seconds")),
+          Effect.either,
+          Logger.withMinimumLogLevel(LogLevel.None),
+        ),
+      );
+      expect(result).toEqual(Either.right(expect.any(Number)));
+    } finally {
+      child.kill("SIGKILL");
+      await rm(home, { recursive: true, force: true, maxRetries: 3 });
+    }
+  }, 130_000);
+});
+
+describe("the shell environment", () => {
+  it("reads the output of env -0, including values with = and newlines", () => {
+    expect(parseShellEnv("Welcome!\nPATH=/a:/b\0NOTE=x=y\nz\0\0broken\0")).toEqual({
+      PATH: "/a:/b",
+      NOTE: "x=y\nz",
+    });
   });
 });
