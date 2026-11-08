@@ -23,32 +23,32 @@ export interface PinnedOpenCodeRelease {
   readonly assets: Readonly<Record<string, PinnedOpenCodeAsset>>;
 }
 
-const TAG = "v1.18.33";
+const TAG = "v1.19.5";
 const download = (assetName: string) =>
   `https://github.com/anomalyco/opencode/releases/download/${TAG}/${assetName}`;
 
 export const PINNED_OPENCODE_RELEASE: PinnedOpenCodeRelease = {
-  version: "1.18.33",
+  version: "1.19.5",
   assets: {
     "darwin-arm64": {
       assetName: "opencode-darwin-arm64.zip",
       url: download("opencode-darwin-arm64.zip"),
-      sha256: "24b12873e605b3db3387cb355f43ba7451cd6065c180d8c188663337d2eeb553",
+      sha256: "c1c9e62521192192ef4c3ed1355ada2144055bddb61682217e997b03c55203c1",
     },
     "darwin-x64": {
       assetName: "opencode-darwin-x64.zip",
       url: download("opencode-darwin-x64.zip"),
-      sha256: "90c7e7d9ffa0d8691ca0f15b42a7b89b72e17a4d26074b9ef06559ff87b221ec",
+      sha256: "b0212efa6db347187225a17fa3a31c6b261bf4c9f1589a290b0ca902d720d250",
     },
     "win32-x64": {
       assetName: "opencode-windows-x64.zip",
       url: download("opencode-windows-x64.zip"),
-      sha256: "cc827fda2e32502373c5de25a4b78471766b99881d12a441ae5b9fcff39c5780",
+      sha256: "09a6e693157f0887e504f2cf4357a8cbddc5ead5d0dffb9a269dcc47c48640f5",
     },
     "linux-x64": {
       assetName: "opencode-linux-x64.tar.gz",
       url: download("opencode-linux-x64.tar.gz"),
-      sha256: "e546123213ae47909a4268692aa4b94950d011afe9cac9938753a2194f1c16d5",
+      sha256: "588310a336fa3b9df36b3f0225b26f679d453efaad0cf3d66c3651ef3ec1647a",
     },
   },
 };

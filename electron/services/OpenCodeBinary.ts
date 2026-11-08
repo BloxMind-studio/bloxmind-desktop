@@ -921,6 +921,39 @@ function findNewestCachedBinary(
   }).pipe(Effect.catchAll(() => Effect.succeed(null)));
 }
 
+/**
+ * Validates a zip entry from an OpenCode asset before extract-zip writes it.
+ *
+ * extract-zip rejects directories that canonicalize outside `dir`, but it happily
+ * creates symlinks pointing anywhere, including at files outside the install folder.
+ * OpenCode archives ship plain files, so we reject absolute paths, `..` segments and
+ * symlink entries outright rather than extract with that hole open.
+ *
+ * @returns an error message, or null when the entry can be extracted.
+ */
+export function unsafeOpenCodeZipEntry(
+  fileName: string,
+  externalFileAttributes: number | null | undefined,
+): string | null {
+  const normalized = fileName.replace(/\\/g, "/");
+  if (
+    normalized.startsWith("/") ||
+    /^[a-zA-Z]:\//.test(normalized) ||
+    normalized.startsWith("\\") ||
+    normalized.split("/").some((segment) => segment.trim() === "..")
+  ) {
+    return `${fileName} is an absolute or escaping path`;
+  }
+  // Unix file-type bits live in the high 16 bits of external file attributes.
+  if (typeof externalFileAttributes === "number") {
+    const fileType = (externalFileAttributes >>> 16) & 0o170000;
+    if (fileType === 0o120000) {
+      return `${fileName} is a symlink`;
+    }
+  }
+  return null;
+}
+
 const defaultExtractArchive: ExtractArchive = async (archivePath, destination, format) => {
   if (format !== "zip") {
     await extractTar({ file: archivePath, cwd: destination, strict: true });
@@ -930,6 +963,10 @@ const defaultExtractArchive: ExtractArchive = async (archivePath, destination, f
   await extractZip(archivePath, {
     dir: destination,
     onEntry: (entry) => {
+      const unsafeEntry = unsafeOpenCodeZipEntry(entry.fileName, entry.externalFileAttributes);
+      if (unsafeEntry) {
+        throw new Error(`Refusing to extract ${unsafeEntry}`);
+      }
       sizes.set(entry.fileName, entry.uncompressedSize);
     },
   });

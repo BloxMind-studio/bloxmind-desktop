@@ -7,6 +7,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+
+- OpenCode SDK updated from 1.18.10 to 1.19.5, and the fallback engine pin is now OpenCode v1.19.5 with SHA-256 digests verified against GitHub's published release digests (`pnpm check:opencode-pin` passes). If GitHub's API is unreachable, BloxMind installs a v1.19.x engine instead of the older 1.18.x.
+- Biome stayed on 2.5.6 on purpose: 2.6.x deprecates parts of the config and reports new diagnostics across the codebase. It will be migrated in a dedicated pass rather than smuggled into dependency churn.
+
+### Security
+
+- Updated every npm dependency within its existing major with the safe bumps available. The dependency audit went from 108 findings (2 critical) to 4 (2 high, 1 moderate, 1 low). The two remaining highs are `extract-zip`, which has no published fixed release yet; engine zip extraction now rejects absolute paths, `..` segments and symlink entries before anything is written. The one moderate (a dev-time glob `minimatch`) and one low (`deepmerge`, also pending an upstream release) stay as-is.
+- `zod` is pinned to ^4.6.6 via a workspace override; `@xmldom/xmldom` to ^0.8.15; `brace-expansion` to patched releases per major line. These fix the advisory without forcing major-version jumps anywhere.
+
 ## [0.16.0] - 2026-11-08
 
 ### Fixed

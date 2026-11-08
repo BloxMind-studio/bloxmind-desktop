@@ -27,6 +27,7 @@ import {
   MIN_FREE_BYTES,
   type OpenCodeBinaryOptions,
   selectCompatibleRelease,
+  unsafeOpenCodeZipEntry,
 } from "../../electron/services/OpenCodeBinary";
 import type { PinnedOpenCodeRelease } from "../../electron/services/openCodePinnedRelease";
 import type { OpenCodeStartupProgress } from "../types/desktop";
@@ -2024,5 +2025,34 @@ describe("OpenCode downloads refused over an unknown certificate issuer", () => 
         message: expect.stringContaining("unable to verify the first certificate"),
       },
     });
+  });
+});
+
+describe("unsafeOpenCodeZipEntry", () => {
+  it("allows plain archive members", () => {
+    expect(unsafeOpenCodeZipEntry("opencode", 0o100644 << 16)).toBeNull();
+    expect(unsafeOpenCodeZipEntry("bin/opencode", 0o100755 << 16)).toBeNull();
+    expect(unsafeOpenCodeZipEntry("bin\\opencode", 0o100644 << 16)).toBeNull();
+    expect(unsafeOpenCodeZipEntry("opencode_darwin_arm64/bin/go", undefined)).toBeNull();
+  });
+
+  it("rejects absolute paths", () => {
+    expect(unsafeOpenCodeZipEntry("/etc/passwd", null)).toMatch(/absolute/);
+    expect(unsafeOpenCodeZipEntry("C:/Windows/System32/drivers/etc/hosts", null)).toMatch(
+      /absolute/,
+    );
+    expect(unsafeOpenCodeZipEntry("\\\\server\\share\\file", null)).toMatch(/absolute/);
+  });
+
+  it("rejects path traversal", () => {
+    expect(unsafeOpenCodeZipEntry("../../escape", null)).toMatch(/escaping/);
+    expect(unsafeOpenCodeZipEntry("bin/../../escape", null)).toMatch(/escaping/);
+    expect(unsafeOpenCodeZipEntry("bin\\..\\..\\escape", null)).toMatch(/escaping/);
+  });
+
+  it("rejects symlink entries", () => {
+    // Unix symlink: file type 0o120000 in the high 16 bits.
+    const symlink = (0o120000 << 16) | 0o777;
+    expect(unsafeOpenCodeZipEntry("bin/opencode", symlink)).toBe("bin/opencode is a symlink");
   });
 });
