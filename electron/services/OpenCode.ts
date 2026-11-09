@@ -708,7 +708,7 @@ function spawnOpenCode(prepared: PreparedOpenCode): Effect.Effect<OpenCodeProces
       try: () =>
         spawn(
           prepared.executable,
-          ["serve", "--port", "0", "--hostname", LOOPBACK, "--print-logs", "--log-level", "INFO"],
+          ["serve", "--port", "0", "--hostname", LOOPBACK, "--print-logs", "--log-level", "info"],
           {
             cwd: prepared.workspace,
             env: {
