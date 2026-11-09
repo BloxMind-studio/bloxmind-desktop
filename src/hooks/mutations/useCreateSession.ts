@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import posthog from "posthog-js/dist/module.full.no-external.js";
+import { toast } from "sonner";
 import { analyticsProperties, errorAnalyticsProperties } from "@/lib/analytics";
 import type { Session } from "@/lib/opencode";
 import { qk } from "@/lib/queryKeys";
@@ -37,10 +38,18 @@ export function useCreateSession() {
       selectSession(newSession.id);
       posthog.capture("session_created", analyticsProperties("sessions", { outcome: "success" }));
     },
-    onError: (error) =>
+    onError: (error) => {
       posthog.capture(
         "session_creation_failed",
         errorAnalyticsProperties("sessions", "creation", error),
-      ),
+      );
+      // Creation used to fail silently; say so instead of doing nothing.
+      toast.error("Couldn't create a session", {
+        description:
+          error instanceof Error && error.message
+            ? error.message
+            : "Check that the AI engine is running, then try again.",
+      });
+    },
   });
 }

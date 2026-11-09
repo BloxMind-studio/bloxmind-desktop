@@ -33,8 +33,28 @@ describe("OC2 provider/model translation", () => {
         },
       ],
       { providerID: "anthropic", modelID: "claude" },
+      [
+        {
+          id: "anthropic",
+          name: "Anthropic",
+          methods: [{ type: "env", names: ["ANTHROPIC_API_KEY"] }],
+        },
+        {
+          id: "mistral",
+          name: "Mistral",
+          methods: [{ type: "key", label: "API key" }],
+        },
+      ],
     );
 
+    // Enabled providers keep their models; the integration catalog is merged in.
+    expect(list.all.map((entry) => entry.id)).toEqual(["anthropic", "local", "mistral"]);
+    expect(list.all[0]).toMatchObject({
+      id: "anthropic",
+      source: "config",
+      env: ["ANTHROPIC_API_KEY"],
+    });
+    expect(list.all[2]).toMatchObject({ id: "mistral", name: "Mistral", models: {} });
     expect(list.connected).toEqual(["anthropic"]);
     expect(list.default).toEqual({ anthropic: "claude" });
     expect(list.all[0]).toMatchObject({

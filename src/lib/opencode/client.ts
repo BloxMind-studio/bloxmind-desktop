@@ -536,7 +536,7 @@ export function createOpencodeClient(config: OpencodeClientConfig): OpencodeClie
       list: async (input?: Record<string, unknown>, opts?: V1Options) => {
         // OC2 splits providers/models; rebuild OC1 `{ all, default, connected }`.
         try {
-          const [providers, models, defaultModel] = await Promise.all([
+          const [providers, models, defaultModel, integrations] = await Promise.all([
             oc2.provider.list(
               withDirectory(dir, (input ?? {}) as Record<string, unknown>) as never,
               { signal: opts?.signal } as never,
@@ -547,12 +547,16 @@ export function createOpencodeClient(config: OpencodeClientConfig): OpencodeClie
             oc2.model
               .default(withDirectory(dir, {}) as never, { signal: opts?.signal } as never)
               .catch(() => null),
+            oc2.integration
+              .list(withDirectory(dir, {}) as never, { signal: opts?.signal } as never)
+              .catch(() => [] as unknown),
           ]);
           return {
             data: translateOc2ProviderList(
               unwrapList(providers),
               unwrapList(models),
               (defaultModel as { data?: unknown })?.data ?? defaultModel,
+              unwrapList(integrations),
             ),
           };
         } catch {

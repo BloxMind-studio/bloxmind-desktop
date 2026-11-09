@@ -64,12 +64,31 @@ export interface Oc1ProviderList {
   connected: string[];
 }
 
+function integrationEnvNames(methods: unknown): string[] {
+  const out: string[] = [];
+  if (!Array.isArray(methods)) return out;
+  for (const method of methods as Array<{ type?: string; names?: unknown }>) {
+    if (method?.type !== "env" || !Array.isArray(method.names)) continue;
+    for (const name of method.names) {
+      if (typeof name === "string" && name && !out.includes(name)) out.push(name);
+    }
+  }
+  return out;
+}
+
 export function translateOc2ProviderList(
   providers: any[],
   models: any[],
   defaultModel?: any,
+  integrations: any[] = [],
 ): Oc1ProviderList {
-  const all = providers.map((provider) => {
+  const integrationById = new Map<string, any>();
+  for (const integration of integrations) {
+    if (integration?.id) integrationById.set(integration.id, integration);
+  }
+  const all: Array<Record<string, unknown>> = [];
+  const listed = new Set<string>();
+  for (const provider of providers) {
     const providerModels = models.filter(
       (model) => model?.providerID === provider?.id || model?.canonical === provider?.id,
     );
@@ -78,15 +97,36 @@ export function translateOc2ProviderList(
       const translated = translateOc2Model(model, provider.id);
       if (typeof translated.id === "string") nested[translated.id] = translated;
     }
-    return {
+    const integration = provider?.integrationID
+      ? integrationById.get(provider.integrationID)
+      : integrationById.get(provider?.id);
+    all.push({
       id: provider?.id,
-      name: provider?.name ?? provider?.id,
+      name: provider?.name ?? integration?.name ?? provider?.id,
       source: provider?.activation === "enabled" ? "config" : "env",
-      env: [],
+      env: integrationEnvNames(integration?.methods),
       options: provider?.settings ?? {},
       models: nested,
-    };
-  });
+    });
+    if (provider?.id) listed.add(provider.id);
+    if (provider?.integrationID) listed.add(provider.integrationID);
+  }
+  // OC2 only returns enabled providers; the connectable catalog lives in
+  // integrations (e.g. Anthropic, Amazon Bedrock, ...). Add them with no
+  // models until the user connects and the provider is activated.
+  for (const integration of integrations) {
+    const id = integration?.id;
+    if (!id || listed.has(id)) continue;
+    listed.add(id);
+    all.push({
+      id,
+      name: integration?.name ?? id,
+      source: "api",
+      env: integrationEnvNames(integration?.methods),
+      options: {},
+      models: {},
+    });
+  }
   const defaults: Record<string, string> = {};
   if (defaultModel?.providerID) {
     defaults[defaultModel.providerID] = defaultModel.modelID ?? defaultModel.id;
