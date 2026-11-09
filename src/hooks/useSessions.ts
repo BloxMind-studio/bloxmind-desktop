@@ -12,10 +12,9 @@ export function useSessions() {
     queryKey: qk.sessions,
     queryFn: async () => {
       if (!client) return [];
-      const res = await client.experimental.session.list(
-        { archived: true },
-        { throwOnError: true },
-      );
+      // OC2 `archived: true` returns *only* archived sessions; omit the filter
+      // so the sidebar can see both active and snoozed sessions.
+      const res = await client.experimental.session.list({}, { throwOnError: true });
       if (!res.data) return [];
       return (res.data as Session[])
         .filter(isVisibleSession)

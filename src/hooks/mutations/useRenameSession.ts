@@ -12,13 +12,13 @@ export function useRenameSession() {
     mutationFn: async ({ sessionID, title }: { sessionID: string; title: string }) => {
       if (!client) throw new Error("No client");
       const res = await client.session.update({ sessionID, title }, { throwOnError: true });
-      if (!res.data) throw new Error("No data");
-      return res.data;
+      // OC2 returns void; hand back the pieces we need to update the cache.
+      return { id: sessionID, title, ...(res?.data ?? {}) };
     },
     onSuccess: (updated: Session) => {
       queryClient.setQueryData<Session[]>(qk.sessions, (prev) => {
         if (!prev) return prev;
-        return prev.map((s) => (s.id === updated.id ? updated : s));
+        return prev.map((s) => (s.id === updated.id ? { ...s, title: updated.title } : s));
       });
     },
   });

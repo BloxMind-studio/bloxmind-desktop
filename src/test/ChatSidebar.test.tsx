@@ -214,7 +214,7 @@ describe("ChatSidebar", () => {
 
     await waitFor(() =>
       expect(client.session.update).toHaveBeenCalledWith(
-        { sessionID: "s1", time: { archived: expect.any(Number) } },
+        { sessionID: "s1", archived: true },
         { throwOnError: true },
       ),
     );
@@ -301,7 +301,7 @@ describe("ChatSidebar", () => {
 
     await waitFor(() =>
       expect(client.session.update).toHaveBeenCalledWith(
-        { sessionID: "s1", time: { archived: 0 } },
+        { sessionID: "s1", archived: false },
         { throwOnError: true },
       ),
     );

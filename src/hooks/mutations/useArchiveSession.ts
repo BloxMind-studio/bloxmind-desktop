@@ -14,17 +14,16 @@ export function useArchiveSession() {
   return useMutation({
     mutationFn: async (sessionID: string) => {
       if (!client) throw new Error("No client");
-      const response = await client.session.update(
-        { sessionID, time: { archived: Date.now() } },
-        { throwOnError: true },
-      );
-      if (!response.data) throw new Error("OpenCode did not update the session");
-      return response.data;
+      // OC2 returns void; rely on queued state below rather than response shape.
+      await client.session.update({ sessionID, archived: true }, { throwOnError: true });
+      return { id: sessionID };
     },
     onSuccess: (session) => {
       queryClient.setQueryData<Session[]>(qk.sessions, (previous) => {
-        if (!previous) return [session];
-        return previous.map((item) => (item.id === session.id ? session : item));
+        if (!previous) return previous;
+        return previous.map((item) =>
+          item.id === session.id ? { ...item, time: { ...item.time, archived: Date.now() } } : item,
+        );
       });
 
       if (activeSessionId === session.id) {

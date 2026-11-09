@@ -552,7 +552,8 @@ export function OpenCodeClientProvider({
 
 export async function prefetchServerState(client: OpencodeClient, queryClient: QueryClient) {
   const results = await Promise.allSettled([
-    client.experimental.session.list({ archived: true }, { throwOnError: true }),
+    // OC2 `archived: true` filters to archived sessions only; omit to list all.
+    client.experimental.session.list({}, { throwOnError: true }),
     client.provider.list({}, { throwOnError: true }),
     client.session.status({}, { throwOnError: true }),
     client.app.agents({}, { throwOnError: true }),

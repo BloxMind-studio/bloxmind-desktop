@@ -1,4 +1,5 @@
 import * as OC from "@opencode/client/promise";
+import { normalizeExecutionError, normalizePermissionRequest } from "../oc2Normalize";
 import { buildOc2FormAnswer, translateOc2Form } from "./forms";
 import { translateOc2AuthMethods, translateOc2ProviderList, unwrapList } from "./providers";
 import type { PermissionRequest, QuestionRequest, Session } from "./types";
@@ -49,7 +50,44 @@ function translateOc2ToolState(state: any): any {
   return { status: "pending", input: state.input ?? {}, raw: state.raw ?? "" };
 }
 
-function translateOc2Message(sessionID: string, m: any): { info: any; parts: any[] } {
+export function translateOc2FilePart(file: any): {
+  type: "file";
+  mime: string;
+  url?: string;
+  filename?: string;
+} {
+  const mime = typeof file?.mime === "string" && file.mime ? file.mime : "application/octet-stream";
+  const filename =
+    typeof file?.name === "string" && file.name
+      ? file.name
+      : typeof file?.filename === "string" && file.filename
+        ? file.filename
+        : undefined;
+  const source = file?.source;
+  // OC2 inline files carry base64 in `data`; uri files carry the URL in source.uri.
+  let url =
+    source?.type === "inline" && typeof file?.data === "string" && file.data
+      ? `data:${mime};base64,${file.data}`
+      : source?.type === "uri" && typeof source.uri === "string"
+        ? source.uri
+        : typeof file?.uri === "string"
+          ? file.uri
+          : typeof file?.url === "string"
+            ? file.url
+            : undefined;
+  // A raw base64 payload with no source discriminator still deserves a URL.
+  if (!url && typeof file?.data === "string" && file.data) {
+    url = `data:${mime};base64,${file.data}`;
+  }
+  return {
+    type: "file",
+    mime,
+    ...(url ? { url } : {}),
+    ...(filename ? { filename } : {}),
+  };
+}
+
+export function translateOc2Message(sessionID: string, m: any): { info: any; parts: any[] } {
   if (m && m.info && Array.isArray(m.parts)) return m;
   const type = m?.type ?? m?.info?.role ?? "assistant";
   const role = type === "user" ? "user" : type === "assistant" ? "assistant" : type;
@@ -74,12 +112,7 @@ function translateOc2Message(sessionID: string, m: any): { info: any; parts: any
   if (role === "user" || type === "user") {
     if (typeof m?.text === "string" && m.text) pushPart({ type: "text", text: m.text });
     for (const f of Array.isArray(m?.files) ? m.files : []) {
-      pushPart({
-        type: "file",
-        mime: f?.mime ?? "application/octet-stream",
-        url: f?.uri ?? f?.url,
-        filename: f?.name ?? f?.filename,
-      });
+      pushPart(translateOc2FilePart(f));
     }
   } else if (Array.isArray(m?.content)) {
     for (const c of m.content) {
@@ -101,6 +134,11 @@ function translateOc2Message(sessionID: string, m: any): { info: any; parts: any
   delete info.content;
   delete info.files;
   delete info.text;
+  // OC1 error cards read error.name/error.data; OC2 SessionStructuredError has neither.
+  if (info.error && info.role === "assistant") {
+    const normalized = normalizeExecutionError(info.error);
+    if (normalized) info.error = normalized;
+  }
   return { info, parts };
 }
 
@@ -424,8 +462,35 @@ export function createOpencodeClient(config: OpencodeClientConfig): OpencodeClie
             .remove(withDirectory(dir, input) as never, { signal: opts?.signal })
             .then(() => true),
         ),
-      update: (input: Record<string, unknown>, opts?: V1Options) =>
-        v1(oc2.session.update(withDirectory(dir, input) as never, { signal: opts?.signal })),
+      update: async (input: Record<string, unknown>, opts?: V1Options) => {
+        // OC1: { sessionID, title?, time: { archived: ms } }. OC2: { sessionID, title?, archived?: boolean } — archive
+        // is a boolean; directory is ignored (engine cwd is the workspace).
+        const raw = { ...(input ?? {}) } as Record<string, unknown>;
+        const translated: Record<string, unknown> = { sessionID: raw.sessionID };
+        if (typeof raw.title === "string") translated.title = raw.title;
+        if (raw.metadata && typeof raw.metadata === "object") translated.metadata = raw.metadata;
+        if (typeof raw.archived === "boolean") translated.archived = raw.archived;
+        else if (raw.time && typeof raw.time === "object") {
+          // Translate legacy OC1 `{ time: { archived: ms } }`; archive truthy unless exactly 0.
+          translated.archived = Boolean((raw.time as { archived?: number }).archived);
+        }
+        await oc2.session.update(withDirectory(dir, translated) as never, {
+          signal: opts?.signal,
+        });
+        // OC2 returns void; hand back a truthy Session-ish stub for callers that expect one.
+        const now = Date.now();
+        return {
+          data: {
+            ...translated,
+            id: raw.sessionID,
+            time: {
+              created: now,
+              updated: now,
+              ...(translated.archived ? { archived: now } : {}),
+            },
+          } as unknown as Session,
+        };
+      },
       abort: (input: { sessionID: string }, opts?: V1Options) =>
         v1(
           oc2.session
@@ -673,12 +738,13 @@ export function createOpencodeClient(config: OpencodeClientConfig): OpencodeClie
       },
     },
     app: {
-      agents: (input?: Record<string, unknown>, opts?: V1Options) =>
-        v1(
-          oc2.agent.list(withDirectory(dir, (input ?? {}) as Record<string, unknown>) as never, {
-            signal: opts?.signal,
-          }),
-        ),
+      agents: async (input?: Record<string, unknown>, opts?: V1Options) => {
+        const res = await oc2.agent.list(
+          withDirectory(dir, (input ?? {}) as Record<string, unknown>) as never,
+          { signal: opts?.signal } as never,
+        );
+        return { data: unwrapList(res) };
+      },
       skills: (input?: Record<string, unknown>, opts?: V1Options) =>
         v1(
           oc2.skill.list(withDirectory(dir, (input ?? {}) as Record<string, unknown>) as never, {
@@ -687,20 +753,23 @@ export function createOpencodeClient(config: OpencodeClientConfig): OpencodeClie
         ),
     },
     command: {
-      list: (input?: Record<string, unknown>, opts?: V1Options) =>
-        v1(
-          oc2.command.list(withDirectory(dir, (input ?? {}) as Record<string, unknown>) as never, {
-            signal: opts?.signal,
-          }),
-        ),
+      // OC2 list endpoints return `{ location, data: [] }`; hand back the array.
+      list: async (input?: Record<string, unknown>, opts?: V1Options) => {
+        const res = await oc2.command.list(
+          withDirectory(dir, (input ?? {}) as Record<string, unknown>) as never,
+          { signal: opts?.signal } as never,
+        );
+        return { data: unwrapList(res) };
+      },
     },
     agent: {
-      list: (input?: Record<string, unknown>, opts?: V1Options) =>
-        v1(
-          oc2.agent.list(withDirectory(dir, (input ?? {}) as Record<string, unknown>) as never, {
-            signal: opts?.signal,
-          }),
-        ),
+      list: async (input?: Record<string, unknown>, opts?: V1Options) => {
+        const res = await oc2.agent.list(
+          withDirectory(dir, (input ?? {}) as Record<string, unknown>) as never,
+          { signal: opts?.signal } as never,
+        );
+        return { data: unwrapList(res) };
+      },
     },
     tool: {
       ids: async (_input?: Record<string, unknown>, _opts?: V1Options) => ({
@@ -865,7 +934,10 @@ export function createOpencodeClient(config: OpencodeClientConfig): OpencodeClie
             : res && typeof res === "object" && "data" in (res as object)
               ? (res as { data: unknown }).data
               : res;
-          return { data: (Array.isArray(data) ? data : []) as PermissionRequest[] };
+          const requests = (Array.isArray(data) ? data : []).map((request) =>
+            normalizePermissionRequest(request as Record<string, unknown>),
+          );
+          return { data: requests };
         }
         // OC1 returned all pending requests; OC2 exposes this as permission.request.list().
         const listed = await oc2.permission.request.list(
@@ -876,7 +948,10 @@ export function createOpencodeClient(config: OpencodeClientConfig): OpencodeClie
           listed && typeof listed === "object" && "data" in (listed as object)
             ? (listed as { data: unknown[] }).data
             : listed;
-        return { data: (Array.isArray(data) ? data : []) as PermissionRequest[] };
+        const requests = (Array.isArray(data) ? data : []).map((request) =>
+          normalizePermissionRequest(request as Record<string, unknown>),
+        );
+        return { data: requests };
       },
       reply: (input: Record<string, unknown>, opts?: V1Options) => {
         const mapped = {
