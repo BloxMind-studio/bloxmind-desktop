@@ -725,6 +725,13 @@ function spawnOpenCode(prepared: PreparedOpenCode): Effect.Effect<OpenCodeProces
               // agents. Engine-global AGENTS.md (the one at the engine's config dir) still
               // loads, and that's the file Settings → AI Engine edits.
               OPENCODE_DISABLE_PROJECT_CONFIG: "1",
+              // Verified (anomalyco/opencode docs/CHANGELOG): disables Claude-compat
+              // support (`.claude` instructions/skills/commands) so `~/.claude` / project
+              // `.claude` content does not leak into engine sessions (0.14 isolation gap).
+              OPENCODE_DISABLE_CLAUDE_CODE: "1",
+              // NOTE: `~/.agents` global skill discovery isolation has no verified dedicated
+              // OC2 v2.2.6 disable env var found; do not guess. BloxMind runs with isolated
+              // XDG dirs and OPENCODE_DISABLE_PROJECT_CONFIG to limit project/global leakage.
             },
             stdio: "pipe",
             windowsHide: true,

@@ -17,6 +17,7 @@ export interface OpencodeClientConfig {
 }
 
 // Explicit surface for the OC1-shaped client BloxMind consumes.
+// biome-ignore lint/suspicious/noExplicitAny: OC1→OC2 compatibility boundary; full surface remapped in Steps 4-6
 export type OpencodeClient = any;
 
 function withDirectory<T extends Record<string, unknown> | undefined>(

@@ -3,6 +3,10 @@ import { join, win32 } from "node:path";
 import { STUDIO_MCP_SERVER_NAME } from "../src/lib/bloxmindProgramManifest";
 import { type McpServerConfig, toEngineMcpConfig, validateMcpServer } from "../src/lib/mcpServers";
 
+// OC2 (v2.2.6+) config schema: `mcp.servers` (not flat `mcp.<name>`), servers use
+// `disabled` (not `enabled`), agents are under `agents` (plural), and `skills` is an
+// array of paths. Verified against @opencode/client ConfigEntry.info and V2 docs.
+
 export interface StudioMcpWindowsEnvironment {
   localAppData?: string;
   comSpec?: string;
@@ -76,12 +80,12 @@ export function createOpenCodeConfig(
   type EngineMcpConfig = ReturnType<typeof toEngineMcpConfig> & {
     headers?: Record<string, string>;
   };
-  const mcp: Record<string, EngineMcpConfig> = {
+  const servers: Record<string, EngineMcpConfig> = {
     [STUDIO_MCP_SERVER_NAME]: {
       type: "remote",
       url: broker.url,
       ...(broker.headers ? { headers: broker.headers } : {}),
-      enabled: true,
+      disabled: false,
     },
     ...extraMcpServers,
   };
@@ -90,11 +94,12 @@ export function createOpenCodeConfig(
     compaction: {
       auto: true,
     },
-    // Only advertised when a skill actually ships, so OpenCode never scans a missing directory.
-    ...(skillsPaths.length > 0 ? { skills: { paths: [...skillsPaths] } } : {}),
-    mcp,
+    // OC2: skills is an array of paths (ConfigEntry.info). Only advertised when a
+    // skill actually ships, so OpenCode never scans a missing directory.
+    ...(skillsPaths.length > 0 ? { skills: [...skillsPaths] } : {}),
+    mcp: { servers },
     default_agent: "studio",
-    agent: {
+    agents: {
       studio: {
         mode: "primary",
         description: "Roblox Studio development assistant",

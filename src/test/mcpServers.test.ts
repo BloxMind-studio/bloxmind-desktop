@@ -103,10 +103,10 @@ describe("normalizeEnvironment", () => {
 });
 
 describe("buildMcpConfigPatch", () => {
-  it("writes full entries, including the enabled flag", () => {
+  it("writes full OC2 entries, including the disabled flag", () => {
     const patch = buildMcpConfigPatch([local({ enabled: false })]);
     expect(patch).toEqual({
-      blender: { type: "local", command: ["uvx", "mcp-for-blender"], enabled: false },
+      blender: { type: "local", command: ["uvx", "mcp-for-blender"], disabled: true },
     });
   });
 
@@ -117,15 +117,15 @@ describe("buildMcpConfigPatch", () => {
       remote(),
     ]);
     expect(patch).toEqual({
-      notes: { type: "remote", url: "https://example.com/mcp", enabled: true },
+      notes: { type: "remote", url: "https://example.com/mcp", disabled: false },
     });
   });
 
   it("disables removed servers without clobbering live ones", () => {
     const patch = buildMcpConfigPatch([local()], ["gone", "roblox-studio"]);
     expect(patch).toEqual({
-      blender: { type: "local", command: ["uvx", "mcp-for-blender"], enabled: true },
-      gone: { enabled: false },
+      blender: { type: "local", command: ["uvx", "mcp-for-blender"], disabled: false },
+      gone: { disabled: true },
     });
   });
 });
@@ -137,7 +137,7 @@ describe("toEngineMcpConfig", () => {
     expect(entry).toEqual({
       type: "local",
       command: ["uvx", "mcp-for-blender"],
-      enabled: true,
+      disabled: false,
     });
     if (entry.type === "local") entry.command.push("extra");
     expect(server.command).toEqual(["uvx", "mcp-for-blender"]);
@@ -149,7 +149,7 @@ describe("toEngineMcpConfig", () => {
       type: "local",
       command: ["uvx", "mcp-for-blender"],
       environment: { DISABLE_TELEMETRY: "1" },
-      enabled: true,
+      disabled: false,
     });
   });
 
@@ -157,17 +157,17 @@ describe("toEngineMcpConfig", () => {
     expect(toEngineMcpConfig(local({ environment: {} }))).toEqual({
       type: "local",
       command: ["uvx", "mcp-for-blender"],
-      enabled: true,
+      disabled: false,
     });
     expect(toEngineMcpConfig(local({ environment: null }))).toEqual({
       type: "local",
       command: ["uvx", "mcp-for-blender"],
-      enabled: true,
+      disabled: false,
     });
     expect(toEngineMcpConfig(remote({ environment: { A: "1" } }))).toEqual({
       type: "remote",
       url: "https://example.com/mcp",
-      enabled: true,
+      disabled: false,
     });
   });
 });
@@ -192,8 +192,10 @@ describe("applyMcpServers", () => {
       {
         config: {
           mcp: {
-            blender: { type: "local", command: ["uvx", "mcp-for-blender"], enabled: true },
-            notes: { type: "remote", url: "https://example.com/mcp", enabled: false },
+            servers: {
+              blender: { type: "local", command: ["uvx", "mcp-for-blender"], disabled: false },
+              notes: { type: "remote", url: "https://example.com/mcp", disabled: true },
+            },
           },
         },
       },

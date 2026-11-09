@@ -24,7 +24,18 @@ export async function fetchStatuses(
   const response = await client.session.status({}, { throwOnError: true });
   const afterState = queryClient.getQueryState<Record<string, SessionStatus>>(key);
   if ((afterState?.dataUpdateCount ?? 0) !== beforeRevision) return afterState?.data ?? {};
-  return response.data ?? {};
+  const snapshot = (response.data ?? {}) as Record<string, SessionStatus>;
+  const prev = afterState?.data ?? {};
+  // OC2 adapter may return active-only statuses. Merge conservatively: keep snapshot
+  // entries, and mark previously non-idle sessions absent from the active snapshot as
+  // idle so the watchdog can recover stuck "busy"/"running"/"retry" states without
+  // clobbering SSE-driven updates that arrived mid-flight (revision guard above).
+  const merged: Record<string, SessionStatus> = { ...prev };
+  for (const [id, status] of Object.entries(prev)) {
+    if (!snapshot[id] && status?.type !== "idle") merged[id] = { type: "idle" } as SessionStatus;
+  }
+  for (const [id, status] of Object.entries(snapshot)) merged[id] = status;
+  return merged;
 }
 
 export function useSessionStatuses() {

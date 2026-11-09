@@ -48,7 +48,7 @@ describe("OpenCode configuration", () => {
   });
 
   it("keeps Studio instructions concise and action-oriented", () => {
-    const prompt = createOpenCodeConfig(broker).agent.studio.prompt;
+    const prompt = createOpenCodeConfig(broker).agents.studio.prompt;
 
     expect(prompt.trim().split(/\s+/).length).toBeLessThanOrEqual(165);
     expect(prompt).toMatch(/inspect before editing/i);
@@ -61,7 +61,7 @@ describe("OpenCode configuration", () => {
   });
 
   it("requires maps to close their world instead of ending in empty space", () => {
-    const prompt = createOpenCodeConfig(broker).agent.studio.prompt;
+    const prompt = createOpenCodeConfig(broker).agents.studio.prompt;
 
     expect(prompt).toContain("roblox-world-boundaries");
     expect(prompt).toContain("distant backdrop");
@@ -70,7 +70,7 @@ describe("OpenCode configuration", () => {
   });
 
   it("rules out Rojo and filesystem-sync assumptions", () => {
-    const prompt = createOpenCodeConfig(broker).agent.studio.prompt;
+    const prompt = createOpenCodeConfig(broker).agents.studio.prompt;
 
     expect(prompt).toContain("standalone AI workspace");
     expect(prompt).toContain("Studio MCP bridge");
@@ -81,25 +81,25 @@ describe("OpenCode configuration", () => {
   });
 
   it("connects OpenCode to the loopback broker", () => {
-    expect(createOpenCodeConfig(broker).mcp["roblox-studio"]).toEqual({
+    expect(createOpenCodeConfig(broker).mcp.servers["roblox-studio"]).toEqual({
       type: "remote",
       url: broker.url,
-      enabled: true,
+      disabled: false,
     });
   });
 
   it("sends the broker's per-launch bearer token with every request", () => {
     const headers = { Authorization: "Bearer test-token" };
-    expect(createOpenCodeConfig({ ...broker, headers }).mcp["roblox-studio"]).toEqual({
+    expect(createOpenCodeConfig({ ...broker, headers }).mcp.servers["roblox-studio"]).toEqual({
       type: "remote",
       url: broker.url,
       headers,
-      enabled: true,
+      disabled: false,
     });
   });
 
   it("keeps the Studio bridge alone when no extra servers are configured", () => {
-    expect(Object.keys(createOpenCodeConfig(broker).mcp)).toEqual(["roblox-studio"]);
+    expect(Object.keys(createOpenCodeConfig(broker).mcp.servers)).toEqual(["roblox-studio"]);
   });
 
   it("writes user-configured MCP servers beside the Studio bridge", () => {
@@ -125,21 +125,21 @@ describe("OpenCode configuration", () => {
       ],
     );
 
-    expect(config.mcp.blender).toEqual({
+    expect(config.mcp.servers.blender).toEqual({
       type: "local",
       command: ["uvx", "mcp-for-blender"],
       environment: { DISABLE_TELEMETRY: "1" },
-      enabled: true,
+      disabled: false,
     });
-    expect(config.mcp.notes).toEqual({
+    expect(config.mcp.servers.notes).toEqual({
       type: "remote",
       url: "https://example.com/mcp",
-      enabled: false,
+      disabled: true,
     });
-    expect(config.mcp["roblox-studio"]).toEqual({
+    expect(config.mcp.servers["roblox-studio"]).toEqual({
       type: "remote",
       url: broker.url,
-      enabled: true,
+      disabled: false,
     });
   });
 
@@ -154,11 +154,11 @@ describe("OpenCode configuration", () => {
       ],
     );
 
-    expect(Object.keys(config.mcp)).toEqual(["roblox-studio"]);
-    expect(config.mcp["roblox-studio"]).toEqual({
+    expect(Object.keys(config.mcp.servers)).toEqual(["roblox-studio"]);
+    expect(config.mcp.servers["roblox-studio"]).toEqual({
       type: "remote",
       url: broker.url,
-      enabled: true,
+      disabled: false,
     });
   });
 });
@@ -188,10 +188,10 @@ describe("Bundled skills", () => {
     expect(createOpenCodeConfig(broker)).not.toHaveProperty("skills");
   });
 
-  it("advertises the shipped skill directory in skills.paths", () => {
+  it("advertises the shipped skill directory in OC2 skills config", () => {
     const config = createOpenCodeConfig(broker, ["C:\\app\\resources\\skills"]);
 
-    expect(config.skills).toEqual({ paths: ["C:\\app\\resources\\skills"] });
-    expect(config.agent.studio.mode).toBe("primary");
+    expect(config.skills).toEqual(["C:\\app\\resources\\skills"]);
+    expect(config.agents.studio.mode).toBe("primary");
   });
 });

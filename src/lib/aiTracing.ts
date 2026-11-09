@@ -1,11 +1,8 @@
 import type { Properties } from "posthog-js";
 import type {
   AssistantMessage,
-  Event,
   Message,
   Part,
-  PermissionRequest,
-  QuestionRequest,
   SnapshotFileDiff,
   Todo,
   ToolPart,
@@ -413,8 +410,16 @@ export class AiTracer {
     if (queue.length === 0) this.turns.delete(sessionID);
   }
 
-  handleEvent(event: Event): void {
+  handleEvent(rawEvent: unknown): void {
     if (!this.isEnabled()) return;
+    // OC2 (v2.2.6) emits {type,data}; OC1 emitted {type,properties}. Normalize so
+    // existing property reads don't throw; OC2-only event types are handled where mapped.
+    const raw =
+      rawEvent && typeof rawEvent === "object" ? (rawEvent as Record<string, unknown>) : null;
+    const event = (
+      raw?.data && !raw?.properties ? { ...raw, properties: raw.data } : rawEvent
+    ) as Record<string, unknown> | null;
+    if (!event) return;
     switch (event.type) {
       case "session.created":
       case "session.updated": {
@@ -466,8 +471,10 @@ export class AiTracer {
       case "session.idle":
         this.finishSession(event.properties.sessionID);
         break;
-      case "session.compacted": {
-        const { sessionID } = event.properties;
+      case "session.compacted":
+      case "session.compaction.ended": {
+        const { sessionID } = (event.properties ?? {}) as { sessionID?: string };
+        if (!sessionID) break;
         const turn = this.activeTurn(sessionID);
         if (turn) turn.compactions += 1;
         this.span(sessionID, turn, { name: "compaction", latencyMs: 0 });
@@ -925,30 +932,42 @@ export class AiTracer {
     });
   }
 
-  private onPermissionAsked(request: PermissionRequest): void {
-    this.pending.set(request.id, {
+  private onPermissionAsked(request: unknown): void {
+    if (!request || typeof request !== "object") return;
+    const r = request as Record<string, unknown>;
+    if (typeof r.id !== "string" || typeof r.sessionID !== "string") return;
+    const permission = (r.permission ?? r.action ?? "unknown") as string;
+    const patterns = (r.patterns ?? r.resources ?? []) as unknown;
+    const tool =
+      r.tool && typeof r.tool === "object" ? (r.tool as { messageID?: string }) : undefined;
+    this.pending.set(r.id, {
       askedAt: this.now(),
-      sessionID: request.sessionID,
+      sessionID: r.sessionID,
       kind: "permission",
-      name: `permission:${request.permission}`,
+      name: `permission:${permission}`,
       input: truncateValue({
-        permission: request.permission,
-        patterns: request.patterns,
-        always: request.always,
-        metadata: request.metadata,
+        permission,
+        patterns,
+        always: r.always ?? r.save,
+        metadata: r.metadata,
       }),
-      parentID: request.tool?.messageID,
+      parentID: tool?.messageID,
     });
   }
 
-  private onQuestionAsked(request: QuestionRequest): void {
-    this.pending.set(request.id, {
+  private onQuestionAsked(request: unknown): void {
+    if (!request || typeof request !== "object") return;
+    const r = request as Record<string, unknown>;
+    if (typeof r.id !== "string" || typeof r.sessionID !== "string") return;
+    const tool =
+      r.tool && typeof r.tool === "object" ? (r.tool as { messageID?: string }) : undefined;
+    this.pending.set(r.id, {
       askedAt: this.now(),
-      sessionID: request.sessionID,
+      sessionID: r.sessionID,
       kind: "question",
       name: "question",
-      input: truncateValue(request.questions),
-      parentID: request.tool?.messageID,
+      input: truncateValue(r.questions ?? r.fields ?? request),
+      parentID: tool?.messageID,
     });
   }
 

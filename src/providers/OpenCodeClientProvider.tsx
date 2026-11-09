@@ -569,9 +569,9 @@ export async function prefetchServerState(client: OpencodeClient, queryClient: Q
   const authRes = authResult.status === "fulfilled" ? authResult.value : undefined;
 
   if (sessionRes?.data) {
-    const sorted = (sessionRes.data as any[])
-      .filter(isVisibleSession)
-      .sort((a: any, b: any) => b.time.created - a.time.created);
+    const sorted = (sessionRes.data as Array<{ id: string; time: { created: number } }>)
+      .filter(isVisibleSession as (s: unknown) => boolean)
+      .sort((a, b) => b.time.created - a.time.created) as unknown as typeof sessionRes.data;
     queryClient.setQueryData(qk.sessions, sorted);
   }
 

@@ -136,26 +136,26 @@ export function normalizeEnvironment(
   return entries.length > 0 ? Object.fromEntries(entries) : null;
 }
 
-/** The engine-facing config entry for one server. Disabled servers are kept. */
+/** The OC2 engine-facing config entry for one server. Disabled servers are kept. */
 export function toEngineMcpConfig(
   server: McpServerConfig,
 ):
-  | { type: "local"; command: string[]; environment?: Record<string, string>; enabled: boolean }
-  | { type: "remote"; url: string; enabled: boolean } {
+  | { type: "local"; command: string[]; environment?: Record<string, string>; disabled: boolean }
+  | { type: "remote"; url: string; disabled: boolean } {
   if (server.type === "local") {
     const environment = normalizeEnvironment(server.environment);
     return {
       type: "local",
       command: [...(server.command ?? [])],
       ...(environment ? { environment } : {}),
-      enabled: server.enabled,
+      disabled: !server.enabled,
     };
   }
-  return { type: "remote", url: server.url?.trim() ?? "", enabled: server.enabled };
+  return { type: "remote", url: server.url?.trim() ?? "", disabled: !server.enabled };
 }
 
 /**
- * The config entries to push into the running engine for `servers`, including
+ * The OC2 config entries to push into the running engine for `servers`, including
  * `disabled` placeholders for servers the user removed so they stop serving
  * tools immediately. Removal can't delete the entry outright: the server's
  * config schema rejects `null` MCP entries, and the app rewrites the engine
@@ -173,18 +173,18 @@ export function buildMcpConfigPatch(
   }
   for (const name of removedNames) {
     if (isReservedMcpServerName(name)) continue;
-    patch[name] ??= { enabled: false };
+    patch[name] ??= { disabled: true };
   }
   return patch;
 }
 
 /**
- * Push the MCP server list into the running OpenCode server and reconcile the
- * connection state of each entry. Verified against the local 1.19.x server:
- * a config update hot-applies new servers (and auto-connects them), a partial
- * `{ enabled }` update flips an existing entry, and `disconnect` stops one
- * immediately. Failures are the caller's to surface; individual connect or
- * disconnect misses are ignored because the engine may not know a lazy entry.
+ * Push the MCP server list into the running OpenCode OC2 engine and reconcile the
+ * connection state of each entry. OC2 config patches use `mcp.servers` (not a flat
+ * `mcp` map) and `disabled` (not `enabled`). Failures are the caller's to surface;
+ * individual connect/disconnect misses are ignored because the engine may not know a
+ * lazy entry. (Hot-apply/connect behavior is verified by runtime; schema is verified
+ * against OC2 v2.2.6.)
  */
 export async function applyMcpServers(
   client: OpencodeClient,
@@ -195,7 +195,10 @@ export async function applyMcpServers(
   if (Object.keys(patch).length > 0) {
     const configApi = client.global?.config;
     if (configApi) {
-      await configApi.update({ config: { mcp: patch } as Config }, { throwOnError: true });
+      await configApi.update(
+        { config: { mcp: { servers: patch } } as unknown as Config },
+        { throwOnError: true },
+      );
     }
   }
   const mcpApi = client.mcp;
