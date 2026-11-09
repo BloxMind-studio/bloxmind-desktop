@@ -1,4 +1,3 @@
-import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk/v2/client";
 import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
 import posthog from "posthog-js/dist/module.full.no-external.js";
 import {
@@ -15,6 +14,7 @@ import LoadingScreen, { type StartupProgress } from "@/components/LoadingScreen"
 import { aiTracer, captureDetailedAnalytics } from "@/lib/analytics";
 import { loadConfig } from "@/lib/config";
 import { desktop } from "@/lib/desktop";
+import { createOpencodeClient, type OpencodeClient } from "@/lib/opencode";
 import { qk } from "@/lib/queryKeys";
 import { isVisibleSession } from "@/lib/sessionVisibility";
 import { sseDispatch } from "@/lib/sseDispatch";
@@ -569,9 +569,9 @@ export async function prefetchServerState(client: OpencodeClient, queryClient: Q
   const authRes = authResult.status === "fulfilled" ? authResult.value : undefined;
 
   if (sessionRes?.data) {
-    const sorted = sessionRes.data
+    const sorted = (sessionRes.data as any[])
       .filter(isVisibleSession)
-      .sort((a, b) => b.time.created - a.time.created);
+      .sort((a: any, b: any) => b.time.created - a.time.created);
     queryClient.setQueryData(qk.sessions, sorted);
   }
 

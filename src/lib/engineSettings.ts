@@ -1,4 +1,4 @@
-import type { Config, OpencodeClient } from "@opencode-ai/sdk/v2/client";
+import type { Config, OpencodeClient } from "@/lib/opencode";
 
 import { splitModelKey } from "@/lib/splitModelKey";
 

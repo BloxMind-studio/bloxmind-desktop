@@ -1,3 +1,4 @@
+import type { Properties } from "posthog-js";
 import type {
   AssistantMessage,
   Event,
@@ -8,8 +9,7 @@ import type {
   SnapshotFileDiff,
   Todo,
   ToolPart,
-} from "@opencode-ai/sdk/v2/client";
-import type { Properties } from "posthog-js";
+} from "@/lib/opencode";
 import type { MessageWithParts } from "@/types";
 import type { InstructionFile } from "@/types/desktop";
 

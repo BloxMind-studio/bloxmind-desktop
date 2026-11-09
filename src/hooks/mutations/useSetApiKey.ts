@@ -1,12 +1,7 @@
-import type {
-  OpencodeClient,
-  ProviderAuthMethod,
-  ProviderListResponse,
-} from "@opencode-ai/sdk/v2/client";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import posthog from "posthog-js/dist/module.full.no-external.js";
-
 import { analyticsProperties, detailedAnalyticsProperties } from "@/lib/analytics";
+import type { OpencodeClient, ProviderAuthMethod, ProviderListResponse } from "@/lib/opencode";
 import { qk } from "@/lib/queryKeys";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 

@@ -1,5 +1,5 @@
-import type { Session } from "@opencode-ai/sdk/v2/client";
 import { useQuery } from "@tanstack/react-query";
+import type { Session } from "@/lib/opencode";
 
 import { qk } from "@/lib/queryKeys";
 import { isVisibleSession } from "@/lib/sessionVisibility";
@@ -17,7 +17,9 @@ export function useSessions() {
         { throwOnError: true },
       );
       if (!res.data) return [];
-      return res.data.filter(isVisibleSession).sort((a, b) => b.time.created - a.time.created);
+      return (res.data as Session[])
+        .filter(isVisibleSession)
+        .sort((a: Session, b: Session) => b.time.created - a.time.created);
     },
     enabled: ready && !!client,
   });

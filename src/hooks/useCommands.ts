@@ -1,5 +1,5 @@
-import type { Command } from "@opencode-ai/sdk/v2/client";
 import { useQuery } from "@tanstack/react-query";
+import type { Command } from "@/lib/opencode";
 
 import { qk } from "@/lib/queryKeys";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";

@@ -1,7 +1,6 @@
-import type { Part } from "@opencode-ai/sdk/v2/client";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-
 import { findImageParts } from "@/lib/imageSupport";
+import type { Part } from "@/lib/opencode";
 import { qk } from "@/lib/queryKeys";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";

@@ -1,10 +1,10 @@
+import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 import type {
   ProviderAuthMethod,
   ProviderAuthResponse,
   ProviderListResponse,
-} from "@opencode-ai/sdk/v2/client";
-import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
+} from "@/lib/opencode";
 
 import { providerDisplayName } from "@/lib/providerAuth";
 import { qk } from "@/lib/queryKeys";

@@ -1,5 +1,5 @@
-import type { QuestionRequest } from "@opencode-ai/sdk/v2/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type { QuestionRequest } from "@/lib/opencode";
 
 import { qk } from "@/lib/queryKeys";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
@@ -25,7 +25,11 @@ export function useActiveQuestion(): QuestionRequest | null {
       const response = await client.question.list({}, { throwOnError: true });
       const afterState = queryClient.getQueryState<QuestionRequest[]>(queryKey);
       if ((afterState?.dataUpdateCount ?? 0) !== beforeRevision) return afterState?.data ?? [];
-      return response.data?.filter((question) => question.sessionID === activeSessionId) ?? [];
+      return (
+        response.data?.filter(
+          (question: QuestionRequest) => question.sessionID === activeSessionId,
+        ) ?? []
+      );
     },
     enabled: ready && !!client && !!activeSessionId,
   });

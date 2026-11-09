@@ -23,9 +23,13 @@ import { PINNED_OPENCODE_RELEASE, type PinnedOpenCodeRelease } from "./openCodeP
 
 const OPEN_CODE_API = "https://api.github.com/repos/anomalyco/opencode/releases";
 const OPEN_CODE_DOWNLOAD_PREFIX = "https://github.com/anomalyco/opencode/releases/download/";
-// OpenCode's API isn't stable across major releases, so BloxMind stays on the 1.x line its SDK was
-// built against.
-const SUPPORTED_MAJOR = 1;
+// BloxMind targets the OpenCode 2.x line (OC2 migration). The pinned release is the known-good
+// fallback; GitHub lookups may offer newer 2.x releases. Reject other majors.
+const SUPPORTED_MAJOR = 2;
+
+function isSupportedVersion(version: Version): boolean {
+  return version.major === SUPPORTED_MAJOR;
+}
 const RELEASES_PER_PAGE = 100;
 const LOOKUP_TIMEOUT_MS = 15_000;
 /**
@@ -545,17 +549,16 @@ async function downloadWithResume(
   }
 }
 
+/** Parses a stable `v?x.y.z` tag. Compatibility (major line) is checked separately. */
 function parseVersion(tag: string): Version | null {
   const match = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(tag);
   if (!match) return null;
-
-  const version = {
+  return {
     major: Number(match[1]),
     minor: Number(match[2]),
     patch: Number(match[3]),
     value: `${Number(match[1])}.${Number(match[2])}.${Number(match[3])}`,
   };
-  return version.major === SUPPORTED_MAJOR ? version : null;
 }
 
 function compareVersions(left: Version, right: Version): number {
@@ -605,7 +608,7 @@ export function selectCompatibleRelease(
   const candidates = releases.flatMap((release): CompatibleRelease[] => {
     if (release.draft || release.prerelease) return [];
     const version = parseVersion(release.tag_name);
-    if (!version || avoid.includes(version.value)) return [];
+    if (!version || !isSupportedVersion(version) || avoid.includes(version.value)) return [];
 
     const asset = release.assets.find((candidate) => candidate.name === archiveName);
     const digest = asset?.digest?.match(/^sha256:([a-f\d]{64})$/i)?.[1]?.toLowerCase();
@@ -703,7 +706,7 @@ function findCompatibleRelease(fetchFn: Fetch, archiveName: string, avoid?: read
     const release = selectCompatibleRelease(releases, archiveName, avoid);
     if (release) return release;
     return yield* fail(
-      `No stable OpenCode ${SUPPORTED_MAJOR}.x.x release is available for ${archiveName}`,
+      `No stable OpenCode ${SUPPORTED_MAJOR}.x release is available for ${archiveName}`,
     );
   });
 }
@@ -768,7 +771,8 @@ function readValidCachedBinary(
           new OpenCodeBinaryError({ message: "Cached OpenCode metadata is invalid", cause }),
       ),
     );
-    if (!parseVersion(metadata.version)) return null;
+    const cachedVersion = parseVersion(metadata.version);
+    if (!cachedVersion || !isSupportedVersion(cachedVersion)) return null;
     if (metadata.platform !== platform || metadata.arch !== arch) return null;
     if (metadata.assetName !== spec.archiveName) return null;
     if (
@@ -1561,7 +1565,7 @@ export function ensureOpenCodeBinary(
     if (blocked || updateError.message.startsWith("OpenCode download failed: ")) {
       const reason = blocked ? "blocked_by_security" : "network";
       return yield* fail(
-        `Unable to download a verified OpenCode ${SUPPORTED_MAJOR}.x.x release and no cached copy is available. ` +
+        `Unable to download a verified OpenCode ${SUPPORTED_MAJOR}.x release and no cached copy is available. ` +
           `Release check: ${updateError.message} (reason: ${reason})`,
         updateError,
         reason,
@@ -1586,7 +1590,7 @@ export function ensureOpenCodeBinary(
 
     const reason = combinedFailureReason(updateError, pinnedResult.left);
     return yield* fail(
-      `Unable to download a verified OpenCode ${SUPPORTED_MAJOR}.x.x release and no cached copy is available. ` +
+      `Unable to download a verified OpenCode ${SUPPORTED_MAJOR}.x release and no cached copy is available. ` +
         `Release check: ${updateError.message}. ` +
         `Pinned v${pinnedRelease.version}: ${pinnedResult.left.message} (reason: ${reason})`,
       [updateError, pinnedResult.left],
@@ -1606,6 +1610,7 @@ function pinnedCompatibleRelease(
   if (
     !asset ||
     !version ||
+    !isSupportedVersion(version) ||
     asset.assetName !== spec.archiveName ||
     !asset.url.startsWith(OPEN_CODE_DOWNLOAD_PREFIX) ||
     !/^[a-f\d]{64}$/.test(asset.sha256)

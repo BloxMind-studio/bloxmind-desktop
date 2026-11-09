@@ -260,7 +260,9 @@ describe("Explorer data boundary", () => {
         validate: vi.fn().mockResolvedValue("snapshot"),
       }),
     ).resolves.toMatchObject({ attempts: 1 });
-    expect(permission.reply).toHaveBeenCalledWith({ requestID: "explorer-ask", reply: "reject" });
+    expect(permission.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ requestID: "explorer-ask", reply: "reject" }),
+    );
     expect(permission.reply).not.toHaveBeenCalledWith(
       expect.objectContaining({ requestID: "chat-ask" }),
     );

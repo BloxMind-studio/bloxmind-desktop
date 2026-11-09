@@ -1,4 +1,3 @@
-import type { OpencodeClient } from "@opencode-ai/sdk/v2/client";
 import { describe, expect, it, vi } from "vitest";
 import {
   applyEngineSettings,
@@ -6,6 +5,7 @@ import {
   type EngineProviderInfo,
   type EngineSettingsInput,
 } from "@/lib/engineSettings";
+import type { OpencodeClient } from "@/lib/opencode";
 
 const providers: EngineProviderInfo[] = [
   {

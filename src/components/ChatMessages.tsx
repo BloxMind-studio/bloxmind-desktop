@@ -1,11 +1,3 @@
-import type {
-  Part,
-  PermissionRequest,
-  QuestionAnswer,
-  QuestionRequest,
-  SessionStatus,
-  Todo,
-} from "@opencode-ai/sdk/v2/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
@@ -27,6 +19,14 @@ import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
 import { RobloxInstanceCard } from "@/components/RobloxInstanceCard";
 import type { HighlightLanguage } from "@/components/SyntaxHighlightedOutput";
+import type {
+  Part,
+  PermissionRequest,
+  QuestionAnswer,
+  QuestionRequest,
+  SessionStatus,
+  Todo,
+} from "@/lib/opencode";
 
 /** Module-level constant to avoid creating a new array on every render. */
 const REMARK_PLUGINS = [remarkGfm];

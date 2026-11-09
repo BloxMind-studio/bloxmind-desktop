@@ -1,4 +1,4 @@
-import type { SessionStatus } from "@opencode-ai/sdk/v2/client";
+import type { SessionStatus } from "@/lib/opencode";
 
 type RetryStatus = Extract<SessionStatus, { type: "retry" }>;
 type RetryAction = NonNullable<RetryStatus["action"]>;

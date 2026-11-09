@@ -1,4 +1,4 @@
-import type { Part } from "@opencode-ai/sdk/v2/client";
+import type { Part } from "@/lib/opencode";
 
 import type { ModelInfo } from "@/types";
 

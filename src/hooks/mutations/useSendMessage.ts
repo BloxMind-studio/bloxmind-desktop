@@ -1,4 +1,3 @@
-import type { SessionStatus } from "@opencode-ai/sdk/v2/client";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import posthog from "posthog-js/dist/module.full.no-external.js";
 import { useAllModels } from "@/hooks/useProviders";
@@ -10,6 +9,7 @@ import {
 } from "@/lib/analytics";
 import { IMAGE_INPUT_UNAVAILABLE_NOTE, modelAcceptsImages } from "@/lib/imageSupport";
 import { findModelInfo } from "@/lib/modelSpecs";
+import type { SessionStatus } from "@/lib/opencode";
 import { qk } from "@/lib/queryKeys";
 import { splitModelKey } from "@/lib/splitModelKey";
 import { verificationGuidance } from "@/lib/verification";

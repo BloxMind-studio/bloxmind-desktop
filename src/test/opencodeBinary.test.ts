@@ -1,4 +1,4 @@
-﻿import { createHash } from "node:crypto";
+import { createHash } from "node:crypto";
 import { cpSync, existsSync, rmSync } from "node:fs";
 import {
   cp,
@@ -62,11 +62,11 @@ function release(
 
 function pinnedFor(key: string, assetName: string, archive: Buffer): PinnedOpenCodeRelease {
   return {
-    version: "1.18.3",
+    version: "2.2.3",
     assets: {
       [key]: {
         assetName,
-        url: `https://github.com/anomalyco/opencode/releases/download/v1.18.3/${assetName}`,
+        url: `https://github.com/anomalyco/opencode/releases/download/v2.2.3/${assetName}`,
         sha256: createHash("sha256").update(archive).digest("hex"),
       },
     },
@@ -117,24 +117,24 @@ afterEach(async () => {
 });
 
 describe("OpenCode binary releases", () => {
-  it("selects the newest verified stable 1.x release and rejects other majors", () => {
+  it("selects the newest verified stable 2.x release and rejects other majors", () => {
     const assetName = "opencode-darwin-arm64.zip";
     const digest = `sha256:${"a".repeat(64)}`;
     const selected = selectCompatibleRelease(
       [
-        release("v2.0.0", assetName, digest),
-        release("v1.17.0", assetName, digest),
-        release("v1.16.5", assetName, digest),
-        release("v1.18.12-beta.1", assetName, digest),
-        release("v1.18.11", assetName, digest, { prerelease: true }),
-        release("v1.18.10", assetName, null),
-        release("v1.18.7", assetName, digest),
-        release("v1.18.9", assetName, digest),
+        release("v3.0.0", assetName, digest),
+        release("v2.1.0", assetName, digest),
+        release("v1.19.5", assetName, digest),
+        release("v2.2.12-beta.1", assetName, digest),
+        release("v2.2.11", assetName, digest, { prerelease: true }),
+        release("v2.2.10", assetName, null),
+        release("v2.2.7", assetName, digest),
+        release("v2.2.9", assetName, digest),
       ],
       assetName,
     );
 
-    expect(selected?.version.value).toBe("1.18.9");
+    expect(selected?.version.value).toBe("2.2.9");
     expect(selected?.archiveSha256).toBe("a".repeat(64));
   });
 
@@ -143,7 +143,7 @@ describe("OpenCode binary releases", () => {
     const archive = Buffer.from("verified archive");
     const digest = createHash("sha256").update(archive).digest("hex");
     const assetName = "opencode-darwin-arm64.zip";
-    const releases = [release("v1.18.2", assetName, `sha256:${digest}`)];
+    const releases = [release("v2.2.2", assetName, `sha256:${digest}`)];
     const startupProgress: OpenCodeStartupProgress[] = [];
     const fetch = vi
       .fn()
@@ -166,8 +166,8 @@ describe("OpenCode binary releases", () => {
       }),
     );
 
-    expect(installed.version).toBe("1.18.2");
-    expect(installed.executable).toBe(join(cacheDirectory, "darwin-arm64", "1.18.2", "opencode"));
+    expect(installed.version).toBe("2.2.2");
+    expect(installed.executable).toBe(join(cacheDirectory, "darwin-arm64", "2.2.2", "opencode"));
     await expect(readFile(installed.executable, "utf8")).resolves.toBe("runtime binary");
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(startupProgress[0]).toEqual({ phase: "checking" });
@@ -201,7 +201,7 @@ describe("OpenCode binary releases", () => {
     const fetch = vi
       .fn()
       .mockResolvedValueOnce(
-        Response.json([release("v1.18.7", assetName, `sha256:${"b".repeat(64)}`)]),
+        Response.json([release("v2.2.7", assetName, `sha256:${"b".repeat(64)}`)]),
       )
       .mockResolvedValueOnce(new Response("tampered archive"));
 
@@ -226,7 +226,7 @@ describe("OpenCode binary releases", () => {
     });
   });
 
-  it("never installs a new major release and falls back to the pinned 1.x release", async () => {
+  it("never installs a new major release and falls back to the pinned 2.x release", async () => {
     const cacheDirectory = await makeTemporaryDirectory();
     const assetName = "opencode-windows-x64.zip";
     const archive = Buffer.from("pinned windows archive");
@@ -234,7 +234,7 @@ describe("OpenCode binary releases", () => {
     const fetch = vi
       .fn()
       .mockResolvedValueOnce(
-        Response.json([release("v2.0.0", assetName, `sha256:${"c".repeat(64)}`)]),
+        Response.json([release("v3.0.0", assetName, `sha256:${"c".repeat(64)}`)]),
       )
       .mockResolvedValueOnce(new Response(archive));
 
@@ -249,7 +249,7 @@ describe("OpenCode binary releases", () => {
       }).pipe(Logger.withMinimumLogLevel(LogLevel.None)),
     );
 
-    expect(installed.version).toBe("1.18.3");
+    expect(installed.version).toBe("2.2.3");
     expect(fetch).toHaveBeenLastCalledWith(
       pinnedRelease.assets["win32-x64"]?.url,
       expect.anything(),
@@ -278,8 +278,8 @@ describe("OpenCode binary releases", () => {
     );
 
     expect(installed).toEqual({
-      executable: join(cacheDirectory, "win32-x64", "1.18.3", "opencode.exe"),
-      version: "1.18.3",
+      executable: join(cacheDirectory, "win32-x64", "2.2.3", "opencode.exe"),
+      version: "2.2.3",
     });
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(String(fetch.mock.calls[0]?.[0])).toContain("api.github.com");
@@ -306,7 +306,7 @@ describe("OpenCode binary releases", () => {
       }).pipe(Logger.withMinimumLogLevel(LogLevel.None)),
     );
 
-    expect(installed.version).toBe("1.18.3");
+    expect(installed.version).toBe("2.2.3");
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
@@ -346,7 +346,7 @@ describe("OpenCode binary releases", () => {
   it("aborts an in-flight download and cleans its temporary directory", async () => {
     const cacheDirectory = await makeTemporaryDirectory();
     const assetName = "opencode-darwin-arm64.zip";
-    const releases = [release("v1.18.2", assetName, `sha256:${"a".repeat(64)}`)];
+    const releases = [release("v2.2.2", assetName, `sha256:${"a".repeat(64)}`)];
     let downloadSignal: AbortSignal | undefined;
     let markDownloadStarted: (() => void) | undefined;
     const downloadStarted = new Promise<void>((resolve) => {
@@ -387,7 +387,7 @@ describe("OpenCode binary releases", () => {
     const archive = Buffer.from("verified archive");
     const digest = createHash("sha256").update(archive).digest("hex");
     const assetName = "opencode-darwin-arm64.zip";
-    const releases = [release("v1.18.2", assetName, `sha256:${digest}`)];
+    const releases = [release("v2.2.2", assetName, `sha256:${digest}`)];
     let finishDownload: ((response: Response) => void) | undefined;
     let markDownloadStarted: (() => void) | undefined;
     const downloadStarted = new Promise<void>((resolve) => {
@@ -420,7 +420,7 @@ describe("OpenCode binary releases", () => {
     expect(entries.some((entry) => entry.startsWith(".download-"))).toBe(false);
 
     finishDownload?.(new Response(archive));
-    await expect(running).resolves.toMatchObject({ version: "1.18.2" });
+    await expect(running).resolves.toMatchObject({ version: "2.2.2" });
   });
 
   it("waits for non-cancellable extraction before cleaning up on interruption", async () => {
@@ -428,7 +428,7 @@ describe("OpenCode binary releases", () => {
     const archive = Buffer.from("verified archive");
     const digest = createHash("sha256").update(archive).digest("hex");
     const assetName = "opencode-darwin-arm64.zip";
-    const releases = [release("v1.18.2", assetName, `sha256:${digest}`)];
+    const releases = [release("v2.2.2", assetName, `sha256:${digest}`)];
     const fetch = vi
       .fn()
       .mockResolvedValueOnce(Response.json(releases))
@@ -544,7 +544,7 @@ describe("OpenCode installs that Windows blocks", () => {
 
     expect(result).toMatchObject({
       _tag: "Right",
-      right: { executable: join(cacheDirectory, "win32-x64", "1.18.3", EXE) },
+      right: { executable: join(cacheDirectory, "win32-x64", "2.2.3", EXE) },
     });
     expect(extractArchive).toHaveBeenCalledTimes(3);
     expect(new Set(destinations).size).toBe(3);
@@ -561,7 +561,7 @@ describe("OpenCode installs that Windows blocks", () => {
       left: {
         reason: "blocked_by_security",
         message: expect.stringMatching(
-          /Pinned v1\.18\.3: Failed to extract the OpenCode archive: EPERM: operation not permitted, open .*opencode\.exe' \(3 attempts\) \(reason: blocked_by_security\)$/,
+          /Pinned v2\.2\.3: Failed to extract the OpenCode archive: EPERM: operation not permitted, open .*opencode\.exe' \(3 attempts\) \(reason: blocked_by_security\)$/,
         ),
       },
     });
@@ -594,7 +594,7 @@ describe("OpenCode installs that Windows blocks", () => {
       .mockRejectedValueOnce(errno("EBUSY", "EBUSY: resource busy or locked"));
     const { result } = await installOnWindows({ extractArchive, fileSystem: { stat } });
 
-    expect(result).toMatchObject({ _tag: "Right", right: { version: "1.18.3" } });
+    expect(result).toMatchObject({ _tag: "Right", right: { version: "2.2.3" } });
     expect(extractArchive).toHaveBeenCalledTimes(2);
   });
 
@@ -629,7 +629,7 @@ describe("OpenCode installs that Windows blocks", () => {
       .mockRejectedValueOnce(errno("ENOENT", "ENOENT: no such file or directory"));
     const { result } = await installOnWindows({ extractArchive, fileSystem: { stat } });
 
-    expect(result).toMatchObject({ _tag: "Right", right: { version: "1.18.3" } });
+    expect(result).toMatchObject({ _tag: "Right", right: { version: "2.2.3" } });
     expect(extractArchive).toHaveBeenCalledTimes(2);
   });
 
@@ -755,7 +755,7 @@ describe("OpenCode installs that Windows blocks", () => {
         },
       },
     });
-    expect(result).toMatchObject({ _tag: "Right", right: { version: "1.18.3" } });
+    expect(result).toMatchObject({ _tag: "Right", right: { version: "2.2.3" } });
   });
 
   it("retries publishing while Windows locks the new folder", async () => {
@@ -768,9 +768,9 @@ describe("OpenCode installs that Windows blocks", () => {
       fileSystem: { rename },
     });
 
-    expect(result).toMatchObject({ _tag: "Right", right: { version: "1.18.3" } });
+    expect(result).toMatchObject({ _tag: "Right", right: { version: "2.2.3" } });
     expect(rename).toHaveBeenCalledTimes(3);
-    await expect(readFile(join(cacheDirectory, "win32-x64", "1.18.3", EXE), "utf8")).resolves.toBe(
+    await expect(readFile(join(cacheDirectory, "win32-x64", "2.2.3", EXE), "utf8")).resolves.toBe(
       "runtime binary",
     );
   });
@@ -800,8 +800,8 @@ describe("OpenCode installs that Windows blocks", () => {
     const cacheDirectory = await makeTemporaryDirectory();
     const archive = Buffer.from("pinned windows archive");
     // A copy of the same version with no metadata, which has to be deleted before the new one goes in.
-    await mkdir(join(cacheDirectory, "win32-x64", "1.18.3"), { recursive: true });
-    await writeFile(join(cacheDirectory, "win32-x64", "1.18.3", EXE), "half written");
+    await mkdir(join(cacheDirectory, "win32-x64", "2.2.3"), { recursive: true });
+    await writeFile(join(cacheDirectory, "win32-x64", "2.2.3", EXE), "half written");
     let firstAttemptAt: number | undefined;
     const remove = vi.fn(async (path: string) => {
       firstAttemptAt ??= Date.now();
@@ -825,7 +825,7 @@ describe("OpenCode installs that Windows blocks", () => {
       }),
     );
 
-    expect(result).toMatchObject({ _tag: "Right", right: { version: "1.18.3" } });
+    expect(result).toMatchObject({ _tag: "Right", right: { version: "2.2.3" } });
     expect(remove.mock.calls.length).toBeGreaterThan(1);
   });
 
@@ -846,10 +846,10 @@ describe("OpenCode installs that Windows blocks", () => {
     // What the other BloxMind ends up publishing: a complete, verified copy.
     const elsewhere = await makeTemporaryDirectory();
     expect((await runInVirtualTime(install(elsewhere))).result).toMatchObject({ _tag: "Right" });
-    const published = join(elsewhere, "win32-x64", "1.18.3");
+    const published = join(elsewhere, "win32-x64", "2.2.3");
 
     const cacheDirectory = await makeTemporaryDirectory();
-    const versionDirectory = join(cacheDirectory, "win32-x64", "1.18.3");
+    const versionDirectory = join(cacheDirectory, "win32-x64", "2.2.3");
     await mkdir(versionDirectory, { recursive: true });
     await writeFile(join(versionDirectory, EXE), "half written");
     const remove = vi.fn(async () => {
@@ -863,7 +863,7 @@ describe("OpenCode installs that Windows blocks", () => {
 
     const { result } = await runInVirtualTime(install(cacheDirectory, { remove }));
 
-    expect(result).toMatchObject({ _tag: "Right", right: { version: "1.18.3" } });
+    expect(result).toMatchObject({ _tag: "Right", right: { version: "2.2.3" } });
     expect(remove).toHaveBeenCalledTimes(1);
   });
 
@@ -894,7 +894,7 @@ describe("OpenCode installs that Windows blocks", () => {
       }),
     );
 
-    expect(result).toMatchObject({ _tag: "Right", right: { version: "1.18.3" } });
+    expect(result).toMatchObject({ _tag: "Right", right: { version: "2.2.3" } });
     // Virtual time can jump past several delays, so success after a refused first try is the proof.
     expect(rename.mock.calls.length).toBeGreaterThan(1);
   });
@@ -944,9 +944,9 @@ describe("OpenCode installs that Windows blocks", () => {
       fileSystem: { rename },
     });
 
-    expect(result).toMatchObject({ _tag: "Right", right: { version: "1.18.3" } });
+    expect(result).toMatchObject({ _tag: "Right", right: { version: "2.2.3" } });
     expect(rename).toHaveBeenCalledTimes(1);
-    await expect(readFile(join(cacheDirectory, "win32-x64", "1.18.3", EXE), "utf8")).resolves.toBe(
+    await expect(readFile(join(cacheDirectory, "win32-x64", "2.2.3", EXE), "utf8")).resolves.toBe(
       "runtime binary",
     );
   });
@@ -954,8 +954,8 @@ describe("OpenCode installs that Windows blocks", () => {
   it("leaves a copy alone when another BloxMind published it during this install", async () => {
     const first = await installOnWindows({ extractArchive: writeExecutable(EXE) });
     expect(first.result._tag).toBe("Right");
-    const published = join(first.cacheDirectory, "win32-x64", "1.18.3");
-    const saved = join(await makeTemporaryDirectory(), "1.18.3");
+    const published = join(first.cacheDirectory, "win32-x64", "2.2.3");
+    const saved = join(await makeTemporaryDirectory(), "2.2.3");
     await cp(published, saved, { recursive: true });
     await rm(published, { recursive: true });
 
@@ -1052,7 +1052,7 @@ describe("OpenCode downloads on a poor connection", () => {
     const chunks = Array.from({ length: 5 }, (_, index) => Buffer.alloc(1024, index));
     const archive = Buffer.concat(chunks);
     const digest = createHash("sha256").update(archive).digest("hex");
-    const releases = [release("v1.18.2", ASSET_NAME, `sha256:${digest}`)];
+    const releases = [release("v2.2.2", ASSET_NAME, `sha256:${digest}`)];
     const startupProgress: OpenCodeStartupProgress[] = [];
     const intervalMs = DOWNLOAD_STALL_TIMEOUT_MS - 1_000;
     const fetch = vi
@@ -1077,7 +1077,7 @@ describe("OpenCode downloads on a poor connection", () => {
       }),
     );
 
-    expect(result).toMatchObject({ _tag: "Right", right: { version: "1.18.2" } });
+    expect(result).toMatchObject({ _tag: "Right", right: { version: "2.2.2" } });
     expect(elapsedMs).toBeGreaterThan(120_000);
     // Only the release lookup and one download, with no fallback to the pinned release.
     expect(fetch).toHaveBeenCalledTimes(2);
@@ -1098,7 +1098,7 @@ describe("OpenCode downloads on a poor connection", () => {
     const rest = Buffer.alloc(1024, 2);
     const archive = Buffer.concat([first, rest]);
     const digest = createHash("sha256").update(archive).digest("hex");
-    const releases = [release("v1.18.2", ASSET_NAME, `sha256:${digest}`)];
+    const releases = [release("v2.2.2", ASSET_NAME, `sha256:${digest}`)];
 
     const install = async (fetch: (url: string) => Promise<Response>) =>
       runInVirtualTime(
@@ -1128,7 +1128,7 @@ describe("OpenCode downloads on a poor connection", () => {
 
       const { result } = await install(fetch);
 
-      expect(result).toMatchObject({ _tag: "Right", right: { version: "1.18.2" } });
+      expect(result).toMatchObject({ _tag: "Right", right: { version: "2.2.2" } });
       expect(fetch).toHaveBeenCalledTimes(3);
       expect(rangeOf(fetch.mock.calls[1] as unknown[]).Range).toBeUndefined();
       expect(rangeOf(fetch.mock.calls[2] as unknown[]).Range).toBe(`bytes=${first.byteLength}-`);
@@ -1143,7 +1143,7 @@ describe("OpenCode downloads on a poor connection", () => {
 
       const { result } = await install(fetch);
 
-      expect(result).toMatchObject({ _tag: "Right", right: { version: "1.18.2" } });
+      expect(result).toMatchObject({ _tag: "Right", right: { version: "2.2.2" } });
     });
 
     it("asks for the whole file again when a server sends the wrong part", async () => {
@@ -1158,7 +1158,7 @@ describe("OpenCode downloads on a poor connection", () => {
 
       const { result } = await install(fetch);
 
-      expect(result).toMatchObject({ _tag: "Right", right: { version: "1.18.2" } });
+      expect(result).toMatchObject({ _tag: "Right", right: { version: "2.2.2" } });
       expect(rangeOf(fetch.mock.calls[3] as unknown[]).Range).toBeUndefined();
     });
 
@@ -1202,7 +1202,7 @@ describe("OpenCode downloads on a poor connection", () => {
         }),
       );
 
-      expect(result).toMatchObject({ _tag: "Right", right: { version: "1.18.2" } });
+      expect(result).toMatchObject({ _tag: "Right", right: { version: "2.2.2" } });
       expect(rangeOf(fetch.mock.calls[1] as unknown[]).Range).toBe(`bytes=${first.byteLength}-`);
     });
 
@@ -1216,7 +1216,7 @@ describe("OpenCode downloads on a poor connection", () => {
 
       const { result } = await install(fetch);
 
-      expect(result).toMatchObject({ _tag: "Right", right: { version: "1.18.2" } });
+      expect(result).toMatchObject({ _tag: "Right", right: { version: "2.2.2" } });
     });
 
     it("waits between tries, and counts only tries that got nothing more", async () => {
@@ -1253,7 +1253,7 @@ describe("OpenCode downloads on a poor connection", () => {
 
       const { result } = await install(fetch);
 
-      expect(result).toMatchObject({ _tag: "Right", right: { version: "1.18.2" } });
+      expect(result).toMatchObject({ _tag: "Right", right: { version: "2.2.2" } });
       expect(attempt).toBe(pieces);
       expect((attemptsAt[1] as number) - (attemptsAt[0] as number)).toBeGreaterThanOrEqual(5_000);
     });
@@ -1294,7 +1294,7 @@ describe("OpenCode downloads on a poor connection", () => {
         delays: { verifyMs: 0, extractRetryMs: [] },
       };
       const asset = "opencode-windows-x64.zip";
-      const windowsArchive = [release("v1.18.2", asset, `sha256:${digest}`)];
+      const windowsArchive = [release("v2.2.2", asset, `sha256:${digest}`)];
       const windowsFetch = vi.fn(async (url: string) =>
         url.includes("api.github.com") ? Response.json(windowsArchive) : new Response(archive),
       );
@@ -1323,7 +1323,7 @@ describe("OpenCode downloads on a poor connection", () => {
           extractArchive: writeExecutable("opencode.exe"),
         }),
       );
-      expect(secondTry.result).toMatchObject({ _tag: "Right", right: { version: "1.18.2" } });
+      expect(secondTry.result).toMatchObject({ _tag: "Right", right: { version: "2.2.2" } });
       expect(
         windowsFetch.mock.calls.filter(([url]) => !String(url).includes("api.github")).length,
       ).toBe(0);
@@ -1331,7 +1331,7 @@ describe("OpenCode downloads on a poor connection", () => {
 
     it("opens with a working copy straight away, and updates in the background", async () => {
       const cacheDirectory = await makeTemporaryDirectory();
-      const older = [release("v1.18.1", ASSET_NAME, `sha256:${digest}`)];
+      const older = [release("v2.2.1", ASSET_NAME, `sha256:${digest}`)];
       const first = await runInVirtualTime(
         ensureOpenCodeBinary({
           cacheDirectory,
@@ -1345,7 +1345,7 @@ describe("OpenCode downloads on a poor connection", () => {
           delays: { verifyMs: 0 },
         }),
       );
-      expect(first.result).toMatchObject({ _tag: "Right", right: { version: "1.18.1" } });
+      expect(first.result).toMatchObject({ _tag: "Right", right: { version: "2.2.1" } });
       vi.useRealTimers();
 
       const newer = Buffer.alloc(2048, 7);
@@ -1354,7 +1354,7 @@ describe("OpenCode downloads on a poor connection", () => {
       const fetch = vi
         .fn()
         .mockResolvedValueOnce(
-          Response.json([release("v1.18.2", ASSET_NAME, `sha256:${newerDigest}`)]),
+          Response.json([release("v2.2.2", ASSET_NAME, `sha256:${newerDigest}`)]),
         )
         .mockResolvedValueOnce(new Response(newer));
 
@@ -1370,11 +1370,11 @@ describe("OpenCode downloads on a poor connection", () => {
         }).pipe(Logger.withMinimumLogLevel(LogLevel.None)),
       );
 
-      expect(running.version).toBe("1.18.1");
+      expect(running.version).toBe("2.2.1");
       // Nothing about the background work reaches the startup screen.
       await vi.waitFor(async () => {
         const versions = await readdir(join(cacheDirectory, "darwin-arm64"));
-        expect(versions).toContain("1.18.2");
+        expect(versions).toContain("2.2.2");
       });
       expect(progress.filter((update) => update.phase === "downloading")).toEqual([]);
 
@@ -1388,7 +1388,7 @@ describe("OpenCode downloads on a poor connection", () => {
           delays: { verifyMs: 0 },
         }).pipe(Logger.withMinimumLogLevel(LogLevel.None)),
       );
-      expect(next.version).toBe("1.18.2");
+      expect(next.version).toBe("2.2.2");
     });
 
     const installVersion = async (cacheDirectory: string, version: string) => {
@@ -1422,20 +1422,18 @@ describe("OpenCode downloads on a poor connection", () => {
         }).pipe(Logger.withMinimumLogLevel(LogLevel.None)),
       );
 
-    /** Has a working 1.18.1, then lets 1.18.2 arrive in the background as a real install would. */
+    /** Has a working 2.2.1, then lets 2.2.2 arrive in the background as a real install would. */
     const installTwoVersions = async (cacheDirectory: string) => {
-      await installVersion(cacheDirectory, "1.18.1");
+      await installVersion(cacheDirectory, "2.2.1");
       await launch(
         cacheDirectory,
         vi
           .fn()
-          .mockResolvedValueOnce(
-            Response.json([release("v1.18.2", ASSET_NAME, `sha256:${digest}`)]),
-          )
+          .mockResolvedValueOnce(Response.json([release("v2.2.2", ASSET_NAME, `sha256:${digest}`)]))
           .mockResolvedValueOnce(new Response(archive)),
       );
       await vi.waitFor(async () => {
-        expect(await readdir(join(cacheDirectory, "darwin-arm64"))).toContain("1.18.2");
+        expect(await readdir(join(cacheDirectory, "darwin-arm64"))).toContain("2.2.2");
       });
     };
 
@@ -1444,51 +1442,51 @@ describe("OpenCode downloads on a poor connection", () => {
       await installTwoVersions(cacheDirectory);
       const offline = vi.fn().mockRejectedValue(new TypeError("offline"));
       const options = { cacheDirectory, platform: "darwin" as const, arch: "arm64" };
-      expect((await launch(cacheDirectory, offline)).version).toBe("1.18.2");
+      expect((await launch(cacheDirectory, offline)).version).toBe("2.2.2");
 
-      const fallback = await Effect.runPromise(findOpenCodeFallback(options, "1.18.2"));
-      expect(fallback?.version).toBe("1.18.1");
+      const fallback = await Effect.runPromise(findOpenCodeFallback(options, "2.2.2"));
+      expect(fallback?.version).toBe("2.2.1");
 
-      await Effect.runPromise(distrustOpenCodeVersion(options, "1.18.2"));
-      expect((await launch(cacheDirectory, offline)).version).toBe("1.18.1");
+      await Effect.runPromise(distrustOpenCodeVersion(options, "2.2.2"));
+      expect((await launch(cacheDirectory, offline)).version).toBe("2.2.1");
     });
 
     it("has nothing to offer when no other copy exists", async () => {
       const cacheDirectory = await makeTemporaryDirectory();
-      await installVersion(cacheDirectory, "1.18.1");
+      await installVersion(cacheDirectory, "2.2.1");
       const options = { cacheDirectory, platform: "darwin" as const, arch: "arm64" };
-      await expect(Effect.runPromise(findOpenCodeFallback(options, "1.18.1"))).resolves.toBeNull();
+      await expect(Effect.runPromise(findOpenCodeFallback(options, "2.2.1"))).resolves.toBeNull();
     });
 
     it("goes back from a release GitHub has withdrawn", async () => {
       const cacheDirectory = await makeTemporaryDirectory();
       await installTwoVersions(cacheDirectory);
 
-      // GitHub's newest is now the older one, so 1.18.2 was pulled.
+      // GitHub's newest is now the older one, so 2.2.2 was pulled.
       await launch(
         cacheDirectory,
         vi
           .fn()
-          .mockResolvedValue(Response.json([release("v1.18.1", ASSET_NAME, `sha256:${digest}`)])),
+          .mockResolvedValue(Response.json([release("v2.2.1", ASSET_NAME, `sha256:${digest}`)])),
       );
       await vi.waitFor(async () => {
         const notes = await readFile(
           join(cacheDirectory, "darwin-arm64", "cache-notes.json"),
           "utf8",
         );
-        expect(notes).toContain("1.18.1");
+        expect(notes).toContain("2.2.1");
       });
 
       const next = await launch(
         cacheDirectory,
         vi.fn().mockRejectedValue(new TypeError("offline")),
       );
-      expect(next.version).toBe("1.18.1");
+      expect(next.version).toBe("2.2.1");
     });
 
     it("sweeps up what a quit left behind, but not an install still running", async () => {
       const cacheDirectory = await makeTemporaryDirectory();
-      await installVersion(cacheDirectory, "1.18.1");
+      await installVersion(cacheDirectory, "2.2.1");
       const platformDirectory = join(cacheDirectory, "darwin-arm64");
       const abandoned = join(platformDirectory, ".download-old");
       const recent = join(platformDirectory, ".download-new");
@@ -1509,7 +1507,7 @@ describe("OpenCode downloads on a poor connection", () => {
       const platformDirectory = join(cacheDirectory, "darwin-arm64");
       await mkdir(platformDirectory, { recursive: true });
       const options = { cacheDirectory, platform: "darwin" as const, arch: "arm64" };
-      const versions = ["1.18.1", "1.18.2", "1.18.3", "1.18.4"];
+      const versions = ["2.2.1", "2.2.2", "2.2.3", "2.2.4"];
 
       await Promise.all(
         versions.map((version) => Effect.runPromise(distrustOpenCodeVersion(options, version))),
@@ -1530,11 +1528,11 @@ describe("OpenCode downloads on a poor connection", () => {
       await utimes(lock, longAgo, longAgo);
 
       await Effect.runPromise(
-        distrustOpenCodeVersion({ cacheDirectory, platform: "darwin", arch: "arm64" }, "1.18.2"),
+        distrustOpenCodeVersion({ cacheDirectory, platform: "darwin", arch: "arm64" }, "2.2.2"),
       );
 
       const notes = await readFile(join(platformDirectory, "cache-notes.json"), "utf8");
-      expect(JSON.parse(notes).distrusted).toEqual(["1.18.2"]);
+      expect(JSON.parse(notes).distrusted).toEqual(["2.2.2"]);
       expect(existsSync(lock)).toBe(false);
     });
 
@@ -1544,14 +1542,14 @@ describe("OpenCode downloads on a poor connection", () => {
       await mkdir(platformDirectory, { recursive: true });
       await writeFile(
         join(platformDirectory, "cache-notes.json"),
-        JSON.stringify({ distrusted: ["1.18.2"] }),
+        JSON.stringify({ distrusted: ["2.2.2"] }),
       );
       const fetch = vi
         .fn()
         .mockResolvedValueOnce(
           Response.json([
-            release("v1.18.2", ASSET_NAME, `sha256:${digest}`),
-            release("v1.18.1", ASSET_NAME, `sha256:${digest}`),
+            release("v2.2.2", ASSET_NAME, `sha256:${digest}`),
+            release("v2.2.1", ASSET_NAME, `sha256:${digest}`),
           ]),
         )
         .mockResolvedValueOnce(new Response(archive));
@@ -1567,8 +1565,8 @@ describe("OpenCode downloads on a poor connection", () => {
         }),
       );
 
-      expect(result).toMatchObject({ _tag: "Right", right: { version: "1.18.1" } });
-      expect(String(fetch.mock.calls[1]?.[0])).toContain("/v1.18.1/");
+      expect(result).toMatchObject({ _tag: "Right", right: { version: "2.2.1" } });
+      expect(String(fetch.mock.calls[1]?.[0])).toContain("/v2.2.1/");
     });
 
     it("doesn't fall back to a pinned release that has already failed here", async () => {
@@ -1577,7 +1575,7 @@ describe("OpenCode downloads on a poor connection", () => {
       await mkdir(platformDirectory, { recursive: true });
       await writeFile(
         join(platformDirectory, "cache-notes.json"),
-        JSON.stringify({ distrusted: ["1.18.3"] }),
+        JSON.stringify({ distrusted: ["2.2.3"] }),
       );
       const fetch = vi.fn(async (url: string) =>
         url.includes("api.github.com") ? rateLimited() : new Response(archive),
@@ -1604,26 +1602,26 @@ describe("OpenCode downloads on a poor connection", () => {
 
     it("updates in the background to the newest release that hasn't failed here", async () => {
       const cacheDirectory = await makeTemporaryDirectory();
-      await installVersion(cacheDirectory, "1.18.1");
+      await installVersion(cacheDirectory, "2.2.1");
       const platformDirectory = join(cacheDirectory, "darwin-arm64");
       await writeFile(
         join(platformDirectory, "cache-notes.json"),
-        JSON.stringify({ distrusted: ["1.18.3"] }),
+        JSON.stringify({ distrusted: ["2.2.3"] }),
       );
       const fetch = vi.fn(async (url: string) =>
         url.includes("api.github.com")
           ? Response.json([
-              release("v1.18.3", ASSET_NAME, `sha256:${digest}`),
-              release("v1.18.2", ASSET_NAME, `sha256:${digest}`),
+              release("v2.2.3", ASSET_NAME, `sha256:${digest}`),
+              release("v2.2.2", ASSET_NAME, `sha256:${digest}`),
             ])
           : new Response(archive),
       );
 
-      expect((await launch(cacheDirectory, fetch)).version).toBe("1.18.1");
+      expect((await launch(cacheDirectory, fetch)).version).toBe("2.2.1");
       await vi.waitFor(async () => {
-        expect(await readdir(platformDirectory)).toContain("1.18.2");
+        expect(await readdir(platformDirectory)).toContain("2.2.2");
       });
-      expect(await readdir(platformDirectory)).not.toContain("1.18.3");
+      expect(await readdir(platformDirectory)).not.toContain("2.2.3");
     });
 
     it("keeps the copy startup falls back to when an update lands in the background", async () => {
@@ -1631,27 +1629,25 @@ describe("OpenCode downloads on a poor connection", () => {
       const platformDirectory = join(cacheDirectory, "darwin-arm64");
       await installTwoVersions(cacheDirectory);
 
-      // 1.18.2 opens while 1.18.3 comes down. If 1.18.2 won't start, 1.18.1 is what's left to try.
+      // 2.2.2 opens while 2.2.3 comes down. If 2.2.2 won't start, 2.2.1 is what's left to try.
       const running = await launch(
         cacheDirectory,
         vi
           .fn()
-          .mockResolvedValueOnce(
-            Response.json([release("v1.18.3", ASSET_NAME, `sha256:${digest}`)]),
-          )
+          .mockResolvedValueOnce(Response.json([release("v2.2.3", ASSET_NAME, `sha256:${digest}`)]))
           .mockResolvedValueOnce(new Response(archive)),
       );
-      expect(running.version).toBe("1.18.2");
-      const saved = join(cacheDirectory, "partial", `${ASSET_NAME}.1.18.3.${digest}.partial`);
+      expect(running.version).toBe("2.2.2");
+      const saved = join(cacheDirectory, "partial", `${ASSET_NAME}.2.2.3.${digest}.partial`);
       await vi.waitFor(async () => {
-        expect(await readdir(platformDirectory)).toContain("1.18.3");
+        expect(await readdir(platformDirectory)).toContain("2.2.3");
         expect(existsSync(saved)).toBe(false);
       });
       // Pruning comes right after the saved download is cleared.
       await new Promise((resolve) => setTimeout(resolve, 200));
 
       expect(await readdir(platformDirectory)).toEqual(
-        expect.arrayContaining(["1.18.1", "1.18.2", "1.18.3"]),
+        expect.arrayContaining(["2.2.1", "2.2.2", "2.2.3"]),
       );
     });
 
@@ -1703,8 +1699,8 @@ describe("OpenCode downloads on a poor connection", () => {
     it("keeps what was saved for a newer release when the pinned one installs", async () => {
       const cacheDirectory = await makeTemporaryDirectory();
       const partialDirectory = join(cacheDirectory, "partial");
-      const newer = join(partialDirectory, `${ASSET_NAME}.1.18.9.${"e".repeat(64)}.partial`);
-      const older = join(partialDirectory, `${ASSET_NAME}.1.18.1.${"f".repeat(64)}.partial`);
+      const newer = join(partialDirectory, `${ASSET_NAME}.2.2.9.${"e".repeat(64)}.partial`);
+      const older = join(partialDirectory, `${ASSET_NAME}.2.2.1.${"f".repeat(64)}.partial`);
       await mkdir(partialDirectory, { recursive: true });
       await writeFile(newer, "worth resuming");
       await writeFile(older, "old bytes");
@@ -1724,7 +1720,7 @@ describe("OpenCode downloads on a poor connection", () => {
         }),
       );
 
-      expect(result).toMatchObject({ _tag: "Right", right: { version: "1.18.3" } });
+      expect(result).toMatchObject({ _tag: "Right", right: { version: "2.2.3" } });
       await expect(readFile(newer, "utf8")).resolves.toBe("worth resuming");
       await expect(readFile(older)).rejects.toThrow();
     });
@@ -1759,7 +1755,7 @@ describe("OpenCode downloads on a poor connection", () => {
 
   it("tries again when a connection drops before the first byte", async () => {
     const digest = createHash("sha256").update(Buffer.from("whole")).digest("hex");
-    const releases = [release("v1.18.2", ASSET_NAME, `sha256:${digest}`)];
+    const releases = [release("v2.2.2", ASSET_NAME, `sha256:${digest}`)];
     const fetch = vi
       .fn()
       .mockResolvedValueOnce(Response.json(releases))
@@ -1775,13 +1771,13 @@ describe("OpenCode downloads on a poor connection", () => {
         delays: { verifyMs: 0 },
       }),
     );
-    expect(result).toMatchObject({ _tag: "Right", right: { version: "1.18.2" } });
+    expect(result).toMatchObject({ _tag: "Right", right: { version: "2.2.2" } });
   });
 
   it("keeps what arrived when the server errors on a resume, and carries on", async () => {
     const whole = Buffer.alloc(2048, 3);
     const digest = createHash("sha256").update(whole).digest("hex");
-    const releases = [release("v1.18.2", ASSET_NAME, `sha256:${digest}`)];
+    const releases = [release("v2.2.2", ASSET_NAME, `sha256:${digest}`)];
     const fetch = vi
       .fn()
       .mockResolvedValueOnce(Response.json(releases))
@@ -1803,7 +1799,7 @@ describe("OpenCode downloads on a poor connection", () => {
         delays: { verifyMs: 0 },
       }),
     );
-    expect(result).toMatchObject({ _tag: "Right", right: { version: "1.18.2" } });
+    expect(result).toMatchObject({ _tag: "Right", right: { version: "2.2.2" } });
   });
 
   it("aborts a download that stops sending data and says how far it got", async () => {
@@ -1918,7 +1914,7 @@ describe("OpenCode downloads refused over an unknown certificate issuer", () => 
         cacheDirectory,
       );
 
-      expect(result).toMatchObject({ _tag: "Right", right: { version: "1.18.3" } });
+      expect(result).toMatchObject({ _tag: "Right", right: { version: "2.2.3" } });
       // The lookup supplies the expected SHA-256, so it never goes over system certificates.
       expect(fetchWithSystemCertificates).toHaveBeenCalledTimes(1);
       expect(fetchWithSystemCertificates.mock.calls[0]?.[0]).toBe(
@@ -1937,13 +1933,13 @@ describe("OpenCode downloads refused over an unknown certificate issuer", () => 
     const digest = createHash("sha256").update(archive).digest("hex");
     const fetch = vi
       .fn()
-      .mockResolvedValueOnce(Response.json([release("v1.18.2", ASSET_NAME, `sha256:${digest}`)]))
+      .mockResolvedValueOnce(Response.json([release("v2.2.2", ASSET_NAME, `sha256:${digest}`)]))
       .mockRejectedValueOnce(certificateFailure("SELF_SIGNED_CERT_IN_CHAIN"));
     const fetchWithSystemCertificates = vi.fn().mockResolvedValueOnce(new Response(archive));
 
     const result = await install({ fetch, fetchWithSystemCertificates }, cacheDirectory);
 
-    expect(result).toMatchObject({ _tag: "Right", right: { version: "1.18.2" } });
+    expect(result).toMatchObject({ _tag: "Right", right: { version: "2.2.2" } });
     expect(fetchWithSystemCertificates).toHaveBeenCalledTimes(1);
   });
 

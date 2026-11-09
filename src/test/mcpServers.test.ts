@@ -1,6 +1,4 @@
-import type { OpencodeClient } from "@opencode-ai/sdk/v2/client";
 import { describe, expect, it, vi } from "vitest";
-
 import {
   applyMcpServers,
   blenderMcpServer,
@@ -12,6 +10,7 @@ import {
   validateMcpServer,
   validateMcpServers,
 } from "@/lib/mcpServers";
+import type { OpencodeClient } from "@/lib/opencode";
 
 function local(overrides: Partial<McpServerConfig> = {}): McpServerConfig {
   return {

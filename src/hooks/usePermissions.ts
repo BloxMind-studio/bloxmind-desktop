@@ -1,5 +1,5 @@
-import type { PermissionRequest } from "@opencode-ai/sdk/v2/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type { PermissionRequest } from "@/lib/opencode";
 
 import { qk } from "@/lib/queryKeys";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
@@ -27,7 +27,11 @@ export function useActivePermission(): PermissionRequest | null {
       const response = await client.permission.list({}, { throwOnError: true });
       const afterState = queryClient.getQueryState<PermissionRequest[]>(queryKey);
       if ((afterState?.dataUpdateCount ?? 0) !== beforeRevision) return afterState?.data ?? [];
-      return response.data?.filter((permission) => permission.sessionID === activeSessionId) ?? [];
+      return (
+        response.data?.filter(
+          (permission: PermissionRequest) => permission.sessionID === activeSessionId,
+        ) ?? []
+      );
     },
     enabled: ready && !!client && !!activeSessionId,
   });

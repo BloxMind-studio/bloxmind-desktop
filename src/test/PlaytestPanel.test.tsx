@@ -1,4 +1,3 @@
-import type { Message, Part } from "@opencode-ai/sdk/v2/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useRef } from "react";
@@ -7,6 +6,7 @@ import PlaytestPanel from "@/components/PlaytestPanel";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { setDetailedAnalyticsEnabled } from "@/lib/analytics";
+import type { Message, Part } from "@/lib/opencode";
 import { qk } from "@/lib/queryKeys";
 import type { MessagesCache } from "@/lib/sseDispatch";
 import { ActiveSessionContext } from "@/providers/ActiveSessionProvider";
@@ -160,10 +160,12 @@ describe("PlaytestPanel", () => {
     const created = client.session.create.mock.calls[0][0];
     expect(created.permission).toEqual([{ permission: "*", pattern: "*", action: "ask" }]);
     expect(created.metadata).toMatchObject({ BloxMindHidden: true });
-    expect(client.permission.reply).toHaveBeenCalledWith({
-      requestID: "planner-ask",
-      reply: "reject",
-    });
+    expect(client.permission.reply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestID: "planner-ask",
+        reply: "reject",
+      }),
+    );
     expect(client.permission.reply).not.toHaveBeenCalledWith(
       expect.objectContaining({ requestID: "chat-ask" }),
     );

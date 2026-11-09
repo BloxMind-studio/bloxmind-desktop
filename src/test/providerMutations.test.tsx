@@ -230,7 +230,9 @@ describe("useCheckProvider", () => {
     expect(client.session.create.mock.calls[0][0].permission).toEqual([
       { permission: "*", pattern: "*", action: "ask" },
     ]);
-    expect(client.permission.reply).toHaveBeenCalledWith({ requestID: "mine", reply: "reject" });
+    expect(client.permission.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ requestID: "mine", reply: "reject" }),
+    );
     expect(client.permission.reply).not.toHaveBeenCalledWith(
       expect.objectContaining({ requestID: "theirs" }),
     );

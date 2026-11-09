@@ -1,4 +1,4 @@
-import type { AssistantMessage } from "@opencode-ai/sdk/v2/client";
+import type { AssistantMessage } from "@/lib/opencode";
 
 export type ModelError = NonNullable<AssistantMessage["error"]>;
 

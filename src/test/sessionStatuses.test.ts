@@ -4,10 +4,10 @@
  * older snapshot on top of the newer one.
  */
 
-import type { OpencodeClient, SessionStatus } from "@opencode-ai/sdk/v2/client";
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 import { fetchStatuses } from "@/hooks/useSessionStatuses";
+import type { OpencodeClient, SessionStatus } from "@/lib/opencode";
 import { qk } from "@/lib/queryKeys";
 
 function makeQC() {

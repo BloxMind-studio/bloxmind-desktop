@@ -4,6 +4,9 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
+    "paths": {
+      "@/*": ["./../../src/*"]
+    },
     "noEmit": true,
     "skipLibCheck": true,
     "strict": true,

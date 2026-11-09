@@ -24,6 +24,9 @@ importers:
       '@opencode-ai/sdk':
         specifier: ^1.19.5
         version: 1.19.5
+      '@opencode/client':
+        specifier: 2.2.6
+        version: 2.2.6(effect@3.22.4)
       '@shikijs/core':
         specifier: ^4.6.0
         version: 4.6.0
@@ -810,6 +813,23 @@ packages:
 
   '@opencode-ai/sdk@1.19.5':
     resolution: {integrity: sha512-+bqu8gHiwmq96T9q5G34uLNHWCInIMsrE3hytCNHj1cVaxjY0AGJyNCT1rkeeZwgPU7A5TMTNwN+0XxCO2vqDg==}
+
+  '@opencode/client@2.2.6':
+    resolution: {integrity: sha512-o90b8Z6tk62U3MiRK1g6r7WmNWLzHzIHme75/MCWa9/XmOREMzY4W1N01wAuHwU3J6UH/PlUDNKvLkeX5qCyeA==}
+    peerDependencies:
+      effect: 4.1.0
+      solid-js: '>=1.9.0'
+    peerDependenciesMeta:
+      effect:
+        optional: true
+      solid-js:
+        optional: true
+
+  '@opencode/protocol@2.2.6':
+    resolution: {integrity: sha512-XBAgz2qnhFS/EI4P3pgC9A6HJTHnFiaQXkqux3liXwE7hZh5wEzRZ551nQZD95rkrH00EnryUSaKI2y/O2Bt6w==}
+
+  '@opencode/schema@2.2.6':
+    resolution: {integrity: sha512-TaLr30ktFFVsuReorFNbqYvybTVxV/4M44qm5XzRjUqq6deR0jH4h4Wt1gB0NTkXDFL0LMH+Ul1oVBnp5w9TRg==}
 
   '@oxc-project/types@0.156.0':
     resolution: {integrity: sha512-1Duyg48TdJNdyhEB8Xn1L36bT9Pv6GUtlKjHxOys8xkaF/rQq3XJE+bAurSK/AgIz5mGFsb77cn9Pb20+WCScw==}
@@ -2621,6 +2641,9 @@ packages:
 
   effect@3.22.4:
     resolution: {integrity: sha512-RNshu7AXVxxDh6aS4lothhJ+QoZ4xSykbWNaaVdvDN72RMyVwhCGdALkyl1TbEydgAmRIdD1eTyJqBUGwSBGDA==}
+
+  effect@4.1.0:
+    resolution: {integrity: sha512-lGx2MJJyrXA8RZb2UpQ/0Nkb5Utaimby7oD92+18noBxLPE85IFOvptdzau8dvcxAOwfwHo9iqapbKeFzqQM/Q==}
 
   ejs@3.1.10:
     resolution: {integrity: sha512-UeJmFfOrAQS8OJWPZ4qtgHyWExa088/MtK5UEyoJGFH67cDEXkZSviOiKRCZ4Xij0zxI3JECgYs3oKx+AizQBA==}
@@ -5678,6 +5701,23 @@ snapshots:
     dependencies:
       cross-spawn: 7.0.6
 
+  '@opencode/client@2.2.6(effect@3.22.4)':
+    dependencies:
+      '@opencode/protocol': 2.2.6
+      '@opencode/schema': 2.2.6
+    optionalDependencies:
+      effect: 3.22.4
+
+  '@opencode/protocol@2.2.6':
+    dependencies:
+      '@opencode/schema': 2.2.6
+      effect: 4.1.0
+
+  '@opencode/schema@2.2.6':
+    dependencies:
+      '@standard-schema/spec': 1.1.0
+      effect: 4.1.0
+
   '@oxc-project/types@0.156.0': {}
 
   '@peculiar/asn1-schema@2.8.0':
@@ -7406,6 +7446,8 @@ snapshots:
     dependencies:
       '@standard-schema/spec': 1.1.0
       fast-check: 3.23.2
+
+  effect@4.1.0: {}
 
   ejs@3.1.10:
     dependencies:

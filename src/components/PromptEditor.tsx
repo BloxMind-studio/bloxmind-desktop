@@ -10,7 +10,6 @@ import {
   MenuOption,
   useBasicTypeaheadTriggerMatch,
 } from "@lexical/react/LexicalTypeaheadMenuPlugin";
-import type { Command } from "@opencode-ai/sdk/v2/client";
 import {
   $createParagraphNode,
   $createTextNode,
@@ -38,6 +37,7 @@ import {
 import { createPortal } from "react-dom";
 import { analyticsProperties } from "@/lib/analytics";
 import type { ExplorerNode } from "@/lib/explorer";
+import type { Command } from "@/lib/opencode";
 
 type TokenKind = "object" | "command";
 

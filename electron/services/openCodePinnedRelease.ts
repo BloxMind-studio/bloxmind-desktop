@@ -5,7 +5,7 @@
  * does not cover, and is verified against the SHA-256 below.
  *
  * To bump it:
- * 1. Pick a stable 1.x.x release that BloxMind has run with.
+ * 1. Pick a stable OpenCode 2.x release that BloxMind has run with.
  * 2. Copy each asset's `digest` (without the `sha256:` prefix) from
  *    `gh api repos/anomalyco/opencode/releases/tags/<tag>`.
  * 3. Run `pnpm check:opencode-pin` to confirm the hashes match GitHub's published digests.
@@ -23,32 +23,32 @@ export interface PinnedOpenCodeRelease {
   readonly assets: Readonly<Record<string, PinnedOpenCodeAsset>>;
 }
 
-const TAG = "v1.19.5";
+const TAG = "v2.2.6";
 const download = (assetName: string) =>
   `https://github.com/anomalyco/opencode/releases/download/${TAG}/${assetName}`;
 
 export const PINNED_OPENCODE_RELEASE: PinnedOpenCodeRelease = {
-  version: "1.19.5",
+  version: "2.2.6",
   assets: {
     "darwin-arm64": {
       assetName: "opencode-darwin-arm64.zip",
       url: download("opencode-darwin-arm64.zip"),
-      sha256: "c1c9e62521192192ef4c3ed1355ada2144055bddb61682217e997b03c55203c1",
+      sha256: "15491608f6b0bc4debe5eac35eab629a2b07ea9a1fbac68ad53bcea59fcc4b45",
     },
     "darwin-x64": {
       assetName: "opencode-darwin-x64.zip",
       url: download("opencode-darwin-x64.zip"),
-      sha256: "b0212efa6db347187225a17fa3a31c6b261bf4c9f1589a290b0ca902d720d250",
+      sha256: "b2962dc445d873df56ae7d3ba7e66502b046bbc4dafa820eca18d0303a98a29c",
     },
     "win32-x64": {
       assetName: "opencode-windows-x64.zip",
       url: download("opencode-windows-x64.zip"),
-      sha256: "09a6e693157f0887e504f2cf4357a8cbddc5ead5d0dffb9a269dcc47c48640f5",
+      sha256: "f75c16b33b8523fe1ff41e7d97e3ae654a47d59a0e327def24db2d9291bb24be",
     },
     "linux-x64": {
       assetName: "opencode-linux-x64.tar.gz",
       url: download("opencode-linux-x64.tar.gz"),
-      sha256: "588310a336fa3b9df36b3f0225b26f679d453efaad0cf3d66c3651ef3ec1647a",
+      sha256: "08bb21d6326ce740d91cce7ebe88a6536933f6e1e30353b91a06b01f25da306c",
     },
   },
 };

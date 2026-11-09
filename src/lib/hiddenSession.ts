@@ -1,4 +1,4 @@
-import type { OpencodeClient, PermissionRuleset } from "@opencode-ai/sdk/v2/client";
+import type { OpencodeClient, PermissionRuleset } from "@/lib/opencode";
 
 /**
  * Permissions for a hidden helper session whose tools must never run. Every
@@ -25,7 +25,9 @@ export function rejectPermissions(client: OpencodeClient, sessionID: string): ()
       const pending = await client.permission.list({}).catch(() => undefined);
       for (const request of pending?.data ?? []) {
         if (request.sessionID !== sessionID) continue;
-        await client.permission.reply({ requestID: request.id, reply: "reject" }).catch(() => {});
+        await client.permission
+          .reply({ requestID: request.id, sessionID, reply: "reject", decision: "reject" })
+          .catch(() => {});
       }
       await new Promise((resolve) => setTimeout(resolve, PERMISSION_POLL_MS));
     }

@@ -1,7 +1,6 @@
-import type { AssistantMessage } from "@opencode-ai/sdk/v2/client";
 import { describe, expect, it } from "vitest";
-
 import { isFreeUsageLimit, presentModelError } from "@/lib/modelError";
+import type { AssistantMessage } from "@/lib/opencode";
 
 type ModelError = NonNullable<AssistantMessage["error"]>;
 

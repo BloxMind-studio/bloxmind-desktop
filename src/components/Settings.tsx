@@ -1,4 +1,3 @@
-import type { Model } from "@opencode-ai/sdk/v2/client";
 import { Search, Sparkles } from "lucide-react";
 import posthog from "posthog-js/dist/module.full.no-external.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -26,6 +25,7 @@ import {
   parseCommandLine,
   validateMcpServer,
 } from "@/lib/mcpServers";
+import type { Model } from "@/lib/opencode";
 import { OPENCODE_GO, shouldRecommendOpenCodeGo } from "@/lib/opencodeGo";
 import {
   canDisconnect,

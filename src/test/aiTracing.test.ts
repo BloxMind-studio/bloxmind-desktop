@@ -1,6 +1,6 @@
-import type { Event } from "@opencode-ai/sdk/v2/client";
 import { describe, expect, it, vi } from "vitest";
 import { AiTracer, toConversation, trimConversation, truncateText } from "@/lib/aiTracing";
+import type { Event } from "@/lib/opencode";
 import type { MessageWithParts } from "@/types";
 import type { InstructionFile } from "@/types/desktop";
 

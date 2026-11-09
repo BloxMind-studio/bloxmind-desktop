@@ -1,5 +1,5 @@
-import type { OpencodeClient } from "@opencode-ai/sdk/v2/client";
 import { Effect, Schema } from "effect";
+import type { OpencodeClient } from "@/lib/opencode";
 import type { GeneratedProgramArtifact, GeneratedProgramEnvelope } from "../types/generatedProgram";
 import { STUDIO_MCP_SERVER_NAME } from "./bloxmindProgramManifest";
 import { ASK_ALL_PERMISSIONS, rejectPermissions } from "./hiddenSession";
