@@ -824,10 +824,12 @@ describe("User journeys", () => {
     });
 
     expect(client.permission.reply).toHaveBeenCalledWith(
-      {
+      expect.objectContaining({
         requestID: "perm_1",
         reply: "once",
-      },
+        decision: "once",
+        sessionID: "s1",
+      }),
       { throwOnError: true },
     );
   });
@@ -938,10 +940,11 @@ describe("User journeys", () => {
     });
 
     expect(client.question.reply).toHaveBeenCalledWith(
-      {
+      expect.objectContaining({
         requestID: "q1",
         answers: [["Overwrite"]],
-      },
+        sessionID: "s1",
+      }),
       { throwOnError: true },
     );
   });

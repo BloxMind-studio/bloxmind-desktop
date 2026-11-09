@@ -1,4 +1,6 @@
 import * as OC from "@opencode/client/promise";
+import { buildOc2FormAnswer, translateOc2Form } from "./forms";
+import { translateOc2AuthMethods, translateOc2ProviderList, unwrapList } from "./providers";
 import type { PermissionRequest, QuestionRequest, Session } from "./types";
 
 export type V1Options = { throwOnError?: boolean; signal?: AbortSignal; [key: string]: unknown };
@@ -7,6 +9,227 @@ export type V1Options = { throwOnError?: boolean; signal?: AbortSignal; [key: st
 async function v1<T>(promise: Promise<T>, _opts?: V1Options): Promise<{ data: T }> {
   const data = await promise;
   return { data };
+}
+
+function translateOc2ToolState(state: any): any {
+  if (!state || typeof state !== "object") return { status: "pending", input: {}, raw: "" };
+  const status = state.status;
+  if (status === "completed") {
+    const content = Array.isArray(state.content) ? state.content : [];
+    const text = content
+      .map((c: any) => (c?.type === "text" ? c.text : ""))
+      .filter(Boolean)
+      .join("\n");
+    return {
+      status: "completed",
+      input: state.input ?? {},
+      output: text,
+      title: state.metadata?.title ?? "",
+      metadata: state.metadata ?? {},
+      time: state.time ?? {},
+    };
+  }
+  if (status === "error") {
+    return {
+      status: "error",
+      input: state.input ?? {},
+      error: state.error?.message ?? state.error?.type ?? "Tool failed",
+      metadata: state.metadata ?? {},
+      time: state.time ?? {},
+    };
+  }
+  if (status === "running" || status === "streaming") {
+    return {
+      status: "running",
+      input: state.input ?? {},
+      metadata: state.metadata ?? {},
+      time: state.time ?? {},
+    };
+  }
+  return { status: "pending", input: state.input ?? {}, raw: state.raw ?? "" };
+}
+
+function translateOc2Message(sessionID: string, m: any): { info: any; parts: any[] } {
+  if (m && m.info && Array.isArray(m.parts)) return m;
+  const type = m?.type ?? m?.info?.role ?? "assistant";
+  const role = type === "user" ? "user" : type === "assistant" ? "assistant" : type;
+  const info: any = {
+    ...(m?.info && typeof m.info === "object" ? m.info : {}),
+    ...m,
+    id: m?.id ?? m?.info?.id,
+    sessionID: m?.sessionID ?? m?.info?.sessionID ?? sessionID,
+    role: m?.info?.role ?? (role === "user" || role === "assistant" ? role : "assistant"),
+    time: m?.time ?? m?.info?.time ?? { created: Date.now() },
+  };
+  if (info.model && typeof info.model === "object") {
+    info.providerID = info.providerID ?? info.model.providerID;
+    info.modelID = info.modelID ?? info.model.id ?? info.model.modelID;
+  }
+  const parts: any[] = [];
+  const messageID = info.id;
+  const pushPart = (part: any) => {
+    parts.push({ ...part, id: part.id ?? `${messageID}:${parts.length}`, sessionID, messageID });
+  };
+  if (Array.isArray(m?.parts)) return { info, parts: m.parts };
+  if (role === "user" || type === "user") {
+    if (typeof m?.text === "string" && m.text) pushPart({ type: "text", text: m.text });
+    for (const f of Array.isArray(m?.files) ? m.files : []) {
+      pushPart({
+        type: "file",
+        mime: f?.mime ?? "application/octet-stream",
+        url: f?.uri ?? f?.url,
+        filename: f?.name ?? f?.filename,
+      });
+    }
+  } else if (Array.isArray(m?.content)) {
+    for (const c of m.content) {
+      if (!c) continue;
+      if (c.type === "text") pushPart({ type: "text", text: c.text ?? "" });
+      else if (c.type === "reasoning")
+        pushPart({ type: "reasoning", text: c.text ?? "", time: c.time });
+      else if (c.type === "tool")
+        pushPart({
+          type: "tool",
+          tool: c.name,
+          callID: c.id,
+          state: translateOc2ToolState(c.state),
+        });
+    }
+  } else if (typeof m?.text === "string") {
+    pushPart({ type: "text", text: m.text });
+  }
+  delete info.content;
+  delete info.files;
+  delete info.text;
+  return { info, parts };
+}
+
+function normalizeOc2Model(
+  model: unknown,
+): { providerID: string; id: string; variant?: string } | null {
+  if (!model || typeof model !== "object") return null;
+  const m = model as Record<string, unknown>;
+  const providerID = typeof m.providerID === "string" ? m.providerID : undefined;
+  const id =
+    typeof m.id === "string" ? m.id : typeof m.modelID === "string" ? m.modelID : undefined;
+  if (!providerID || !id) return null;
+  const variant = typeof m.variant === "string" ? m.variant : undefined;
+  return { providerID, id, ...(variant ? { variant } : {}) };
+}
+
+/**
+ * Translate BloxMind's OC1 prompt payload to OC2 `SessionPromptInput`.
+ * - `parts` (text/file) -> `text` + `files` (data URLs passed as URIs)
+ * - `system` -> prepended to text as delimited context (OC2 prompt has no system field; preserves BloxMind safety/verification notes)
+ * - `model`/`agent`/`variant` -> OC2 session.switchModel/switchAgent before prompt
+ */
+async function translateOc1Prompt(
+  oc2: ReturnType<typeof OC.OpenCode.make>,
+  directory: string | undefined,
+  input: Record<string, unknown>,
+  opts?: V1Options,
+): Promise<Record<string, unknown>> {
+  const sessionID = input.sessionID as string;
+  const parts = Array.isArray(input.parts) ? (input.parts as Array<Record<string, unknown>>) : null;
+
+  if (!parts && typeof input.text === "string") {
+    // Already OC2-shaped enough; still handle model/agent switching if present.
+    await applyOc1Selection(oc2, directory, sessionID, input, opts);
+    return withDirectory(directory, input) as Record<string, unknown>;
+  }
+
+  const textParts: string[] = [];
+  const files: Array<{ uri: string; name?: string; source?: { type: "inline" } }> = [];
+  for (const part of parts ?? []) {
+    if (part?.type === "text" && typeof part.text === "string") textParts.push(part.text);
+    else if (part?.type === "file" && typeof part.url === "string") {
+      const file: { uri: string; name?: string; source?: { type: "inline" } } = { uri: part.url };
+      if (typeof part.filename === "string") file.name = part.filename;
+      if (part.url.startsWith("data:")) file.source = { type: "inline" };
+      files.push(file);
+    }
+  }
+
+  const userText = textParts.join("\n\n").trim();
+  const systemNotes: string[] = [];
+  const system = typeof input.system === "string" ? input.system.trim() : "";
+  if (system) systemNotes.push(`[System context for this request]\n${system}`);
+  // OC2's prompt API has no `format`, so carry structured-output schemas as an
+  // explicit instruction instead of silently dropping them (hidden sessions
+  // such as playtest planning/explorer rely on JSON responses).
+  const format = input.format as
+    | { type?: string; schema?: unknown; retryCount?: number }
+    | undefined;
+  if (format?.type === "json_schema" && format.schema) {
+    systemNotes.push(
+      `[Structured output required]\nReturn only a single JSON value that validates against this JSON Schema. Do not wrap it in markdown fences or add commentary.\n${JSON.stringify(format.schema)}`,
+    );
+  }
+  const text = systemNotes.length
+    ? `${systemNotes.join("\n\n")}\n\n[User request]\n${userText || "(see attached files)"}`
+    : userText;
+
+  if (!input.noReply) {
+    await applyOc1Selection(oc2, directory, sessionID, input, opts);
+  }
+
+  const out: Record<string, unknown> = { sessionID, text: text || " " };
+  if (files.length) out.files = files;
+  if (typeof input.id === "string") out.id = input.id;
+  if (input.metadata && typeof input.metadata === "object") out.metadata = input.metadata;
+  if (input.noReply) out.__noReply = true;
+  return withDirectory(directory, out) as Record<string, unknown>;
+}
+
+async function applyOc1Selection(
+  oc2: ReturnType<typeof OC.OpenCode.make>,
+  directory: string | undefined,
+  sessionID: string,
+  input: Record<string, unknown>,
+  opts?: V1Options,
+) {
+  if (!sessionID) return;
+  const agent = typeof input.agent === "string" ? input.agent : undefined;
+  if (agent) {
+    await oc2.session.switchAgent(withDirectory(directory, { sessionID, agent }) as never, {
+      signal: opts?.signal,
+    });
+  }
+  const model = normalizeOc2Model(input.model);
+  const variant = typeof input.variant === "string" ? input.variant : undefined;
+  if (model) {
+    await oc2.session.switchModel(
+      withDirectory(directory, {
+        sessionID,
+        model: variant && !model.variant ? { ...model, variant } : model,
+      }) as never,
+      { signal: opts?.signal },
+    );
+  }
+}
+
+async function translateOc1Command(
+  oc2: ReturnType<typeof OC.OpenCode.make>,
+  directory: string | undefined,
+  input: Record<string, unknown>,
+  opts?: V1Options,
+): Promise<Record<string, unknown>> {
+  const sessionID = input.sessionID as string;
+  await applyOc1Selection(oc2, directory, sessionID, input, opts);
+  if (typeof input.name === "string") {
+    return withDirectory(directory, input) as Record<string, unknown>;
+  }
+  // OC1 command shape fallback: { command, arguments } -> OC2 { name, text }
+  const name = typeof input.command === "string" ? input.command : String(input.name ?? "");
+  const text =
+    typeof input.arguments === "string"
+      ? input.arguments
+      : typeof input.text === "string"
+        ? input.text
+        : "";
+  const out: Record<string, unknown> = { sessionID, name, text };
+  if (Array.isArray(input.files)) out.files = input.files;
+  return withDirectory(directory, out) as Record<string, unknown>;
 }
 
 export interface OpencodeClientConfig {
@@ -35,9 +258,7 @@ function withDirectory<T extends Record<string, unknown> | undefined>(
  * `{ data }` for `throwOnError` callers, adapts SSE, and maps renamed methods.
  */
 export function createOpencodeClient(config: OpencodeClientConfig): OpencodeClient {
-  const make =
-    (OC as { make?: typeof OC.OpenCode.make; OpenCode?: { make: typeof OC.OpenCode.make } }).make ??
-    (OC as { OpenCode: { make: (o: unknown) => unknown } }).OpenCode.make;
+  const make = (OC as { OpenCode: { make: typeof OC.OpenCode.make } }).OpenCode.make;
   const oc2 = make({
     baseUrl: config.baseUrl,
     headers: config.headers,
@@ -45,51 +266,156 @@ export function createOpencodeClient(config: OpencodeClientConfig): OpencodeClie
   }) as ReturnType<typeof OC.OpenCode.make>;
   const dir = config.directory;
 
+  /** OC2 credentials reference an integration id; map the OC1 provider id to it. */
+  const resolveIntegrationID = async (providerID: string, opts?: V1Options): Promise<string> => {
+    try {
+      const res = await oc2.provider.get(
+        withDirectory(dir, { providerID }) as never,
+        { signal: opts?.signal } as never,
+      );
+      const info = (res as { data?: unknown })?.data ?? res;
+      if (info && typeof info === "object" && typeof (info as any).integrationID === "string") {
+        return (info as any).integrationID;
+      }
+    } catch {
+      // Fall back to the provider id; many integrations share the same id.
+    }
+    return providerID;
+  };
+
+  const oauthAttempts = new Map<string, { integrationID: string; attemptID: string }>();
+
+  /** Fetch the newest assistant message in OC1 `{ info, parts }` form. */
+  const latestAssistantMessage = async (
+    sessionID: string,
+    opts?: V1Options,
+  ): Promise<{ info: any; parts: any[] } | null> => {
+    try {
+      const res = await oc2.message.list(
+        withDirectory(dir, { sessionID }) as any,
+        { signal: opts?.signal } as any,
+      );
+      const raw = (res as any)?.data ?? res;
+      const items = Array.isArray(raw?.data) ? raw.data : Array.isArray(raw) ? raw : [];
+      for (let index = items.length - 1; index >= 0; index--) {
+        if (items[index]?.type === "assistant") {
+          return translateOc2Message(sessionID, items[index]);
+        }
+      }
+    } catch {
+      // Fall through to the empty result below.
+    }
+    return null;
+  };
+
+  /**
+   * OC2 `session.prompt` only enqueues the user message; OC1 `session.prompt`
+   * resolved with the finished assistant message. Wait for idle, then read it.
+   */
+  const waitForTurn = async (sessionID: string, opts?: V1Options): Promise<void> => {
+    const wait = (
+      oc2.session as unknown as {
+        wait?: (input: unknown, options?: unknown) => Promise<unknown>;
+      }
+    ).wait;
+    if (typeof wait !== "function") return;
+    try {
+      await wait({ sessionID }, { signal: opts?.signal });
+    } catch {
+      // Interrupted/aborted turns still resolve through the fallback read.
+    }
+  };
+
   const client = {
     _oc2: oc2,
     session: {
-      messages: (input: { sessionID: string }, opts?: V1Options) =>
-        v1(
-          oc2.message.list(withDirectory(dir, input) as { sessionID: string; directory?: string }, {
-            signal: opts?.signal,
-          }),
-        ),
+      messages: async (input: { sessionID: string }, opts?: V1Options) => {
+        const res = await oc2.message.list(
+          withDirectory(dir, input) as any,
+          { signal: opts?.signal } as any,
+        );
+        const raw = (res as any)?.data ?? res;
+        const items = Array.isArray(raw?.data) ? raw.data : Array.isArray(raw) ? raw : [];
+        // Drop non-chat OC2 timeline entries (agent/model switches, idle markers,
+        // skill/shell events); BloxMind renders user and assistant messages only.
+        return {
+          data: items
+            .filter(
+              (m: any) =>
+                m?.type === "user" ||
+                m?.type === "assistant" ||
+                m?.info?.role === "user" ||
+                m?.info?.role === "assistant",
+            )
+            .map((m: any) => translateOc2Message(input.sessionID, m)),
+        };
+      },
       status: (_input?: Record<string, unknown>, opts?: V1Options) => {
         // OC2 `session.active()` returns only running sessions as { [id]: {type:"running"} }.
         // BloxMind expects a full status map; synthesize idle-absence compat by returning the active map.
         return v1(
-          oc2.session
-            .active(opts?.signal ? { signal: opts.signal } : undefined)
-            .then((active) => active as Record<string, unknown>),
+          oc2.session.active(opts?.signal ? { signal: opts.signal } : undefined).then((active) => {
+            // OC2 `session.active` reports `{type:"running"}`; BloxMind's UI
+            // transitions (checkpoints/completion cue) key off OC1 `"busy"`.
+            const mapped: Record<string, unknown> = {};
+            for (const [id, status] of Object.entries(
+              (active ?? {}) as Record<string, { type?: string }>,
+            )) {
+              mapped[id] = status?.type === "running" ? { ...status, type: "busy" } : status;
+            }
+            return mapped;
+          }),
           opts,
         );
       },
       todo: async (input: { sessionID: string }, opts?: V1Options) => {
-        // OC2 has no direct session.todo endpoint in the core client; preserve shape.
-        // If the engine exposes it via RPC/extensions, callers degrade to empty.
-        const rpc = (
-          oc2 as unknown as { rpc?: { call?: (i: unknown, o?: unknown) => Promise<unknown> } }
-        ).rpc;
-        if (rpc?.call) {
-          try {
-            const out = (await rpc.call(
-              { method: "session.todo", input: withDirectory(dir, input) },
-              { signal: opts?.signal },
-            )) as { output?: unknown };
-            return { data: Array.isArray(out?.output) ? out.output : (out?.output ?? []) };
-          } catch {
-            return { data: [] };
+        // OC2 has no session.todo endpoint: todos live in the latest `todowrite`
+        // tool call, so derive them from the message history.
+        try {
+          const res = await oc2.message.list(
+            withDirectory(dir, input) as any,
+            { signal: opts?.signal } as any,
+          );
+          const raw = (res as any)?.data ?? res;
+          const items = Array.isArray(raw?.data) ? raw.data : Array.isArray(raw) ? raw : [];
+          let todos: unknown[] = [];
+          for (const message of items) {
+            const content = Array.isArray(message?.content) ? message.content : [];
+            for (const entry of content) {
+              const name = String(entry?.name ?? "");
+              if (
+                entry?.type !== "tool" ||
+                !(name === "todowrite" || name.endsWith("_todowrite"))
+              ) {
+                continue;
+              }
+              const candidate = entry?.state?.input?.todos ?? entry?.state?.metadata?.todos;
+              if (Array.isArray(candidate)) todos = candidate;
+            }
           }
+          return { data: todos };
+        } catch {
+          return { data: [] as unknown[] };
         }
-        return { data: [] as unknown[] };
       },
-      create: (input?: Record<string, unknown>, opts?: V1Options) =>
-        v1(
-          oc2.session.create(
-            withDirectory(dir, (input ?? {}) as Record<string, unknown>) as never,
-            { signal: opts?.signal },
-          ),
-        ),
+      create: (input?: Record<string, unknown>, opts?: V1Options) => {
+        const raw = { ...(input ?? {}) } as Record<string, unknown>;
+        // OC1 used `permission` (PermissionRuleset/rules); OC2 SessionCreateInput uses `permissions` array.
+        if (raw.permission && !raw.permissions) {
+          const p = raw.permission;
+          if (Array.isArray(p)) {
+            raw.permissions = p.map((rule: any) => ({
+              action: rule?.permission ?? rule?.action ?? "*",
+              resource: rule?.pattern ?? rule?.resource ?? "*",
+              effect: rule?.action === "deny" ? "deny" : "ask",
+            }));
+          }
+          delete raw.permission;
+        }
+        const model = normalizeOc2Model(raw.model);
+        if (model) raw.model = model;
+        return v1(oc2.session.create(withDirectory(dir, raw) as never, { signal: opts?.signal }));
+      },
       get: (input: Record<string, unknown>, opts?: V1Options) =>
         v1(oc2.session.get(withDirectory(dir, input) as never, { signal: opts?.signal })),
       delete: (input: { sessionID: string }, opts?: V1Options) =>
@@ -107,19 +433,59 @@ export function createOpencodeClient(config: OpencodeClientConfig): OpencodeClie
             .then((r) => (r as { interrupted?: boolean })?.interrupted ?? true),
         ),
       promptAsync: async (input: Record<string, unknown>, opts?: V1Options) => {
-        // OC2 exposes `prompt` (synchronous API call that enqueues/returns inbox info) and streaming via events.
-        // BloxMind's promptAsync was fire-and-forget; return a compatible shape.
-        const data = await oc2.session.prompt(withDirectory(dir, input) as never, {
-          signal: opts?.signal,
-        });
+        const translated = await translateOc1Prompt(oc2, dir, input, opts);
+        const synthetic = (oc2.session as Record<string, unknown>).synthetic as
+          | ((i: unknown, o?: unknown) => Promise<unknown>)
+          | undefined;
+        const { __noReply, ...rest } = translated as Record<string, unknown> & {
+          __noReply?: boolean;
+        };
+        if (__noReply && synthetic) {
+          const data = await synthetic(
+            { sessionID: rest.sessionID, text: rest.text, metadata: rest.metadata },
+            { signal: opts?.signal },
+          );
+          return { data };
+        }
+        const data = await oc2.session.prompt(rest as never, { signal: opts?.signal });
         return { data };
       },
-      prompt: (input: Record<string, unknown>, opts?: V1Options) =>
-        v1(oc2.session.prompt(withDirectory(dir, input) as never, { signal: opts?.signal })),
+      prompt: async (input: Record<string, unknown>, opts?: V1Options) => {
+        const translated = await translateOc1Prompt(oc2, dir, input, opts);
+        const synthetic = (oc2.session as Record<string, unknown>).synthetic as
+          | ((i: unknown, o?: unknown) => Promise<unknown>)
+          | undefined;
+        const { __noReply, ...rest } = translated as Record<string, unknown> & {
+          __noReply?: boolean;
+        };
+        if (__noReply && synthetic) {
+          return v1(
+            synthetic(
+              { sessionID: rest.sessionID, text: rest.text, metadata: rest.metadata },
+              { signal: opts?.signal },
+            ),
+            opts,
+          );
+        }
+        await oc2.session.prompt(rest as never, { signal: opts?.signal });
+        const sessionID = rest.sessionID as string;
+        await waitForTurn(sessionID, opts);
+        const final = await latestAssistantMessage(sessionID, opts);
+        return {
+          data:
+            final ??
+            ({
+              info: { sessionID, role: "assistant" },
+              parts: [],
+            } as { info: any; parts: any[] }),
+        };
+      },
       compact: (input: Record<string, unknown>, opts?: V1Options) =>
         v1(oc2.session.compact(withDirectory(dir, input) as never, { signal: opts?.signal })),
-      command: (input: Record<string, unknown>, opts?: V1Options) =>
-        v1(oc2.session.command(withDirectory(dir, input) as never, { signal: opts?.signal })),
+      command: async (input: Record<string, unknown>, opts?: V1Options) => {
+        const translated = await translateOc1Command(oc2, dir, input, opts);
+        return v1(oc2.session.command(translated as never, { signal: opts?.signal }), opts);
+      },
       revert: {
         stage: (input: Record<string, unknown>, opts?: V1Options) =>
           v1(
@@ -167,42 +533,120 @@ export function createOpencodeClient(config: OpencodeClientConfig): OpencodeClie
       },
     },
     provider: {
-      list: (input?: Record<string, unknown>, opts?: V1Options) =>
-        v1(
-          oc2.provider.list(withDirectory(dir, (input ?? {}) as Record<string, unknown>) as never, {
-            signal: opts?.signal,
-          }),
-        ),
-      auth: async (_input?: Record<string, unknown>, _opts?: V1Options) => {
-        // OC2 moved auth/credentials; return undefined so callers keep working (useProviders catches).
-        return { data: undefined as unknown };
+      list: async (input?: Record<string, unknown>, opts?: V1Options) => {
+        // OC2 splits providers/models; rebuild OC1 `{ all, default, connected }`.
+        try {
+          const [providers, models, defaultModel] = await Promise.all([
+            oc2.provider.list(
+              withDirectory(dir, (input ?? {}) as Record<string, unknown>) as never,
+              { signal: opts?.signal } as never,
+            ),
+            oc2.model
+              .list(withDirectory(dir, {}) as never, { signal: opts?.signal } as never)
+              .catch(() => [] as unknown),
+            oc2.model
+              .default(withDirectory(dir, {}) as never, { signal: opts?.signal } as never)
+              .catch(() => null),
+          ]);
+          return {
+            data: translateOc2ProviderList(
+              unwrapList(providers),
+              unwrapList(models),
+              (defaultModel as { data?: unknown })?.data ?? defaultModel,
+            ),
+          };
+        } catch {
+          return { data: { all: [], default: {}, connected: [] } };
+        }
+      },
+      auth: async (_input?: Record<string, unknown>, opts?: V1Options) => {
+        // OC2 integrations -> OC1 `{ [providerID]: ProviderAuthMethod[] }`.
+        try {
+          const [providers, integrations] = await Promise.all([
+            oc2.provider
+              .list(withDirectory(dir, {}) as never, { signal: opts?.signal } as never)
+              .catch(() => [] as unknown),
+            oc2.integration
+              .list(withDirectory(dir, {}) as never, { signal: opts?.signal } as never)
+              .catch(() => [] as unknown),
+          ]);
+          return {
+            data: translateOc2AuthMethods(unwrapList(providers), unwrapList(integrations)),
+          };
+        } catch {
+          return { data: undefined as unknown };
+        }
       },
       oauth: {
         authorize: async (input: Record<string, unknown>, opts?: V1Options) => {
-          const integration = (
-            oc2 as unknown as {
-              integration?: { oauth?: { connect?: (i: unknown, o?: unknown) => Promise<unknown> } };
+          const providerID = input.providerID as string | undefined;
+          if (!providerID) return { data: undefined };
+          const integrationID = await resolveIntegrationID(providerID, opts);
+          let methodID = typeof input.methodID === "string" ? input.methodID : undefined;
+          if (!methodID) {
+            try {
+              const integrations = unwrapList(
+                await oc2.integration.list(
+                  withDirectory(dir, {}) as never,
+                  {
+                    signal: opts?.signal,
+                  } as never,
+                ),
+              );
+              const integration = integrations.find((entry: any) => entry?.id === integrationID);
+              const methods = Array.isArray(integration?.methods) ? integration.methods : [];
+              const index = typeof input.method === "number" ? input.method : 0;
+              methodID = methods[index]?.id ?? methods[0]?.id;
+            } catch {
+              methodID = undefined;
             }
-          ).integration;
-          if (integration?.oauth?.connect)
-            return v1(
-              integration.oauth.connect(withDirectory(dir, input), { signal: opts?.signal }),
-            );
-          return { data: undefined };
+          }
+          if (!methodID) return { data: undefined };
+          const res = await oc2.integration.oauth.connect(
+            withDirectory(dir, {
+              integrationID,
+              methodID,
+              answer:
+                input.answer ??
+                input.inputs ??
+                (input.form && typeof input.form === "object" ? input.form : undefined),
+            }) as never,
+            { signal: opts?.signal } as never,
+          );
+          const attempt = (res as { data?: unknown })?.data ?? res;
+          if (attempt && typeof attempt === "object" && "attemptID" in attempt) {
+            oauthAttempts.set(providerID, {
+              integrationID,
+              attemptID: String((attempt as { attemptID: unknown }).attemptID),
+            });
+          }
+          // OC2 IntegrationAttempt is shape-compatible with OC1 ProviderAuthAuthorization.
+          return { data: attempt };
         },
         callback: async (input: Record<string, unknown>, opts?: V1Options) => {
-          const integration = (
-            oc2 as unknown as {
-              integration?: {
-                oauth?: { complete?: (i: unknown, o?: unknown) => Promise<unknown> };
-              };
-            }
-          ).integration;
-          if (integration?.oauth?.complete)
-            return v1(
-              integration.oauth.complete(withDirectory(dir, input), { signal: opts?.signal }),
+          const providerID = input.providerID as string | undefined;
+          const stored = providerID ? oauthAttempts.get(providerID) : undefined;
+          const integrationID =
+            stored?.integrationID ??
+            (typeof input.integrationID === "string" ? input.integrationID : providerID);
+          const attemptID =
+            stored?.attemptID ??
+            (typeof input.attemptID === "string" ? input.attemptID : undefined);
+          if (!integrationID || !attemptID) return { data: false };
+          try {
+            await oc2.integration.oauth.complete(
+              withDirectory(dir, {
+                integrationID,
+                attemptID,
+                ...(typeof input.code === "string" ? { code: input.code } : {}),
+              }) as never,
+              { signal: opts?.signal } as never,
             );
-          return { data: undefined };
+            if (providerID) oauthAttempts.delete(providerID);
+            return { data: true };
+          } catch {
+            return { data: false };
+          }
         },
       },
     },
@@ -339,33 +783,51 @@ export function createOpencodeClient(config: OpencodeClientConfig): OpencodeClie
     },
     question: {
       list: async (
-        _input?: Record<string, unknown>,
-        _opts?: V1Options,
+        input?: Record<string, unknown>,
+        opts?: V1Options,
       ): Promise<{ data: QuestionRequest[] }> => {
-        // OC2 uses session forms; no global question.list. BloxMind filters by session in hooks.
-        return { data: [] as QuestionRequest[] };
+        // OC2 uses per-session forms; no global question.list.
+        const sessionID = (input as { sessionID?: string } | undefined)?.sessionID;
+        if (!sessionID) return { data: [] as QuestionRequest[] };
+        try {
+          const listed = await oc2.session.form
+            .list(withDirectory(dir, { sessionID }) as never, { signal: opts?.signal } as never)
+            .catch(() => [] as unknown);
+          const forms = Array.isArray((listed as { data?: unknown })?.data)
+            ? (listed as { data: unknown[] }).data
+            : Array.isArray(listed)
+              ? listed
+              : [];
+          return {
+            data: forms
+              .map((form) => translateOc2Form(form))
+              .filter((question): question is QuestionRequest => !!question),
+          };
+        } catch {
+          return { data: [] as QuestionRequest[] };
+        }
       },
       reply: async (input: Record<string, unknown>, opts?: V1Options) => {
-        // Best-effort: OC2 form reply takes sessionID+formID+answer; OC1 question reply took requestID+answers.
-        // Mapped in Step 4 if needed; keep call from throwing.
+        // OC2 form reply takes sessionID+formID+answer; OC1 question reply took requestID+answers.
+        const sessionID = input.sessionID as string | undefined;
+        const formID = (input.requestID ?? input.formID) as string | undefined;
+        const form = oc2.session?.form;
+        if (!form?.reply || !sessionID || !formID) return { data: true };
+        let answer: unknown = input.answers ?? input.answer;
+        // Prefer a field-aware mapping; fall back to the raw payload if the form is gone.
         try {
-          const form = oc2.session?.form as
-            | { reply?: (i: unknown, o?: unknown) => Promise<unknown> }
-            | undefined;
-          if (form?.reply && input.sessionID && (input.requestID ?? input.formID)) {
-            return v1(
-              form.reply(
-                {
-                  sessionID: input.sessionID,
-                  formID: input.requestID ?? input.formID,
-                  answer: input.answers ?? input.answer,
-                } as never,
-                { signal: opts?.signal },
-              ),
-            );
+          const detail = await form.get(
+            withDirectory(dir, { sessionID, formID }) as never,
+            { signal: opts?.signal } as never,
+          );
+          const formDetail = (detail as { data?: unknown })?.data ?? detail;
+          if (formDetail && typeof formDetail === "object") {
+            answer = buildOc2FormAnswer(formDetail, input.answers ?? input.answer);
           }
         } catch {}
-        return { data: true };
+        return v1(
+          form.reply({ sessionID, formID, answer } as never, { signal: opts?.signal } as never),
+        );
       },
       reject: async (input: Record<string, unknown>, opts?: V1Options) => {
         try {
@@ -423,6 +885,68 @@ export function createOpencodeClient(config: OpencodeClientConfig): OpencodeClie
           oc2.permission.reply(withDirectory(dir, mapped) as never, { signal: opts?.signal }),
           opts,
         );
+      },
+    },
+    // OC1 compatibility: BloxMind's provider connect/disconnect flows use auth + instance.dispose.
+    // OC2 has credential/integration APIs and no instance.dispose; bridges are best-effort/verified-safe.
+    auth: {
+      set: async (
+        input: { providerID: string; auth: { type: string; key?: string; [k: string]: unknown } },
+        opts?: V1Options,
+      ) => {
+        if (input?.auth?.type === "api" && typeof input.auth.key === "string") {
+          const integrationID = await resolveIntegrationID(input.providerID, opts);
+          try {
+            await oc2.credential.create(
+              {
+                integrationID,
+                label: input.providerID,
+                value: { type: "key", key: input.auth.key },
+              } as never,
+              { signal: opts?.signal } as never,
+            );
+            return { data: true };
+          } catch {
+            // Fall through to experimental/legacy paths if present.
+          }
+        }
+        const exp = (oc2 as any).experimental?.auth as
+          | { set?: (i: unknown, o?: unknown) => Promise<unknown> }
+          | undefined;
+        if (exp?.set) return v1(exp.set(input, { signal: opts?.signal }), opts);
+        throw new Error("Provider authentication is not available for this OC2 engine API.");
+      },
+      remove: async (input: { providerID: string }, opts?: V1Options) => {
+        try {
+          const integrationID = await resolveIntegrationID(input.providerID, opts);
+          const entries = unwrapList(await oc2.credential.list({ signal: opts?.signal } as never));
+          const matches = entries.filter(
+            (e: any) =>
+              e?.integrationID === integrationID ||
+              e?.integrationID === input.providerID ||
+              e?.providerID === input.providerID ||
+              e?.id === input.providerID ||
+              e?.label === input.providerID,
+          );
+          for (const m of matches) {
+            if (m?.id)
+              await oc2.credential
+                .remove({ credentialID: m.id } as never, { signal: opts?.signal } as never)
+                .catch(() => {});
+          }
+          if (matches.length) return { data: true };
+        } catch {}
+        const exp = (oc2 as any).experimental?.auth as
+          | { remove?: (i: unknown, o?: unknown) => Promise<unknown> }
+          | undefined;
+        if (exp?.remove) return v1(exp.remove(input, { signal: opts?.signal }), opts);
+        return { data: true };
+      },
+    },
+    instance: {
+      dispose: async (_input?: Record<string, unknown>, _opts?: V1Options) => {
+        // OC2 client has no instance.dispose; no-op keeps OC1 refresh flows from throwing.
+        return { data: true };
       },
     },
     event: {

@@ -397,6 +397,16 @@ export class AiTracer {
   }
 
   /** Drops a turn whose prompt never reached OpenCode. */
+  /**
+   * OC2 does not emit an OC1 `message.updated` for the user message, so bind the
+   * prompt's returned message id to the turn started by `beginTurn`.
+   */
+  bindUserMessage(sessionID: string, messageID: string): void {
+    if (!this.isEnabled()) return;
+    const turn = this.turns.get(sessionID)?.find((entry) => entry.traceId === null);
+    if (turn) turn.traceId = messageID;
+  }
+
   cancelTurn(sessionID: string): void {
     const queue = this.turns.get(sessionID);
     if (!queue) return;
@@ -416,16 +426,26 @@ export class AiTracer {
     // existing property reads don't throw; OC2-only event types are handled where mapped.
     const raw =
       rawEvent && typeof rawEvent === "object" ? (rawEvent as Record<string, unknown>) : null;
-    const event = (
-      raw?.data && !raw?.properties ? { ...raw, properties: raw.data } : rawEvent
-    ) as Record<string, unknown> | null;
+    // biome-ignore lint/suspicious/noExplicitAny: staged OC1/OC2 event reconciliation boundary
+    const event: any = raw?.data && !raw?.properties ? { ...raw, properties: raw.data } : rawEvent;
     if (!event) return;
     switch (event.type) {
       case "session.created":
       case "session.updated": {
-        const { info } = event.properties;
-        if (info.parentID) this.rememberSession(this.sessionParents, info.id, info.parentID);
-        if (info.title) this.rememberSession(this.sessionTitles, info.id, info.title);
+        // OC2 puts the fields directly in `data`; OC1 nested them under `info`.
+        const props = event.properties ?? {};
+        const info = props.info ?? props;
+        const id = info.id ?? info.sessionID;
+        if (!id) break;
+        if (info.parentID) this.rememberSession(this.sessionParents, id, info.parentID);
+        if (info.title) this.rememberSession(this.sessionTitles, id, info.title);
+        break;
+      }
+      case "session.renamed": {
+        const props = event.properties ?? {};
+        if (props.sessionID && props.title) {
+          this.rememberSession(this.sessionTitles, props.sessionID, props.title);
+        }
         break;
       }
       case "message.updated":
@@ -508,6 +528,214 @@ export class AiTracer {
       case "question.rejected":
         this.resolvePending(event.properties.requestID, "dismissed");
         break;
+      // OC2 forms replace OC1 questions.
+      case "form.created": {
+        const props = event.properties ?? {};
+        const form = props.form ?? props;
+        this.onQuestionAsked({ id: form.id, sessionID: form.sessionID });
+        break;
+      }
+      case "form.replied":
+        this.resolvePending((event.properties ?? {}).id, (event.properties ?? {}).answer);
+        break;
+      case "form.cancelled":
+        this.resolvePending((event.properties ?? {}).id, "dismissed");
+        break;
+      // OC2 streams typed parts instead of OC1 `message.part.updated`.
+      case "session.step.started": {
+        const props = event.properties ?? {};
+        const { sessionID, assistantMessageID: messageID } = props;
+        if (!sessionID || !messageID) break;
+        this.oc2Message(messageID, sessionID, {
+          time: { created: props.started ?? this.now() },
+          ...(typeof props.agent === "string" ? { agent: props.agent } : {}),
+          ...(props.model?.providerID ? { providerID: props.model.providerID } : {}),
+          ...(props.model?.id || props.model?.modelID
+            ? { modelID: props.model.id ?? props.model.modelID }
+            : {}),
+        });
+        break;
+      }
+      case "session.step.ended": {
+        const props = event.properties ?? {};
+        const { sessionID, assistantMessageID: messageID } = props;
+        if (!sessionID || !messageID) break;
+        const previous = this.messages.get(messageID)?.info;
+        const created =
+          previous?.role === "assistant" ? previous.time.created : (props.started ?? this.now());
+        this.oc2Message(messageID, sessionID, {
+          ...(props.tokens ? { tokens: props.tokens } : {}),
+          ...(typeof props.cost === "number" ? { cost: props.cost } : {}),
+          ...(props.finish ? { finish: props.finish } : {}),
+          time: { created, completed: this.now() },
+        });
+        break;
+      }
+      case "session.step.failed": {
+        const props = event.properties ?? {};
+        const { sessionID, assistantMessageID: messageID } = props;
+        if (!sessionID || !messageID) break;
+        const previous = this.messages.get(messageID)?.info;
+        const created = previous?.role === "assistant" ? previous.time.created : this.now();
+        const error = props.error ?? {};
+        this.oc2Message(messageID, sessionID, {
+          error: {
+            name: error.type ?? "UnknownError",
+            data: { message: error.message ?? "The model could not respond." },
+          },
+          ...(typeof props.cost === "number" ? { cost: props.cost } : {}),
+          ...(props.tokens ? { tokens: props.tokens } : {}),
+          time: { created, completed: this.now() },
+        });
+        break;
+      }
+      case "session.text.started":
+      case "session.text.delta":
+      case "session.text.ended": {
+        const props = event.properties ?? {};
+        const { sessionID, assistantMessageID: messageID } = props;
+        if (!sessionID || !messageID) break;
+        const partID = `${messageID}:text:${props.ordinal ?? 0}`;
+        this.upsertOc2Part(
+          messageID,
+          sessionID,
+          partID,
+          () => ({ type: "text", text: "", time: { start: this.now() } }),
+          (part) => {
+            if (event.type === "session.text.delta") {
+              part.text = `${part.text ?? ""}${props.delta ?? ""}`;
+            } else if (event.type === "session.text.ended" && typeof props.text === "string") {
+              part.text = props.text;
+              part.time = { ...(part.time as object), end: this.now() };
+            }
+          },
+        );
+        break;
+      }
+      case "session.reasoning.started":
+      case "session.reasoning.delta":
+      case "session.reasoning.ended": {
+        const props = event.properties ?? {};
+        const { sessionID, assistantMessageID: messageID } = props;
+        if (!sessionID || !messageID) break;
+        const partID = `${messageID}:reasoning:${props.ordinal ?? 0}`;
+        this.upsertOc2Part(
+          messageID,
+          sessionID,
+          partID,
+          () => ({ type: "reasoning", text: "", time: { start: this.now() } }),
+          (part) => {
+            if (event.type === "session.reasoning.delta") {
+              part.text = `${part.text ?? ""}${props.delta ?? ""}`;
+            } else if (event.type === "session.reasoning.ended" && typeof props.text === "string") {
+              part.text = props.text;
+            }
+          },
+        );
+        break;
+      }
+      case "session.tool.input.started":
+      case "session.tool.input.delta":
+      case "session.tool.input.ended":
+      case "session.tool.called":
+      case "session.tool.progress":
+      case "session.tool.success":
+      case "session.tool.failed": {
+        const props = event.properties ?? {};
+        const { sessionID, assistantMessageID: messageID } = props;
+        const callID = props.id;
+        if (!sessionID || !messageID || !callID) break;
+        const partID = `${messageID}:tool:${callID}`;
+        this.upsertOc2Part(
+          messageID,
+          sessionID,
+          partID,
+          () => ({
+            type: "tool",
+            tool: props.name ?? "tool",
+            callID,
+            state: { status: "running", input: {}, metadata: {}, time: { start: this.now() } },
+          }),
+          (part) => {
+            const state =
+              part.state && typeof part.state === "object"
+                ? (part.state as Record<string, unknown>)
+                : {};
+            part.state = state;
+            if (event.type === "session.tool.input.started" && typeof props.name === "string") {
+              part.tool = props.name;
+            } else if (event.type === "session.tool.input.delta") {
+              state.raw = `${state.raw ?? ""}${props.delta ?? ""}`;
+            } else if (event.type === "session.tool.input.ended") {
+              state.raw = props.text ?? state.raw ?? "";
+              if (typeof props.text === "string") {
+                try {
+                  const parsed = JSON.parse(props.text);
+                  if (parsed && typeof parsed === "object") state.input = parsed;
+                } catch {
+                  // Incomplete/non-JSON tool input.
+                }
+              }
+            } else if (event.type === "session.tool.called") {
+              if (props.input && typeof props.input === "object") state.input = props.input;
+            } else if (event.type === "session.tool.progress") {
+              if (props.metadata && typeof props.metadata === "object") {
+                state.metadata = { ...(state.metadata as object), ...props.metadata };
+              }
+            } else if (event.type === "session.tool.success") {
+              state.status = "completed";
+              state.output = Array.isArray(props.content)
+                ? props.content
+                    .map((entry: { type?: string; text?: string }) =>
+                      entry?.type === "text" ? (entry.text ?? "") : "",
+                    )
+                    .filter(Boolean)
+                    .join("\n")
+                : "";
+              state.metadata = props.metadata ?? state.metadata ?? {};
+              state.title = props.metadata?.title ?? "";
+              state.time = { ...(state.time as object), end: this.now() };
+            } else if (event.type === "session.tool.failed") {
+              state.status = "error";
+              state.error = props.error?.message ?? props.error?.type ?? "Tool failed";
+              state.metadata = props.metadata ?? state.metadata ?? {};
+              state.time = { ...(state.time as object), end: this.now() };
+            }
+          },
+        );
+        // OC2 has no todo.updated event: read the latest todowrite input instead.
+        if (
+          event.type === "session.tool.success" &&
+          String(props.name ?? "").endsWith("todowrite")
+        ) {
+          const state = this.messages.get(messageID)?.parts.get(partID) as
+            | { state?: { input?: { todos?: Todo[] } } }
+            | undefined;
+          const todos = state?.state?.input?.todos;
+          const info = this.messages.get(messageID)?.info;
+          const turn = this.activeTurn(
+            sessionID,
+            info?.role === "assistant" ? info.parentID : undefined,
+          );
+          if (turn && Array.isArray(todos)) turn.todos = todos;
+        }
+        break;
+      }
+      case "session.execution.interrupted": {
+        const sessionID = (event.properties ?? {}).sessionID;
+        const turn = sessionID ? this.activeTurn(sessionID) : undefined;
+        if (turn) turn.aborted = true;
+        break;
+      }
+      case "session.execution.failed": {
+        const props = event.properties ?? {};
+        const turn = props.sessionID ? this.activeTurn(props.sessionID) : undefined;
+        if (turn) {
+          turn.error = props.error?.type ?? "UnknownError";
+          turn.errorMessage = props.error?.message ?? null;
+        }
+        break;
+      }
     }
   }
 
@@ -694,6 +922,52 @@ export class AiTracer {
       tracked.emittedParts.add(part.id);
       this.emitToolSpan(part);
     }
+  }
+
+  /** Build/merge an OC2 assistant message into the OC1-shaped tracker. */
+  private oc2AssistantInfo(
+    messageID: string,
+    sessionID: string,
+    patch: Record<string, unknown>,
+  ): AssistantMessage {
+    const previous = this.messages.get(messageID)?.info;
+    const turn = this.activeTurn(sessionID);
+    const base =
+      previous && previous.role === "assistant"
+        ? previous
+        : ({
+            id: messageID,
+            sessionID,
+            role: "assistant",
+            time: { created: this.now() },
+            parentID: turn?.traceId ?? sessionID,
+            modelID: turn?.input.model ?? "",
+            providerID: turn?.input.provider ?? "",
+            mode: turn?.input.agent ?? "",
+            agent: turn?.input.agent ?? "",
+            path: { cwd: "", root: "" },
+            cost: 0,
+            tokens: { total: 0, input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          } as AssistantMessage);
+    return { ...base, ...patch } as AssistantMessage;
+  }
+
+  private oc2Message(messageID: string, sessionID: string, patch: Record<string, unknown>): void {
+    this.onMessage(this.oc2AssistantInfo(messageID, sessionID, patch));
+  }
+
+  private upsertOc2Part(
+    messageID: string,
+    sessionID: string,
+    partID: string,
+    create: () => Record<string, unknown>,
+    mutate: (part: Record<string, unknown>) => void,
+  ): void {
+    const tracked = this.track(messageID);
+    const existing = tracked.parts.get(partID) as Record<string, unknown> | undefined;
+    const part = existing ? { ...existing } : create();
+    mutate(part);
+    this.onPart({ ...part, id: partID, sessionID, messageID } as unknown as Part);
   }
 
   private markOutput(tracked: TrackedMessage): void {

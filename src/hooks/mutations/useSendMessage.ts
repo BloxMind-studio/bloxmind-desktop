@@ -130,9 +130,13 @@ export function useSendMessage(options?: { onError?: (error: Error) => void }) {
         variant: selectedVariant ?? undefined,
       });
       try {
-        await client.session.promptAsync(opts as Parameters<typeof client.session.promptAsync>[0], {
-          throwOnError: true,
-        });
+        const sent = await client.session.promptAsync(
+          opts as Parameters<typeof client.session.promptAsync>[0],
+          { throwOnError: true },
+        );
+        // OC2 returns the queued user message; bind it as the turn's trace id.
+        const sentID = (sent as { data?: { id?: string } } | undefined)?.data?.id;
+        if (typeof sentID === "string") aiTracer.bindUserMessage(activeSessionId, sentID);
       } catch (error) {
         aiTracer.cancelTurn(activeSessionId);
         throw error;

@@ -911,4 +911,157 @@ describe("sseDispatch", () => {
       expect(qc.getQueryData(qk.compaction("s2"))).toEqual({ active: true, reason: "auto" });
     });
   });
+
+  describe("OC2 streaming", () => {
+    it("creates the assistant message and appends text deltas", () => {
+      dispatch(
+        qc,
+        {
+          type: "session.step.started",
+          data: {
+            sessionID: "s1",
+            assistantMessageID: "a1",
+            agent: "build",
+            model: { providerID: "anthropic", id: "claude" },
+            started: 1,
+          },
+        },
+        "s1",
+      );
+      dispatch(
+        qc,
+        {
+          type: "session.text.started",
+          data: { sessionID: "s1", assistantMessageID: "a1", ordinal: 0 },
+        },
+        "s1",
+      );
+      dispatch(
+        qc,
+        {
+          type: "session.text.delta",
+          data: { sessionID: "s1", assistantMessageID: "a1", ordinal: 0, delta: "Hello" },
+        },
+        "s1",
+      );
+      dispatch(
+        qc,
+        {
+          type: "session.text.delta",
+          data: { sessionID: "s1", assistantMessageID: "a1", ordinal: 0, delta: " world" },
+        },
+        "s1",
+      );
+
+      const cache = getMessages(qc);
+      expect(cache.messageIds).toContain("a1");
+      expect(cache.messagesById.a1.info).toMatchObject({
+        role: "assistant",
+        providerID: "anthropic",
+        modelID: "claude",
+      });
+      expect(cache.messagesById.a1.parts.find((entry) => entry.type === "text")).toMatchObject({
+        type: "text",
+        text: "Hello world",
+      });
+
+      dispatch(
+        qc,
+        {
+          type: "session.text.ended",
+          data: { sessionID: "s1", assistantMessageID: "a1", ordinal: 0, text: "Hello world!" },
+        },
+        "s1",
+      );
+      expect(
+        getMessages(qc).messagesById.a1.parts.find((entry) => entry.type === "text"),
+      ).toMatchObject({ text: "Hello world!" });
+    });
+
+    it("tracks tool calls from input to success", () => {
+      dispatch(
+        qc,
+        {
+          type: "session.step.started",
+          data: { sessionID: "s1", assistantMessageID: "a1", started: 1 },
+        },
+        "s1",
+      );
+      dispatch(
+        qc,
+        {
+          type: "session.tool.input.started",
+          data: { sessionID: "s1", assistantMessageID: "a1", id: "call1", name: "bash" },
+        },
+        "s1",
+      );
+      dispatch(
+        qc,
+        {
+          type: "session.tool.called",
+          data: { sessionID: "s1", assistantMessageID: "a1", id: "call1", input: { cmd: "ls" } },
+        },
+        "s1",
+      );
+      dispatch(
+        qc,
+        {
+          type: "session.tool.success",
+          data: {
+            sessionID: "s1",
+            assistantMessageID: "a1",
+            id: "call1",
+            content: [{ type: "text", text: "file.txt" }],
+            metadata: { title: "List files" },
+          },
+        },
+        "s1",
+      );
+
+      const part = getMessages(qc).messagesById.a1.parts.find(
+        (entry) => entry.type === "tool" && entry.callID === "call1",
+      );
+      expect(part).toMatchObject({
+        tool: "bash",
+        state: {
+          status: "completed",
+          input: { cmd: "ls" },
+          output: "file.txt",
+          title: "List files",
+        },
+      });
+    });
+
+    it("surfaces an OC2 form as a question", () => {
+      dispatch(
+        qc,
+        {
+          type: "form.created",
+          data: {
+            form: {
+              id: "form1",
+              sessionID: "s1",
+              title: "Choose",
+              fields: [
+                {
+                  key: "choice",
+                  title: "Pick",
+                  type: "string",
+                  options: [{ value: "a", label: "A" }],
+                },
+              ],
+            },
+          },
+        },
+        "s1",
+      );
+
+      const questions = qc.getQueryData<QuestionRequest[]>(qk.questions("s1"));
+      expect(questions?.[0]).toMatchObject({
+        id: "form1",
+        sessionID: "s1",
+        questions: [{ header: "Pick", options: [{ label: "A" }] }],
+      });
+    });
+  });
 });

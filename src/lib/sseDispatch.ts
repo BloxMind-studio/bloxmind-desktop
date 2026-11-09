@@ -9,6 +9,7 @@ import type {
   SessionStatus,
   Todo,
 } from "@/lib/opencode";
+import { translateOc2Form } from "@/lib/opencode/forms";
 import { qk } from "@/lib/queryKeys";
 import { isVisibleSession } from "@/lib/sessionVisibility";
 import type { MessageWithParts } from "@/types";
@@ -316,6 +317,83 @@ function captureUsageFromTokens(
   });
 }
 
+function oc2PartId(messageID: string, kind: string, ordinal: number | string): string {
+  return `${messageID}:${kind}:${ordinal}`;
+}
+
+/** Ensure an assistant message exists and apply a part-level mutation to it. */
+function mutateOc2Part(
+  queryClient: QueryClient,
+  sessionID: string,
+  messageID: string,
+  partID: string,
+  create: () => Record<string, any>,
+  mutate: (part: Record<string, any>) => void,
+): void {
+  queryClient.setQueryData<MessagesCache>(qk.messages(sessionID), (prev) => {
+    if (!prev) {
+      // Opened mid-stream: start streaming immediately and fetch history once.
+      scheduleMessagesRefetch(queryClient, sessionID);
+    }
+    const cache: MessagesCache = prev ?? { messageIds: [], messagesById: {} };
+    const existingMessage = cache.messagesById[messageID];
+    const message: MessageWithParts = existingMessage ?? {
+      info: {
+        id: messageID,
+        sessionID,
+        role: "assistant",
+        time: { created: Date.now() },
+      } as MessageWithParts["info"],
+      parts: [],
+    };
+    const parts = [...(message.parts as unknown as Array<Record<string, any>>)];
+    const index = parts.findIndex((part) => part.id === partID);
+    const part = index >= 0 ? { ...parts[index] } : create();
+    mutate(part);
+    if (index >= 0) parts[index] = part;
+    else parts.push(part);
+    return {
+      ...cache,
+      messageIds: existingMessage ? cache.messageIds : [...cache.messageIds, messageID],
+      messagesById: {
+        ...cache.messagesById,
+        [messageID]: { ...message, parts: parts as unknown as MessageWithParts["parts"] },
+      },
+    };
+  });
+}
+
+function updateOc2AssistantInfo(
+  queryClient: QueryClient,
+  sessionID: string,
+  messageID: string,
+  patch: Record<string, unknown>,
+): void {
+  queryClient.setQueryData<MessagesCache>(qk.messages(sessionID), (prev) => {
+    if (!prev) return prev;
+    const existing = prev.messagesById[messageID];
+    if (!existing) return prev;
+    return {
+      ...prev,
+      messagesById: {
+        ...prev.messagesById,
+        [messageID]: {
+          ...existing,
+          info: { ...existing.info, ...patch } as MessageWithParts["info"],
+        },
+      },
+    };
+  });
+}
+
+function toolContentText(content: unknown): string {
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((entry: any) => (entry?.type === "text" ? entry.text : ""))
+    .filter(Boolean)
+    .join("\n");
+}
+
 function dispatchEvent(
   queryClient: QueryClient,
   event: unknown,
@@ -323,7 +401,8 @@ function dispatchEvent(
   captureModelUsage?: (usage: ModelUsageEvent) => void,
 ): void {
   const currentSessionId = activeSessionIdRef.current;
-  const data = eventData(event);
+  // biome-ignore lint/suspicious/noExplicitAny: staged OC1/OC2 event reconciliation boundary
+  const data = eventData(event) as Record<string, any>;
   const eventObj = event && typeof event === "object" ? (event as Record<string, unknown>) : {};
   const type = String(eventObj.type ?? "");
 
@@ -376,7 +455,8 @@ function dispatchEvent(
       break;
     }
     case "session.deleted": {
-      const id = data.info?.id ?? data.sessionID ?? data.id;
+      const info = data.info as { id?: string } | undefined;
+      const id = (info?.id ?? data.sessionID ?? data.id) as string | undefined;
       if (!id) break;
       queryClient.setQueryData<Session[]>(qk.sessions, (prev) => {
         if (!prev) return prev;
@@ -391,8 +471,8 @@ function dispatchEvent(
       break;
     }
     case "session.status": {
-      const sessionID = data.sessionID;
-      const status = data.status;
+      const sessionID = data.sessionID as string | undefined;
+      const status = data.status as SessionStatus | undefined;
       if (!sessionID || !status) break;
       if (status.type !== "idle") {
         queryClient.setQueryData<ModelError | null>(qk.sessionError(sessionID), null);
@@ -616,6 +696,19 @@ function dispatchEvent(
       }
       break;
     }
+    case "form.created": {
+      // OC2 form -> OC1 question so BloxMind's question UI can render it.
+      const form = data.form ?? data;
+      const question = translateOc2Form(form);
+      if (question?.sessionID === currentSessionId) {
+        queryClient.setQueryData<QuestionRequest[]>(qk.questions(question.sessionID), (prev) => {
+          const queue = prev ?? [];
+          if (queue.some((entry) => entry.id === question.id)) return queue;
+          return [...queue, question];
+        });
+      }
+      break;
+    }
     case "question.asked": {
       const props = data as QuestionRequest & { sessionID?: string };
       if (props?.sessionID === currentSessionId) {
@@ -671,18 +764,263 @@ function dispatchEvent(
       );
       break;
     }
-    // OC2 message/streaming events have no OC1 part-level equivalent. Invalidate the
-    // active session's messages as a safe fallback so the UI catches up (Step 4 staged).
-    case "session.message.content.updated":
+    // OC2 assistant content/streaming/tool events. Full part-level synthesis is staged;
+    // apply known content updates, otherwise invalidate for safe fallback.
+    case "session.message.content.updated": {
+      const sessionID = data.sessionID as string | undefined;
+      const messageID = data.messageID as string | undefined;
+      const content = Array.isArray(data.content) ? data.content : null;
+      if (!sessionID || sessionID !== currentSessionId || !messageID) break;
+      if (content) {
+        queryClient.setQueryData<MessagesCache>(qk.messages(sessionID), (prev) => {
+          if (!prev?.messagesById[messageID]) return prev;
+          const msg = prev.messagesById[messageID];
+          const parts = content.map((c: any, i: number): any => {
+            const base = { id: `${messageID}:c${i}`, sessionID, messageID };
+            if (c?.type === "text") return { ...base, type: "text" as const, text: c.text ?? "" };
+            if (c?.type === "reasoning")
+              return { ...base, type: "reasoning" as const, text: c.text ?? "", time: c.time };
+            if (c?.type === "tool") {
+              const st = c.state;
+              const status = st?.status;
+              const toolContent = Array.isArray(st?.content) ? st.content : [];
+              const output = toolContent
+                .map((x: any) => (x?.type === "text" ? x.text : ""))
+                .filter(Boolean)
+                .join("\n");
+              const state =
+                status === "completed"
+                  ? {
+                      status: "completed",
+                      input: st?.input ?? {},
+                      output,
+                      title: st?.metadata?.title ?? "",
+                      metadata: st?.metadata ?? {},
+                      time: st?.time ?? {},
+                    }
+                  : status === "error"
+                    ? {
+                        status: "error",
+                        input: st?.input ?? {},
+                        error: st?.error?.message ?? st?.error?.type ?? "Tool failed",
+                        metadata: st?.metadata ?? {},
+                        time: st?.time ?? {},
+                      }
+                    : status === "running" || status === "streaming"
+                      ? {
+                          status: "running",
+                          input: st?.input ?? {},
+                          metadata: st?.metadata ?? {},
+                          time: st?.time ?? {},
+                        }
+                      : { status: "pending", input: st?.input ?? {}, raw: st?.raw ?? "" };
+              return { ...base, type: "tool" as const, tool: c.name, callID: c.id, state };
+            }
+            return { ...base, type: "text" as const, text: "" };
+          });
+          return {
+            ...prev,
+            messagesById: { ...prev.messagesById, [messageID]: { ...msg, parts } as any },
+          } as MessagesCache;
+        });
+        if (
+          !queryClient.getQueryData<MessagesCache>(qk.messages(sessionID))?.messagesById[messageID]
+        ) {
+          scheduleMessagesRefetch(queryClient, sessionID);
+        }
+      } else {
+        scheduleMessagesRefetch(queryClient, sessionID);
+      }
+      break;
+    }
+    // OC2 token/part streaming. Parts are keyed by assistant message + ordinal so
+    // deltas append in place, then the authoritative text at `*.ended` wins.
+    case "session.text.started":
     case "session.text.delta":
+    case "session.text.ended": {
+      const sessionID = data.sessionID as string | undefined;
+      const messageID = data.assistantMessageID as string | undefined;
+      if (!sessionID || sessionID !== currentSessionId || !messageID) break;
+      const ordinal = Number(data.ordinal ?? 0);
+      const partID = oc2PartId(messageID, "text", ordinal);
+      mutateOc2Part(
+        queryClient,
+        sessionID,
+        messageID,
+        partID,
+        () => ({
+          id: partID,
+          sessionID,
+          messageID,
+          type: "text",
+          text: "",
+          time: { start: Date.now() },
+        }),
+        (part) => {
+          if (type === "session.text.delta") part.text = `${part.text ?? ""}${data.delta ?? ""}`;
+          else if (type === "session.text.ended" && typeof data.text === "string") {
+            part.text = data.text;
+            part.time = { ...(part.time as object), end: Date.now() };
+          }
+        },
+      );
+      break;
+    }
+    case "session.reasoning.started":
     case "session.reasoning.delta":
+    case "session.reasoning.ended": {
+      const sessionID = data.sessionID as string | undefined;
+      const messageID = data.assistantMessageID as string | undefined;
+      if (!sessionID || sessionID !== currentSessionId || !messageID) break;
+      const ordinal = Number(data.ordinal ?? 0);
+      const partID = oc2PartId(messageID, "reasoning", ordinal);
+      mutateOc2Part(
+        queryClient,
+        sessionID,
+        messageID,
+        partID,
+        () => ({
+          id: partID,
+          sessionID,
+          messageID,
+          type: "reasoning",
+          text: "",
+          time: { start: Date.now() },
+        }),
+        (part) => {
+          if (type === "session.reasoning.delta") {
+            part.text = `${part.text ?? ""}${data.delta ?? ""}`;
+          } else if (type === "session.reasoning.ended" && typeof data.text === "string") {
+            part.text = data.text;
+            part.time = { ...(part.time as object), end: Date.now() };
+          }
+        },
+      );
+      break;
+    }
+    case "session.tool.input.started":
     case "session.tool.input.delta":
+    case "session.tool.input.ended":
+    case "session.tool.called":
     case "session.tool.progress":
     case "session.tool.success":
-    case "session.tool.failed":
-    case "session.step.started":
-    case "session.step.ended":
-    case "session.step.failed":
+    case "session.tool.failed": {
+      const sessionID = data.sessionID as string | undefined;
+      const messageID = data.assistantMessageID as string | undefined;
+      const callID = data.id as string | undefined;
+      if (!sessionID || sessionID !== currentSessionId || !messageID || !callID) break;
+      const partID = oc2PartId(messageID, "tool", callID);
+      mutateOc2Part(
+        queryClient,
+        sessionID,
+        messageID,
+        partID,
+        () => ({
+          id: partID,
+          sessionID,
+          messageID,
+          type: "tool",
+          tool: data.name ?? "tool",
+          callID,
+          state: { status: "running", input: {}, metadata: {}, time: { start: Date.now() } },
+        }),
+        (part) => {
+          const state =
+            part.state && typeof part.state === "object"
+              ? (part.state as Record<string, unknown>)
+              : {};
+          part.state = state;
+          if (type === "session.tool.input.started" && typeof data.name === "string") {
+            part.tool = data.name;
+          } else if (type === "session.tool.input.delta") {
+            state.raw = `${state.raw ?? ""}${data.delta ?? ""}`;
+          } else if (type === "session.tool.input.ended") {
+            state.raw = data.text ?? state.raw ?? "";
+            if (typeof data.text === "string") {
+              try {
+                const parsed = JSON.parse(data.text);
+                if (parsed && typeof parsed === "object") state.input = parsed;
+              } catch {
+                // Partial or non-JSON input; keep the raw text for debugging.
+              }
+            }
+          } else if (type === "session.tool.called") {
+            state.status = "running";
+            if (data.input && typeof data.input === "object") state.input = data.input;
+          } else if (type === "session.tool.progress") {
+            if (data.metadata && typeof data.metadata === "object") {
+              state.metadata = { ...(state.metadata as object), ...data.metadata };
+            }
+          } else if (type === "session.tool.success") {
+            state.status = "completed";
+            state.output = toolContentText(data.content);
+            state.metadata = data.metadata ?? state.metadata ?? {};
+            state.title = (data.metadata as { title?: string } | undefined)?.title ?? "";
+            state.time = { ...(state.time as object), end: Date.now() };
+          } else if (type === "session.tool.failed") {
+            state.status = "error";
+            state.error =
+              (data.error as { message?: string; type?: string } | undefined)?.message ??
+              (data.error as { type?: string } | undefined)?.type ??
+              "Tool failed";
+            state.metadata = data.metadata ?? state.metadata ?? {};
+            state.time = { ...(state.time as object), end: Date.now() };
+          }
+        },
+      );
+      break;
+    }
+    case "session.step.started": {
+      const sessionID = data.sessionID as string | undefined;
+      const messageID = data.assistantMessageID as string | undefined;
+      if (!sessionID || sessionID !== currentSessionId || !messageID) break;
+      const model = data.model as
+        | { providerID?: string; id?: string; modelID?: string }
+        | undefined;
+      const stepID = oc2PartId(messageID, "step", data.started ?? Date.now());
+      mutateOc2Part(
+        queryClient,
+        sessionID,
+        messageID,
+        stepID,
+        () => ({ id: stepID, sessionID, messageID, type: "step-start" }),
+        () => {},
+      );
+      updateOc2AssistantInfo(queryClient, sessionID, messageID, {
+        providerID: model?.providerID,
+        modelID: model?.id ?? model?.modelID,
+        ...(model ? { model } : {}),
+        ...(typeof data.agent === "string" ? { agent: data.agent } : {}),
+        time: { created: data.started ?? Date.now() },
+      });
+      break;
+    }
+    case "session.step.ended": {
+      const sessionID = data.sessionID as string | undefined;
+      const messageID = data.assistantMessageID as string | undefined;
+      if (!sessionID || sessionID !== currentSessionId || !messageID) break;
+      updateOc2AssistantInfo(queryClient, sessionID, messageID, {
+        finish: data.finish,
+        ...(data.tokens ? { tokens: data.tokens } : {}),
+        ...(typeof data.cost === "number" ? { cost: data.cost } : {}),
+        time: { created: Date.now(), completed: Date.now() },
+      });
+      if (data.tokens) {
+        captureUsageFromTokens(captureModelUsage, data.tokens);
+      }
+      break;
+    }
+    case "session.step.failed": {
+      const sessionID = data.sessionID as string | undefined;
+      const messageID = data.assistantMessageID as string | undefined;
+      if (!sessionID || sessionID !== currentSessionId || !messageID) break;
+      const error = normalizeExecutionError(data);
+      updateOc2AssistantInfo(queryClient, sessionID, messageID, {
+        ...(error ? { error } : {}),
+        time: { created: Date.now(), completed: Date.now() },
+      });
+      break;
+    }
     case "session.execution.started": {
       const sessionID = data.sessionID;
       if (sessionID && sessionID === currentSessionId) {

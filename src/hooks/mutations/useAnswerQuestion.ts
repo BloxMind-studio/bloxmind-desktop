@@ -20,7 +20,9 @@ export function useAnswerQuestion() {
     }) => {
       if (!client || !activeSessionId) throw new Error("No client or session");
       const sessionID = activeSessionId;
-      await client.question.reply({ requestID, answers }, { throwOnError: true });
+      await client.question.reply({ requestID, answers, sessionID, formID: requestID } as never, {
+        throwOnError: true,
+      });
       return sessionID;
     },
     onSuccess: (sessionID, { requestID }) => {
@@ -40,7 +42,9 @@ export function useRejectQuestion() {
     mutationFn: async (requestID: string) => {
       if (!client || !activeSessionId) throw new Error("No client or session");
       const sessionID = activeSessionId;
-      await client.question.reject({ requestID }, { throwOnError: true });
+      await client.question.reject({ requestID, sessionID, formID: requestID } as never, {
+        throwOnError: true,
+      });
       return sessionID;
     },
     onSuccess: (sessionID, requestID) => {

@@ -22,7 +22,10 @@ export function useActiveQuestion(): QuestionRequest | null {
       const queryKey = qk.questions(activeSessionId);
       const beforeRevision =
         queryClient.getQueryState<QuestionRequest[]>(queryKey)?.dataUpdateCount ?? 0;
-      const response = await client.question.list({}, { throwOnError: true });
+      const response = await client.question.list(
+        { sessionID: activeSessionId },
+        { throwOnError: true },
+      );
       const afterState = queryClient.getQueryState<QuestionRequest[]>(queryKey);
       if ((afterState?.dataUpdateCount ?? 0) !== beforeRevision) return afterState?.data ?? [];
       return (

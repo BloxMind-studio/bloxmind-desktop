@@ -20,7 +20,9 @@ export function useReplyPermission() {
     }) => {
       if (!client || !activeSessionId) throw new Error("No client or session");
       const sessionID = activeSessionId;
-      await client.permission.reply({ requestID, reply }, { throwOnError: true });
+      await client.permission.reply({ requestID, reply, decision: reply, sessionID } as never, {
+        throwOnError: true,
+      });
       return sessionID;
     },
     onSuccess: (sessionID, { requestID }) => {
