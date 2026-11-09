@@ -9,6 +9,7 @@ import type {
 } from "@/lib/opencode";
 import type { MessageWithParts } from "@/types";
 import type { InstructionFile } from "@/types/desktop";
+import { baseToolName } from "./toolName";
 
 // Rebuilds OpenCode's event stream into PostHog LLM analytics events:
 //   $ai_trace      one per user prompt, from send until the session goes idle
@@ -489,6 +490,7 @@ export class AiTracer {
         break;
       }
       case "session.idle":
+      case "session.execution.succeeded":
         this.finishSession(event.properties.sessionID);
         break;
       case "session.compacted":
@@ -704,20 +706,22 @@ export class AiTracer {
           },
         );
         // OC2 has no todo.updated event: read the latest todowrite input instead.
-        if (
-          event.type === "session.tool.success" &&
-          String(props.name ?? "").endsWith("todowrite")
-        ) {
-          const state = this.messages.get(messageID)?.parts.get(partID) as
-            | { state?: { input?: { todos?: Todo[] } } }
+        // OC2 puts the tool name on input.started, not on success, so read the stored part.
+        if (event.type === "session.tool.success") {
+          const part = this.messages.get(messageID)?.parts.get(partID) as
+            | { tool?: unknown; state?: { input?: { todos?: Todo[] } } }
             | undefined;
-          const todos = state?.state?.input?.todos;
-          const info = this.messages.get(messageID)?.info;
-          const turn = this.activeTurn(
-            sessionID,
-            info?.role === "assistant" ? info.parentID : undefined,
-          );
-          if (turn && Array.isArray(todos)) turn.todos = todos;
+          const partTool = typeof part?.tool === "string" ? part.tool : "";
+          const base = baseToolName(partTool);
+          if (base === "todowrite") {
+            const todos = part?.state?.input?.todos;
+            const info = this.messages.get(messageID)?.info;
+            const turn = this.activeTurn(
+              sessionID,
+              info?.role === "assistant" ? info.parentID : undefined,
+            );
+            if (turn && Array.isArray(todos)) turn.todos = todos;
+          }
         }
         break;
       }

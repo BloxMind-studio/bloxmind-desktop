@@ -14,12 +14,16 @@ describe("Studio target program generation", () => {
     const create = vi.fn().mockResolvedValue({ data: { id: "private" } });
     const prompt = vi.fn().mockResolvedValue({
       data: {
-        info: {
-          structured: {
-            discovery: envelope("studio-target-discovery"),
-            selection: envelope("studio-target-selection"),
+        info: {},
+        parts: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              discovery: envelope("studio-target-discovery"),
+              selection: envelope("studio-target-selection"),
+            }),
           },
-        },
+        ],
       },
     });
     const remove = vi.fn().mockResolvedValue({ data: true });

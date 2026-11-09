@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import type { QuestionAnswer, QuestionRequest } from "@/lib/opencode";
 
 import { qk } from "@/lib/queryKeys";
@@ -30,6 +31,14 @@ export function useAnswerQuestion() {
         prev?.filter((question) => question.id !== requestID),
       );
     },
+    onError: (error) => {
+      toast.error("Couldn't send that answer", {
+        description:
+          error instanceof Error && error.message
+            ? error.message
+            : "The engine rejected the answer. Try again.",
+      });
+    },
   });
 }
 
@@ -51,6 +60,14 @@ export function useRejectQuestion() {
       queryClient.setQueryData<QuestionRequest[]>(qk.questions(sessionID), (prev) =>
         prev?.filter((question) => question.id !== requestID),
       );
+    },
+    onError: (error) => {
+      toast.error("Couldn't dismiss that question", {
+        description:
+          error instanceof Error && error.message
+            ? error.message
+            : "The engine rejected the rejection. Try again.",
+      });
     },
   });
 }

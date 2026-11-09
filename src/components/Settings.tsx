@@ -1142,6 +1142,11 @@ function EngineTab() {
     <div className="mx-auto w-full max-w-md px-6 py-8">
       <h4 className="font-serif text-lg italic text-foreground">AI Engine</h4>
       <p className="mt-1 text-xs text-muted-foreground">Configure the behavior of the AI model.</p>
+      <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-[11px] leading-relaxed text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+        OpenCode 2 doesn't expose temperature, Max Tokens, or a custom API endpoint, so those
+        controls are disabled for now — they are kept for when the engine supports them. Changes
+        take effect when the engine restarts.
+      </div>
 
       {/* Temperature */}
       <div className="mt-6">
@@ -1158,12 +1163,15 @@ function EngineTab() {
               step="0.05"
               value={temperature}
               onChange={(e) => setTemperature(parseFloat(e.target.value))}
-              className="h-1.5 flex-1 cursor-pointer appearance-none rounded-full bg-border accent-foreground"
+              disabled
+              aria-disabled="true"
+              title="Not supported by the OpenCode 2 engine yet"
+              className="h-1.5 flex-1 cursor-not-allowed appearance-none rounded-full bg-border accent-foreground opacity-50"
             />
             <span className="text-[10px] text-muted-foreground">Creative</span>
           </div>
           <div className="mt-1 text-center text-[10px] text-muted-foreground">
-            {temperature.toFixed(2)}
+            {temperature.toFixed(2)} · managed by OpenCode
           </div>
         </div>
       </div>
@@ -1180,14 +1188,17 @@ function EngineTab() {
             max={128_000}
             step={256}
             value={maxTokens}
+            disabled
+            aria-disabled="true"
+            title="Not supported by the OpenCode 2 engine yet"
             onChange={(e) =>
               setMaxTokens(Math.min(128_000, Math.max(0, parseInt(e.target.value, 10) || 0)))
             }
-            className="h-8 w-full rounded border bg-background px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-ring"
+            className="h-8 w-full cursor-not-allowed rounded border bg-background px-2 text-xs font-mono opacity-50 focus:outline-none"
           />
           <div className="mt-1 text-[10px] text-muted-foreground">
             Caps the response length for the selected model (up to 128,000; 0 uses the model's own
-            limit). Very low caps can cut a long reply off mid-thought.
+            limit). Managed by OpenCode — this engine doesn't expose the setting yet.
           </div>
         </div>
       </div>
@@ -1225,8 +1236,9 @@ function EngineTab() {
             </button>
           </div>
           <p className="mt-2 text-[10px] text-muted-foreground">
-            Automatic compaction keeps long sessions going without any action. To compact by hand
-            instead, turn this off and use Compact in the chat header.
+            Automatic compaction keeps long sessions going without any action. Applies the next time
+            the engine starts. To compact by hand instead, turn this off and use Compact in the chat
+            header.
           </p>
         </div>
       </div>
@@ -1240,22 +1252,17 @@ function EngineTab() {
           <input
             type="text"
             value={customApiEndpoint ?? ""}
+            disabled
+            aria-disabled="true"
+            title="Not supported by the OpenCode 2 engine yet"
             onChange={(e) => setCustomApiEndpoint(e.target.value.trim() || null)}
             placeholder="https://api.example.com/v1"
-            className="h-8 w-full rounded border bg-background px-2 text-xs font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
+            className="h-8 w-full cursor-not-allowed rounded border bg-background px-2 text-xs font-mono opacity-50 placeholder:text-muted-foreground/40 focus:outline-none"
           />
           <div className="mt-1 text-[10px] text-muted-foreground">
-            Overrides the API base URL for every connected provider. Leave empty to use each
-            provider's default endpoint.
+            Overrides the API base URL for every connected provider. Managed by OpenCode — this
+            engine doesn't expose the setting yet.
           </div>
-          {customApiEndpoint && (
-            <button
-              onClick={() => setCustomApiEndpoint(null)}
-              className="mt-1 text-[10px] text-muted-foreground underline hover:text-foreground"
-            >
-              Reset to default
-            </button>
-          )}
         </div>
       </div>
 

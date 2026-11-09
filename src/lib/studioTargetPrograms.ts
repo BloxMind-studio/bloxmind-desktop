@@ -1,10 +1,10 @@
 import { Effect, Schema } from "effect";
 import type { OpencodeClient } from "@/lib/opencode";
-
 import {
   type StudioTargetProgramEnvelopes,
   StudioTargetProgramEnvelopesSchema,
 } from "@/types/studioTarget";
+import { extractStructuredOutput } from "./structuredOutput";
 
 const ENVELOPE_JSON_SCHEMA = {
   type: "object",
@@ -42,7 +42,7 @@ First inspect the Studio MCP capabilities available to you. Do not assume tool n
 Return envelopes for:
 1. discovery: contract name "studio-target-discovery", version "1", inputSchemaVersion "1", outputSchemaVersion "1". Its async function run({ input, callTool }) lists connected Roblox Studio sessions/places. Return { targets: [{ key, label, detail, placeId }], selectedKey: null }. Each key must be the exact Studio instance identifier accepted as studio_id by Studio tools. Include Place ID as a string when available, otherwise null. Labels/details are user-facing and detail may be null.
 2. selection: contract name "studio-target-selection", version "1", inputSchemaVersion "1", outputSchemaVersion "1". Its run receives input { targetKey } and statelessly verifies that exact Studio instance is still present by listing Studios again. Do not call set_active_studio or mutate server/session state. Return { selected: { key, label, detail, placeId }, verified: true }. Throw if the target is stale, disconnected, or ambiguous.
-Each source must define exactly async function run({ input, callTool }) and use only JSON-safe values plus callTool(name,args). No imports, exports, eval, global state, prose, markdown fences, or hardcoded place/session identifiers. Normalize MCP content defensively. Return only the requested structured output.`;
+Each source must define exactly async function run({ input, callTool }) and use only JSON-safe values plus callTool(name,args). No imports, exports, eval, global state, prose, markdown fences, or hardcoded place/session identifiers. Normalize MCP content defensively. Reply with a single JSON value matching the requested envelope schema — no prose, no markdown fences.`;
 
 interface StudioTargetModel {
   providerID: string;
@@ -77,7 +77,9 @@ export async function generateStudioTargetPrograms(
       { throwOnError: true },
     );
     return Effect.runPromise(
-      Schema.decodeUnknown(StudioTargetProgramEnvelopesSchema)(response.data.info.structured),
+      Schema.decodeUnknown(StudioTargetProgramEnvelopesSchema)(
+        extractStructuredOutput(response.data),
+      ),
     );
   } finally {
     await client.session.delete({ sessionID }, { throwOnError: true }).catch(() => undefined);

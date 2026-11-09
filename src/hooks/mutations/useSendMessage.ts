@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import posthog from "posthog-js/dist/module.full.no-external.js";
+import { toast } from "sonner";
 import { useAllModels } from "@/hooks/useProviders";
 import {
   aiTracer,
@@ -76,6 +77,16 @@ export function useSendMessage(options?: { onError?: (error: Error) => void }) {
       // Never attach images to a model that cannot read them: one screenshot
       // otherwise makes every later request fail upstream.
       const sentImages = acceptsImages === false ? undefined : images;
+      if (acceptsImages === false && images?.length) {
+        // The composer blocks images, but nothing outside this guard stops one
+        // slipping in — say so out loud instead of silently dropping them.
+        toast.warning(
+          `This model can't read images — ${images.length === 1 ? "it was" : `${images.length} were`} left out.`,
+          {
+            id: `images-blocked-${selectedModel ?? "unknown"}`,
+          },
+        );
+      }
 
       // Assemble message parts: text first, then any image attachments.
       const parts: Array<{ type: string; [k: string]: unknown }> = [{ type: "text", text }];

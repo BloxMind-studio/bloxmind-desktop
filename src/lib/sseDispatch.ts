@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { Data, Effect, Schema } from "effect";
+import { toast } from "sonner";
 import type { ModelError } from "@/lib/modelError";
 import { normalizeExecutionError, normalizePermissionRequest } from "@/lib/oc2Normalize";
 import type {
@@ -13,6 +14,7 @@ import type {
 import { translateOc2Form } from "@/lib/opencode/forms";
 import { qk } from "@/lib/queryKeys";
 import { isVisibleSession } from "@/lib/sessionVisibility";
+import { baseToolName } from "@/lib/toolName";
 import type { MessageWithParts } from "@/types";
 
 export interface MessagesCache {
@@ -171,6 +173,9 @@ function queueDelta(
  * misses coalesce into one debounced invalidate per session.
  */
 const pendingMessagesRefetches = new Map<string, ReturnType<typeof setTimeout>>();
+
+/** Which model each live assistant step is running on, for usage analytics. */
+const oc2StepModels = new Map<string, { providerID?: string; modelID?: string }>();
 
 function scheduleMessagesRefetch(queryClient: QueryClient, sessionID: string): void {
   const existing = pendingMessagesRefetches.get(sessionID);
@@ -670,6 +675,13 @@ function dispatchEvent(
           if (queue.some((entry) => entry.id === question.id)) return queue;
           return [...queue, question];
         });
+      } else if (!question && form?.id) {
+        // All-external/hidden fields can't be answered inline — the turn would
+        // otherwise look dead while the engine waits on a browser prompt.
+        toast("The engine needs something only a browser can give it", {
+          id: `form-unanswerable-${form.id}`,
+          description: "Complete the sign-in or prompt that OpenCode opened outside this window.",
+        });
       }
       break;
     }
@@ -718,81 +730,16 @@ function dispatchEvent(
       }
       break;
     }
-    case "session.usage.updated":
-    case "session.usage.recorded": {
-      captureUsageFromTokens(
-        captureModelUsage,
-        data.tokens,
-        data.providerID ?? "",
-        data.modelID ?? "",
-      );
+    case "session.usage.updated": {
+      // Raw usage reports carry no provider/model; the assistant step we
+      // attributed at `step.started` is the source of usage capture instead.
       break;
     }
-    // OC2 assistant content/streaming/tool events. Full part-level synthesis is staged;
-    // apply known content updates, otherwise invalidate for safe fallback.
+    // Durable-replay only in OC2 v2.2.6: rebuilding parts here would clobber the
+    // synthesized streaming ids, so just refetch the message instead.
     case "session.message.content.updated": {
       const sessionID = data.sessionID as string | undefined;
-      const messageID = data.messageID as string | undefined;
-      const content = Array.isArray(data.content) ? data.content : null;
-      if (!sessionID || sessionID !== currentSessionId || !messageID) break;
-      if (content) {
-        queryClient.setQueryData<MessagesCache>(qk.messages(sessionID), (prev) => {
-          if (!prev?.messagesById[messageID]) return prev;
-          const msg = prev.messagesById[messageID];
-          const parts = content.map((c: any, i: number): any => {
-            const base = { id: `${messageID}:c${i}`, sessionID, messageID };
-            if (c?.type === "text") return { ...base, type: "text" as const, text: c.text ?? "" };
-            if (c?.type === "reasoning")
-              return { ...base, type: "reasoning" as const, text: c.text ?? "", time: c.time };
-            if (c?.type === "tool") {
-              const st = c.state;
-              const status = st?.status;
-              const toolContent = Array.isArray(st?.content) ? st.content : [];
-              const output = toolContent
-                .map((x: any) => (x?.type === "text" ? x.text : ""))
-                .filter(Boolean)
-                .join("\n");
-              const state =
-                status === "completed"
-                  ? {
-                      status: "completed",
-                      input: st?.input ?? {},
-                      output,
-                      title: st?.metadata?.title ?? "",
-                      metadata: st?.metadata ?? {},
-                      time: st?.time ?? {},
-                    }
-                  : status === "error"
-                    ? {
-                        status: "error",
-                        input: st?.input ?? {},
-                        error: st?.error?.message ?? st?.error?.type ?? "Tool failed",
-                        metadata: st?.metadata ?? {},
-                        time: st?.time ?? {},
-                      }
-                    : status === "running" || status === "streaming"
-                      ? {
-                          status: "running",
-                          input: st?.input ?? {},
-                          metadata: st?.metadata ?? {},
-                          time: st?.time ?? {},
-                        }
-                      : { status: "pending", input: st?.input ?? {}, raw: st?.raw ?? "" };
-              return { ...base, type: "tool" as const, tool: c.name, callID: c.id, state };
-            }
-            return { ...base, type: "text" as const, text: "" };
-          });
-          return {
-            ...prev,
-            messagesById: { ...prev.messagesById, [messageID]: { ...msg, parts } as any },
-          } as MessagesCache;
-        });
-        if (
-          !queryClient.getQueryData<MessagesCache>(qk.messages(sessionID))?.messagesById[messageID]
-        ) {
-          scheduleMessagesRefetch(queryClient, sessionID);
-        }
-      } else {
+      if (sessionID && sessionID === currentSessionId) {
         scheduleMessagesRefetch(queryClient, sessionID);
       }
       break;
@@ -874,6 +821,7 @@ function dispatchEvent(
       const callID = data.id as string | undefined;
       if (!sessionID || sessionID !== currentSessionId || !messageID || !callID) break;
       const partID = oc2PartId(messageID, "tool", callID);
+      let toolName = "";
       mutateOc2Part(
         queryClient,
         sessionID,
@@ -930,8 +878,16 @@ function dispatchEvent(
             state.metadata = data.metadata ?? state.metadata ?? {};
             state.time = { ...(state.time as object), end: Date.now() };
           }
+          if (typeof part.tool === "string") toolName = part.tool;
         },
       );
+      // OC2 has no todo.updated event; refresh the todos panel once a todowrite lands.
+      if (
+        (type === "session.tool.success" || type === "session.tool.failed") &&
+        baseToolName(toolName) === "todowrite"
+      ) {
+        void queryClient.invalidateQueries({ queryKey: qk.todos(sessionID) });
+      }
       break;
     }
     case "session.step.started": {
@@ -950,6 +906,10 @@ function dispatchEvent(
         () => ({ id: stepID, sessionID, messageID, type: "step-start" }),
         () => {},
       );
+      oc2StepModels.set(`${sessionID}:${messageID}`, {
+        providerID: model?.providerID,
+        modelID: model?.id ?? model?.modelID,
+      });
       updateOc2AssistantInfo(queryClient, sessionID, messageID, {
         providerID: model?.providerID,
         modelID: model?.id ?? model?.modelID,
@@ -969,8 +929,15 @@ function dispatchEvent(
         ...(typeof data.cost === "number" ? { cost: data.cost } : {}),
         time: { created: Date.now(), completed: Date.now() },
       });
+      const usage = oc2StepModels.get(`${sessionID}:${messageID}`);
+      oc2StepModels.delete(`${sessionID}:${messageID}`);
       if (data.tokens) {
-        captureUsageFromTokens(captureModelUsage, data.tokens);
+        captureUsageFromTokens(
+          captureModelUsage,
+          data.tokens,
+          usage?.providerID ?? "",
+          usage?.modelID ?? "",
+        );
       }
       break;
     }
@@ -979,6 +946,7 @@ function dispatchEvent(
       const messageID = data.assistantMessageID as string | undefined;
       if (!sessionID || sessionID !== currentSessionId || !messageID) break;
       const error = normalizeExecutionError(data);
+      oc2StepModels.delete(`${sessionID}:${messageID}`);
       updateOc2AssistantInfo(queryClient, sessionID, messageID, {
         ...(error ? { error } : {}),
         time: { created: Date.now(), completed: Date.now() },

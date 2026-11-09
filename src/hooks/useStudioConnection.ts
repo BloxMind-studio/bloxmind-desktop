@@ -37,7 +37,7 @@ export async function checkStudioConnection(
       const current = await client.mcp.status({});
       if (current.data?.[STUDIO_MCP_NAME]?.status === "connected") return "connected";
 
-      await client.mcp.connect({ name: STUDIO_MCP_NAME }).catch(() => undefined);
+      await client.mcp.connect({ server: STUDIO_MCP_NAME }).catch(() => undefined);
       const refreshed = await client.mcp.status({});
       return refreshed.data?.[STUDIO_MCP_NAME]?.status === "connected" ? "connected" : "waiting";
     } catch {

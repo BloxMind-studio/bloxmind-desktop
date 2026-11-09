@@ -133,7 +133,7 @@ describe("PlaytestPanel", () => {
     });
     client.session.prompt.mockImplementation(async () => {
       await rejection;
-      return { data: { info: { structured: PLAN }, parts: [] } };
+      return { data: { info: {}, parts: [{ type: "text", text: JSON.stringify(PLAN) }] } };
     });
 
     render(<Harness client={client} onClose={onClose} />);
@@ -155,8 +155,8 @@ describe("PlaytestPanel", () => {
       sessionID: "planner",
       format: { type: "json_schema" },
     });
-    // "deny" would drop every tool from the request, including the
-    // StructuredOutput tool, and OpenCode's free tier rejects tool-less requests.
+    // "deny" would drop every tool from the request, and OpenCode's free tier
+    // rejects tool-less requests.
     const created = client.session.create.mock.calls[0][0];
     expect(created.permission).toEqual([{ permission: "*", pattern: "*", action: "ask" }]);
     expect(created.metadata).toMatchObject({ BloxMindHidden: true });
@@ -220,7 +220,12 @@ describe("PlaytestPanel", () => {
 
   it("reports an invalid plan only when the planner answered without an error", async () => {
     const client = plannerClient(
-      vi.fn().mockResolvedValue({ data: { info: { structured: { goal: "Missing lists" } } } }),
+      vi.fn().mockResolvedValue({
+        data: {
+          info: {},
+          parts: [{ type: "text", text: JSON.stringify({ goal: "Missing lists" }) }],
+        },
+      }),
     );
     render(<Harness client={client} detailedAnalytics="enabled" />);
     fireEvent.click(screen.getByRole("button", { name: "Generate from chat" }));
@@ -262,7 +267,9 @@ describe("PlaytestPanel", () => {
             },
           },
         })
-        .mockResolvedValueOnce({ data: { info: { structured: PLAN } } }),
+        .mockResolvedValueOnce({
+          data: { info: {}, parts: [{ type: "text", text: JSON.stringify(PLAN) }] },
+        }),
     );
     render(<Harness client={client} />);
     fireEvent.click(screen.getByRole("button", { name: "Generate from chat" }));
@@ -272,7 +279,7 @@ describe("PlaytestPanel", () => {
     expect(client.session.prompt).toHaveBeenCalledTimes(2);
     const retry = client.session.prompt.mock.calls[1][0];
     expect(retry).toMatchObject({ sessionID: "planner", format: { type: "json_schema" } });
-    expect(retry.parts[0].text).toContain("StructuredOutput tool");
+    expect(retry.parts[0].text).toContain("JSON");
     expect(retry.parts[0].text).not.toContain("CHAT HISTORY");
     expect(capture).toHaveBeenCalledWith("generation_succeeded", {
       analytics_schema_version: 1,

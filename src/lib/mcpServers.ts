@@ -1,4 +1,4 @@
-import type { Config, OpencodeClient } from "@/lib/opencode";
+import type { OpencodeClient } from "@/lib/opencode";
 
 import { STUDIO_MCP_SERVER_NAME } from "./bloxmindProgramManifest";
 
@@ -191,28 +191,19 @@ export function buildMcpConfigPatch(
 }
 
 /**
- * Push the MCP server list into the running OpenCode OC2 engine and reconcile the
- * connection state of each entry. OC2 config patches use `mcp.servers` (not a flat
- * `mcp` map) and `disabled` (not `enabled`). Failures are the caller's to surface;
- * individual connect/disconnect misses are ignored because the engine may not know a
- * lazy entry. (Hot-apply/connect behavior is verified by runtime; schema is verified
- * against OC2 v2.2.6.)
+ * Push the MCP server list into the running OC2 engine and reconcile the
+ * connection state of each entry. OC2 has no config-patch endpoint, so the
+ * config file is the source of truth (rewritten at engine start); the live
+ * call here connects/disconnects whatever the engine already knows about.
+ * Failures are the caller's to surface; individual connect/disconnect misses
+ * are ignored because the engine may not know a lazy entry — that's what
+ * restart is for. (Hot-connect requires the server already in engine config.)
  */
 export async function applyMcpServers(
   client: OpencodeClient,
   servers: readonly McpServerConfig[],
   removedNames: readonly string[] = [],
 ): Promise<void> {
-  const patch = buildMcpConfigPatch(servers, removedNames);
-  if (Object.keys(patch).length > 0) {
-    const configApi = client.global?.config;
-    if (configApi) {
-      await configApi.update(
-        { config: { mcp: { servers: patch } } as unknown as Config },
-        { throwOnError: true },
-      );
-    }
-  }
   const mcpApi = client.mcp;
   if (!mcpApi) return;
   const tasks: Promise<unknown>[] = [];
@@ -220,14 +211,14 @@ export async function applyMcpServers(
     if (validateMcpServer(server)) continue;
     tasks.push(
       (server.enabled
-        ? mcpApi.connect({ name: server.name })
-        : mcpApi.disconnect({ name: server.name })
+        ? mcpApi.connect({ server: server.name })
+        : mcpApi.disconnect({ server: server.name })
       ).catch(() => undefined),
     );
   }
   for (const name of removedNames) {
-    if (isReservedMcpServerName(name)) continue;
-    tasks.push(mcpApi.disconnect({ name }).catch(() => undefined));
+    if (isReservedMcpServerName(name) || isForbiddenMcpServerName(name)) continue;
+    tasks.push(mcpApi.disconnect({ server: name }).catch(() => undefined));
   }
   await Promise.all(tasks);
 }

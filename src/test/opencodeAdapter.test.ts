@@ -1,6 +1,100 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { normalizeExecutionError, normalizePermissionRequest } from "@/lib/oc2Normalize";
-import { translateOc2FilePart, translateOc2Message } from "@/lib/opencode/client";
+import {
+  createOpencodeClient,
+  translateOc2FilePart,
+  translateOc2Message,
+} from "@/lib/opencode/client";
+
+describe("OC2 OAuth adapter (stubbed engine)", () => {
+  const oauthIntegration = {
+    id: "anthropic",
+    name: "Anthropic",
+    methods: [
+      { type: "env", names: ["ANTHROPIC_API_KEY"] },
+      { id: "browser", type: "oauth", label: "Sign in with browser" },
+    ],
+  };
+
+  function stubEngine() {
+    const calls: Array<{ url: string; body?: unknown }> = [];
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+      calls.push({ url: `${init?.method ?? "GET"} ${url.pathname}`, body });
+      const json = (value: unknown, status = 200) =>
+        new Response(JSON.stringify(value), {
+          status,
+          headers: { "content-type": "application/json" },
+        });
+      if (url.pathname === "/api/provider/anthropic") {
+        return json({ id: "anthropic", name: "Anthropic", integrationID: "anthropic" });
+      }
+      if (url.pathname === "/api/integration") {
+        return json({ location: { directory: "ws" }, data: [oauthIntegration] });
+      }
+      if (url.pathname === "/api/integration/anthropic/connect/oauth") {
+        return json({
+          attemptID: "att-1",
+          url: "https://auth.example.com/authorize",
+          instructions: "Finish in your browser",
+          mode: "code",
+        });
+      }
+      if (url.pathname === "/api/integration/anthropic/connect/oauth/att-1/complete") {
+        return new Response(null, { status: 204 });
+      }
+      return new Response("{}", { status: 404, headers: { "content-type": "application/json" } });
+    }) as unknown as typeof fetch;
+    return { calls, fetchImpl };
+  }
+
+  it("resolves the OAuth method by dialog index and maps mode to method", async () => {
+    const { calls, fetchImpl } = stubEngine();
+    const client = createOpencodeClient({
+      baseUrl: "http://127.0.0.1:1",
+      directory: "ws",
+      fetch: fetchImpl,
+    });
+
+    // The dialog shows oauth/key methods only; the env method before the oauth
+    // one must not shift the index.
+    const res = await client.provider.oauth.authorize({ providerID: "anthropic", method: 0 });
+
+    expect(res.data).toMatchObject({
+      url: "https://auth.example.com/authorize",
+      method: "code",
+      instructions: "Finish in your browser",
+      attemptID: "att-1",
+    });
+    const connect = calls.find(
+      (call) => call.url === "POST /api/integration/anthropic/connect/oauth",
+    );
+    expect(connect?.body).toMatchObject({ methodID: "browser" });
+  });
+
+  it("completes the OAuth attempt through the stored attempt id", async () => {
+    const { calls, fetchImpl } = stubEngine();
+    const client = createOpencodeClient({
+      baseUrl: "http://127.0.0.1:1",
+      directory: "ws",
+      fetch: fetchImpl,
+    });
+
+    await client.provider.oauth.authorize({ providerID: "anthropic", method: 0 });
+    const res = await client.provider.oauth.callback({
+      providerID: "anthropic",
+      method: 0,
+      code: "abc123",
+    });
+
+    expect(res.data).toBe(true);
+    const complete = calls.find(
+      (call) => call.url === "POST /api/integration/anthropic/connect/oauth/att-1/complete",
+    );
+    expect(complete).toBeDefined();
+  });
+});
 
 describe("OC2 permission normalization", () => {
   it("maps OC2 asked/list requests to the OC1 shape the UI renders", () => {

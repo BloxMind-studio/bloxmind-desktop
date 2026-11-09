@@ -1063,5 +1063,64 @@ describe("sseDispatch", () => {
         questions: [{ header: "Pick", options: [{ label: "A" }] }],
       });
     });
+
+    it("invalidates the todos query when a todowrite tool completes", () => {
+      qc.setQueryData<MessagesCache>(qk.messages("s1"), { messageIds: ["m1"], messagesById: {} });
+      qc.setQueryData(qk.todos("s1"), [{ content: "before", status: "pending", priority: "high" }]);
+
+      dispatch(
+        qc,
+        {
+          type: "session.step.started",
+          data: { sessionID: "s1", assistantMessageID: "m1", started: 1 },
+        },
+        "s1",
+      );
+      dispatch(
+        qc,
+        {
+          type: "session.tool.input.started",
+          data: { sessionID: "s1", assistantMessageID: "m1", id: "call1", name: "todowrite" },
+        },
+        "s1",
+      );
+      const invalidate = vi.spyOn(qc, "invalidateQueries");
+      dispatch(
+        qc,
+        {
+          type: "session.tool.success",
+          data: {
+            sessionID: "s1",
+            assistantMessageID: "m1",
+            id: "call1",
+            content: [{ type: "text", text: "ok" }],
+          },
+        },
+        "s1",
+      );
+
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: qk.todos("s1") });
+    });
+  });
+
+  describe("OC2 compaction events", () => {
+    it("marks compaction active and cleared on the OC2 names", () => {
+      dispatch(
+        qc,
+        { type: "session.compaction.started", data: { sessionID: "s1", reason: "manual" } },
+        "s1",
+      );
+      expect(qc.getQueryData(qk.compaction("s1"))).toEqual({ active: true, reason: "manual" });
+
+      dispatch(
+        qc,
+        { type: "session.compaction.ended", data: { sessionID: "s1", reason: "manual" } },
+        "s1",
+      );
+      expect(qc.getQueryData(qk.compaction("s1"))).toEqual({ active: false, reason: "manual" });
+
+      dispatch(qc, { type: "session.compaction.failed", data: { sessionID: "s1" } }, "s1");
+      expect(qc.getQueryData(qk.compaction("s1"))).toMatchObject({ active: false });
+    });
   });
 });

@@ -35,7 +35,7 @@ export function normalizeExecutionError(data: unknown): ModelError | null {
       message,
       responseBody: response?.body,
       statusCode: e.status,
-      isRetryable: false,
+      isRetryable: e.retryAfterMs !== undefined && e.retryAfterMs !== null,
     },
   } as unknown as ModelError;
 }

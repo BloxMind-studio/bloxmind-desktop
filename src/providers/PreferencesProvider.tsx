@@ -11,14 +11,13 @@ import {
 } from "react";
 import { toast } from "sonner";
 import { useAgents } from "@/hooks/useAgents";
-import { useConnectedProviders, useProviderList } from "@/hooks/useProviders";
+import { useConnectedProviders } from "@/hooks/useProviders";
 import {
   ANALYTICS_NOTICE_VERSION,
   setDetailedAnalyticsEnabled as setDetailedAnalyticsCollection,
 } from "@/lib/analytics";
 import { type AppConfig, loadConfig, patchConfig } from "@/lib/config";
 import { setNotificationsEnabled as setDesktopNotificationsEnabled } from "@/lib/desktopNotifications";
-import { applyEngineSettings } from "@/lib/engineSettings";
 import { applyMcpServers, type McpServerConfig } from "@/lib/mcpServers";
 import { qk } from "@/lib/queryKeys";
 import { setSoundEffectsEnabled } from "@/lib/soundEffects";
@@ -158,8 +157,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [mcpServers, setMcpServersState] = useState<McpServerConfig[]>([]);
 
   const connectedProviders = useConnectedProviders();
-  const providerList = useProviderList();
-  const { client, ready } = useOpenCodeClient();
+  const { client } = useOpenCodeClient();
 
   // Pending settings write. Merged so a burst of edits lands as one patch and
   // flushed on blur/unmount so a fast quit cannot drop the last change.
@@ -510,57 +508,10 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setDesktopNotificationsEnabled(notificationsEnabled);
   }, [notificationsEnabled]);
 
-  // Push the AI Engine settings into the running server's config so they take
-  // effect. Debounced because the temperature slider fires per step and the
-  // update round-trips through the server; gated on the initial config load
-  // so the persisted values are applied, not the in-code defaults. Every
-  // update rewrites and hot-reloads the server config, so identical payloads
-  // (e.g. from unrelated config refetches) are skipped.
-  const lastEngineSyncRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!client || !ready || !configData || !providerList) return;
-    const fingerprint = JSON.stringify([
-      temperature,
-      maxTokens,
-      autoCompaction,
-      customApiEndpoint,
-      selectedAgent,
-      selectedModel,
-      providerList.all,
-      providerList.connected,
-    ]);
-    if (fingerprint === lastEngineSyncRef.current) return;
-    const timer = setTimeout(() => {
-      lastEngineSyncRef.current = fingerprint;
-      void applyEngineSettings(
-        client,
-        {
-          temperature,
-          maxTokens,
-          autoCompaction,
-          customApiEndpoint,
-          agent: selectedAgent,
-          modelKey: selectedModel,
-        },
-        providerList.all,
-        providerList.connected,
-      ).catch((error: unknown) => {
-        console.warn("Failed to apply AI engine settings:", error);
-      });
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [
-    client,
-    ready,
-    configData,
-    providerList,
-    temperature,
-    maxTokens,
-    autoCompaction,
-    customApiEndpoint,
-    selectedAgent,
-    selectedModel,
-  ]);
+  // OpenCode 2 has no live config channel (BloxMind's engine reads its config
+  // from disk at startup), so there is nothing to push here: the engine gets
+  // the settings at the next launch, and they are applied through the engine
+  // config file, not through a config-patch round-trip.
 
   const value = useMemo<PreferencesContextValue>(
     () => ({

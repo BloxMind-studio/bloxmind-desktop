@@ -185,47 +185,31 @@ describe("toEngineMcpConfig", () => {
 
 describe("applyMcpServers", () => {
   function clientWithMcp() {
-    const update = vi.fn().mockResolvedValue({});
     const connect = vi.fn().mockResolvedValue({ data: true });
     const disconnect = vi.fn().mockResolvedValue({ data: true });
-    const client = {
-      global: { config: { update } },
-      mcp: { connect, disconnect },
-    } as unknown as OpencodeClient;
-    return { update, connect, disconnect, client };
+    const client = { mcp: { connect, disconnect } } as unknown as OpencodeClient;
+    return { connect, disconnect, client };
   }
 
-  it("patches the engine config, then connects enabled servers", async () => {
-    const { update, connect, disconnect, client } = clientWithMcp();
+  it("connects enabled servers and disconnects the rest, with the OC2 server field", async () => {
+    const { connect, disconnect, client } = clientWithMcp();
     await applyMcpServers(client, [local(), remote({ enabled: false })]);
 
-    expect(update).toHaveBeenCalledWith(
-      {
-        config: {
-          mcp: {
-            servers: {
-              blender: { type: "local", command: ["uvx", "mcp-for-blender"], disabled: false },
-              notes: { type: "remote", url: "https://example.com/mcp", disabled: true },
-            },
-          },
-        },
-      },
-      { throwOnError: true },
-    );
-    expect(connect).toHaveBeenCalledWith({ name: "blender" });
-    expect(disconnect).toHaveBeenCalledWith({ name: "notes" });
+    expect(connect).toHaveBeenCalledWith({ server: "blender" });
+    expect(disconnect).toHaveBeenCalledWith({ server: "notes" });
   });
 
   it("disconnects removed servers", async () => {
     const { disconnect, client } = clientWithMcp();
     await applyMcpServers(client, [], ["gone"]);
-    expect(disconnect).toHaveBeenCalledWith({ name: "gone" });
+    expect(disconnect).toHaveBeenCalledWith({ server: "gone" });
   });
 
-  it("skips the config update when there is nothing to write", async () => {
-    const { update, client } = clientWithMcp();
-    await applyMcpServers(client, []);
-    expect(update).not.toHaveBeenCalled();
+  it("does not call connect or disconnect for invalid entries", async () => {
+    const { connect, disconnect, client } = clientWithMcp();
+    await applyMcpServers(client, [local({ name: "broken", command: [] })]);
+    expect(connect).not.toHaveBeenCalled();
+    expect(disconnect).not.toHaveBeenCalled();
   });
 
   it("survives individual connect or disconnect failures", async () => {
@@ -235,18 +219,9 @@ describe("applyMcpServers", () => {
     await expect(applyMcpServers(client, [local()], ["gone"])).resolves.toBeUndefined();
   });
 
-  it("propagates config update failures to the caller", async () => {
-    const { update, connect, client } = clientWithMcp();
-    update.mockRejectedValue(new Error("400"));
-    await expect(applyMcpServers(client, [local()])).rejects.toThrow("400");
-    expect(connect).not.toHaveBeenCalled();
-  });
-
   it("does nothing when the client lacks the mcp surface", async () => {
-    const update = vi.fn().mockResolvedValue({});
-    const client = { global: { config: { update } } } as unknown as OpencodeClient;
+    const client = {} as unknown as OpencodeClient;
     await expect(applyMcpServers(client, [local()])).resolves.toBeUndefined();
-    expect(update).toHaveBeenCalled();
   });
 });
 

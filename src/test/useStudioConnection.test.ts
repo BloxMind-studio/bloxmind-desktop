@@ -43,7 +43,7 @@ describe("checkStudioConnection", () => {
     };
 
     await expect(checkStudioConnection(client as never)).resolves.toBe("connected");
-    expect(client.mcp.connect).toHaveBeenCalledWith({ name: "roblox-studio" });
+    expect(client.mcp.connect).toHaveBeenCalledWith({ server: "roblox-studio" });
   });
 
   it("keeps waiting when the MCP still reports a failed connection", async () => {

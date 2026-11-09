@@ -113,7 +113,9 @@ describe("Explorer data boundary", () => {
     const create = vi.fn().mockResolvedValue({ data: { id: "hidden-session" } });
     const prompt = vi.fn();
     for (const response of responses) {
-      prompt.mockResolvedValueOnce({ data: { info: { structured: response } } });
+      prompt.mockResolvedValueOnce({
+        data: { info: {}, parts: [{ type: "text", text: JSON.stringify(response) }] },
+      });
     }
     const remove = vi.fn().mockResolvedValue({ data: true });
     const permission = {
@@ -150,7 +152,7 @@ describe("Explorer data boundary", () => {
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
         metadata: { BloxMindHidden: true, purpose: "explorer" },
-        // "deny" would drop the StructuredOutput tool from the request.
+        // "deny" would drop every tool from the request, which free tier rejects.
         permission: [{ permission: "*", pattern: "*", action: "ask" }],
       }),
       { throwOnError: true },
@@ -251,7 +253,7 @@ describe("Explorer data boundary", () => {
     });
     prompt.mockImplementation(async () => {
       await rejection;
-      return { data: { info: { structured } } };
+      return { data: { info: {}, parts: [{ type: "text", text: JSON.stringify(structured) }] } };
     });
 
     await expect(
@@ -268,7 +270,7 @@ describe("Explorer data boundary", () => {
     );
     const system = prompt.mock.calls[0][0].system as string;
     expect(system).toContain("Do not call any Studio tool yourself");
-    expect(system).toContain("StructuredOutput tool");
+    expect(system).toContain("JSON");
   });
 
   it("surfaces a provider error from the reply without retrying", async () => {
@@ -298,7 +300,9 @@ describe("Explorer data boundary", () => {
       .mockResolvedValueOnce(
         modelErrorReply("StructuredOutputError", "Model did not produce structured output"),
       )
-      .mockResolvedValueOnce({ data: { info: { structured } } });
+      .mockResolvedValueOnce({
+        data: { info: {}, parts: [{ type: "text", text: JSON.stringify(structured) }] },
+      });
 
     await expect(
       generateExplorerProgram(client as never, {
@@ -308,7 +312,7 @@ describe("Explorer data boundary", () => {
     ).resolves.toMatchObject({ program: structured, attempts: 2 });
     const retry = prompt.mock.calls[1][0].parts[0].text as string;
     expect(retry).toContain("Model did not produce structured output");
-    expect(retry).toContain("StructuredOutput tool");
+    expect(retry).toContain("JSON");
     expect(retry).not.toContain("compiled and ran");
   });
 

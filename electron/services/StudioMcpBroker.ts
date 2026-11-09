@@ -26,8 +26,8 @@ import {
 import { ensureFolder, workspaceFailureReason } from "../workspaceFolders";
 
 const LOOPBACK = "127.0.0.1";
-/** Request bodies are JSON-RPC; anything larger is not a legitimate call. */
-const MAX_REQUEST_BYTES = 256 * 1024;
+/** Request bodies are JSON-RPC; scripted Studio tools can carry large sources. */
+const MAX_REQUEST_BYTES = 4 * 1024 * 1024;
 /** Bound the sessions a misbehaving local client can open. */
 const MAX_SESSIONS = 32;
 

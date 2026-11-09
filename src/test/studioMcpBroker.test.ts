@@ -115,7 +115,7 @@ describe("Studio MCP broker", () => {
         jsonrpc: "2.0",
         id: 1,
         method: "initialize",
-        padding: "x".repeat(300_000),
+        padding: "x".repeat(5 * 1024 * 1024),
       }),
     });
     expect(response.status).toBe(413);

@@ -357,15 +357,18 @@ export function createOpencodeClient(config: OpencodeClientConfig): OpencodeClie
       }
     ).wait;
     if (typeof wait !== "function") return;
+    const timeoutMs =
+      typeof (opts as { timeoutMs?: number } | undefined)?.timeoutMs === "number"
+        ? (opts as { timeoutMs: number }).timeoutMs
+        : 10 * 60_000;
     try {
-      await wait({ sessionID }, { signal: opts?.signal });
+      await wait({ sessionID }, { signal: opts?.signal ?? AbortSignal.timeout(timeoutMs) });
     } catch {
-      // Interrupted/aborted turns still resolve through the fallback read.
+      // Interrupted/aborted turns and timeout still resolve through the fallback read.
     }
   };
 
   const client = {
-    _oc2: oc2,
     session: {
       messages: async (input: { sessionID: string }, opts?: V1Options) => {
         const res = await oc2.message.list(
@@ -664,8 +667,15 @@ export function createOpencodeClient(config: OpencodeClientConfig): OpencodeClie
               );
               const integration = integrations.find((entry: any) => entry?.id === integrationID);
               const methods = Array.isArray(integration?.methods) ? integration.methods : [];
+              // The connect dialog lists the same oauth/key methods we show, so
+              // index into the same filtered view — an env method has no id and
+              // would shift every index.
+              const eligible = methods.filter(
+                (method: any) => method?.type === "oauth" || method?.type === "key",
+              );
               const index = typeof input.method === "number" ? input.method : 0;
-              methodID = methods[index]?.id ?? methods[0]?.id;
+              methodID =
+                eligible[index]?.id ?? eligible[0]?.id ?? methods.find((m: any) => m?.id)?.id;
             } catch {
               methodID = undefined;
             }
@@ -688,8 +698,23 @@ export function createOpencodeClient(config: OpencodeClientConfig): OpencodeClie
               integrationID,
               attemptID: String((attempt as { attemptID: unknown }).attemptID),
             });
+            // OC1 ProviderAuthAuthorization reads { url, method, instructions };
+            // OC2 IntegrationAttempt carries the same data as { url, instructions, mode }.
+            const source = attempt as {
+              url?: string;
+              instructions?: string;
+              mode?: string;
+              attemptID?: string;
+            };
+            return {
+              data: {
+                url: source.url,
+                method: source.mode,
+                instructions: source.instructions ?? "",
+                attemptID: source.attemptID,
+              },
+            };
           }
-          // OC2 IntegrationAttempt is shape-compatible with OC1 ProviderAuthAuthorization.
           return { data: attempt };
         },
         callback: async (input: Record<string, unknown>, opts?: V1Options) => {

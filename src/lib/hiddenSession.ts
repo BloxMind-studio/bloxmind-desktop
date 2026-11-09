@@ -4,8 +4,7 @@ import type { OpencodeClient, PermissionRuleset } from "@/lib/opencode";
  * Permissions for a hidden helper session whose tools must never run. Every
  * tool needs approval, and `rejectPermissions` rejects every request, so
  * nothing runs. "deny" would be simpler but drops the tools from the request,
- * which OpenCode's free tier and Go reject, and it also drops the
- * StructuredOutput tool OpenCode adds for `format: json_schema` prompts.
+ * which OpenCode's free tier and Go reject.
  */
 export const ASK_ALL_PERMISSIONS: PermissionRuleset = [
   { permission: "*", pattern: "*", action: "ask" },

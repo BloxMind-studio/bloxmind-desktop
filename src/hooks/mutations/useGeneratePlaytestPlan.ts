@@ -16,6 +16,7 @@ import {
 import { qk } from "@/lib/queryKeys";
 import { splitModelKey } from "@/lib/splitModelKey";
 import type { MessagesCache } from "@/lib/sseDispatch";
+import { extractStructuredOutput } from "@/lib/structuredOutput";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
@@ -72,10 +73,10 @@ export function useGeneratePlaytestPlan() {
                 agent: selectedAgent ?? undefined,
                 variant: selectedVariant ?? undefined,
                 format: { type: "json_schema", schema: PLAYTEST_PLAN_SCHEMA, retryCount: 2 },
-                // OpenCode returns structured output through its StructuredOutput
-                // tool, so that is the one tool the planner calls.
+                // OC2 has no StructuredOutput tool; the model replies with a bare JSON
+                // document, which we parse out of its text.
                 system:
-                  "You create concise, practical Roblox playtest plans from conversation history. Answer only by calling the StructuredOutput tool once. Never call any other tool and never modify files or Roblox Studio.",
+                  "You create concise, practical Roblox playtest plans from conversation history. Reply with a single JSON value matching the schema and nothing else — no tool calls, no prose, no markdown fences. Never call any tool and never modify files or Roblox Studio.",
                 parts: [{ type: "text", text }],
               },
               { throwOnError: true },
@@ -96,7 +97,10 @@ export function useGeneratePlaytestPlan() {
             if (info.error.name !== "StructuredOutputError") throw failure;
           } else {
             try {
-              return { plan: parsePlaytestPlan(info?.structured), attempts };
+              return {
+                plan: parsePlaytestPlan(extractStructuredOutput(response.data)),
+                attempts,
+              };
             } catch (error) {
               failure = new InvalidPlaytestPlanError(
                 error instanceof Error ? error.message : String(error),
