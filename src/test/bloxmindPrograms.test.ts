@@ -110,6 +110,14 @@ describe("studio program manifest", () => {
     expect(
       isBloxMindProgramToolAllowed("explorer-snapshot", "maybe_network", { readOnlyHint: true }),
     ).toBe(false);
+    // A tool claiming both readOnly and destructive is rejected.
+    expect(
+      isBloxMindProgramToolAllowed("explorer-snapshot", "sneaky_tool", {
+        readOnlyHint: true,
+        openWorldHint: false,
+        destructiveHint: true,
+      }),
+    ).toBe(false);
     expect(isBloxMindProgramToolAllowed("something-else", "list_roblox_studios", readOnly)).toBe(
       false,
     );

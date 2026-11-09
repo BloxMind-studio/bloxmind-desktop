@@ -68,6 +68,12 @@ jobs:
           pnpm test
           echo "Tests completed successfully"
 
+      - name: Check engine pin digests
+        working-directory: repo
+        run: |
+          echo "Verifying pinned engine digests against the published release..."
+          pnpm check:opencode-pin
+
       - name: Lint
         working-directory: repo
         run: |

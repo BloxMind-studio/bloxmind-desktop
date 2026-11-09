@@ -1,6 +1,6 @@
 import { type ChildProcessWithoutNullStreams, exec, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { writeFile } from "node:fs/promises";
+import { chmod, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { Context, Data, Duration, Effect, Layer, Option, Schedule, type Scope } from "effect";
@@ -9,6 +9,7 @@ import { networkConnections, type Systeminformation } from "systeminformation";
 import type { McpServerConfig } from "../../src/lib/mcpServers";
 import type { OpenCodeInfo, OpenCodeStartupProgress } from "../../src/types/desktop";
 import { createOpenCodeConfig } from "../opencodeConfig";
+import { buildEngineEnv } from "./engineEnv";
 import { loadShellPath } from "../shellEnv";
 import { ensureFolder, workspaceFailureReason } from "../workspaceFolders";
 import {
@@ -674,9 +675,11 @@ function prepareOpenCode(
       mcpServers,
     );
     yield* fileOperation("Failed to write the OpenCode configuration", () =>
-      writeFile(
-        join(configDirectory, "opencode.json"),
-        JSON.stringify(config, null, 2),
+      writeFile(join(configDirectory, "opencode.json"), JSON.stringify(config, null, 2), {
+        mode: 0o600,
+      }).then(() =>
+        // writeFile's mode only applies to new files; tighten one written by an older build.
+        chmod(join(configDirectory, "opencode.json"), 0o600).catch(() => {}),
       ),
     );
 
@@ -704,6 +707,15 @@ function prepareOpenCode(
 function spawnOpenCode(prepared: PreparedOpenCode): Effect.Effect<OpenCodeProcess, OpenCodeError> {
   return Effect.gen(function* () {
     const shellPath = yield* Effect.promise(loadShellPath);
+    const engineEnv = buildEngineEnv(process.env, {
+      xdgCache: prepared.xdgCache,
+      xdgConfig: prepared.xdgConfig,
+      xdgData: prepared.xdgData,
+      xdgState: prepared.xdgState,
+      serverPassword: prepared.password,
+      serverUsername: SERVER_USERNAME,
+      shellPath,
+    });
     const child = yield* Effect.try({
       try: () =>
         spawn(
@@ -711,28 +723,7 @@ function spawnOpenCode(prepared: PreparedOpenCode): Effect.Effect<OpenCodeProces
           ["serve", "--port", "0", "--hostname", LOOPBACK, "--print-logs", "--log-level", "info"],
           {
             cwd: prepared.workspace,
-            env: {
-              ...process.env,
-              ...(shellPath ? { PATH: shellPath } : {}),
-              XDG_CACHE_HOME: prepared.xdgCache,
-              XDG_CONFIG_HOME: prepared.xdgConfig,
-              XDG_DATA_HOME: prepared.xdgData,
-              XDG_STATE_HOME: prepared.xdgState,
-              OPENCODE_SERVER_PASSWORD: prepared.password,
-              OPENCODE_SERVER_USERNAME: SERVER_USERNAME,
-              // BloxMind's engine runs as the user, so the user's own OpenCode setup would
-              // otherwise leak into engine sessions: their instructions, config, commands and
-              // agents. Engine-global AGENTS.md (the one at the engine's config dir) still
-              // loads, and that's the file Settings → AI Engine edits.
-              OPENCODE_DISABLE_PROJECT_CONFIG: "1",
-              // Verified (anomalyco/opencode docs/CHANGELOG): disables Claude-compat
-              // support (`.claude` instructions/skills/commands) so `~/.claude` / project
-              // `.claude` content does not leak into engine sessions (0.14 isolation gap).
-              OPENCODE_DISABLE_CLAUDE_CODE: "1",
-              // NOTE: `~/.agents` global skill discovery isolation has no verified dedicated
-              // OC2 v2.2.6 disable env var found; do not guess. BloxMind runs with isolated
-              // XDG dirs and OPENCODE_DISABLE_PROJECT_CONFIG to limit project/global leakage.
-            },
+            env: engineEnv,
             stdio: "pipe",
             windowsHide: true,
           },

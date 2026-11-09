@@ -27,6 +27,7 @@ import {
   MIN_FREE_BYTES,
   type OpenCodeBinaryOptions,
   selectCompatibleRelease,
+  unsafeOpenCodeTarEntry,
   unsafeOpenCodeZipEntry,
 } from "../../electron/services/OpenCodeBinary";
 import type { PinnedOpenCodeRelease } from "../../electron/services/openCodePinnedRelease";
@@ -2038,6 +2039,14 @@ describe("unsafeOpenCodeZipEntry", () => {
       /absolute/,
     );
     expect(unsafeOpenCodeZipEntry("\\\\server\\share\\file", null)).toMatch(/absolute/);
+    expect(unsafeOpenCodeZipEntry("C:relative\\name", null)).toMatch(/data stream|absolute/);
+    expect(unsafeOpenCodeZipEntry("opencode.txt:payload", null)).toMatch(/data stream/);
+    expect(unsafeOpenCodeZipEntry("bin/CON.txt", null)).toMatch(/device/i);
+    expect(unsafeOpenCodeZipEntry("bin/nul", null)).toMatch(/device/i);
+    expect(unsafeOpenCodeZipEntry("aux.md", null)).toMatch(/device/i);
+    expect(unsafeOpenCodeZipEntry("bin/com1.md", null)).toMatch(/device/i);
+    expect(unsafeOpenCodeZipEntry("lpt9", null)).toMatch(/device/i);
+    expect(unsafeOpenCodeZipEntry("bin/notes.txt:Zone.Identifier", null)).toMatch(/data stream/);
   });
 
   it("rejects path traversal", () => {
@@ -2050,5 +2059,30 @@ describe("unsafeOpenCodeZipEntry", () => {
     // Unix symlink: file type 0o120000 in the high 16 bits.
     const symlink = (0o120000 << 16) | 0o777;
     expect(unsafeOpenCodeZipEntry("bin/opencode", symlink)).toBe("bin/opencode is a symlink");
+  });
+});
+
+describe("unsafeOpenCodeTarEntry", () => {
+  it("allows plain files and directories", () => {
+    expect(unsafeOpenCodeTarEntry("opencode", { type: "File" })).toBeNull();
+    expect(
+      unsafeOpenCodeTarEntry("bin/opencode", { type: "File", linkpath: undefined }),
+    ).toBeNull();
+  });
+
+  it("rejects symlinks, hard links and device nodes", () => {
+    expect(
+      unsafeOpenCodeTarEntry("bin/opencode", { type: "SymbolicLink", linkpath: "/etc/passwd" }),
+    ).toMatch(/SymbolicLink/);
+    expect(unsafeOpenCodeTarEntry("bin/opencode", { type: "Link", linkpath: "bin/other" })).toMatch(
+      /Link/,
+    );
+    expect(unsafeOpenCodeTarEntry("dev/null", { type: "CharacterDevice" })).toMatch(
+      /CharacterDevice/,
+    );
+    expect(unsafeOpenCodeTarEntry("bin/opencode", { type: "File", linkpath: "../escape" })).toMatch(
+      /escaping|absolute/,
+    );
+    expect(unsafeOpenCodeTarEntry("bin/../escape", { type: "File" })).toMatch(/escaping/);
   });
 });

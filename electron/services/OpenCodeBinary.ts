@@ -10,6 +10,7 @@ import {
   rm,
   stat,
   statfs,
+  utimes,
   writeFile,
 } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -400,9 +401,16 @@ function resumedFrom(response: Response): number | null {
 
 /** Worth doing but never worth failing over, since all it saves is downloading again. */
 async function saveDownload(path: string, data: Buffer): Promise<void> {
-  await mkdir(dirname(path), { recursive: true })
-    .then(() => writeFile(path, data))
-    .catch(() => {});
+  // Write beside the target and rename, so a crash mid-save can't leave a
+  // half-written file that later counts as resumable progress.
+  const temp = `${path}.${process.pid}.tmp-${randomUUID()}`;
+  try {
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(temp, data);
+    await rename(temp, path);
+  } catch {
+    await rm(temp, { force: true }).catch(() => {});
+  }
 }
 
 /**
@@ -824,14 +832,28 @@ async function readCacheNotes(platformDirectory: string): Promise<CacheNotes> {
 }
 
 /** Takes the notes' lock file, or says it couldn't. It's held only for one read and one write. */
-async function lockCacheNotes(lock: string): Promise<boolean> {
+async function lockCacheNotes(
+  lock: string,
+): Promise<(() => Promise<void>) | null> {
   const deadline = Date.now() + CACHE_NOTES_LOCK_STALE_MS * 2;
+  const token = `${process.pid}:${randomUUID()}`;
   while (Date.now() < deadline) {
     try {
-      await writeFile(lock, String(process.pid), { flag: "wx" });
-      return true;
+      await writeFile(lock, token, { flag: "wx" });
+      // Refresh the mtime while holding the lock: a slow critical section must
+      // not look abandoned, or another process would rm the lock out from under
+      // us. unref'd so a busy loop here never keeps the process alive.
+      const heartbeat = setInterval(() => {
+        const now = new Date();
+        void utimes(lock, now, now).catch(() => {});
+      }, Math.max(500, CACHE_NOTES_LOCK_STALE_MS / 5));
+      heartbeat.unref?.();
+      return async () => {
+        clearInterval(heartbeat);
+        await rm(lock, { force: true }).catch(() => {});
+      };
     } catch (cause) {
-      if (errorCode(cause) !== "EEXIST") return false;
+      if (errorCode(cause) !== "EEXIST") return null;
     }
     // A BloxMind that quit while holding the lock would otherwise block every change after it.
     const held = await stat(lock).then(
@@ -841,7 +863,7 @@ async function lockCacheNotes(lock: string): Promise<boolean> {
     if (held > CACHE_NOTES_LOCK_STALE_MS) await rm(lock, { force: true }).catch(() => {});
     else await new Promise((resolve) => setTimeout(resolve, CACHE_NOTES_LOCK_RETRY_MS));
   }
-  return false;
+  return null;
 }
 
 /**
@@ -855,7 +877,8 @@ async function updateCacheNotes(
 ): Promise<void> {
   const path = join(platformDirectory, CACHE_NOTES_FILE);
   const lock = `${path}.lock`;
-  if (!(await lockCacheNotes(lock))) return;
+  const release = await lockCacheNotes(lock);
+  if (!release) return;
   const temporary = `${path}.${randomUUID()}.tmp`;
   try {
     const notes = change(await readCacheNotes(platformDirectory));
@@ -864,7 +887,7 @@ async function updateCacheNotes(
   } catch {
     await rm(temporary, { force: true }).catch(() => {});
   } finally {
-    await rm(lock, { force: true }).catch(() => {});
+    await release();
   }
 }
 
@@ -935,6 +958,16 @@ function findNewestCachedBinary(
  *
  * @returns an error message, or null when the entry can be extracted.
  */
+/** Windows device names; a segment whose base matches one is rejected everywhere. */
+const WINDOWS_RESERVED_DEVICE_NAMES = new Set([
+  "con",
+  "prn",
+  "aux",
+  "nul",
+  ...Array.from({ length: 9 }, (_, index) => `com${index + 1}`),
+  ...Array.from({ length: 9 }, (_, index) => `lpt${index + 1}`),
+]);
+
 export function unsafeOpenCodeZipEntry(
   fileName: string,
   externalFileAttributes: number | null | undefined,
@@ -948,6 +981,16 @@ export function unsafeOpenCodeZipEntry(
   ) {
     return `${fileName} is an absolute or escaping path`;
   }
+  // Colons mean a drive-relative path or an NTFS alternate data stream.
+  if (normalized.includes(":")) {
+    return `${fileName} is an alternate data stream or drive-relative path`;
+  }
+  for (const segment of normalized.split("/")) {
+    const base = segment.trim().replace(/[. ]+$/, "").split(".")[0]?.toLowerCase();
+    if (base && WINDOWS_RESERVED_DEVICE_NAMES.has(base)) {
+      return `${fileName} is a reserved device name`;
+    }
+  }
   // Unix file-type bits live in the high 16 bits of external file attributes.
   if (typeof externalFileAttributes === "number") {
     const fileType = (externalFileAttributes >>> 16) & 0o170000;
@@ -958,9 +1001,45 @@ export function unsafeOpenCodeZipEntry(
   return null;
 }
 
+/**
+ * Validates a tar entry from a Linux release, mirroring the zip checks. `filter`
+ * in `extractTar` aborts when this throws, so a hostile archive never lands on disk.
+ */
+export function unsafeOpenCodeTarEntry(
+  path: string,
+  entry: { type?: string; linkpath?: string },
+): string | null {
+  const shared = unsafeOpenCodeZipEntry(path, undefined);
+  if (shared) return shared;
+  if (
+    entry.type &&
+    (["SymbolicLink", "Link", "CharacterDevice", "BlockDevice", "FIFO"] as string[]).includes(
+      entry.type,
+    )
+  ) {
+    return `${path} is an unsupported ${entry.type}`;
+  }
+  if (typeof entry.linkpath === "string" && entry.linkpath) {
+    const linkSafety = unsafeOpenCodeZipEntry(entry.linkpath, undefined);
+    if (linkSafety) return `${path} links to ${linkSafety}`;
+  }
+  return null;
+}
+
 const defaultExtractArchive: ExtractArchive = async (archivePath, destination, format) => {
   if (format !== "zip") {
-    await extractTar({ file: archivePath, cwd: destination, strict: true });
+    await extractTar({
+      file: archivePath,
+      cwd: destination,
+      strict: true,
+      filter: (path, entry) => {
+        const unsafeEntry = unsafeOpenCodeTarEntry(path, entry as { type?: string; linkpath?: string });
+        if (unsafeEntry) {
+          throw new Error(`Refusing to extract ${unsafeEntry}`);
+        }
+        return true;
+      },
+    });
     return undefined;
   }
   const sizes = new Map<string, number>();

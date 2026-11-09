@@ -3,7 +3,17 @@ import { userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { app, BrowserWindow, dialog, ipcMain, Menu, net, Notification, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  Menu,
+  net,
+  Notification,
+  shell,
+  type IpcMainInvokeEvent,
+} from "electron";
 import { autoUpdater } from "electron-updater";
 import { Cause, Data, Effect, Layer, ManagedRuntime, Schema } from "effect";
 
@@ -77,6 +87,24 @@ function isAppEntryUrl(candidate: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Every IPC handler goes through this gate: the app window is the only document
+ * allowed to drive the main process. A navigation away from the entry URL (or a
+ * second window that somehow got the preload) would otherwise reach handlers
+ * that read/write the filesystem and the engine.
+ */
+function safeIpcHandle(
+  channel: string,
+  listener: (event: IpcMainInvokeEvent, ...args: any[]) => unknown,
+): void {
+  ipcMain.handle(channel, (event, ...args) => {
+    if (!isAppEntryUrl(event.senderFrame?.url ?? "")) {
+      throw new Error(`Ignored IPC call to ${channel} from an unexpected sender`);
+    }
+    return listener(event, ...args);
+  });
 }
 
 function configPath(): string {
@@ -379,7 +407,7 @@ const disposeOpenCodeRuntimeBounded = Effect.tryPromise({
 
 const registerIpcHandlers = Effect.sync(() => {
   ipcMain.on(channels.mainErrorReady, (event) => mainErrorReporter.attach(event.sender));
-  ipcMain.handle(channels.compileExplorerProgram, (_event, input: unknown) =>
+  safeIpcHandle(channels.compileExplorerProgram, (_event, input: unknown) =>
     openCodeRuntime.runPromise(
       Effect.gen(function* () {
         const program = yield* Schema.decodeUnknown(ExplorerProgramEnvelopeSchema)(input);
@@ -388,40 +416,40 @@ const registerIpcHandlers = Effect.sync(() => {
       }),
     ),
   );
-  ipcMain.handle(channels.listExplorerProgramTools, () =>
+  safeIpcHandle(channels.listExplorerProgramTools, () =>
     openCodeRuntime.runPromise(
       GeneratedProgramRuntime.pipe(
         Effect.flatMap((runtime) => runtime.allowedTools("explorer-snapshot")),
       ),
     ),
   );
-  ipcMain.handle(channels.getOpenCodeInfo, () =>
+  safeIpcHandle(channels.getOpenCodeInfo, () =>
     openCodeRuntime.runPromise(
       OpenCode.pipe(Effect.flatMap((service) => service.info)),
     ),
   );
-  ipcMain.handle(channels.getOpenCodeInstallFolder, () => openCodeBinaryDirectory);
-  ipcMain.handle(channels.getStudioMcpStatus, () =>
+  safeIpcHandle(channels.getOpenCodeInstallFolder, () => openCodeBinaryDirectory);
+  safeIpcHandle(channels.getStudioMcpStatus, () =>
     openCodeRuntime.runPromise(StudioMcpBroker.pipe(Effect.flatMap((broker) => broker.status))),
   );
-  ipcMain.handle(channels.getVersion, () => runMain(Effect.sync(() => app.getVersion())));
-  ipcMain.handle(channels.getInstructionFiles, () =>
+  safeIpcHandle(channels.getVersion, () => runMain(Effect.sync(() => app.getVersion())));
+  safeIpcHandle(channels.getInstructionFiles, () =>
     findInstructionFiles({
       workspace: join(app.getPath("home"), "BloxMind"),
       globalConfigDirectory,
       home: app.getPath("home"),
     }),
   );
-  ipcMain.handle(channels.getInstructions, () =>
+  safeIpcHandle(channels.getInstructions, () =>
     readGlobalInstructions(globalConfigDirectory),
   );
-  ipcMain.handle(channels.saveInstructions, (_event, content: unknown) =>
+  safeIpcHandle(channels.saveInstructions, (_event, content: unknown) =>
     writeGlobalInstructions(globalConfigDirectory, content),
   );
-  ipcMain.handle(channels.getBloxMindPrograms, () => bloxmindProgramStore.current());
-  ipcMain.handle(channels.loadConfig, () => runMain(loadConfig));
-  ipcMain.handle(channels.patchConfig, (_event, patch: unknown) => runMain(patchConfig(patch)));
-  ipcMain.handle(channels.installStudioTargetPrograms, (_event, input: unknown) =>
+  safeIpcHandle(channels.getBloxMindPrograms, () => bloxmindProgramStore.current());
+  safeIpcHandle(channels.loadConfig, () => runMain(loadConfig));
+  safeIpcHandle(channels.patchConfig, (_event, patch: unknown) => runMain(patchConfig(patch)));
+  safeIpcHandle(channels.installStudioTargetPrograms, (_event, input: unknown) =>
     openCodeRuntime.runPromise(
       Effect.gen(function* () {
         const envelopes = yield* Schema.decodeUnknown(StudioTargetProgramEnvelopesSchema)(input);
@@ -439,7 +467,7 @@ const registerIpcHandlers = Effect.sync(() => {
       }),
     ),
   );
-  ipcMain.handle(channels.discoverStudioTargets, (_event, input: unknown) =>
+  safeIpcHandle(channels.discoverStudioTargets, (_event, input: unknown) =>
     openCodeRuntime.runPromise(
       Effect.gen(function* () {
         yield* Effect.logInfo("[studio-target] discovery requested");
@@ -455,7 +483,7 @@ const registerIpcHandlers = Effect.sync(() => {
       }),
     ),
   );
-  ipcMain.handle(channels.selectStudioTarget, (_event, input: unknown, targetKey: unknown) =>
+  safeIpcHandle(channels.selectStudioTarget, (_event, input: unknown, targetKey: unknown) =>
     openCodeRuntime.runPromise(
       Effect.gen(function* () {
         const programs = yield* Schema.decodeUnknown(StudioTargetProgramsSchema)(input);
@@ -467,7 +495,7 @@ const registerIpcHandlers = Effect.sync(() => {
       }),
     ),
   );
-  ipcMain.handle(channels.openUrl, (_event, rawUrl: string) =>
+  safeIpcHandle(channels.openUrl, (_event, rawUrl: string) =>
     runMain(
       parseExternalUrl(rawUrl).pipe(
         Effect.flatMap((url) =>
@@ -479,7 +507,7 @@ const registerIpcHandlers = Effect.sync(() => {
       ),
     ),
   );
-  ipcMain.handle(channels.checkForUpdate, () =>
+  safeIpcHandle(channels.checkForUpdate, () =>
     runMain(
       Effect.gen(function* () {
         if (!app.isPackaged) return null;
@@ -495,7 +523,7 @@ const registerIpcHandlers = Effect.sync(() => {
       }),
     ),
   );
-  ipcMain.handle(channels.installUpdate, () =>
+  safeIpcHandle(channels.installUpdate, () =>
     runMain(
       Effect.gen(function* () {
         if (!app.isPackaged) {
@@ -526,8 +554,7 @@ const registerIpcHandlers = Effect.sync(() => {
       }),
     ),
   );
-  ipcMain.handle(
-    channels.invokeExplorerProgram,
+  safeIpcHandle(channels.invokeExplorerProgram,
     (_event, input: unknown, studioIdInput: unknown) =>
       openCodeRuntime.runPromise(
         Effect.gen(function* () {
@@ -562,7 +589,7 @@ const registerIpcHandlers = Effect.sync(() => {
         ),
       ),
   );
-  ipcMain.handle(channels.compileProjectIndexProgram, (_event, input: unknown) =>
+  safeIpcHandle(channels.compileProjectIndexProgram, (_event, input: unknown) =>
     openCodeRuntime.runPromise(
       Effect.gen(function* () {
         const program = yield* Schema.decodeUnknown(ProjectIndexProgramEnvelopeSchema)(input);
@@ -571,8 +598,7 @@ const registerIpcHandlers = Effect.sync(() => {
       }),
     ),
   );
-  ipcMain.handle(
-    channels.invokeProjectIndexProgram,
+  safeIpcHandle(channels.invokeProjectIndexProgram,
     (_event, input: unknown, studioIdInput: unknown) =>
       openCodeRuntime.runPromise(
         Effect.gen(function* () {
@@ -602,7 +628,7 @@ const registerIpcHandlers = Effect.sync(() => {
         ),
       ),
   );
-  ipcMain.handle(channels.relaunch, () =>
+  safeIpcHandle(channels.relaunch, () =>
     runMain(
       Effect.sync(() => {
         app.relaunch();
@@ -610,7 +636,7 @@ const registerIpcHandlers = Effect.sync(() => {
       }),
     ),
   );
-  ipcMain.handle(channels.notifyResponseReady, () =>
+  safeIpcHandle(channels.notifyResponseReady, () =>
     runMain(
       Effect.sync(() => {
         // Don't interrupt when the user is already looking at the app.
@@ -636,7 +662,7 @@ const registerIpcHandlers = Effect.sync(() => {
   // they reach the service (which additionally sanitizes them into paths).
   const SessionIdSchema = Schema.String.pipe(Schema.minLength(1), Schema.maxLength(256));
   const CheckpointIdSchema = Schema.String.pipe(Schema.minLength(1), Schema.maxLength(256));
-  ipcMain.handle(channels.checkpointCapture, (_event, input: unknown) =>
+  safeIpcHandle(channels.checkpointCapture, (_event, input: unknown) =>
     openCodeRuntime.runPromise(
       Effect.gen(function* () {
         const context = yield* Schema.decodeUnknown(CaptureContextSchema)(input);
@@ -654,7 +680,7 @@ const registerIpcHandlers = Effect.sync(() => {
       }),
     ),
   );
-  ipcMain.handle(channels.checkpointRestore, (_event, input: unknown) =>
+  safeIpcHandle(channels.checkpointRestore, (_event, input: unknown) =>
     openCodeRuntime.runPromise(
       Effect.gen(function* () {
         const restoreInput = yield* Schema.decodeUnknown(CheckpointRestoreInputSchema)(input);
@@ -672,7 +698,7 @@ const registerIpcHandlers = Effect.sync(() => {
       }),
     ),
   );
-  ipcMain.handle(channels.checkpointPreview, (_event, checkpointId: unknown, sessionId: unknown) =>
+  safeIpcHandle(channels.checkpointPreview, (_event, checkpointId: unknown, sessionId: unknown) =>
     openCodeRuntime.runPromise(
       Effect.gen(function* () {
         const id = yield* Schema.decodeUnknown(CheckpointIdSchema)(checkpointId);
@@ -691,7 +717,7 @@ const registerIpcHandlers = Effect.sync(() => {
       }),
     ),
   );
-  ipcMain.handle(channels.checkpointChanged, (_event, checkpointId: unknown, sessionId: unknown) =>
+  safeIpcHandle(channels.checkpointChanged, (_event, checkpointId: unknown, sessionId: unknown) =>
     openCodeRuntime.runPromise(
       Effect.gen(function* () {
         const id = yield* Schema.decodeUnknown(CheckpointIdSchema)(checkpointId);
@@ -701,7 +727,7 @@ const registerIpcHandlers = Effect.sync(() => {
       }),
     ),
   );
-  ipcMain.handle(channels.checkpointList, (_event, sessionId: unknown) =>
+  safeIpcHandle(channels.checkpointList, (_event, sessionId: unknown) =>
     openCodeRuntime.runPromise(
       Effect.gen(function* () {
         const sid = yield* Schema.decodeUnknown(SessionIdSchema)(sessionId);
@@ -715,7 +741,7 @@ const registerIpcHandlers = Effect.sync(() => {
       }),
     ),
   );
-  ipcMain.handle(channels.checkpointValidate, () =>
+  safeIpcHandle(channels.checkpointValidate, () =>
     openCodeRuntime.runPromise(
       Effect.gen(function* () {
         const service = yield* CheckpointServiceTag;

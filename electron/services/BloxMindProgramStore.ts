@@ -12,10 +12,17 @@ import { verifyBloxMindProgramManifest } from "../bloxmindProgramSignature";
 
 // Published as prerelease assets on a rolling release, so electron-updater (which
 // follows the repository's latest release) never mistakes it for an app update.
-// The signed manifest is published from the upstream repository, where the pinned
-// signing key belongs, so the URL stays there until BloxMind republishes and
-// re-signs the programs release itself.
-const RELEASE_URL = "https://github.com/paralov/app-bloxbot-ai/releases/download/bloxbot-programs";
+// BloxMind's own pipeline (.github/workflows/bloxmind-programs.yml) signs and
+// publishes here; do not point this back at the upstream repository.
+//
+// Key ownership note: the pinned public key (electron/bloxmindProgramSignature.ts)
+// must match the private half held in this repository's
+// BLOXMIND_PROGRAMS_SIGNING_KEY secret. Rotate both together — generate a fresh
+// Ed25519 keypair, replace the pinned public key, update the secret, then republish
+// the manifest. Installed apps fall back to their builtin programs while a rotation
+// is in flight, so this is safe to do at any time.
+const RELEASE_URL =
+  "https://github.com/BloxMind-studio/bloxmind-desktop/releases/download/bloxmind-programs";
 export const BLOXMIND_PROGRAMS_MANIFEST_URL = `${RELEASE_URL}/manifest.json`;
 export const BLOXMIND_PROGRAMS_SIGNATURE_URL = `${RELEASE_URL}/manifest.json.sig`;
 

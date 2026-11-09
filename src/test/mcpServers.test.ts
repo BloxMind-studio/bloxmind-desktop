@@ -128,6 +128,17 @@ describe("buildMcpConfigPatch", () => {
       gone: { disabled: true },
     });
   });
+
+  it("refuses names that would clobber a plain object's prototype", () => {
+    expect(validateMcpServer(local({ name: "__proto__" }))).toMatch(/reserved/i);
+    expect(validateMcpServer(local({ name: "constructor" }))).toMatch(/reserved/i);
+    expect(validateMcpServer(local({ name: "Prototype" }))).toMatch(/reserved/i);
+    const patch = buildMcpConfigPatch([local({ name: "__proto__" })]);
+    expect(Object.keys(patch)).toEqual([]);
+    expect(Object.getPrototypeOf(patch)).toBeNull();
+    // JSON keeps the object honest: no prototype survives the round-trip.
+    expect(JSON.stringify({ servers: patch })).toBe('{"servers":{}}');
+  });
 });
 
 describe("toEngineMcpConfig", () => {

@@ -608,6 +608,7 @@ describe("an OpenCode left by an earlier run", () => {
       kill: vi.fn(() => {
         alive = false;
       }),
+      created: vi.fn(async () => Date.now()),
     };
   };
 

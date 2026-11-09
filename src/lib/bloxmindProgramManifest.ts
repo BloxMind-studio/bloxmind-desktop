@@ -171,7 +171,11 @@ export function isKnownBloxMindProgramTool(contractName: string, toolName: strin
  * missing openWorldHint as open-world, so an unlabelled tool doesn't qualify.
  */
 export function isReadOnlyStudioTool(annotations?: StudioToolAnnotations): boolean {
-  return annotations?.readOnlyHint === true && annotations.openWorldHint === false;
+  return (
+    annotations?.readOnlyHint === true &&
+    annotations.openWorldHint === false &&
+    annotations.destructiveHint !== true
+  );
 }
 
 /**

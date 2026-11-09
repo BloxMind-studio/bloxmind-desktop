@@ -21,6 +21,15 @@ export interface McpServerConfig {
 
 export const MCP_SERVER_NAME_PATTERN = /^[A-Za-z0-9_-]{1,48}$/;
 
+/** Names that would mutate a plain object's prototype when used as keys. */
+export const MCP_FORBIDDEN_SERVER_NAMES = ["__proto__", "constructor", "prototype"] as const;
+
+export function isForbiddenMcpServerName(name: string): boolean {
+  return MCP_FORBIDDEN_SERVER_NAMES.includes(
+    name.toLowerCase() as (typeof MCP_FORBIDDEN_SERVER_NAMES)[number],
+  );
+}
+
 /**
  * The Studio-side companion to the Blender bridge: Cautioned's "Blender
  * Animations (ultimate edition)" plugin, which moves R15 rigs and animations
@@ -44,6 +53,9 @@ export function isReservedMcpServerName(name: string): boolean {
 export function validateMcpServer(server: McpServerConfig): string | null {
   if (!MCP_SERVER_NAME_PATTERN.test(server.name)) {
     return "Use 1–48 letters, numbers, dashes or underscores.";
+  }
+  if (isForbiddenMcpServerName(server.name)) {
+    return "That name is reserved. Pick another one.";
   }
   if (isReservedMcpServerName(server.name)) {
     return "That name is reserved by the built-in Studio connection.";
@@ -166,13 +178,13 @@ export function buildMcpConfigPatch(
   servers: readonly McpServerConfig[],
   removedNames: readonly string[] = [],
 ): Record<string, unknown> {
-  const patch: Record<string, unknown> = {};
+  const patch: Record<string, unknown> = Object.create(null);
   for (const server of servers) {
     if (validateMcpServer(server)) continue;
     patch[server.name] = toEngineMcpConfig(server);
   }
   for (const name of removedNames) {
-    if (isReservedMcpServerName(name)) continue;
+    if (isReservedMcpServerName(name) || isForbiddenMcpServerName(name)) continue;
     patch[name] ??= { disabled: true };
   }
   return patch;

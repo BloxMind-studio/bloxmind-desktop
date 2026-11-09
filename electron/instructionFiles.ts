@@ -1,5 +1,6 @@
 import { access, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { existsSync, mkdirSync, copyFileSync, readFileSync } from "node:fs";
+import { existsSync, statSync, mkdirSync, readFileSync, writeFileSync, renameSync, rmSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { dirname, join, resolve, sep } from "node:path";
 
 import type { InstructionFile } from "../src/types/desktop";
@@ -97,10 +98,35 @@ export function globalInstructionFilePath(globalConfigDirectory: string): string
   return join(globalConfigDirectory, "AGENTS.md");
 }
 
+/**
+ * Windows refuses a rename onto a file another reader has open (EPERM, EBUSY,
+ * EACCES) for a moment. Retry briefly, as graceful-fs does.
+ */
+async function renameWithRetry(from: string, to: string): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await rename(from, to);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      const transient = code === "EPERM" || code === "EBUSY" || code === "EACCES";
+      if (!transient || attempt >= 6) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 10 * 2 ** attempt));
+    }
+  }
+}
+
 export async function readGlobalInstructions(globalConfigDirectory: string): Promise<string> {
-  const content = await readFile(globalInstructionFilePath(globalConfigDirectory), "utf8").catch(
-    () => "",
-  );
+  const target = globalInstructionFilePath(globalConfigDirectory);
+  let content: string;
+  try {
+    content = await readFile(target, "utf8");
+  } catch (error) {
+    // A missing file is an empty draft; a corrupt or unreadable one is an error
+    // the caller must surface instead of silently overwriting.
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return "";
+    throw error;
+  }
   return content.length > GLOBAL_INSTRUCTIONS_MAX_LENGTH
     ? content.slice(0, GLOBAL_INSTRUCTIONS_MAX_LENGTH)
     : content;
@@ -118,10 +144,16 @@ export async function writeGlobalInstructions(
   }
   const target = globalInstructionFilePath(globalConfigDirectory);
   await mkdir(dirname(target), { recursive: true });
-  // Write next to the target and rename, so a crash mid-write never leaves a torn file.
-  const temp = `${target}.tmp-${process.pid}-${Date.now()}`;
-  await writeFile(temp, content, "utf8");
-  await rename(temp, target);
+  // Write next to the target and rename atomically, so a crash mid-write can
+  // never leave a torn file; the temp name is unique per write.
+  const temp = `${target}.tmp-${process.pid}-${randomBytes(6).toString("hex")}`;
+  try {
+    await writeFile(temp, content, "utf8");
+    await renameWithRetry(temp, target);
+  } catch (error) {
+    await rm(temp, { force: true }).catch(() => {});
+    throw error;
+  }
 }
 
 /**
@@ -130,10 +162,6 @@ export async function writeGlobalInstructions(
  * engine, that file's content would be silently ignored — carry it over into the
  * engine-global AGENTS.md the first time this runs. Returns whether it migrated anything.
  */
-/** One-time seed: the engine used to load `~/BloxMind/AGENTS.md`, and BloxMind purged the
- * legacy-generated sections from it. Now that project files are off the table for the
- * engine, that file's content would be silently ignored — carry it over into the
- * engine-global AGENTS.md the first time this runs. Returns whether it migrated anything. */
 export function migrateWorkspaceInstructionsToGlobalSync(
   workspace: string,
   globalConfigDirectory: string,
@@ -142,11 +170,46 @@ export function migrateWorkspaceInstructionsToGlobalSync(
   if (existsSync(target)) return false;
   const source = join(workspace, "AGENTS.md");
   if (!existsSync(source)) return false;
-  const content = readFileSync(source, "utf8");
+  // Read the file with a cap so a corrupt or huge legacy file can't stall startup,
+  // then write it atomically through the same pattern as a normal save.
+  let size = 0;
+  try {
+    size = statSync(source).size;
+  } catch {
+    return false;
+  }
+  if (size > 4 * 1024 * 1024) return false;
+  let content: string;
+  try {
+    content = readFileSync(source, "utf8");
+  } catch {
+    return false;
+  }
   if (content.trim() === "") return false;
+  if (content.length > GLOBAL_INSTRUCTIONS_MAX_LENGTH) {
+    content = content.slice(0, GLOBAL_INSTRUCTIONS_MAX_LENGTH);
+  }
   mkdirSync(dirname(target), { recursive: true });
-  copyFileSync(source, target);
-  return true;
+  const temp = `${target}.tmp-${process.pid}-${randomBytes(6).toString("hex")}`;
+  try {
+    writeFileSync(temp, content, "utf8");
+    for (let attempt = 0; ; attempt++) {
+      try {
+        renameSync(temp, target);
+        break;
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        const transient = code === "EPERM" || code === "EBUSY" || code === "EACCES";
+        if (!transient || attempt >= 6) throw error;
+        const waitUntil = Date.now() + 10 * 2 ** attempt;
+        while (Date.now() < waitUntil) {}
+      }
+    }
+    return true;
+  } catch {
+    rmSync(temp, { force: true });
+    return false;
+  }
 }
 
 const MANAGED_BLOCK_BEGIN = "<!-- bloxmind-managed:begin -->";

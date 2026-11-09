@@ -167,4 +167,29 @@ describe("global engine instructions", () => {
     expect(migrateWorkspaceInstructionsToGlobalSync(workspace, globalConfigDirectory)).toBe(false);
     expect(existsSync(join(workspace, "AGENTS.md"))).toBe(true);
   });
+
+  it("truncates an oversized workspace AGENTS.md instead of copying it verbatim", async () => {
+    root = await mkdtemp(join(tmpdir(), "bloxmind-instructions-"));
+    const workspace = join(root, "home", "BloxMind");
+    const globalConfigDirectory = join(root, "config", "opencode");
+    await mkdir(workspace, { recursive: true });
+    await writeFile(
+      join(workspace, "AGENTS.md"),
+      "x".repeat(GLOBAL_INSTRUCTIONS_MAX_LENGTH + 5_000),
+    );
+
+    expect(migrateWorkspaceInstructionsToGlobalSync(workspace, globalConfigDirectory)).toBe(true);
+
+    const content = await readGlobalInstructions(globalConfigDirectory);
+    expect(content.length).toBe(GLOBAL_INSTRUCTIONS_MAX_LENGTH);
+  });
+
+  it("surfaces a read failure instead of pretending the file is empty", async () => {
+    root = await mkdtemp(join(tmpdir(), "bloxmind-instructions-"));
+    const globalConfigDirectory = join(root, "config", "opencode");
+    // A directory sitting at the AGENTS.md path makes readFile fail with EISDIR.
+    await mkdir(join(globalConfigDirectory, "AGENTS.md"), { recursive: true });
+
+    await expect(readGlobalInstructions(globalConfigDirectory)).rejects.toThrow();
+  });
 });

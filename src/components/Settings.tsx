@@ -37,7 +37,6 @@ import {
 } from "@/lib/providerAuth";
 import { checkModels, checkPreference, type ProviderCheckResult } from "@/lib/providerCheck";
 import { VERIFICATION_OPTIONS } from "@/lib/verification";
-import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
 import type { ModelInfo, ProviderInfo } from "@/types";
 import { type AppConfig, DEFAULT_APP_CONFIG, type UpdateInfo } from "@/types/desktop";
@@ -1094,7 +1093,6 @@ function EngineTab() {
     customApiEndpoint,
     setCustomApiEndpoint,
   } = usePreferences();
-  const { client } = useOpenCodeClient();
   const [instructionsDraft, setInstructionsDraft] = useState<string | null>(null);
   const [instructionsSaved, setInstructionsSaved] = useState("");
   const [instructionsSaving, setInstructionsSaving] = useState(false);
@@ -1109,6 +1107,8 @@ function EngineTab() {
       },
       () => {
         if (cancelled) return;
+        // Don't pretend the file is empty: warn, so a save doesn't silently erase it.
+        toast.error("Couldn't read global instructions. Saving will overwrite the file.");
         setInstructionsDraft("");
         setInstructionsSaved("");
       },
@@ -1128,9 +1128,9 @@ function EngineTab() {
     try {
       await desktop.saveInstructions(instructionsDraft);
       setInstructionsSaved(instructionsDraft);
-      // Ask the engine to drop its cached config so the new instructions apply on the next prompt.
-      await client?.instance.dispose({}).catch(() => undefined);
-      toast.success("Global instructions saved — they apply on the next message.");
+      // OC2 reads config only at engine start, so say when it takes effect instead
+      // of implying a live reload.
+      toast.success("Global instructions saved. They apply when the engine restarts.");
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : "Failed to save global instructions");
     } finally {
