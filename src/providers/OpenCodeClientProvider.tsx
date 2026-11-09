@@ -331,7 +331,21 @@ export function OpenCodeClientProvider({
         (await client.session.messages({ sessionID }, { throwOnError: true })).data,
       loadTools: async (provider, model) =>
         (await client.tool.list({ provider, model }, { throwOnError: true })).data,
-      loadInstructions: () => desktop.getInstructionFiles(),
+      loadInstructions: async () => {
+        // The engine runs with project-config isolation, so only the engine-global
+        // AGENTS.md is actually in effect. Don't snapshot ~/.claude/CLAUDE.md or
+        // ancestor project files — users didn't opt in to sharing personal files.
+        const content = await desktop.getInstructions();
+        if (!content.trim()) return [];
+        return [
+          {
+            path: "(engine-global AGENTS.md)",
+            scope: "global" as const,
+            chars: content.length,
+            content,
+          },
+        ];
+      },
     });
     return () => aiTracer.configure({});
   }, [client]);

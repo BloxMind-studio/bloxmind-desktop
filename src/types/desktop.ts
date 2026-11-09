@@ -237,6 +237,7 @@ export interface DesktopApi {
    * tells the main process the window is ready, which flushes errors buffered until then.
    */
   onMainError(listener: (report: MainErrorReport) => void): () => void;
+  notifyResponseReady(): Promise<void>;
   checkpointCapture(context: CaptureContext): Promise<Checkpoint>;
   checkpointRestore(input: CheckpointRestoreInput): Promise<CheckpointRestoreResult>;
   checkpointPreview(checkpointId: string, sessionId: string): Promise<RestorePreview>;

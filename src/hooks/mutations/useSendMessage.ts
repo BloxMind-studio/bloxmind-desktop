@@ -17,6 +17,9 @@ import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
 
+const ASSET_UPLOAD_SAFETY_NOTE =
+  "When uploading or creating assets (models, images, or files): upload only the exact bytes the user previewed or explicitly approved; never upload the same asset twice; make uploads resume-safe/idempotent when possible.";
+
 // ── Types ────────────────────────────────────────────────────────────────
 
 /** Input payload for sending a chat message. */
@@ -95,6 +98,10 @@ export function useSendMessage(options?: { onError?: (error: Error) => void }) {
       const guidance = verificationGuidance(verificationLevel);
       const notes = [guidance];
       if (acceptsImages === false) notes.push(IMAGE_INPUT_UNAVAILABLE_NOTE);
+      // When uploading or creating assets (models/images), only upload the exact
+      // bytes the user previewed, never upload the same asset twice, and make
+      // uploads resume-safe/idempotent when possible.
+      notes.push(ASSET_UPLOAD_SAFETY_NOTE);
       opts.system = [baseSystemPrompt, ...notes].filter(Boolean).join("\n\n");
 
       // Resolve provider/model from the selected model key (e.g. "anthropic/claude-3.5-sonnet").

@@ -35,6 +35,29 @@ interface ImageAttachment {
 const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 const MAX_IMAGE_SIZE = 20 * 1024 * 1024;
 const MAX_ATTACHMENTS = 5;
+const DRAFT_STORAGE_PREFIX = "BloxMind:chat-draft:";
+
+function draftKey(sessionId: string | null): string {
+  return `${DRAFT_STORAGE_PREFIX}${sessionId ?? "new"}`;
+}
+
+function readDraft(sessionId: string | null): string {
+  try {
+    return localStorage.getItem(draftKey(sessionId)) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function writeDraft(sessionId: string | null, text: string): void {
+  try {
+    const key = draftKey(sessionId);
+    if (text.trim()) localStorage.setItem(key, text);
+    else localStorage.removeItem(key);
+  } catch {
+    // Ignore storage failures (private mode / quota).
+  }
+}
 
 let attachmentCounter = 0;
 
@@ -323,6 +346,7 @@ function ChatInput() {
   const dragCounterRef = useRef(0);
   const rejectTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const previousSessionRef = useRef(activeSessionId);
+  const restoredDraftRef = useRef<string | null>(null);
   const failedSendRef = useRef<{
     sessionId: string | null;
     text: string;
@@ -345,10 +369,43 @@ function ChatInput() {
 
   useEffect(() => {
     if (previousSessionRef.current === activeSessionId) return;
+    // Persist the outgoing session's draft before switching away.
+    writeDraft(previousSessionRef.current, promptEditorRef.current?.getText() ?? "");
     previousSessionRef.current = activeSessionId;
     setText("");
     setAttachments([]);
     promptEditorRef.current?.clear();
+    const draft = readDraft(activeSessionId);
+    if (draft.trim()) {
+      promptEditorRef.current?.setText(draft);
+      setText(draft);
+    }
+    restoredDraftRef.current = activeSessionId;
+  }, [activeSessionId]);
+
+  // Restore draft on first mount (session-change effect skips when ref already matches).
+  useEffect(() => {
+    if (restoredDraftRef.current === activeSessionId) return;
+    restoredDraftRef.current = activeSessionId;
+    const draft = readDraft(activeSessionId);
+    if (draft.trim() && !(promptEditorRef.current?.getText() ?? "").trim()) {
+      promptEditorRef.current?.setText(draft);
+      setText(draft);
+    }
+  }, [activeSessionId]);
+
+  // Persist draft on page hide so it survives restarts/crashes.
+  useEffect(() => {
+    const save = () => writeDraft(activeSessionId, promptEditorRef.current?.getText() ?? "");
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") save();
+    };
+    window.addEventListener("pagehide", save);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("pagehide", save);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [activeSessionId]);
 
   useEffect(() => {
@@ -579,6 +636,7 @@ function ChatInput() {
     setText("");
     setAttachments([]);
     promptEditorRef.current?.clear();
+    writeDraft(activeSessionId, "");
     playMessageSent();
     void sendMessage
       .mutateAsync({ text: trimmed || " ", images, studioTargetReference, systemPrompt })

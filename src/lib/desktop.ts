@@ -90,6 +90,7 @@ interface DesktopEffects {
   readonly checkForUpdate: Effect.Effect<UpdateInfo | null, DesktopError>;
   readonly installUpdate: Effect.Effect<void, DesktopError>;
   readonly relaunch: Effect.Effect<void, DesktopError>;
+  readonly notifyResponseReady: Effect.Effect<void, DesktopError>;
   readonly installStudioTargetPrograms: (
     envelopes: StudioTargetProgramEnvelopes,
   ) => Effect.Effect<StudioTargetPrograms, DesktopError>;
@@ -189,6 +190,7 @@ const browserEffects: DesktopEffects = {
   invokeProjectIndexProgram: () =>
     Effect.fail(new DesktopError({ message: "Project index requires the desktop app." })),
   relaunch: Effect.sync(() => window.location.reload()),
+  notifyResponseReady: Effect.void,
   installStudioTargetPrograms: () =>
     Effect.fail(
       new DesktopError({ message: "Studio targets are only available in the desktop app." }),
@@ -292,6 +294,7 @@ function makeBridgeEffects(api: DesktopApi): DesktopEffects {
         api.invokeProjectIndexProgram(artifact, studioId),
       ).pipe(decodeBridgeValue("Project index skeleton is invalid", ProjectSkeletonSchema)),
     relaunch: invoke("Failed to relaunch the app", () => api.relaunch()),
+    notifyResponseReady: invoke("Failed to show notification", () => api.notifyResponseReady()),
     installStudioTargetPrograms: (envelopes) =>
       invoke("Failed to install Studio target programs", () =>
         api.installStudioTargetPrograms(envelopes),
@@ -371,6 +374,7 @@ export const desktop: DesktopApi = {
   invokeProjectIndexProgram: (artifact, studioId) =>
     runPromise(desktopEffects.invokeProjectIndexProgram(artifact, studioId)),
   relaunch: () => runPromise(desktopEffects.relaunch),
+  notifyResponseReady: () => runPromise(desktopEffects.notifyResponseReady),
   installStudioTargetPrograms: (envelopes) =>
     runPromise(desktopEffects.installStudioTargetPrograms(envelopes)),
   discoverStudioTargets: (programs) => runPromise(desktopEffects.discoverStudioTargets(programs)),

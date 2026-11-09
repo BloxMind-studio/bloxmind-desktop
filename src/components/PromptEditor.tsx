@@ -382,6 +382,7 @@ export interface PromptEditorHandle {
   focus(): void;
   getText(): string;
   insertText(text: string): void;
+  setText(text: string): void;
 }
 
 interface PromptEditorProps {
@@ -424,6 +425,20 @@ export default forwardRef<PromptEditorHandle, PromptEditorProps>(function Prompt
         paragraph.append($createTextNode(text));
         paragraph.selectEnd();
       });
+    },
+    setText(text: string) {
+      editorRef.current?.update(() => {
+        const root = $getRoot();
+        root.clear();
+        const paragraph = $createParagraphNode();
+        if (text) paragraph.append($createTextNode(text));
+        root.append(paragraph);
+        paragraph.selectEnd();
+      });
+      const root = editorRef.current?.getRootElement() as
+        | (HTMLDivElement & { value?: string })
+        | null;
+      if (root) root.value = text;
     },
   }));
 

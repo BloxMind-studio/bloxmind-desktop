@@ -3,7 +3,7 @@ import { userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { app, BrowserWindow, dialog, ipcMain, Menu, net, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, net, Notification, shell } from "electron";
 import { autoUpdater } from "electron-updater";
 import { Cause, Data, Effect, Layer, ManagedRuntime, Schema } from "effect";
 
@@ -227,13 +227,13 @@ function parseExternalUrl(rawUrl: string) {
   return Effect.try({
     try: () => new URL(rawUrl),
     catch: (cause) =>
-      new DesktopMainError({ message: "Only HTTP and HTTPS links can be opened", cause }),
+      new DesktopMainError({ message: "Only web and mail links can be opened", cause }),
   }).pipe(
     Effect.flatMap((url) =>
-      url.protocol === "https:" || url.protocol === "http:"
+      url.protocol === "https:" || url.protocol === "http:" || url.protocol === "mailto:"
         ? Effect.succeed(url)
         : Effect.fail(
-            new DesktopMainError({ message: "Only HTTP and HTTPS links can be opened" }),
+            new DesktopMainError({ message: "Only web and mail links can be opened" }),
           ),
     ),
   );
@@ -607,6 +607,27 @@ const registerIpcHandlers = Effect.sync(() => {
       Effect.sync(() => {
         app.relaunch();
         app.quit();
+      }),
+    ),
+  );
+  ipcMain.handle(channels.notifyResponseReady, () =>
+    runMain(
+      Effect.sync(() => {
+        // Don't interrupt when the user is already looking at the app.
+        if (BrowserWindow.getFocusedWindow()) return;
+        if (!Notification.isSupported()) return;
+        const n = new Notification({
+          title: "BloxMind",
+          body: "Your assistant finished responding.",
+        });
+        n.on("click", () => {
+          const win = BrowserWindow.getAllWindows()[0];
+          if (!win) return;
+          if (win.isMinimized()) win.restore();
+          win.show();
+          win.focus();
+        });
+        n.show();
       }),
     ),
   );

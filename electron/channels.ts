@@ -23,6 +23,7 @@ export const channels = {
   bloxmindProgramsUpdated: "bloxmind-programs:updated",
   mainError: "app:main-error",
   mainErrorReady: "app:main-error-ready",
+  notifyResponseReady: "app:notify-response-ready",
   compileProjectIndexProgram: "project-index:compile-program",
   invokeProjectIndexProgram: "project-index:invoke-program",
   // ── Checkpoint system ──────────────────────────────────────────────

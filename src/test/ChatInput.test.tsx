@@ -210,6 +210,7 @@ function TestChatInput({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  window.localStorage.clear();
 });
 
 afterEach(() => {

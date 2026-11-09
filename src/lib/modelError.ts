@@ -3,7 +3,7 @@ import type { AssistantMessage } from "@opencode-ai/sdk/v2/client";
 export type ModelError = NonNullable<AssistantMessage["error"]>;
 
 export interface ModelErrorPresentation {
-  kind: "context" | "auth" | "aborted" | "image" | "generic";
+  kind: "context" | "auth" | "aborted" | "image" | "usage" | "unavailable" | "generic";
   title: string;
   description: string;
   detail?: string;
@@ -22,6 +22,29 @@ export function modelErrorDetail(error: ModelError): string | undefined {
   return detail?.trim();
 }
 
+/** OpenCode's free tier refusing a prompt because free messages are used up. */
+export function isFreeUsageLimit(error: ModelError): boolean {
+  const data =
+    error.data && typeof error.data === "object" ? (error.data as Record<string, unknown>) : {};
+  return (
+    (typeof data.responseBody === "string" && data.responseBody.includes("FreeUsageLimitError")) ||
+    (typeof data.message === "string" && /free usage (limit|exceeded)/i.test(data.message))
+  );
+}
+
+function isModelUnavailable(detail: string | undefined): boolean {
+  if (!detail) return false;
+  return (
+    /model (?:is )?(?:retired|deprecated|no longer (?:available|supported)|disabled)/i.test(
+      detail,
+    ) ||
+    /(?:not available|unavailable|unsupported|blocked) (?:in|for) (?:your )?(?:region|country|location)/i.test(
+      detail,
+    ) ||
+    /region.?lock|geo.?restrict/i.test(detail)
+  );
+}
+
 export function isImageInputError(error: ModelError): boolean {
   const detail = modelErrorDetail(error);
   if (!detail) return false;
@@ -32,6 +55,15 @@ export function isImageInputError(error: ModelError): boolean {
 
 export function presentModelError(error: ModelError): ModelErrorPresentation {
   const detail = modelErrorDetail(error);
+
+  if (isFreeUsageLimit(error)) {
+    return {
+      kind: "usage",
+      title: "You've used today's free messages",
+      description:
+        "Free messages reset daily. To keep going now, connect a provider in Settings or use OpenCode Go.",
+    };
+  }
 
   if (error.name === "ContextOverflowError") {
     return {
@@ -69,6 +101,16 @@ export function presentModelError(error: ModelError): ModelErrorPresentation {
       title: "This model can't read images",
       description:
         "A screenshot or image reached a model that only accepts text. Remove the image from this conversation and retry, or switch to a vision-capable model.",
+      detail,
+    };
+  }
+
+  if (isModelUnavailable(detail)) {
+    return {
+      kind: "unavailable",
+      title: "This model isn't available",
+      description:
+        "The selected model may be retired, region-locked, or temporarily unavailable. Choose another model in the picker and retry.",
       detail,
     };
   }

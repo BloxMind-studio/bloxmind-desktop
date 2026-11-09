@@ -37,6 +37,7 @@ const api: DesktopApi = {
   invokeProjectIndexProgram: (artifact, studioId) =>
     ipcRenderer.invoke(channels.invokeProjectIndexProgram, artifact, studioId),
   relaunch: () => ipcRenderer.invoke(channels.relaunch),
+  notifyResponseReady: () => ipcRenderer.invoke(channels.notifyResponseReady),
   installStudioTargetPrograms: (envelopes) =>
     ipcRenderer.invoke(channels.installStudioTargetPrograms, envelopes),
   discoverStudioTargets: (programs) =>
