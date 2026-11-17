@@ -3,6 +3,23 @@
 import type { ModelError } from "@/lib/modelError";
 import type { PermissionRequest } from "./opencode/types";
 
+const SYSTEM_CONTEXT_PREFIX = "[System context for this request]";
+const USER_REQUEST_MARKER = "\n[User request]\n";
+
+/**
+ * Strip the injected system-context wrapper that `translateOc1Prompt` may prepend
+ * to a user message when the OC2 engine has no native system field (and synthetic
+ * injection is unavailable). The wrapper — and any `[Structured output required]`
+ * block — is for the engine only; the person should never see it in their own bubble.
+ * Legacy messages that were stored with the wrapper are cleaned when read.
+ */
+export function stripInjectedSystemContext(text: string): string {
+  if (typeof text !== "string" || !text.startsWith(SYSTEM_CONTEXT_PREFIX)) return text;
+  const index = text.indexOf(USER_REQUEST_MARKER);
+  if (index === -1) return text;
+  return text.slice(index + USER_REQUEST_MARKER.length);
+}
+
 export function normalizePermissionRequest(data: Record<string, unknown>): PermissionRequest {
   // OC1: {id, sessionID, permission, patterns, metadata, tool?}. OC2 permission.asked data:
   // {id, sessionID, action, resources, save?, metadata?, source?, message?}

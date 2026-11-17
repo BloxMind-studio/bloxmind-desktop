@@ -22,7 +22,7 @@ import type { OpenCodeStartupProgress } from "@/types/desktop";
 
 export const SSE_RECONNECT_DELAY = 3_000;
 export const SSE_FAILURE_THRESHOLD = 3;
-export const SSE_HEARTBEAT_TIMEOUT = 30_000; // No events for 30s → force reconnect
+export const SSE_HEARTBEAT_TIMEOUT = 30_000; // No events for 30s → probe server, reconnect only if it's dead
 export const SSE_HEARTBEAT_INTERVAL = 5_000; // Check every 5s
 export const SSE_POLL_INTERVAL = 1_000; // Server health-check poll interval
 export const SSE_POLL_TIMEOUT = 3_000; // Per-poll request timeout
@@ -399,23 +399,51 @@ export function OpenCodeClientProvider({
       }, delay);
     }
 
-    // Heartbeat: if no SSE events arrive for SSE_HEARTBEAT_TIMEOUT,
-    // the connection is likely dead (e.g. network dropped). Force a reconnect.
+    // Heartbeat: the server does not emit periodic keep-alive events — it is
+    // silent whenever the session is idle, and a half-open/dead TCP connection
+    // can look "fine" forever from the client's side. So when the watchdog trips
+    // we probe the server first. Alive → resubscribe anyway (a silent refresh of
+    // the stream, cheap, and the only way a dead-but-quiet connection recovers),
+    // but never count it as a failure or show the toast. Dead → failure + abort +
+    // backoff reconnect, and only then the toast.
+    let probeInFlight = false;
+    async function probeServer(): Promise<boolean> {
+      if (!client) return false;
+      try {
+        await client.session.status({}, { throwOnError: true });
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
     function startHeartbeat() {
       clearInterval(heartbeatTimer);
       lastEventTime = Date.now();
       heartbeatTimer = setInterval(() => {
         if (abortController.signal.aborted) return;
         const elapsed = Date.now() - lastEventTime;
-        if (elapsed >= sseHeartbeatTimeout) {
-          console.warn(`SSE heartbeat timeout: no events for ${elapsed}ms, forcing reconnect`);
+        if (elapsed < sseHeartbeatTimeout || probeInFlight) return;
+        probeInFlight = true;
+        void probeServer().then((alive) => {
+          probeInFlight = false;
+          if (abortController.signal.aborted) return;
+          if (alive) {
+            // Server reachable: refresh the stream quietly. Do not count a
+            // failure — an idle session is not an error.
+            lastEventTime = Date.now();
+            streamAbortController?.abort();
+            scheduleReconnect();
+            return;
+          }
+          console.warn(`SSE heartbeat timeout: no events for ${elapsed}ms and server probe failed, forcing reconnect`);
           consecutiveFailures++;
           if (consecutiveFailures >= SSE_FAILURE_THRESHOLD) showReconnectToast();
           // Abort the current stream so the for-await loop breaks.
           // The outer abortController stays alive so scheduleReconnect can still fire.
           streamAbortController?.abort();
           scheduleReconnect();
-        }
+        });
       }, SSE_HEARTBEAT_INTERVAL);
     }
 
@@ -426,8 +454,11 @@ export function OpenCodeClientProvider({
 
     async function subscribe() {
       // A stream is already active. The reconnect timer must not start a
-      // second, overlapping loop; the active loop reschedules on exit.
-      if (streamAbortController) return;
+      // second, overlapping loop; the active loop reschedules on exit. But an
+      // ABORTED controller is stale — the aborted for-await may never wake up
+      // to clear it, which would make every reconnect a no-op and leave the
+      // feed frozen forever. A fresh stream must be allowed to take over.
+      if (streamAbortController && !streamAbortController.signal.aborted) return;
       if (!client) return;
       // A fresh per-stream abort controller lets the heartbeat kill a stuck
       // stream without killing the outer reconnect loop. Passing its signal
@@ -581,7 +612,13 @@ export async function prefetchServerState(client: OpencodeClient, queryClient: Q
   }
 
   if (agentsRes?.data && Array.isArray(agentsRes.data)) {
-    queryClient.setQueryData(qk.agents, agentsRes.data);
+    queryClient.setQueryData(
+      qk.agents,
+      (agentsRes.data as Array<Record<string, unknown>>).map((agent) => ({
+        ...agent,
+        id: typeof agent.id === "string" ? agent.id : agent.name,
+      })),
+    );
   }
 
   if (providerRes?.data) {

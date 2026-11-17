@@ -313,7 +313,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (agents.length === 0 || selectedAgent) return;
     const primary = agents.find((a) => a.mode === "primary" && !a.hidden);
-    if (primary) setSelectedAgentState(primary.name);
+    if (primary) setSelectedAgentState(primary.id);
   }, [agents, selectedAgent]);
 
   const setSelectedModel = useCallback(

@@ -4,7 +4,7 @@ import type { OpencodeClient } from "@/lib/opencode";
 
 import { hasPlaytestContext } from "@/lib/playtestPlan";
 import { qk } from "@/lib/queryKeys";
-import type { MessagesCache } from "@/lib/sseDispatch";
+import { type MessagesCache, sortMessageIds } from "@/lib/sseDispatch";
 import { baseToolName } from "@/lib/toolName";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
@@ -49,7 +49,7 @@ export function mergeMessagesSnapshot(
   for (const messageID of concurrentlyUpdatedIds) {
     if (!knownIds.has(messageID)) messageIds.push(messageID);
   }
-  return { messageIds, messagesById };
+  return { messageIds: sortMessageIds(messageIds, messagesById), messagesById };
 }
 
 export async function fetchMessages(
@@ -86,9 +86,11 @@ export async function fetchMessages(
     messageIds.push(msg.info.id);
     messagesById[msg.info.id] = { info: msg.info, parts: msg.parts };
   }
+  // Never trust the server's arrival order; the feed must read chronologically.
+  const sortedIds = sortMessageIds(messageIds, messagesById);
   return mergeMessagesSnapshot(
     before,
-    { messageIds, messagesById },
+    { messageIds: sortedIds, messagesById },
     queryClient.getQueryData<MessagesCache>(queryKey),
     observedChanges,
   );

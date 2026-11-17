@@ -2,7 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { Data, Effect, Schema } from "effect";
 import { toast } from "sonner";
 import type { ModelError } from "@/lib/modelError";
-import { normalizeExecutionError, normalizePermissionRequest } from "@/lib/oc2Normalize";
+import { normalizeExecutionError, normalizePermissionRequest, stripInjectedSystemContext } from "@/lib/oc2Normalize";
 import type {
   Event,
   PermissionRequest,
@@ -20,6 +20,41 @@ import type { MessageWithParts } from "@/types";
 export interface MessagesCache {
   messageIds: string[];
   messagesById: Record<string, MessageWithParts>;
+}
+
+/**
+ * Insert a message id into `ids` ordered by `info.time.created`. SSE events can
+ * arrive out of order (e.g. the assistant's message lands before the user's that
+ * spawned it), so we never trust arrival order for the feed layout.
+ */
+export function insertMessageIdSorted(
+  ids: string[],
+  byId: Record<string, MessageWithParts>,
+  id: string,
+  created: number | undefined,
+): string[] {
+  if (typeof created !== "number" || !Number.isFinite(created)) return [...ids, id];
+  let index = ids.length;
+  while (index > 0) {
+    const t = byId[ids[index - 1]]?.info?.time?.created;
+    if (typeof t === "number" && t <= created) break;
+    index -= 1;
+  }
+  const next = [...ids];
+  next.splice(index, 0, id);
+  return next;
+}
+
+/** Stable sort of `ids` by `info.time.created`; ids without a timestamp keep their relative order at the end. */
+export function sortMessageIds(ids: string[], byId: Record<string, MessageWithParts>): string[] {
+  return ids
+    .map((id, index) => ({ id, index, created: byId[id]?.info?.time?.created }))
+    .sort((a, b) => {
+      const ta = typeof a.created === "number" && Number.isFinite(a.created) ? a.created : Number.POSITIVE_INFINITY;
+      const tb = typeof b.created === "number" && Number.isFinite(b.created) ? b.created : Number.POSITIVE_INFINITY;
+      return ta - tb || a.index - b.index;
+    })
+    .map((entry) => entry.id);
 }
 
 /**
@@ -323,7 +358,14 @@ function mutateOc2Part(
     else parts.push(part);
     return {
       ...cache,
-      messageIds: existingMessage ? cache.messageIds : [...cache.messageIds, messageID],
+      messageIds: existingMessage
+        ? cache.messageIds
+        : insertMessageIdSorted(
+            cache.messageIds,
+            cache.messagesById,
+            messageID,
+            (message.info as { time?: { created?: number } })?.time?.created,
+          ),
       messagesById: {
         ...cache.messagesById,
         [messageID]: { ...message, parts: parts as unknown as MessageWithParts["parts"] },
@@ -550,6 +592,10 @@ function dispatchEvent(
     }
     case "message.updated": {
       const info = data.info;
+      if (info && typeof info === "object" && typeof info.role !== "string" && typeof info.type === "string") {
+        // OC2 message rows carry `type`; the UI keys off `role`. Normalize.
+        info.role = info.type;
+      }
       if (!currentSessionId || !info || info.sessionID !== currentSessionId) break;
       const previousMessage = queryClient.getQueryData<MessagesCache>(qk.messages(currentSessionId))
         ?.messagesById[info.id];
@@ -571,7 +617,12 @@ function dispatchEvent(
           };
         }
         return {
-          messageIds: [...prev.messageIds, info.id],
+          messageIds: insertMessageIdSorted(
+            prev.messageIds,
+            prev.messagesById,
+            info.id,
+            info?.time?.created,
+          ),
           messagesById: { ...prev.messagesById, [info.id]: { info, parts: [] } },
         };
       });
@@ -592,7 +643,7 @@ function dispatchEvent(
       break;
     }
     case "message.part.updated": {
-      const part = data.part;
+      let part = data.part;
       if (!currentSessionId || !part || part.sessionID !== currentSessionId) break;
       const messages = queryClient.getQueryData<MessagesCache>(qk.messages(currentSessionId));
       if (!messages?.messagesById[part.messageID]) {
@@ -603,6 +654,12 @@ function dispatchEvent(
         if (!prev) return prev;
         const msg = prev.messagesById[part.messageID];
         if (!msg) return prev;
+        // Never render the injected system-context wrapper in someone's own bubble.
+        // OC2 user message `info` may carry no `role` (the row type lives outside info),
+        // so match the wrapper itself instead of gating on role.
+        if (part.type === "text" && typeof part.text === "string") {
+          part = { ...part, text: stripInjectedSystemContext(part.text) };
+        }
         const partIdx = msg.parts.findIndex((p) => p.id === part.id);
         const newParts =
           partIdx >= 0 ? msg.parts.map((p, i) => (i === partIdx ? part : p)) : [...msg.parts, part];

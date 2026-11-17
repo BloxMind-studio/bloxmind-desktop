@@ -14,7 +14,12 @@ export function useCommands(): Command[] {
     queryFn: async () => {
       if (!client) return [];
       const response = await client.command.list({}, { throwOnError: true });
-      return Array.isArray(response.data) ? response.data : [];
+      if (!Array.isArray(response.data)) return [];
+      // Servers may omit `hints` (e.g. skill/MCP-sourced commands); guarantee the array.
+      return response.data.map((command: Command) => ({
+        ...command,
+        hints: Array.isArray(command.hints) ? command.hints : [],
+      }));
     },
     enabled: ready && !!client,
   });

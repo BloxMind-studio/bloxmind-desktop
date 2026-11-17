@@ -654,7 +654,8 @@ function ChatInput() {
   const modelDisplay = selectedModel
     ? (selectedModel.split("/").pop() ?? selectedModel)
     : "Select model";
-  const agentDisplay = selectedAgent ?? "Default agent";
+  // selectedAgent holds the engine agent id; show its display name when known.
+  const agentDisplay = agents.find((a) => a.id === selectedAgent)?.name ?? selectedAgent ?? "Default agent";
   const selectedVariantIndex = selectedVariant
     ? Math.max(0, availableVariants.indexOf(selectedVariant) + 1)
     : 0;
@@ -984,12 +985,12 @@ function ChatInput() {
                 {showAgentPicker && (
                   <div className="absolute bottom-full right-0 z-50 mb-1 max-h-48 w-56 overflow-y-auto rounded-lg border bg-popover p-1 shadow-lg">
                     {visibleAgents.map((agent) => {
-                      const isSelected = selectedAgent === agent.name;
+                      const isSelected = selectedAgent === agent.id;
                       return (
                         <button
-                          key={agent.name}
+                          key={agent.id}
                           onClick={() => {
-                            setSelectedAgent(agent.name);
+                            setSelectedAgent(agent.id);
                             setShowAgentPicker(false);
                           }}
                           className={`flex w-full flex-col rounded-md px-2 py-1.5 text-left transition-colors ${isSelected ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}

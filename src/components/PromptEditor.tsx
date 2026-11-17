@@ -279,7 +279,8 @@ function TypeaheadPlugin({
     const commandOptions: PromptOption[] = [];
     for (const command of commands) {
       if (!command.name.toLowerCase().includes(search)) continue;
-      const usage = command.hints.length > 0 ? `/${command.name} ${command.hints.join(" ")}` : "";
+      const hints = Array.isArray(command.hints) ? command.hints : [];
+      const usage = hints.length > 0 ? `/${command.name} ${hints.join(" ")}` : "";
       commandOptions.push(
         new PromptOption(
           `command:${command.name}`,

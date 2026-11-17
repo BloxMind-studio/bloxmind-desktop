@@ -1,5 +1,5 @@
 import * as OC from "@opencode/client/promise";
-import { normalizeExecutionError, normalizePermissionRequest } from "../oc2Normalize";
+import { normalizeExecutionError, normalizePermissionRequest, stripInjectedSystemContext } from "../oc2Normalize";
 import { buildOc2FormAnswer, translateOc2Form } from "./forms";
 import { translateOc2AuthMethods, translateOc2ProviderList, unwrapList } from "./providers";
 import type { PermissionRequest, QuestionRequest, Session } from "./types";
@@ -87,8 +87,20 @@ export function translateOc2FilePart(file: any): {
   };
 }
 
+/** Remove the injected system-context wrapper from a message's text parts. */
+function stripUserMessageParts(_info: any, parts: any[]): any[] {
+  // The wrapper is unambiguous (it only ever prefixes injected system context),
+  // so strip it regardless of role — OC2 rows may not surface `role` in info.
+  return parts.map((part) =>
+    part && part.type === "text" && typeof part.text === "string"
+      ? { ...part, text: stripInjectedSystemContext(part.text) }
+      : part,
+  );
+}
+
 export function translateOc2Message(sessionID: string, m: any): { info: any; parts: any[] } {
-  if (m && m.info && Array.isArray(m.parts)) return m;
+  if (m && m.info && Array.isArray(m.parts))
+    return { info: m.info, parts: stripUserMessageParts(m.info, m.parts) };
   const type = m?.type ?? m?.info?.role ?? "assistant";
   const role = type === "user" ? "user" : type === "assistant" ? "assistant" : type;
   const info: any = {
@@ -108,7 +120,7 @@ export function translateOc2Message(sessionID: string, m: any): { info: any; par
   const pushPart = (part: any) => {
     parts.push({ ...part, id: part.id ?? `${messageID}:${parts.length}`, sessionID, messageID });
   };
-  if (Array.isArray(m?.parts)) return { info, parts: m.parts };
+  if (Array.isArray(m?.parts)) return { info, parts: stripUserMessageParts(info, m.parts) };
   if (role === "user" || type === "user") {
     if (typeof m?.text === "string" && m.text) pushPart({ type: "text", text: m.text });
     for (const f of Array.isArray(m?.files) ? m.files : []) {
@@ -134,12 +146,13 @@ export function translateOc2Message(sessionID: string, m: any): { info: any; par
   delete info.content;
   delete info.files;
   delete info.text;
+  const cleanedParts = stripUserMessageParts(info, parts);
   // OC1 error cards read error.name/error.data; OC2 SessionStructuredError has neither.
   if (info.error && info.role === "assistant") {
     const normalized = normalizeExecutionError(info.error);
     if (normalized) info.error = normalized;
   }
-  return { info, parts };
+  return { info, parts: cleanedParts };
 }
 
 function normalizeOc2Model(
@@ -158,7 +171,8 @@ function normalizeOc2Model(
 /**
  * Translate BloxMind's OC1 prompt payload to OC2 `SessionPromptInput`.
  * - `parts` (text/file) -> `text` + `files` (data URLs passed as URIs)
- * - `system` -> prepended to text as delimited context (OC2 prompt has no system field; preserves BloxMind safety/verification notes)
+ * - `system` -> delivered as a synthetic context-only message when the engine supports
+ *   it (invisible in the feed); otherwise prepended to text as delimited context
  * - `model`/`agent`/`variant` -> OC2 session.switchModel/switchAgent before prompt
  */
 async function translateOc1Prompt(
@@ -203,9 +217,42 @@ async function translateOc1Prompt(
       `[Structured output required]\nReturn only a single JSON value that validates against this JSON Schema. Do not wrap it in markdown fences or add commentary.\n${JSON.stringify(format.schema)}`,
     );
   }
-  const text = systemNotes.length
-    ? `${systemNotes.join("\n\n")}\n\n[User request]\n${userText || "(see attached files)"}`
-    : userText;
+  // The person should never see these notes, and the engine must not burn a turn on
+  // them. OC2 has first-class session instructions: per-session key/value entries
+  // injected into the model's system context (see `core/*` entries like core/date).
+  // Putting them before the prompt delivers the notes with no extra turn and no
+  // message in the feed. If the instructions API is unavailable, fall back to
+  // prepending the notes to the text — the renderer strips that wrapper on display.
+  const instructionsEntry = (
+    oc2.experimental as
+      | { session?: { instructions?: { entry?: { put?: (i: unknown, o?: unknown) => Promise<unknown> } } } }
+      | undefined
+  )?.session?.instructions?.entry;
+  let text = userText;
+  if (systemNotes.length) {
+    let delivered = false;
+    if (instructionsEntry?.put) {
+      try {
+        await instructionsEntry.put(
+          withDirectory(directory, {
+            sessionID,
+            key: "bloxmind.request",
+            value: systemNotes.join("\n\n"),
+          }),
+          { signal: opts?.signal },
+        );
+        delivered = true;
+      } catch (error) {
+        console.warn("Session instructions injection failed; merging into prompt text", error);
+      }
+    }
+    if (!delivered) {
+      const merged = `${systemNotes.join("\n\n")}\n\n[User request]\n${userText || "(see attached files)"}`;
+      // noReply means this whole message is context-only; keep the feed filter
+      // from ever rendering it.
+      text = input.noReply ? `[SYSTEM_NOTIFICATION]\n${merged}` : merged;
+    }
+  }
 
   if (!input.noReply) {
     await applyOc1Selection(oc2, directory, sessionID, input, opts);
