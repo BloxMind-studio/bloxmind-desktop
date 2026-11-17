@@ -40,7 +40,9 @@ describe("OpenCode query lifecycle", () => {
       connected: [],
       default: {},
     });
-    expect(queryClient.getQueryData(qk.agents)).toEqual([{ id: "build", name: "build", mode: "primary" }]);
+    expect(queryClient.getQueryData(qk.agents)).toEqual([
+      { id: "build", name: "build", mode: "primary" },
+    ]);
   });
 
   it("fails startup when every server-state endpoint is unavailable", async () => {

@@ -2,7 +2,11 @@ import type { QueryClient } from "@tanstack/react-query";
 import { Data, Effect, Schema } from "effect";
 import { toast } from "sonner";
 import type { ModelError } from "@/lib/modelError";
-import { normalizeExecutionError, normalizePermissionRequest, stripInjectedSystemContext } from "@/lib/oc2Normalize";
+import {
+  normalizeExecutionError,
+  normalizePermissionRequest,
+  stripInjectedSystemContext,
+} from "@/lib/oc2Normalize";
 import type {
   Event,
   PermissionRequest,
@@ -50,8 +54,14 @@ export function sortMessageIds(ids: string[], byId: Record<string, MessageWithPa
   return ids
     .map((id, index) => ({ id, index, created: byId[id]?.info?.time?.created }))
     .sort((a, b) => {
-      const ta = typeof a.created === "number" && Number.isFinite(a.created) ? a.created : Number.POSITIVE_INFINITY;
-      const tb = typeof b.created === "number" && Number.isFinite(b.created) ? b.created : Number.POSITIVE_INFINITY;
+      const ta =
+        typeof a.created === "number" && Number.isFinite(a.created)
+          ? a.created
+          : Number.POSITIVE_INFINITY;
+      const tb =
+        typeof b.created === "number" && Number.isFinite(b.created)
+          ? b.created
+          : Number.POSITIVE_INFINITY;
       return ta - tb || a.index - b.index;
     })
     .map((entry) => entry.id);
@@ -592,7 +602,12 @@ function dispatchEvent(
     }
     case "message.updated": {
       const info = data.info;
-      if (info && typeof info === "object" && typeof info.role !== "string" && typeof info.type === "string") {
+      if (
+        info &&
+        typeof info === "object" &&
+        typeof info.role !== "string" &&
+        typeof info.type === "string"
+      ) {
         // OC2 message rows carry `type`; the UI keys off `role`. Normalize.
         info.role = info.type;
       }

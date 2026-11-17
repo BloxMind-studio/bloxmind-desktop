@@ -655,7 +655,8 @@ function ChatInput() {
     ? (selectedModel.split("/").pop() ?? selectedModel)
     : "Select model";
   // selectedAgent holds the engine agent id; show its display name when known.
-  const agentDisplay = agents.find((a) => a.id === selectedAgent)?.name ?? selectedAgent ?? "Default agent";
+  const agentDisplay =
+    agents.find((a) => a.id === selectedAgent)?.name ?? selectedAgent ?? "Default agent";
   const selectedVariantIndex = selectedVariant
     ? Math.max(0, availableVariants.indexOf(selectedVariant) + 1)
     : 0;

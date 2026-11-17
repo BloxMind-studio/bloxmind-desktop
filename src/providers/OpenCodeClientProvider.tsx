@@ -436,7 +436,9 @@ export function OpenCodeClientProvider({
             scheduleReconnect();
             return;
           }
-          console.warn(`SSE heartbeat timeout: no events for ${elapsed}ms and server probe failed, forcing reconnect`);
+          console.warn(
+            `SSE heartbeat timeout: no events for ${elapsed}ms and server probe failed, forcing reconnect`,
+          );
           consecutiveFailures++;
           if (consecutiveFailures >= SSE_FAILURE_THRESHOLD) showReconnectToast();
           // Abort the current stream so the for-await loop breaks.

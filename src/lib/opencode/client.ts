@@ -1,5 +1,9 @@
 import * as OC from "@opencode/client/promise";
-import { normalizeExecutionError, normalizePermissionRequest, stripInjectedSystemContext } from "../oc2Normalize";
+import {
+  normalizeExecutionError,
+  normalizePermissionRequest,
+  stripInjectedSystemContext,
+} from "../oc2Normalize";
 import { buildOc2FormAnswer, translateOc2Form } from "./forms";
 import { translateOc2AuthMethods, translateOc2ProviderList, unwrapList } from "./providers";
 import type { PermissionRequest, QuestionRequest, Session } from "./types";
@@ -225,7 +229,11 @@ async function translateOc1Prompt(
   // prepending the notes to the text — the renderer strips that wrapper on display.
   const instructionsEntry = (
     oc2.experimental as
-      | { session?: { instructions?: { entry?: { put?: (i: unknown, o?: unknown) => Promise<unknown> } } } }
+      | {
+          session?: {
+            instructions?: { entry?: { put?: (i: unknown, o?: unknown) => Promise<unknown> } };
+          };
+        }
       | undefined
   )?.session?.instructions?.entry;
   let text = userText;
