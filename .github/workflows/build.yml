@@ -70,6 +70,8 @@ jobs:
 
       - name: Check engine pin digests
         working-directory: repo
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           echo "Verifying pinned engine digests against the published release..."
           pnpm check:opencode-pin
