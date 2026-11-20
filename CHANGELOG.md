@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-11-20
+
 ### Fixed
 
 - Streamed output no longer comes out with duplicated chunks in the AI trace when detailed AI traces are on — the tracer was appending deltas into the same message-part object the SSE dispatcher was mutating, so every token chunk landed twice.
@@ -23,11 +25,18 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - The project-index button no longer shows any number by default — just the folder icon and status dot — and reveals the indexed-script count on hover.
 - The chat input no longer shows a spinning "reload" mark next to the token-context indicator, and the hover ring no longer flickers in and out when the pointer crosses it: the text stays in place (invisible on hover instead of being swapped) while the ring overlays it at a fixed position instead of resizing the area.
 - The hover background on the About tab's "Built With" rows no longer shows square corners over the rounded container, which now clips its children.
+- Idle chats no longer go deaf: the SSE watchdog probes the server and quietly refreshes a healthy-but-silent stream instead of forcing reconnects and showing "Lost connection"; an aborted stream can no longer block future reconnects.
+- Messages render in chronological order even when SSE events arrive out of order, so an agent answer no longer appears above the message that prompted it.
+- Hidden system context (verification level, custom instructions, structured-output rules) is delivered as a per-session engine instructions entry and stripped from legacy merged user messages, so it never appears in your own chat bubble or burns an extra agent turn.
+- Agent selection uses engine agent ids instead of display names, so sends no longer fail with "Agent not found: Build".
+- Commands that omit `hints` no longer crash the composer's `/` typeahead menu.
+- CI's pinned-engine digest check authenticates to GitHub's API, avoiding HTTP 403 rate-limit failures.
 
 ### Changed
 
 - OpenCode SDK updated from 1.18.10 to 1.19.5, and the fallback engine pin is now OpenCode v1.19.5 with SHA-256 digests verified against GitHub's published release digests (`pnpm check:opencode-pin` passes). If GitHub's API is unreachable, BloxMind installs a v1.19.x engine instead of the older 1.18.x.
 - Biome stayed on 2.5.6 on purpose: 2.6.x deprecates parts of the config and reports new diagnostics across the codebase. It will be migrated in a dedicated pass rather than smuggled into dependency churn.
+- The `roblox-game-development` skill was rewritten (v2.1) with tighter scope, server-authoritative patterns, safer DataStore/Remote usage, and a verification checklist.
 
 ### Security
 
@@ -446,7 +455,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - OpenCode downloads are restricted to official GitHub release assets and verified with SHA-256 digests before installation and on every cache reuse.
 - Electron runs with context isolation, renderer sandboxing, Node.js integration disabled, validated IPC payloads, and external navigation blocked.
 
-[Unreleased]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.16.1...HEAD
+[0.16.1]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.16.0...v0.16.1
 [0.16.0]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.14.4...v0.15.0
 [0.14.4]: https://github.com/BloxMind-studio/bloxmind-desktop/compare/v0.14.3...v0.14.4

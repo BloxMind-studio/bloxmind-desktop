@@ -1,283 +1,178 @@
 ---
 name: roblox-game-development
-description: Use this skill for any Roblox related tasks
+description: Use when writing, reviewing, or fixing Roblox gameplay code - Luau scripts and ModuleScripts, server/client architecture, RemoteEvents and RemoteFunctions, DataStores, inventory, currency, combat, and performance or exploit-safety problems. Not for dressing maps and worlds (use roblox-world-boundaries) or character animation (use animate-roblox-characters).
 ---
 
-# Roblox Game Development Skill
+# Roblox Game Development
 
-## Description
-Expert Roblox game developer specializing in Luau scripting, game mechanics, UI/UX design, and monetization strategies. Assists with everything from simple scripts to complex multiplayer experiences.
+## Scope
 
-## Resource Library
-This skill includes a comprehensive collection of production-ready resources:
+Covers gameplay code and the systems behind it. Hand off when the request is about:
 
-- **📜 [Helper Scripts](scripts/)** - Professional utility modules for data management, networking, UI, game flow, and audio
-- **📋 [Document Templates](templates/)** - Complete project documentation templates including Game Design Documents, Technical Specifications, Testing Plans, and Marketing Strategies  
-- **📚 [Development Resources](resources/)** - Game templates, asset libraries, debugging guides, performance optimization tools, and quick reference materials
+| Request | Use instead |
+| --- | --- |
+| Maps, levels, terrain, backdrops, world edges | `roblox-world-boundaries` |
+| Rigs, keyframes, R15/R6 animation | `animate-roblox-characters` |
 
-## Core Capabilities
+Inspect the existing code and hierarchy before writing anything. Match the project's module layout, naming, and Luau style instead of importing a new architecture.
 
-### Luau Programming
-- **Modern Luau Features**: Utilize type annotations, generics, the New Type Solver (general release), improved type inference/autocomplete, and performance optimizations
-- **Script Architecture**: Implement clean, modular code with proper separation of concerns
-- **Performance Optimization**: Write efficient scripts that handle large player counts
-- **Error Handling**: Robust error management and debugging techniques
+## Non-negotiables
 
-### Luau Type System Updates
-- **New Type Solver**: General release (no longer a Studio Beta); enabled by default for `nonstrict` and `nocheck` modes starting January 7, 2026
-- **Key Improvements**: Better type inference, fewer false positives, stronger generics support, and improved autocomplete
-- **Legacy Solver Timeline**: The legacy solver remains available through 2026, but it is slated for removal
-- **Migration Guidance**: Most code works without changes, but a few edge cases may need explicit type annotations or cleanup
-- **Best Practices**: Prefer explicit annotations on public APIs, use generics where appropriate, and lean on improved autocomplete for faster iteration
+1. **The server is authoritative.** The client sends intent, never outcomes. Prices, damage, currency, and inventory changes are computed and validated on the server.
+2. **Never trust a client argument.** Validate type, range, ownership, existence, and cooldown before using it.
+3. **Every DataStore call is wrapped in `pcall`.** They are network calls and they will fail.
+4. **`DataStoreService` is server-only.** Calling it from a `LocalScript` errors.
+5. **Report failures.** `warn` with context. Do not swallow an error and continue silently.
 
-```lua
--- New Type Solver infers types more accurately
-local function processPlayer(player: Player)
-    local name: string = player.Name  -- inferred correctly
-    local team = player.Team  -- Team? properly inferred
-end
-```
+## Data and persistence
 
-### Game Systems Development
-- **Player Data Management**: DataStore implementation with backup systems (see [DataManager.lua](scripts/DataManager.lua))
-- **Inventory Systems**: Item management, trading, and equipment systems
-- **Economy Design**: Currency systems, shops, and balanced progression
-- **Combat Mechanics**: Damage systems, weapons, abilities, and PvP/PvE gameplay
-- **Social Features**: Friends, guilds, chat systems, and player interactions
+Prefer native `DataStoreService`. `DataStore2` (Berezaa) is deprecated; migrate to native rather than adding it to a new project.
 
-### Roblox Studio Expertise
-- **Workspace Organization**: Proper model hierarchy and asset management
-- **Terrain Sculpting**: Advanced terrain tools and environmental design
-- **Lighting & Atmosphere**: Realistic lighting setups and mood creation
-- **Animation**: Rig creation, keyframe animation, and scripted animations
-- **Physics Simulation**: Custom physics, constraints, and interactive objects
+### Set vs Update
 
-### User Interface Design
-- **Modern UI Frameworks**: Clean, responsive interface design (see [UIManager.lua](scripts/UIManager.lua))
-- **Mobile Optimization**: Touch-friendly controls and adaptive layouts
-- **Accessibility**: Colorblind-friendly palettes and readable fonts
-- **UX Patterns**: Intuitive navigation and user flow optimization
+| | `SetAsync` | `UpdateAsync` |
+| --- | --- | --- |
+| Multi-server safety | can lose concurrent writes | reads current value first, safe |
+| Cost | 1 write | 1 read + 1 write |
+| Use for | throwaway data | currency, items, progression |
 
-### Multiplayer & Networking
-- **Client-Server Architecture**: Proper remote event/function usage (see [RemoteManager.lua](scripts/RemoteManager.lua))
-- **Anti-Exploit Measures**: Server-side validation and security best practices
-- **Synchronization**: Real-time multiplayer mechanics and state management
-- **Scaling Solutions**: Performance optimization for high player counts
-
-### Monetization & Analytics
-- **Developer Products**: Robux purchases and virtual currency
-- **Game Passes**: Premium features and subscription models
-- **Analytics Integration**: Player behavior tracking and retention metrics
-- **A/B Testing**: Feature testing and conversion optimization
-
-## Development Workflow
-
-### Project Setup
-1. **Game Concept Development**: Genre analysis, target audience, and core loop design (see [Game Design Document template](templates/game_design_document.md))
-2. **Technical Architecture**: Script organization, module system, and dependency management (see [Technical Specification template](templates/technical_specification.md))
-3. **Asset Pipeline**: Model importing, texture optimization, and version control (see [Asset Library](resources/asset_library.md))
-4. **Testing Framework**: Unit tests, integration tests, and QA processes (see [Testing Plan template](templates/testing_plan.md))
-
-### Implementation Phases
-1. **Core Mechanics**: Basic gameplay loop and player controls (use [Game Templates](resources/game_templates.md) for rapid prototyping)
-2. **System Integration**: Connecting different game systems (see [GameManager.lua](scripts/GameManager.lua))
-3. **Content Creation**: Levels, quests, items, and progression systems
-4. **Polish & Optimization**: Performance tuning and bug fixes (see [Performance Optimization Guide](resources/performance_optimization.md))
-5. **Launch Preparation**: Store assets, descriptions, and marketing materials (see [Marketing Plan template](templates/marketing_plan.md))
-
-### Best Practices
-- **Code Organization**: Use ModuleScripts for reusable components
-- **Security First**: Always validate on server-side
-- **Performance Monitoring**: Regular profiling and optimization
-- **Player Feedback**: Iterative development based on player data
-- **Version Control**: Proper backup and collaboration workflows
-
-## Common Patterns & Solutions
-
-### DataStore Access and Storage Updates
-- **Per-Experience Quotas**: Each experience gets its own DataStore read/write quota, and Roblox is enforcing these limits starting in early 2026
-- **Throttle Behavior**: Exceeding limits throttles requests instead of throwing hard errors, so code should gracefully retry or fall back
-- **Best Practices**: Batch operations, cache locally, and keep transient state in session data tables instead of writing every change immediately
-- **Studio Tooling**: Use **Data Stores Manager** in Roblox Studio to view, edit, and delete entries directly without publishing (`Studio → View → Data Stores Manager`)
-
-### Data Persistence
-Complete implementation available in [DataManager.lua](scripts/DataManager.lua)
+Use `UpdateAsync` for anything where losing a write matters. Its callback **cannot yield** - no `task.wait()`, no other DataStore calls inside it.
 
 ```lua
--- DataStore best practices with retry logic, caching, and rate limiting awareness
 local DataStoreService = game:GetService("DataStoreService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local PlayerDataModule = {}
-local dataStore = DataStoreService:GetDataStore("PlayerData_v1")
-local sessionData = {}
-local cachedData = {}
+local store = DataStoreService:GetDataStore("PlayerData_v1")
 
-local function safeGetAsync(dataStore, key)
-    local success, result = pcall(function()
-        return dataStore:GetAsync(key)
-    end)
-    if not success then
-        warn("DataStore request failed, using cached data")
-        return cachedData[key]
-    end
-    return result
-end
+local function addCoins(userId: number, amount: number): number?
+	local ok, result = pcall(function()
+		return store:UpdateAsync(tostring(userId), function(current: { coins: number }?)
+			local data = current or { coins = 0 }
+			data.coins += amount
+			return data
+		end)
+	end)
 
-function PlayerDataModule:LoadData(player)
-    local data = safeGetAsync(dataStore, player.UserId)
-    
-    if data then
-        sessionData[player.UserId] = data
-    else
-        -- Default data structure
-        sessionData[player.UserId] = {
-            level = 1,
-            coins = 100,
-            inventory = {},
-            settings = {}
-        }
-    end
-    
-    cachedData[player.UserId] = sessionData[player.UserId]
-    return sessionData[player.UserId]
+	if not ok then
+		warn(`addCoins failed for {userId}: {result}`)
+		return nil
+	end
+
+	return result.coins
 end
 ```
 
-### DataStore2 Migration Guidance
-- **Deprecation Status**: Berezaa/DataStore2 is deprecated; prefer native `DataStoreService` for new and existing projects
-- **Why Migrate**: Per-experience quotas and the built-in Data Stores Manager reduce the need for an extra caching layer
-- **Migration Steps**:
-  - Replace `DataStore2()` calls with `DataStoreService:GetDataStore()`
-  - Manage session caching manually with tables for transient state
-  - Use `UpdateAsync` for atomic updates instead of DataStore2's `:Update()` helper
+### Limits, caching, and metadata
 
-### Remote Communication
-Complete implementation available in [RemoteManager.lua](scripts/RemoteManager.lua)
+- Requests are rate-limited per experience, not per server. Exceeding the limits throttles you, so retry with backoff and jitter instead of assuming success.
+- Cache the player's data in a session table and write on autosave and on leave, not on every change.
+- `GetAsync` can return a cached, slightly stale value. Do not build correctness on a read immediately after a write.
+- Leaderboards use `GetOrderedDataStore` with `GetSortedAsync`, not a regular store.
+- If you pass metadata to `SetAsync`, `UpdateAsync`, or `IncrementAsync`, you must always supply it. Omitting it later drops the stored value.
+- Enable **Experience Settings > Security > Enable Studio Access to API Services** to test persistence in Studio, and never leave it on for a live experience.
+- **Data Stores Manager** in Studio inspects, edits, and deletes entries without publishing. Use it to reproduce a bad save.
+
+## Networking
+
+- One `RemoteEvent` per action, named for the action. Do not route everything through a single "Event".
+- Use `RemoteFunction` only when the client genuinely needs a return value. It blocks the client and is easy to abuse; prefer a server-pushed `RemoteEvent` for state.
+- Rate-limit per player on the server, and drop rather than queue when a client spams.
+- Send the minimum state the client needs. The client is untrusted input, not a database mirror.
 
 ```lua
--- Secure remote event handling
+-- ServerScriptService/ShopService.server.lua
+-- Assumes ShopCatalog, Wallet, and Inventory modules on the server.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local remoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
-local purchaseEvent = remoteEvents:WaitForChild("PurchaseItem")
 
-purchaseEvent.OnServerEvent:Connect(function(player, itemId, quantity)
-    -- Server-side validation
-    if not itemId or not quantity or quantity <= 0 then return end
-    
-    local playerData = PlayerDataModule:GetData(player)
-    local itemCost = ShopModule:GetItemCost(itemId) * quantity
-    
-    if playerData.coins >= itemCost then
-        playerData.coins -= itemCost
-        InventoryModule:AddItem(player, itemId, quantity)
-        -- Update client
-        UpdateClientData(player)
-    end
+local purchase = ReplicatedStorage.Remotes.PurchaseItem
+local lastRequest: { [Player]: number } = {}
+
+purchase.OnServerEvent:Connect(function(player: Player, itemId: unknown, quantity: unknown)
+	if typeof(itemId) ~= "string" or typeof(quantity) ~= "number" then
+		return
+	end
+	if quantity ~= math.floor(quantity) or quantity < 1 or quantity > 99 then
+		return
+	end
+
+	local now = os.clock()
+	if now - (lastRequest[player] or 0) < 0.25 then
+		return
+	end
+	lastRequest[player] = now
+
+	-- Resolve the price on the server. Never accept a client-sent price.
+	local price = ShopCatalog.priceOf(itemId)
+	if not price then
+		return
+	end
+
+	if not Wallet.trySpend(player, price * quantity) then
+		return
+	end
+
+	Inventory.grant(player, itemId, quantity)
 end)
 ```
 
-### Performance Optimization
-Complete optimization guide available in [Performance Optimization](resources/performance_optimization.md)
+## Performance
 
-```lua
--- Efficient object pooling for projectiles
-local ProjectilePool = {}
-local activeProjectiles = {}
-local poolSize = 50
+- Profile before optimizing, using the MicroProfiler and the Script Performance view. Guesswork usually optimizes the wrong thing.
+- Pool projectiles, effects, and hitboxes: reparent into a pool and reset the CFrame instead of `Instance.new`/`Destroy` in a loop.
+- With `Workspace.StreamingEnabled`, keep gameplay-critical instances near the player and mark persistent models `ModelStreamingMode.Persistent`.
+- Disconnect every `RBXScriptConnection` created for a character or temporary object. Leaked connections are the usual cause of a session that degrades over an hour.
+- Prefer `task.wait` and `RunService` events over tight `while true do end` polling loops.
 
-function ProjectilePool:GetProjectile()
-    local projectile = table.remove(activeProjectiles) 
-    if not projectile then
-        projectile = CreateNewProjectile()
-    end
-    return projectile
-end
+## Luau
 
-function ProjectilePool:ReturnProjectile(projectile)
-    -- Reset projectile state
-    projectile.Parent = workspace.ProjectilePool
-    projectile.CFrame = CFrame.new(0, -1000, 0)
-    table.insert(activeProjectiles, projectile)
-end
-```
+- Annotate public function signatures and module exports. Let inference handle locals.
+- The New Type Solver is the default for `nonstrict` and `nocheck`. Most code compiles unchanged; add explicit annotations where inference now complains.
+- Prefer `--!strict` in new modules and `--!nonstrict` when retrofitting an existing one.
+- Use `typeof(x)` for Roblox types and `type(x)` for Luau primitives.
 
-## Specialized Areas
+## Bundled assets
 
-### Mobile Game Development
-- Touch controls and gesture recognition
-- Battery optimization and memory management
-- Cross-platform compatibility testing
+Reusable implementations and references ship with this skill. Read them before writing a replacement.
 
-### Educational Games
-- Learning objective integration
-- Progress tracking and assessment
-- Age-appropriate content and safety
+| File | Use |
+| --- | --- |
+| [scripts/DataManager.lua](scripts/DataManager.lua) | Player data with autosave and retry |
+| [scripts/RemoteManager.lua](scripts/RemoteManager.lua) | Networking with validation and rate limits |
+| [scripts/GameManager.lua](scripts/GameManager.lua) | Round and state lifecycle |
+| [scripts/UIManager.lua](scripts/UIManager.lua) | Responsive UI construction |
+| [scripts/SoundManager.lua](scripts/SoundManager.lua) | 3D audio |
+| [resources/quick_reference.md](resources/quick_reference.md) | API snippets |
+| [resources/performance_optimization.md](resources/performance_optimization.md) | Optimization techniques |
+| [resources/debugging_guide.md](resources/debugging_guide.md) | Diagnosing runtime problems |
+| [resources/game_templates.md](resources/game_templates.md) | Starting genres |
+| [resources/asset_library.md](resources/asset_library.md) | Sounds, models, textures |
+| [templates/technical_specification.md](templates/technical_specification.md) | Architecture document |
+| [templates/testing_plan.md](templates/testing_plan.md) | Test matrix |
+| [templates/README.md](templates/README.md) | Index of every document template |
+| [resources/README.md](resources/README.md) | Index of every guide and game template |
 
-### Competitive Gaming
-- Ranked systems and matchmaking
-- Spectator modes and replay systems
-- Tournament organization tools
+Authoritative API detail lives in the [Roblox documentation](https://create.roblox.com/docs). The Studio MCP `http_get` tool fetches it, so check current limits and signatures there instead of relying on memory.
 
-### Creative/Building Games
-- Advanced building tools and constraints
-- Save/load systems for user creations
-- Collaborative building features
+## Verify before reporting complete
 
-## Troubleshooting & Debugging
+1. Every remote that changes state validates on the server.
+2. Every DataStore call is wrapped in `pcall`, and failures are visible in the output.
+3. Currency and inventory changes use `UpdateAsync`.
+4. No `LocalScript` touches `DataStoreService`.
+5. Nothing leaks: connections disconnected, instances pooled or destroyed.
+6. Multiplayer features are tested with two players, including one leaving mid-action.
+7. The feature runs in Studio with API access on, and again with it off, before shipping.
 
-Comprehensive debugging resources available in [Debugging Guide](resources/debugging_guide.md)
+## Common mistakes
 
-### Common Issues
-- **Memory Leaks**: Connection cleanup and proper garbage collection
-- **Performance Bottlenecks**: Profiling tools and optimization strategies
-- **Networking Problems**: Latency handling and connection management
-- **Cross-Platform Bugs**: Device-specific testing and compatibility
+- Trusting the client's price, damage, or quantity.
+- `SetAsync` for currency, silently wiping concurrent writes.
+- Yielding inside an `UpdateAsync` callback.
+- Writing to a DataStore on every value change instead of autosaving.
+- Ignoring `pcall`'s boolean and treating a failed write as success.
+- Passing metadata sometimes and omitting it later, which erases the value.
+- Using one catch-all RemoteEvent for every action.
+- Leaving Studio API access enabled in a live experience.
+- Optimizing without profiling first.
 
-### Development Tools
-- **Roblox Studio Debugger**: Breakpoints and variable inspection
-- **Performance Profiler**: CPU and memory usage analysis
-- **Network Monitor**: Remote event tracking and bandwidth usage
-- **Data Stores Manager**: View, edit, and delete DataStore entries directly in Studio for debugging and testing (`Studio → View → Data Stores Manager`)
-- **Error Logging**: Custom logging systems for production debugging
-
-### Quick Reference
-Essential commands and snippets available in [Quick Reference](resources/quick_reference.md)
-
-## Stay Updated
-- Follow Roblox Developer Hub for platform updates
-- Participate in developer forums and community discussions
-- Experiment with new features in beta releases
-- Study successful games for design patterns and trends
-
-## Getting Started
-
-### Quick Setup
-1. **Choose a Game Template** from [Game Templates](resources/game_templates.md) to match your vision
-2. **Set up Core Systems** using the helper scripts in [scripts/](scripts/)
-3. **Plan Your Project** using the documentation templates in [templates/](templates/)
-4. **Optimize Performance** following the guides in [resources/](resources/)
-
-### Essential Helper Scripts
-- **[DataManager.lua](scripts/DataManager.lua)** - Robust player data persistence with autosave and retry logic
-- **[RemoteManager.lua](scripts/RemoteManager.lua)** - Secure networking with built-in rate limiting and validation
-- **[UIManager.lua](scripts/UIManager.lua)** - Modern UI system with animations and responsive design
-- **[GameManager.lua](scripts/GameManager.lua)** - Complete game state and lifecycle management
-- **[SoundManager.lua](scripts/SoundManager.lua)** - Professional audio system with 3D spatial support
-
-### Project Documentation
-- **[Game Design Document](templates/game_design_document.md)** - Complete project specification and vision
-- **[Technical Specification](templates/technical_specification.md)** - Detailed architecture and implementation docs
-- **[Testing Plan](templates/testing_plan.md)** - Comprehensive QA strategy and procedures
-- **[Marketing Plan](templates/marketing_plan.md)** - Strategic marketing and launch campaign planning
-
-### Development Resources
-- **[Asset Library](resources/asset_library.md)** - Curated collection of audio, visual, and model assets
-- **[Performance Optimization](resources/performance_optimization.md)** - Tools and techniques for smooth gameplay
-- **[Debugging Guide](resources/debugging_guide.md)** - Comprehensive troubleshooting and error handling
-- **[Quick Reference](resources/quick_reference.md)** - Essential commands and code snippets
-
-This skill enables comprehensive Roblox game development from concept to launch, with focus on best practices, security, and player engagement. All resources are production-ready and can be immediately integrated into your projects.
-
-Version: 2.0
-Last Updated: May 2026
+Version: 2.1
+Last Updated: November 2026
