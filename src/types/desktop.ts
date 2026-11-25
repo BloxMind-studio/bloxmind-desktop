@@ -187,7 +187,7 @@ export type UpdateInfo = typeof UpdateInfoSchema.Type;
  * isn't on this computer, `unavailable` means it started but closed before it connected.
  */
 export const StudioMcpStatusSchema = Schema.Struct({
-  state: Schema.Literal("starting", "connected", "not_installed", "unavailable"),
+  state: Schema.Literal("starting", "connected", "not_installed", "helper_missing", "unavailable"),
 });
 
 export type StudioMcpStatus = typeof StudioMcpStatusSchema.Type;

@@ -345,8 +345,8 @@ describe("Studio MCP startup (#106)", () => {
           }),
         ),
       );
-      // The window has no state for this, so it shows as unavailable; the message reaches the log.
-      expect(status).toEqual({ state: "unavailable" });
+      // Studio is there but hasn't finished setting up its helper.
+      expect(status).toEqual({ state: "helper_missing" });
       expect(onStartFailure).toHaveBeenCalledOnce();
       const message = describeError(onStartFailure.mock.calls[0]?.[0]).message ?? "";
       expect(message).toContain(
@@ -362,7 +362,7 @@ describe("Studio MCP startup (#106)", () => {
     }
   });
 
-  it("doesn't retry a missing helper, and shows it as unavailable", async () => {
+  it("doesn't retry a missing helper, and shows it as helper_missing", async () => {
     const connectUpstream = vi
       .fn<() => Promise<StudioMcpUpstream>>()
       .mockRejectedValue(
@@ -376,7 +376,7 @@ describe("Studio MCP startup (#106)", () => {
     );
 
     expect(connectUpstream).toHaveBeenCalledOnce();
-    expect(connection.status()).toEqual({ state: "unavailable" });
+    expect(connection.status()).toEqual({ state: "helper_missing" });
     expect(describeError(onFailure.mock.calls[0]?.[0]).message).toBe(
       "Failed to connect to Studio MCP at startup (cause: Roblox Studio's MCP helper (StudioMCP.exe) is missing. Open Roblox Studio once so it installs its MCP helper, or update Studio. Searched: ~\\Roblox Studio)",
     );

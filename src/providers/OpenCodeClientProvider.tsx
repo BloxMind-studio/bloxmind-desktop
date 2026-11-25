@@ -26,6 +26,8 @@ export const SSE_HEARTBEAT_TIMEOUT = 30_000; // No events for 30s → probe serv
 export const SSE_HEARTBEAT_INTERVAL = 5_000; // Check every 5s
 export const SSE_POLL_INTERVAL = 1_000; // Server health-check poll interval
 export const SSE_POLL_TIMEOUT = 3_000; // Per-poll request timeout
+/** The engine can start and then never serve; don't leave the loading screen waiting forever. */
+export const SERVER_WAIT_MS = 60_000;
 export const SIDE_PANEL_EXIT_MS = 180; // Side panel exit animation duration
 
 type AppStatus = "waiting" | "ready" | "error";
@@ -295,7 +297,13 @@ export function OpenCodeClientProvider({
 
     // Step 2: Poll the HTTP server until it responds.
     async function waitForServer(baseUrl: string, authorization: string): Promise<void> {
+      const deadline = Date.now() + SERVER_WAIT_MS;
       while (!cancelled) {
+        if (Date.now() > deadline) {
+          throw new Error(
+            `BloxMind's engine did not become healthy within ${SERVER_WAIT_MS / 1000} seconds after it started`,
+          );
+        }
         try {
           const res = await fetch(`${baseUrl}/session`, {
             headers: { Authorization: authorization },

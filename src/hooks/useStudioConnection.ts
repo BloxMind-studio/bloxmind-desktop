@@ -19,10 +19,17 @@ const inflight = new WeakMap<object, Promise<Exclude<StudioConnectionState, "che
 export type StudioConnectionState = "checking" | "connected" | "waiting";
 
 /** Why Studio's MCP helper can't be reached, when BloxMind knows. */
-export type StudioMcpProblem = Extract<StudioMcpStatus["state"], "not_installed" | "unavailable">;
+export type StudioMcpProblem = Extract<
+  StudioMcpStatus["state"],
+  "not_installed" | "helper_missing" | "unavailable"
+>;
 
 export function studioMcpProblem(status: StudioMcpStatus | undefined): StudioMcpProblem | null {
-  return status?.state === "not_installed" || status?.state === "unavailable" ? status.state : null;
+  return status?.state === "not_installed" ||
+    status?.state === "helper_missing" ||
+    status?.state === "unavailable"
+    ? status.state
+    : null;
 }
 
 export async function checkStudioConnection(

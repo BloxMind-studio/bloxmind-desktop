@@ -36,6 +36,8 @@ const STEPS = [
 const PROBLEM_COPY: Record<StudioMcpProblem, string> = {
   not_installed:
     "BloxMind can't find Roblox Studio's MCP helper. Install or update Roblox Studio, open it, turn on the MCP server in Assistant settings, then check again.",
+  helper_missing:
+    "Roblox Studio isn't ready to connect yet. Open Roblox Studio and let it finish starting, or update it, then check again.",
   unavailable:
     "Studio's MCP helper stopped right after it started. Open Roblox Studio so it can finish any update, then check again. If this keeps happening, reinstall Studio.",
 };

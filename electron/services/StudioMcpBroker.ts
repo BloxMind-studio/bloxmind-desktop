@@ -364,10 +364,9 @@ export class StudioMcpConnection implements StudioMcpUpstream {
 
 function stateForFailure(cause: unknown): StudioMcpStatus["state"] {
   const reason = classifyStudioMcpStartFailure(cause);
-  // The window only distinguishes "not installed" from everything else, so a helper that Studio
-  // set up but that has gone missing shows as unavailable (its message still reaches the log and
-  // the error report).
-  return reason === "not_installed" ? "not_installed" : "unavailable";
+  // Keep a helper Studio set up but hasn't finished starting distinct from one that stopped, so
+  // the setup screen can tell someone to open Studio rather than reinstall it.
+  return reason === "closed" ? "unavailable" : reason;
 }
 
 export interface StudioMcpStartupOptions {
