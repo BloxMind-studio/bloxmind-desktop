@@ -1,6 +1,11 @@
 import { Schema } from "effect";
 import type { BloxMindProgramManifest } from "../lib/bloxmindProgramManifest";
-import type { ExplorerProgramEnvelope, ExplorerSnapshot } from "../lib/explorer";
+import type {
+  ExplorerEdit,
+  ExplorerEditResult,
+  ExplorerProgramEnvelope,
+  ExplorerSnapshot,
+} from "../lib/explorer";
 import type { ProjectIndexProgramEnvelope, ProjectSkeleton } from "../lib/projectIndex";
 import { DEFAULT_VERIFICATION_LEVEL, VerificationLevelSchema } from "../lib/verification";
 import type {
@@ -202,6 +207,8 @@ export interface MainErrorReport {
 
 export interface DesktopApi {
   compileExplorerProgram(program: ExplorerProgramEnvelope): Promise<GeneratedProgramArtifact>;
+  /** Makes one change to an object in the open Studio place. */
+  editExplorerObject(studioId: string, edit: ExplorerEdit): Promise<ExplorerEditResult>;
   invokeExplorerProgram(
     artifact: GeneratedProgramArtifact,
     studioId: string,

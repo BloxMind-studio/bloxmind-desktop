@@ -4,7 +4,13 @@ import {
   BloxMindProgramManifestSchema,
 } from "@/lib/bloxmindProgramManifest";
 import { migrateStoredConfig } from "@/lib/configMigration";
-import { type ExplorerSnapshot, ExplorerSnapshotSchema } from "@/lib/explorer";
+import {
+  type ExplorerEdit,
+  type ExplorerEditResult,
+  ExplorerEditResultSchema,
+  type ExplorerSnapshot,
+  ExplorerSnapshotSchema,
+} from "@/lib/explorer";
 import { type ProjectSkeleton, ProjectSkeletonSchema } from "@/lib/projectIndex";
 import {
   type CaptureContext,
@@ -67,6 +73,10 @@ interface DesktopEffects {
   ) => Promise<infer Output>
     ? (input: Input) => Effect.Effect<Output, DesktopError>
     : never;
+  readonly editExplorerObject: (
+    studioId: string,
+    edit: ExplorerEdit,
+  ) => Effect.Effect<ExplorerEditResult, DesktopError>;
   readonly invokeExplorerProgram: (
     artifact: GeneratedProgramArtifact,
     studioId: string,
@@ -163,6 +173,10 @@ const loadBrowserConfig = Effect.gen(function* () {
 const browserEffects: DesktopEffects = {
   compileExplorerProgram: () =>
     Effect.fail(new DesktopError({ message: "Explorer requires the desktop app." })),
+  editExplorerObject: () =>
+    Effect.fail(
+      new DesktopError({ message: "Editing Explorer objects requires the desktop app." }),
+    ),
   compileProjectIndexProgram: () =>
     Effect.fail(new DesktopError({ message: "Project index requires the desktop app." })),
   getOpenCodeInfo: Effect.fail(
@@ -281,6 +295,10 @@ function makeBridgeEffects(api: DesktopApi): DesktopEffects {
     compileExplorerProgram: (program) =>
       invoke("Failed to compile Explorer program", () => api.compileExplorerProgram(program)).pipe(
         decodeBridgeValue("Explorer program artifact is invalid", GeneratedProgramArtifactSchema),
+      ),
+    editExplorerObject: (studioId, edit) =>
+      invoke("Failed to change the object", () => api.editExplorerObject(studioId, edit)).pipe(
+        decodeBridgeValue("Studio's answer is invalid", ExplorerEditResultSchema),
       ),
     compileProjectIndexProgram: (program) =>
       invoke("Failed to compile project index program", () =>
@@ -402,6 +420,8 @@ const runPromise = <A>(effect: Effect.Effect<A, DesktopError>): Promise<A> =>
 /** Promise-only adapter consumed by React and exposed by the Electron bridge contract. */
 export const desktop: DesktopApi = {
   compileExplorerProgram: (program) => runPromise(desktopEffects.compileExplorerProgram(program)),
+  editExplorerObject: (studioId, edit) =>
+    runPromise(desktopEffects.editExplorerObject(studioId, edit)),
   compileProjectIndexProgram: (program) =>
     runPromise(desktopEffects.compileProjectIndexProgram(program)),
   getOpenCodeInfo: () => runPromise(desktopEffects.getOpenCodeInfo),

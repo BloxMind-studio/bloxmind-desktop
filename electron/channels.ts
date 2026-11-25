@@ -1,5 +1,6 @@
 export const channels = {
   compileExplorerProgram: "explorer:compile-program",
+  editExplorerObject: "explorer:edit-object",
   checkForUpdate: "app:check-for-update",
   getOpenCodeInfo: "opencode:get-info",
   getOpenCodeInstallFolder: "opencode:get-install-folder",

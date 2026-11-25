@@ -13,6 +13,8 @@ import { channels } from "./channels";
 const api: DesktopApi = {
   compileExplorerProgram: (program) =>
     ipcRenderer.invoke(channels.compileExplorerProgram, program),
+  editExplorerObject: (studioId, edit) =>
+    ipcRenderer.invoke(channels.editExplorerObject, studioId, edit),
   compileProjectIndexProgram: (program) =>
     ipcRenderer.invoke(channels.compileProjectIndexProgram, program),
   getOpenCodeInfo: () => ipcRenderer.invoke(channels.getOpenCodeInfo),

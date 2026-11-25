@@ -164,6 +164,66 @@ export const ExplorerSnapshotSchema = Schema.Struct({
 
 export type ExplorerSnapshot = typeof ExplorerSnapshotSchema.Type;
 
+export const ATTRIBUTE_TYPES = [
+  "string",
+  "boolean",
+  "number",
+  "Vector3",
+  "Vector2",
+  "Color3",
+  "BrickColor",
+  "CFrame",
+  "UDim",
+  "UDim2",
+  "NumberRange",
+  "Rect",
+  "NumberSequence",
+  "ColorSequence",
+] as const;
+export type AttributeType = (typeof ATTRIBUTE_TYPES)[number];
+
+const ObjectNameSchema = Schema.String.pipe(Schema.minLength(1), Schema.maxLength(100));
+const FieldNameSchema = Schema.String.pipe(Schema.minLength(1), Schema.maxLength(256));
+const EditedObjectFields = {
+  occurrence: Schema.optional(Schema.Number),
+  occurrences: Schema.optional(Schema.Number),
+  path: Schema.String.pipe(Schema.minLength(1), Schema.maxLength(65_536)),
+  className: Schema.String.pipe(Schema.minLength(1), Schema.maxLength(256)),
+};
+
+/** One read-only-in-Snapshot change someone asks BloxMind to make in Studio. */
+export const ExplorerEditSchema = Schema.Union(
+  Schema.Struct({
+    action: Schema.Literal("rename"),
+    name: ObjectNameSchema,
+    ...EditedObjectFields,
+  }),
+  Schema.Struct({ action: Schema.Literal("duplicate", "delete"), ...EditedObjectFields }),
+  Schema.Struct({
+    action: Schema.Literal("setField"),
+    kind: Schema.Literal("property", "attribute"),
+    field: FieldNameSchema,
+    value: Schema.String.pipe(Schema.maxLength(200_000)),
+    valueType: Schema.String.pipe(Schema.maxLength(64)),
+    ...EditedObjectFields,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("addAttribute"),
+    field: FieldNameSchema,
+    valueType: Schema.Literal(...ATTRIBUTE_TYPES),
+    ...EditedObjectFields,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("removeAttribute", "addTag", "removeTag"),
+    field: FieldNameSchema,
+    ...EditedObjectFields,
+  }),
+);
+export type ExplorerEdit = typeof ExplorerEditSchema.Type;
+
+export const ExplorerEditResultSchema = Schema.Struct({ name: Schema.String });
+export type ExplorerEditResult = typeof ExplorerEditResultSchema.Type;
+
 export const EXPLORER_CONTRACT = {
   name: "explorer-snapshot",
   version: "1",

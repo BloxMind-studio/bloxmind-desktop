@@ -79,14 +79,20 @@ async function run({ input, callTool }: { input: { studioId: string }; callTool:
     String(text)
       .split(/[\s,;{}()]+/)
       .filter(Boolean);
-  const infer = (text: string): any => ({
-    value: text,
-    ...(/^Enum\.\w+\.\w+$/.test(text) ? { type: "EnumItem" } : {}),
-    ...(/-?\d+(?:\.\d+)?(?:e[-+]?\d+)?/i.test(text) ? { numeric: true } : {}),
-  });
-  const fieldValue = (value: any): any => {
+  const infer = (text: string, name = ""): any => {
+    const numbers = numbersIn(text);
+    return {
+      value: text,
+      ...(/^Enum\.\w+\.\w+$/.test(text) ? { type: "EnumItem" } : {}),
+      ...(/^Content[<(]/.test(text) ? { type: "Content" } : {}),
+      ...(/brickcolor/i.test(name) ? { type: "BrickColor" } : {}),
+      ...(/color/i.test(name) && numbers.length === 3 ? { type: "Color3" } : {}),
+      ...(/-?\d+(?:\.\d+)?(?:e[-+]?\d+)?/i.test(text) ? { numeric: true } : {}),
+    };
+  };
+  const fieldValue = (value: any, name = ""): any => {
     if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-      return infer(String(value));
+      return infer(String(value), name);
     }
     if (value && typeof value === "object") {
       if (typeof value.Position === "string" && typeof value.Rotation === "string") {
@@ -96,16 +102,16 @@ async function run({ input, callTool }: { input: { studioId: string }; callTool:
           numeric: true,
         };
       }
-      if (Array.isArray(value)) return infer(value.map((item) => String(item)).join(", "));
-      return infer(JSON.stringify(value));
+      if (Array.isArray(value)) return infer(value.map((item) => String(item)).join(", "), name);
+      return infer(JSON.stringify(value), name);
     }
-    return infer("");
+    return infer("", name);
   };
   const fieldsOf = (values: any, limit: number): any[] => {
     if (!values || typeof values !== "object" || Array.isArray(values)) return [];
     return Object.entries(values)
       .filter(([name]) => name !== "UniqueId")
-      .map(([name, raw]) => ({ name, ...fieldValue(raw) }))
+      .map(([name, raw]) => ({ name, ...fieldValue(raw, String(name)) }))
       .sort((a, b) => String(a.name).localeCompare(String(b.name)))
       .slice(0, limit);
   };

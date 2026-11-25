@@ -37,6 +37,7 @@ import {
   ExplorerModelError,
   type ExplorerNode,
   type ExplorerProgramEnvelope,
+  fieldNumbers,
   formatFieldValue,
   generateExplorerProgram,
   sortExplorerSnapshot,
@@ -776,7 +777,15 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
       </div>
 
       {selected ? (
-        <Inspector node={selected} onReference={handleReference} />
+        <Inspector
+          node={selected}
+          studioId={studioTarget?.selected?.key ?? null}
+          onReference={handleReference}
+          onChanged={() => {
+            resyncRequestedRef.current = true;
+            syncLatestRef.current();
+          }}
+        />
       ) : (
         <div className="shrink-0 border-t px-3 py-2 text-[9px] text-muted-foreground">
           Select an object to inspect and reference it.
@@ -786,7 +795,127 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
   );
 }
 
-function Inspector({ node, onReference }: { node: ExplorerNode; onReference: () => void }) {
+/** The type a value has to be converted back into before Studio accepts an edit. */
+function valueTypeFor(field: ExplorerField): string {
+  if (field.type) return field.type;
+  const value = field.value.trim();
+  if (value === "true" || value === "false") return "boolean";
+  const numbers = fieldNumbers(value);
+  if (
+    numbers.length > 0 &&
+    numbers.every((part) => /^-?\d+(?:\.\d+)?(?:e[-+]?\d+)?$/i.test(part))
+  ) {
+    if (numbers.length === 1) return "number";
+    if (numbers.length === 2) return "Vector2";
+    if (numbers.length === 3) return "Vector3";
+    if (numbers.length === 6) return "CFrame";
+  }
+  return "string";
+}
+
+function EditableFieldRow({
+  field,
+  kind,
+  node,
+  studioId,
+  editable,
+  onChanged,
+}: {
+  field: ExplorerField;
+  kind: "property" | "attribute";
+  node: ExplorerNode;
+  studioId: string | null;
+  editable: boolean;
+  onChanged: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(field.value);
+  const [busy, setBusy] = useState(false);
+  const committingRef = useRef(false);
+
+  async function commit() {
+    if (committingRef.current) return;
+    if (!studioId || draft === field.value) {
+      setEditing(false);
+      return;
+    }
+    committingRef.current = true;
+    setBusy(true);
+    try {
+      await desktop.editExplorerObject(studioId, {
+        action: "setField",
+        kind,
+        field: field.name,
+        value: draft,
+        valueType: valueTypeFor(field),
+        path: node.path,
+        className: node.className,
+      });
+      toast.success(`${field.name} changed`);
+      setEditing(false);
+      onChanged();
+    } catch (error) {
+      toast.error("Couldn't change that value", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      committingRef.current = false;
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] gap-2 text-[10px]">
+      <dt className="truncate text-muted-foreground" title={field.name}>
+        {field.name}
+      </dt>
+      <dd className="min-w-0 break-words font-mono text-foreground" title={field.value}>
+        {editing ? (
+          <input
+            autoFocus
+            value={draft}
+            disabled={busy}
+            onChange={(event) => setDraft(event.target.value)}
+            onBlur={() => void commit()}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") void commit();
+              if (event.key === "Escape") {
+                setDraft(field.value);
+                setEditing(false);
+              }
+            }}
+            className="w-full rounded border bg-background px-1 py-0.5 font-mono text-[10px] text-foreground outline-none focus:ring-1 focus:ring-ring"
+          />
+        ) : (
+          <button
+            type="button"
+            disabled={!editable}
+            title={editable ? `${field.value} — click to change` : field.value}
+            onClick={() => {
+              setDraft(field.value);
+              setEditing(true);
+            }}
+            className="w-full break-words text-left disabled:cursor-default enabled:hover:text-blue-600 enabled:dark:hover:text-blue-400"
+          >
+            {formatFieldValue(field)}
+          </button>
+        )}
+      </dd>
+    </div>
+  );
+}
+
+function Inspector({
+  node,
+  studioId,
+  onReference,
+  onChanged,
+}: {
+  node: ExplorerNode;
+  studioId: string | null;
+  onReference: () => void;
+  onChanged: () => void;
+}) {
   const InstanceIcon = iconForClass(node.className);
   return (
     <div className="max-h-[42%] shrink-0 overflow-y-auto border-t bg-card/60">
@@ -810,16 +939,41 @@ function Inspector({ node, onReference }: { node: ExplorerNode; onReference: () 
       </div>
       <FieldSection
         title="Properties"
+        kind="property"
+        node={node}
+        studioId={studioId}
+        onChanged={onChanged}
         fields={[{ name: "ClassName", value: node.className }, ...node.properties]}
       />
       {node.attributes.length > 0 ? (
-        <FieldSection title="Attributes" fields={node.attributes} />
+        <FieldSection
+          title="Attributes"
+          kind="attribute"
+          node={node}
+          studioId={studioId}
+          onChanged={onChanged}
+          fields={node.attributes}
+        />
       ) : null}
     </div>
   );
 }
 
-function FieldSection({ title, fields }: { title: string; fields: readonly ExplorerField[] }) {
+function FieldSection({
+  title,
+  kind,
+  node,
+  studioId,
+  fields,
+  onChanged,
+}: {
+  title: string;
+  kind: "property" | "attribute";
+  node: ExplorerNode;
+  studioId: string | null;
+  fields: readonly ExplorerField[];
+  onChanged: () => void;
+}) {
   return (
     <section className="border-b px-3 py-2 last:border-b-0">
       <h4 className="mb-1.5 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -827,17 +981,15 @@ function FieldSection({ title, fields }: { title: string; fields: readonly Explo
       </h4>
       <dl className="space-y-1">
         {fields.map((field) => (
-          <div
+          <EditableFieldRow
             key={`${field.name}-${field.value}`}
-            className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] gap-2 text-[10px]"
-          >
-            <dt className="truncate text-muted-foreground" title={field.name}>
-              {field.name}
-            </dt>
-            <dd className="break-words font-mono text-foreground" title={field.value}>
-              {formatFieldValue(field)}
-            </dd>
-          </div>
+            field={field}
+            kind={kind}
+            node={node}
+            studioId={studioId}
+            editable={!!studioId && (kind === "attribute" || field.name !== "ClassName")}
+            onChanged={onChanged}
+          />
         ))}
       </dl>
     </section>

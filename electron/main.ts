@@ -27,7 +27,12 @@ import {
   type OpenCodeStartupProgress,
 } from "../src/types/desktop";
 import { migrateStoredConfig } from "../src/lib/configMigration";
-import { ExplorerProgramEnvelopeSchema, ExplorerSnapshotSchema } from "../src/lib/explorer";
+import {
+  ExplorerEditResultSchema,
+  ExplorerEditSchema,
+  ExplorerProgramEnvelopeSchema,
+  ExplorerSnapshotSchema,
+} from "../src/lib/explorer";
 import { ProjectIndexProgramEnvelopeSchema, ProjectSkeletonSchema } from "../src/lib/projectIndex";
 import { GeneratedProgramArtifactSchema } from "../src/types/generatedProgram";
 import {
@@ -64,7 +69,7 @@ import {
 } from "./instructionFiles";
 import { BLENDER_MCP_SERVER_NAME, skillDirectories, withBlender } from "./opencodeConfig";
 import type { McpServerConfig } from "../src/lib/mcpServers";
-import type { CallStudioTool } from "./studioQueries";
+import { editExplorerObject, type CallStudioTool } from "./studioQueries";
 import { channels } from "./channels";
 import { makeOpenCodeLayer, OpenCode } from "./services/OpenCode";
 import {
@@ -474,6 +479,36 @@ const registerIpcHandlers = Effect.sync(() => {
         const program = yield* Schema.decodeUnknown(ExplorerProgramEnvelopeSchema)(input);
         const runtime = yield* GeneratedProgramRuntime;
         return yield* runtime.compile(program);
+      }),
+    ),
+  );
+  safeIpcHandle(channels.editExplorerObject, (_event, studioId: unknown, input: unknown) =>
+    openCodeRuntime.runPromise(
+      Effect.gen(function* () {
+        const studio = yield* Schema.decodeUnknown(StudioKeySchema)(studioId).pipe(
+          Effect.mapError(
+            (cause) => new DesktopMainError({ message: "A Studio target is required", cause }),
+          ),
+        );
+        const edit = yield* Schema.decodeUnknown(ExplorerEditSchema)(input).pipe(
+          Effect.mapError(
+            (cause) => new DesktopMainError({ message: "Invalid Explorer edit", cause }),
+          ),
+        );
+        const result = yield* Effect.tryPromise({
+          try: () => queryStudio((callTool) => editExplorerObject(callTool, studio, edit)),
+          catch: (cause) =>
+            new DesktopMainError({
+              message: cause instanceof Error ? cause.message : "Studio couldn't make that change",
+              cause,
+            }),
+        });
+        return yield* Schema.decodeUnknown(ExplorerEditResultSchema)(result).pipe(
+          Effect.mapError(
+            (cause) =>
+              new DesktopMainError({ message: "Studio returned an unreadable answer", cause }),
+          ),
+        );
       }),
     ),
   );
