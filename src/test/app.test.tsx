@@ -1063,7 +1063,7 @@ describe("User journeys", () => {
     });
   });
 
-  it("shows OpenCode's structured free-tier action while waiting to retry", async () => {
+  it("does not show a free-tier popup while waiting to retry", async () => {
     const session = makeSession("s1", "Quota Session");
     const client = createClient({
       get: vi.fn().mockResolvedValue({ data: session }),
@@ -1119,20 +1119,9 @@ describe("User journeys", () => {
       );
     });
 
-    expect(await screen.findByRole("dialog")).toHaveTextContent("Free limit reached");
-    expect(screen.getByRole("dialog")).toHaveTextContent("Subscribe to OpenCode Go");
-    expect(screen.getByRole("link", { name: "Subscribe" })).toHaveAttribute(
-      "href",
-      "https://opencode.ai/go",
-    );
-    expect(screen.getByRole("button", { name: "Don't show again" })).toBeInTheDocument();
-    expect(screen.queryByText("Working")).not.toBeInTheDocument();
-    expect(screen.getByText("Waiting to retry")).toBeInTheDocument();
-    expect(screen.queryByText("Thinking...")).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Don't show again" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(window.localStorage.getItem("BloxMind:usage-limit:free-tier:hidden")).toBe("true");
+    expect(screen.queryByText("Free limit reached")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Don't show again" })).not.toBeInTheDocument();
   });
 
   it("hides the thinking indicator when a stopped session goes idle", async () => {

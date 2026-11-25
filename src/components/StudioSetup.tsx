@@ -49,9 +49,18 @@ interface StudioSetupProps {
   problem?: StudioMcpProblem | null;
   onCheck: () => void;
   onContinue: () => void;
+  /** Studio is optional, so someone can get on with work that doesn't need it. */
+  onSkip?: () => void;
 }
 
-function StudioSetup({ connected, checking, problem, onCheck, onContinue }: StudioSetupProps) {
+function StudioSetup({
+  connected,
+  checking,
+  problem,
+  onCheck,
+  onContinue,
+  onSkip,
+}: StudioSetupProps) {
   const [stepIndex, setStepIndex] = useState(0);
   const step = STEPS[stepIndex];
 
@@ -93,16 +102,27 @@ function StudioSetup({ connected, checking, problem, onCheck, onContinue }: Stud
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-6 py-5">
       <section className="animate-fade-in-up w-full max-w-2xl" aria-labelledby="studio-setup-title">
-        <header className="flex items-center gap-4">
-          <BloxMindFace />
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-              One tiny setup
-            </p>
-            <h1 id="studio-setup-title" className="font-serif text-2xl italic">
-              Let&apos;s connect Studio
-            </h1>
+        <header className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <BloxMindFace />
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                One tiny setup
+              </p>
+              <h1 id="studio-setup-title" className="font-serif text-2xl italic">
+                Let&apos;s connect Studio
+              </h1>
+            </div>
           </div>
+          {onSkip ? (
+            <button
+              type="button"
+              onClick={onSkip}
+              className="h-9 shrink-0 rounded-lg border px-4 text-xs font-medium transition-colors hover:bg-muted"
+            >
+              Skip for now
+            </button>
+          ) : null}
         </header>
 
         <div className="mt-4 overflow-hidden rounded-2xl border bg-card shadow-sm">

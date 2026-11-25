@@ -7,8 +7,6 @@ export function releaseAssetNames(version: string): string[] {
   return [
     `BloxMind-${version}-mac-arm64.dmg`,
     `BloxMind-${version}-mac-arm64.zip`,
-    `BloxMind-${version}-mac-x64.dmg`,
-    `BloxMind-${version}-mac-x64.zip`,
     `BloxMind-Setup-${version}.exe`,
     `BloxMind-${version}-linux-amd64.deb`,
     "latest-mac.yml",
@@ -33,14 +31,13 @@ export function changelogSection(changelog: string, version: string): string {
 export function releaseNotes(changelog: string, version: string, notice?: string): string {
   const tag = `v${version}`;
   const download = `${REPOSITORY_URL}/releases/download/${tag}`;
-  const [arm64Dmg, , x64Dmg, , exe, deb] = releaseAssetNames(version);
+  const [arm64Dmg, , exe, deb] = releaseAssetNames(version);
   const trimmedNotice = notice?.trim();
   return [
     "## Download BloxMind",
     "",
     ...(trimmedNotice ? [trimmedNotice, ""] : []),
     `- [macOS Apple Silicon (.dmg)](${download}/${arm64Dmg})`,
-    `- [macOS Intel (.dmg)](${download}/${x64Dmg})`,
     `- [Windows (.exe)](${download}/${exe})`,
     `- [Debian / Ubuntu (.deb)](${download}/${deb})`,
     "",

@@ -20,6 +20,7 @@ import { isSessionWorking, useSessionStatus } from "@/hooks/useSessionStatuses";
 import { useSessions } from "@/hooks/useSessions";
 import { useStudioConnection } from "@/hooks/useStudioConnection";
 import { analyticsProperties, POSTHOG_PROJECT_TOKEN } from "@/lib/analytics";
+import { desktop } from "@/lib/desktop";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { SIDE_PANEL_EXIT_MS, useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
@@ -160,8 +161,62 @@ function Chat() {
   const [sidePanelExiting, setSidePanelExiting] = useState(false);
   const sidePanelTimerRef = useRef<number | null>(null);
 
+  // When the place closes, the Explorer disappears with focus inside it. Say so.
+  const previousPanelRef = useRef(renderedSidePanel);
+  const [panelNote, setPanelNote] = useState("");
+  useEffect(() => {
+    const previous = previousPanelRef.current;
+    previousPanelRef.current = renderedSidePanel;
+    if (hasStudioTarget) {
+      setPanelNote("");
+      return;
+    }
+    if (previous === "explorer" && renderedSidePanel === null) setPanelNote("Explorer closed.");
+  }, [renderedSidePanel, hasStudioTarget]);
+
+  // Finishing setup is a decision to start, so it shouldn't need a second click.
+  const [setupSkipped, setSetupSkipped] = useState<boolean | null>(null);
+  const everConnectedRef = useRef(false);
+  if (studioConnection.state === "connected") everConnectedRef.current = true;
+  const needsSetup =
+    studioConnection.state === "waiting" && setupSkipped !== true && !everConnectedRef.current;
+
+  useEffect(() => {
+    void desktop.loadConfig().then(
+      (config) => setSetupSkipped(config.studioSetupSkipped === true),
+      () => setSetupSkipped(false),
+    );
+  }, []);
+
+  const startFirstChat = useCallback(() => {
+    if (!activeSessionId) createSession.mutate();
+  }, [activeSessionId, createSession]);
+
+  const finishSetup = useCallback(() => {
+    setShowStudioSetup(false);
+    startFirstChat();
+  }, [startFirstChat]);
+
+  const skipSetup = useCallback(() => {
+    setSetupSkipped(true);
+    void desktop.patchConfig({ studioSetupSkipped: true });
+    setShowStudioSetup(false);
+    startFirstChat();
+    document.querySelector<HTMLElement>('[aria-label="Message"]')?.focus();
+  }, [startFirstChat]);
+
+  // Picking a Studio after skipping means the guidance is welcome again.
+  const studioChoices = studioTarget?.studioChoices ?? 0;
+  useEffect(() => {
+    if (studioChoices === 0) return;
+    setSetupSkipped((skipped) => {
+      if (skipped) void desktop.patchConfig({ studioSetupSkipped: false });
+      return false;
+    });
+  }, [studioChoices]);
+
   const appScreen =
-    showStudioSetup || studioConnection.state === "waiting"
+    showStudioSetup || needsSetup
       ? "studio-setup"
       : studioConnection.state === "checking"
         ? "studio-checking"
@@ -230,8 +285,8 @@ function Chat() {
   }, [activeSessionId]);
 
   useEffect(() => {
-    if (studioConnection.state === "waiting") setShowStudioSetup(true);
-  }, [studioConnection.state]);
+    if (studioConnection.state === "waiting" && setupSkipped !== true) setShowStudioSetup(true);
+  }, [setupSkipped, studioConnection.state]);
 
   useEffect(() => {
     if (
@@ -307,13 +362,14 @@ function Chat() {
       />
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        {showStudioSetup || studioConnection.state === "waiting" ? (
+        {showStudioSetup || needsSetup ? (
           <StudioSetup
             connected={studioConnection.state === "connected"}
             checking={studioConnection.checking}
             problem={studioConnection.problem}
             onCheck={() => studioConnection.checkAgain()}
-            onContinue={() => setShowStudioSetup(false)}
+            onContinue={finishSetup}
+            onSkip={skipSetup}
           />
         ) : studioConnection.state === "checking" ? (
           <LoadingScreen message="Finding Roblox Studio" animation="dots" />
@@ -415,6 +471,7 @@ function Chat() {
               quiet={studioUse?.started === true}
               onOpenSetup={() => setShowStudioSetup(true)}
               onOpenPicker={() => setPickerRequest((request) => request + 1)}
+              onWorkedWithoutStudio={skipSetup}
             />
             <ChatInput />
           </>
@@ -425,6 +482,7 @@ function Chat() {
             {initError}
           </div>
         )}
+        <output className="sr-only">{panelNote}</output>
       </div>
       {renderedSidePanel && activeSessionId && !showSettings && !showStudioSetup ? (
         <div

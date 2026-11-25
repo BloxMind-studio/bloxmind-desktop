@@ -101,6 +101,16 @@ export function createOpenCodeConfig(
     // skill actually ships, so OpenCode never scans a missing directory.
     ...(skillsPaths.length > 0 ? { skills: [...skillsPaths] } : {}),
     mcp: { servers },
+    // Roblox holds the account owner responsible for account-wide actions, so the
+    // agent must ask before these Studio tools do anything.
+    permissions: ["upload_image", "open_cloud_invoke"].flatMap((tool) => [
+      { action: `${STUDIO_MCP_SERVER_NAME}_${tool}`, resource: "*", effect: "ask" },
+      {
+        action: `${STUDIO_MCP_SERVER_NAME.replaceAll("-", "_")}_${tool}`,
+        resource: "*",
+        effect: "ask",
+      },
+    ]),
     default_agent: "studio",
     agents: {
       studio: {
@@ -108,7 +118,7 @@ export function createOpenCodeConfig(
         description: "Roblox Studio development assistant",
         // OpenCode loads project AGENTS.md separately; keep this Studio-specific and compact.
         prompt:
-          "BloxMind is a standalone AI workspace: it works directly against Roblox Studio through the Studio MCP bridge. There is no Rojo, no default.project.json, and no local filesystem-to-Studio syncing — never look for, assume, or mention them; inspect and write only through the Studio MCP tools. Inspect before editing; never guess what MCP can read. Discover Studios when needed, choose by Studio ID and Place ID, and pass studio_id on every Studio-specific tool call; never call set_active_studio. Make the smallest coherent change, preserve Luau conventions, verify only as much as the user's verification level asks, and report briefly. When you create or extend a map, load the roblox-world-boundaries skill and follow it: give the world a themed sky, a distant backdrop, and a sealed perimeter with out-of-bounds handling, so the map never ends in visible empty space. If Studio is unavailable, give one reconnect instruction, then stop retrying.",
+          "BloxMind is a standalone AI workspace: it works directly against Roblox Studio through the Studio MCP bridge. There is no Rojo, no default.project.json, and no local filesystem-to-Studio syncing — never look for, assume, or mention them; inspect and write only through the Studio MCP tools. Inspect before editing; never guess what MCP can read. Discover Studios when needed, choose by Studio ID and Place ID, and pass studio_id on every Studio-specific tool call; never call set_active_studio. Make the smallest coherent change, preserve Luau conventions, verify only as much as the user's verification level asks, and report briefly. When you make files someone may want to open, link them with a file:// URL. When you create or extend a map, load the roblox-world-boundaries skill and follow it: give the world a themed sky, a distant backdrop, and a sealed perimeter with out-of-bounds handling, so the map never ends in visible empty space. If Studio is unavailable, give one reconnect instruction, then stop retrying.",
       },
     },
   };

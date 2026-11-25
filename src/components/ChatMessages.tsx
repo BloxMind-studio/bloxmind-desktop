@@ -14,7 +14,7 @@ import {
   useRef,
   useState,
 } from "react";
-import Markdown, { type Components } from "react-markdown";
+import Markdown, { type Components, defaultUrlTransform, type UrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
 import { ModelCard } from "@/components/ModelCard";
@@ -106,13 +106,18 @@ import { isSessionWorking, useSessionStatus } from "@/hooks/useSessionStatuses";
 import { useTodos } from "@/hooks/useTodos";
 import { notifyResponseReady } from "@/lib/desktopNotifications";
 import { type ModelChoice, pickFreeModel } from "@/lib/modelChoice";
-import { type ModelError, type ModelErrorPresentation, presentModelError } from "@/lib/modelError";
+import {
+  freeLimitEndsAt,
+  isFreeUsageLimit,
+  type ModelError,
+  type ModelErrorPresentation,
+  presentModelError,
+} from "@/lib/modelError";
 import { modelLinksIn } from "@/lib/modelLinks";
 import { qk } from "@/lib/queryKeys";
 import { playResponseReady } from "@/lib/soundEffects";
 import type { MessagesCache } from "@/lib/sseDispatch";
 import { baseToolName } from "@/lib/toolName";
-import { getOpenCodeUsageAction, type OpenCodeUsageAction } from "@/lib/usageLimit";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
 import type { Checkpoint } from "@/types/checkpoints";
@@ -464,6 +469,31 @@ const DiffBlock = memo(function DiffBlock({ oldStr, newStr }: { oldStr: string; 
     ...newLines.map((line) => `+${line}`),
   ].join("\n");
   return <InlineDisclosure text={diffText} tone="output" previewLines={3} language="diff" />;
+});
+
+/** GPT models edit through a patch that can touch several files. */
+const PatchToolView = memo(function PatchToolView({
+  input,
+  status,
+}: {
+  input: Record<string, unknown>;
+  status: string;
+}) {
+  const patch = inputField(input, "patchText");
+  const files = [...patch.matchAll(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm)].map(
+    (match) => match[1]?.split("/").slice(-2).join("/") ?? "",
+  );
+  return (
+    <div>
+      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+        <span>{status === "completed" ? "Edited" : "Editing"}</span>
+        {files.length > 0 ? <span className="font-mono">{files.join(", ")}</span> : null}
+      </div>
+      {patch ? (
+        <InlineDisclosure text={patch} tone="output" previewLines={3} language="diff" />
+      ) : null}
+    </div>
+  );
 });
 
 const EditToolView = memo(function EditToolView({
@@ -831,6 +861,10 @@ function MarkdownCode({ className, children }: ComponentProps<"code">) {
   );
 }
 
+/** So a reply can point at a file it made. Only links, since a picture would load it. */
+const keepFileLinks: UrlTransform = (url, key) =>
+  key === "href" && url.startsWith("file:") ? url : defaultUrlTransform(url);
+
 const markdownComponents: Components = {
   p({ children }) {
     return <p className="mb-2 last:mb-0">{children}</p>;
@@ -936,7 +970,12 @@ const MessageText = memo(function MessageText({ text }: { text: string }) {
         {part.label}
       </span>
     ) : (
-      <Markdown key={index} remarkPlugins={REMARK_PLUGINS} components={markdownComponents}>
+      <Markdown
+        key={index}
+        remarkPlugins={REMARK_PLUGINS}
+        components={markdownComponents}
+        urlTransform={keepFileLinks}
+      >
         {part.value}
       </Markdown>
     ),
@@ -1063,6 +1102,8 @@ const ToolPartView = memo(function ToolPartView({
         return <BashToolView input={input} output={output} status={status} />;
       case "edit":
         return <EditToolView input={input} output={output} status={status} />;
+      case "patch":
+        return <PatchToolView input={input} status={status} />;
       case "read":
         return <ReadToolView input={input} status={status} />;
       case "write":
@@ -1100,85 +1141,6 @@ const ToolPartView = memo(function ToolPartView({
 
 const StepPartView = memo(function StepPartView() {
   return <div className="h-6" aria-hidden="true" />;
-});
-
-const StepFinishPartView = memo(function StepFinishPartView({
-  part,
-}: {
-  part: Extract<Part, { type: "step-finish" }>;
-}) {
-  const { tokens, cost } = part;
-  return (
-    <div className="my-1 flex flex-wrap items-center gap-1.5">
-      {cost > 0 && (
-        <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[9px] font-medium tabular-nums text-muted-foreground">
-          <svg
-            width="8"
-            height="8"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="text-emerald-500"
-          >
-            <line x1="12" y1="1" x2="12" y2="23" />
-            <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-          </svg>
-          {cost.toFixed(4)}
-        </span>
-      )}
-      <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2 py-0.5 text-[9px] font-medium tabular-nums text-blue-600 dark:text-blue-400">
-        <svg
-          width="8"
-          height="8"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <polyline points="9 18 15 12 9 6" />
-        </svg>
-        {tokens.input.toLocaleString()} in
-      </span>
-      <span className="inline-flex items-center gap-1 rounded-full bg-purple-500/10 px-2 py-0.5 text-[9px] font-medium tabular-nums text-purple-600 dark:text-purple-400">
-        <svg
-          width="8"
-          height="8"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <polyline points="15 18 9 12 15 6" />
-        </svg>
-        {tokens.output.toLocaleString()} out
-      </span>
-      {tokens.cache.read > 0 && (
-        <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[9px] font-medium tabular-nums text-amber-600 dark:text-amber-400">
-          <svg
-            width="8"
-            height="8"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
-            <path d="M21 3v5h-5" />
-          </svg>
-          {tokens.cache.read.toLocaleString()} cached
-        </span>
-      )}
-    </div>
-  );
 });
 
 const RetryPartView = memo(function RetryPartView({
@@ -1342,15 +1304,32 @@ function ModelSwitchCard({
 
 const ModelErrorCard = memo(function ModelErrorCard({
   error,
+  hitAt,
   model,
   isLatest = true,
 }: {
   error: ModelError;
+  /** When the error happened, so a free limit that has since lifted goes quiet. */
+  hitAt?: number;
   /** The model that failed, as "provider/model", when the error came on its reply. */
   model?: string;
   isLatest?: boolean;
 }) {
-  const presentation = presentModelError(error);
+  const isLimit = isFreeUsageLimit(error);
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    if (!isLimit) return;
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, [isLimit]);
+  const presentation = presentModelError(error, hitAt, now);
+
+  if (presentation.kind === "usage") {
+    const limitOver = hitAt !== undefined && now >= freeLimitEndsAt(error, hitAt);
+    if (limitOver || !isLatest) {
+      return <p className="my-1 text-xs text-muted-foreground">You reached the free limit here.</p>;
+    }
+  }
 
   if (presentation.kind === "region" || presentation.kind === "unavailable") {
     return <ModelSwitchCard presentation={presentation} model={model} isLatest={isLatest} />;
@@ -1392,113 +1371,6 @@ const ModelErrorCard = memo(function ModelErrorCard({
         </div>
       </div>
     </div>
-  );
-});
-
-const USAGE_LIMIT_WINDOW = 24 * 60 * 60 * 1000;
-
-function usageLimitStorageKeys(action: OpenCodeUsageAction) {
-  const suffix = action.reason === "free_tier_limit" ? "free-tier" : "account-rate-limit";
-  return {
-    seen: `BloxMind:usage-limit:${suffix}:seen`,
-    hidden: `BloxMind:usage-limit:${suffix}:hidden`,
-  };
-}
-
-function shouldShowUsageLimitDialog(action: OpenCodeUsageAction): boolean {
-  const keys = usageLimitStorageKeys(action);
-  if (window.localStorage.getItem(keys.hidden) === "true") return false;
-  const seen = Number(window.localStorage.getItem(keys.seen));
-  return !Number.isFinite(seen) || seen === 0 || Date.now() - seen >= USAGE_LIMIT_WINDOW;
-}
-
-const UsageLimitDialog = memo(function UsageLimitDialog({
-  action,
-}: {
-  action: OpenCodeUsageAction;
-}) {
-  const [open, setOpen] = useState(() => shouldShowUsageLimitDialog(action));
-  const dialogRef = useRef<HTMLDialogElement>(null);
-  const titleId = "usage-limit-dialog-title";
-  const descriptionId = "usage-limit-dialog-description";
-
-  const close = useCallback(
-    (dontShowAgain: boolean) => {
-      const keys = usageLimitStorageKeys(action);
-      window.localStorage.setItem(keys.seen, String(Date.now()));
-      if (dontShowAgain) window.localStorage.setItem(keys.hidden, "true");
-      setOpen(false);
-    },
-    [action],
-  );
-
-  useEffect(() => {
-    if (!open) return;
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    if (typeof dialog.showModal === "function") {
-      dialog.showModal();
-    } else {
-      dialog.setAttribute("open", "");
-    }
-    return () => {
-      if (dialog.open && typeof dialog.close === "function") dialog.close();
-    };
-  }, [open]);
-
-  if (!open) return null;
-
-  return (
-    <dialog
-      ref={dialogRef}
-      aria-labelledby={titleId}
-      aria-describedby={descriptionId}
-      className="fixed inset-0 z-50 m-0 h-full max-h-none w-full max-w-none bg-transparent p-4 backdrop:bg-black/40"
-      onCancel={(event) => {
-        event.preventDefault();
-        close(false);
-      }}
-      onClick={(event) => {
-        if (event.target === event.currentTarget) close(false);
-      }}
-    >
-      <div className="absolute left-1/2 top-1/2 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-xl border bg-card p-5 text-foreground shadow-2xl">
-        <h2 id={titleId} className="text-sm font-semibold">
-          {action.title}
-        </h2>
-        <p id={descriptionId} className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-          {action.message}
-        </p>
-        <div className="mt-5 flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={() => close(true)}
-            className="rounded-md px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          >
-            Don't show again
-          </button>
-          {action.link ? (
-            <a
-              href={action.link}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={() => close(false)}
-              className="rounded-md bg-foreground px-3 py-1.5 text-xs font-medium text-background transition-opacity hover:opacity-90"
-            >
-              {action.label}
-            </a>
-          ) : (
-            <button
-              type="button"
-              onClick={() => close(false)}
-              className="rounded-md bg-foreground px-3 py-1.5 text-xs font-medium text-background transition-opacity hover:opacity-90"
-            >
-              {action.label}
-            </button>
-          )}
-        </div>
-      </div>
-    </dialog>
   );
 });
 
@@ -1580,12 +1452,8 @@ const ThinkingBlock = memo(function ThinkingBlock({ parts }: { parts: Part[] }) 
               case "step-start":
                 return <StepPartView key={part.id} />;
               case "step-finish":
-                return (
-                  <StepFinishPartView
-                    key={part.id}
-                    part={part as Extract<Part, { type: "step-finish" }>}
-                  />
-                );
+                // Token and cost badges were removed; the step needs no visible row.
+                return null;
               case "retry":
                 return (
                   <RetryPartView key={part.id} part={part as Extract<Part, { type: "retry" }>} />
@@ -2057,6 +1925,7 @@ const MessageBubble = memo(function MessageBubble({
             {"error" in msg.info && msg.info.error && !aborted && (
               <ModelErrorCard
                 error={msg.info.error}
+                hitAt={msg.info.time.completed ?? msg.info.time.created}
                 model={
                   msg.info.providerID && msg.info.modelID
                     ? `${msg.info.providerID}/${msg.info.modelID}`
@@ -2158,7 +2027,6 @@ function ChatMessages() {
   const { autoScroll } = usePreferences();
   const sessionStatus = useSessionStatus(activeSessionId);
   const isBusy = isSessionWorking(sessionStatus);
-  const usageAction = getOpenCodeUsageAction(sessionStatus);
   const todos = useTodos();
   const todoAnchorMessageId = useTodoAnchorMessageId();
   const activeQuestion = useActiveQuestion();
@@ -2687,12 +2555,6 @@ function ChatMessages() {
               <PermissionPrompt permission={activePermission} onReply={handleReplyPermission} />
             )}
             <BusyThinkingIndicator status={sessionStatus} lastMessageRole={lastMessageRole} />
-            {usageAction && (
-              <UsageLimitDialog
-                key={`${usageAction.provider}:${usageAction.reason}`}
-                action={usageAction}
-              />
-            )}
             {sessionError && !lastMessageHasError && <ModelErrorCard error={sessionError} />}
           </div>
           <div ref={bottomRef} />

@@ -19,6 +19,7 @@ import {
 } from "@/lib/playtestPlan";
 import { splitModelKey } from "@/lib/splitModelKey";
 import { usePreferences } from "@/providers/PreferencesProvider";
+import { useStudioTargetOptional } from "@/providers/StudioTargetProvider";
 
 function generationErrorCategory(error: unknown): string {
   if (!(error instanceof Error)) return "unknown";
@@ -85,6 +86,7 @@ function ListEditor({
 export default function PlaytestPanel({ onClose }: { onClose: () => void }) {
   const generate = useGeneratePlaytestPlan();
   const sendMessage = useSendMessage();
+  const studioTarget = useStudioTargetOptional();
   const { selectedModel } = usePreferences();
   const [plan, setPlan] = useState<PlaytestPlan | null>(null);
   // Undefined while the chat's messages load: generate stays off without the note.
@@ -177,8 +179,12 @@ export default function PlaytestPanel({ onClose }: { onClose: () => void }) {
         }),
       ),
     );
+    studioTarget?.noteRouted?.();
     sendMessage.mutate(
-      { text: formatPlaytestPrompt(plan) },
+      {
+        text: formatPlaytestPrompt(plan),
+        studioTargetReference: studioTarget?.promptReference ?? null,
+      },
       {
         onSuccess: onClose,
         onError: (error) => toast.error("Playtest not started", { description: error.message }),

@@ -304,76 +304,17 @@ describe("resolveBloxMindPrograms", () => {
     };
   }
 
-  it("uses published programs that are newer than the built-in ones", async () => {
-    const { BUILTIN_BLOXMIND_PROGRAM_MANIFEST } = await import("@/lib/builtinBloxMindPrograms");
-    const newer = buildBloxMindProgramManifest(
-      sources("async function run() { return { roots: [] }; }"),
-      BUILTIN_BLOXMIND_PROGRAM_MANIFEST.sequence + 1,
-    );
-    getBloxMindPrograms.mockResolvedValue(newer);
-
-    const { resolved } = await resolve();
-
-    expect(resolved.explorer.source).toBe("published");
-    expect(resolved.explorer.program.source).toBe(newer.programs["explorer-snapshot"]?.source);
-    expect(resolved.targets.source).toBe("published");
-  });
-
-  it("keeps the built-in programs when the published copy isn't newer or can't be read", async () => {
+  it("always uses the programs shipped with the app", async () => {
     const { BUILTIN_BLOXMIND_PROGRAM_MANIFEST } = await import("@/lib/builtinBloxMindPrograms");
     getBloxMindPrograms.mockResolvedValue(
-      buildBloxMindProgramManifest(sources(), BUILTIN_BLOXMIND_PROGRAM_MANIFEST.sequence),
+      buildBloxMindProgramManifest(sources(), BUILTIN_BLOXMIND_PROGRAM_MANIFEST.sequence + 1),
     );
-    expect((await resolve()).resolved.explorer.source).toBe("builtin");
-
-    getBloxMindPrograms.mockRejectedValue(new Error("bridge unavailable"));
-    expect((await resolve()).resolved.explorer.source).toBe("builtin");
-  });
-
-  it("falls back to the built-in program when a published one doesn't fit the app's schema", async () => {
-    const { BUILTIN_BLOXMIND_PROGRAM_MANIFEST } = await import("@/lib/builtinBloxMindPrograms");
-    const newer = buildBloxMindProgramManifest(
-      sources(),
-      BUILTIN_BLOXMIND_PROGRAM_MANIFEST.sequence + 1,
-    );
-    const explorer = newer.programs["explorer-snapshot"];
-    if (!explorer) throw new Error("missing explorer");
-    getBloxMindPrograms.mockResolvedValue({
-      ...newer,
-      programs: {
-        ...newer.programs,
-        "explorer-snapshot": { ...explorer, source: "x".repeat(100_001) },
-      },
-    });
 
     const { resolved } = await resolve();
 
     expect(resolved.explorer.source).toBe("builtin");
-    expect(resolved.targets.source).toBe("published");
-  });
-
-  it("records each program's own origin when only some published programs are usable", async () => {
-    const { BUILTIN_BLOXMIND_PROGRAM_MANIFEST } = await import("@/lib/builtinBloxMindPrograms");
-    const newer = buildBloxMindProgramManifest(
-      sources(),
-      BUILTIN_BLOXMIND_PROGRAM_MANIFEST.sequence + 1,
-    );
-    const explorer = newer.programs["explorer-snapshot"];
-    if (!explorer) throw new Error("missing explorer");
-    getBloxMindPrograms.mockResolvedValue({
-      ...newer,
-      programs: {
-        ...newer.programs,
-        "explorer-snapshot": {
-          ...explorer,
-          contract: { ...explorer.contract, version: "2" },
-        },
-      },
-    });
-
-    const { resolved } = await resolve();
-
-    expect(resolved.explorer.source).toBe("builtin");
-    expect(resolved.targets.source).toBe("published");
+    expect(resolved.explorer.sequence).toBe(BUILTIN_BLOXMIND_PROGRAM_MANIFEST.sequence);
+    expect(resolved.targets.source).toBe("builtin");
+    expect(getBloxMindPrograms).not.toHaveBeenCalled();
   });
 });

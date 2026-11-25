@@ -78,6 +78,8 @@ export const AppConfigSchema = Schema.mutable(
     defaultVariant: Schema.NullOr(Schema.String),
     studioTargetPrograms: Schema.NullOr(StudioTargetProgramsSchema),
     studioTargetsBySession: Schema.Record({ key: Schema.String, value: StudioTargetSchema }),
+    // Someone chose to get on with non-Studio work instead of setting it up.
+    studioSetupSkipped: Schema.Boolean,
     // Chats explicitly set aside for work that has nothing to do with Studio.
     chatsWithoutStudio: MutableStrings,
     // Chats someone picked a Studio for by hand, so the place isn't just a guess.
@@ -124,6 +126,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   defaultVariant: null,
   studioTargetPrograms: null,
   studioTargetsBySession: {},
+  studioSetupSkipped: false,
   chatsWithoutStudio: [],
   chatsWithChosenPlace: [],
   routedTargetsBySession: {},

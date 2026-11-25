@@ -42,6 +42,8 @@ import {
   StudioTargetSelectionSchema,
 } from "../src/types/studioTarget";
 import { handleLastWindowClosed } from "./appLifecycle";
+import { isOpenableUrl } from "./openableUrl";
+import { networkDriveLetters, onNetworkDrive } from "./networkDrives";
 import { createMainErrorReporter } from "./errorReporter";
 import { blenderToolsFolder, engineFolder } from "./machineFolders";
 import {
@@ -306,13 +308,31 @@ function parseExternalUrl(rawUrl: string) {
       new DesktopMainError({ message: "Only web and mail links can be opened", cause }),
   }).pipe(
     Effect.flatMap((url) =>
-      url.protocol === "https:" || url.protocol === "http:" || url.protocol === "mailto:"
+      isOpenableUrl(url)
         ? Effect.succeed(url)
         : Effect.fail(
-            new DesktopMainError({ message: "Only web and mail links can be opened" }),
+            new DesktopMainError({ message: "Only web, mail and local file links can be opened" }),
           ),
     ),
   );
+}
+
+/** A file link shows where the file is; a web link opens normally. */
+function openLink(url: URL) {
+  return Effect.tryPromise({
+    try: async () => {
+      if (url.protocol === "file:") {
+        const path = fileURLToPath(url);
+        if (onNetworkDrive(path, await networkDriveLetters())) {
+          throw new Error("Files on network drives can't be opened from a link");
+        }
+        shell.showItemInFolder(path);
+        return;
+      }
+      await shell.openExternal(url.href);
+    },
+    catch: (cause) => new DesktopMainError({ message: "Failed to open URL", cause }),
+  });
 }
 
 /** Write the whole configuration atomically (temp file + rename). */
@@ -592,16 +612,7 @@ const registerIpcHandlers = Effect.sync(() => {
     ),
   );
   safeIpcHandle(channels.openUrl, (_event, rawUrl: string) =>
-    runMain(
-      parseExternalUrl(rawUrl).pipe(
-        Effect.flatMap((url) =>
-          Effect.tryPromise({
-            try: () => shell.openExternal(url.href),
-            catch: (cause) => new DesktopMainError({ message: "Failed to open URL", cause }),
-          }),
-        ),
-      ),
-    ),
+    runMain(parseExternalUrl(rawUrl).pipe(Effect.flatMap(openLink))),
   );
   safeIpcHandle(channels.checkForUpdate, () =>
     runMain(
@@ -1035,13 +1046,7 @@ function createWindow(): Effect.Effect<void, DesktopMainError> {
       window.webContents.setWindowOpenHandler(({ url }) => {
         Effect.runFork(
           parseExternalUrl(url).pipe(
-            Effect.flatMap((externalUrl) =>
-              Effect.tryPromise({
-                try: () => shell.openExternal(externalUrl.href),
-                catch: (cause) =>
-                  new DesktopMainError({ message: "Failed to open URL", cause }),
-              }),
-            ),
+            Effect.flatMap(openLink),
             Effect.catchAll(Effect.logWarning),
           ),
         );
