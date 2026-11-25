@@ -27,6 +27,7 @@ jobs:
       contents: write
     env:
       GH_TOKEN: ${{ github.token }}
+      BLOXMIND_PROGRAMS_SIGNING_KEY: ${{ secrets.BLOXMIND_PROGRAMS_SIGNING_KEY }}
     steps:
       - name: Require the default branch
         if: ${{ github.ref != 'refs/heads/main' }}
@@ -49,11 +50,14 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Sign the manifest
-        env:
-          BLOXMIND_PROGRAMS_SIGNING_KEY: ${{ secrets.BLOXMIND_PROGRAMS_SIGNING_KEY }}
+        # Forks and private checkouts don't have the signing secret. The app
+        # falls back to the programs shipped with it, so there's nothing to
+        # publish and no reason to fail every push that changes a program.
+        if: env.BLOXMIND_PROGRAMS_SIGNING_KEY != ''
         run: pnpm bloxmind-programs sign signed
 
       - name: Publish to the bloxmind-programs prerelease
+        if: env.BLOXMIND_PROGRAMS_SIGNING_KEY != ''
         run: |
           if [ ! -f signed/manifest.json ]; then
             echo "Nothing new to publish."
