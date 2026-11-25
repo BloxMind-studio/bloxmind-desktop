@@ -605,6 +605,39 @@ export function createOpencodeClient(config: OpencodeClientConfig): OpencodeClie
       },
       compact: (input: Record<string, unknown>, opts?: V1Options) =>
         v1(oc2.session.compact(withDirectory(dir, input) as never, { signal: opts?.signal })),
+      fork: (input: Record<string, unknown>, opts?: V1Options) =>
+        v1(oc2.session.fork(withDirectory(dir, input) as never, { signal: opts?.signal })),
+      /** Rewinds the chat to before a message. Sending again makes it final. */
+      undo: (input: { sessionID: string; messageID: string }, opts?: V1Options) =>
+        v1(
+          (async () => {
+            await oc2.session.interrupt(
+              withDirectory(dir, { sessionID: input.sessionID }) as never,
+              {
+                signal: opts?.signal,
+              },
+            );
+            await waitForTurn(input.sessionID, opts);
+            await oc2.session.revert.stage(withDirectory(dir, input) as never, {
+              signal: opts?.signal,
+            });
+          })(),
+          opts,
+        ),
+      redo: (input: { sessionID: string }, opts?: V1Options) =>
+        v1(
+          oc2.session.revert.clear(withDirectory(dir, input) as never, { signal: opts?.signal }),
+          opts,
+        ),
+      /** The chat as OpenCode stores it, for saving to a file. */
+      exportData: async (input: { sessionID: string }, opts?: V1Options) => ({
+        data: {
+          info: await oc2.session.get(withDirectory(dir, input) as never, {
+            signal: opts?.signal,
+          }),
+          messages: (await client.session.messages(input, opts)).data,
+        },
+      }),
       command: async (input: Record<string, unknown>, opts?: V1Options) => {
         const translated = await translateOc1Command(oc2, dir, input, opts);
         return v1(oc2.session.command(translated as never, { signal: opts?.signal }), opts);
@@ -1145,6 +1178,11 @@ export function createOpencodeClient(config: OpencodeClientConfig): OpencodeClie
           return v1(Promise.resolve(undefined), opts);
         },
       },
+    },
+    location: {
+      /** Rereads config, commands, agents and skills without restarting. */
+      reload: (opts?: V1Options) =>
+        v1(oc2.location.reload(opts?.signal ? { signal: opts.signal } : undefined), opts),
     },
     file: oc2.file,
     find: (oc2 as unknown as Record<string, unknown>).find ?? {},

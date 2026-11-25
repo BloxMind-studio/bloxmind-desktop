@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { isFreeUsageLimit, presentModelError } from "@/lib/modelError";
-import type { AssistantMessage } from "@/lib/opencode";
+import {
+  FREE_LIMIT_FALLBACK_MS,
+  freeLimitEndsAt,
+  isFreeUsageLimit,
+  isModelUnavailable,
+  isRegionLocked,
+  presentModelError,
+} from "@/lib/modelError";
+import type { AssistantMessage } from "@/lib/opencode/types";
 
 type ModelError = NonNullable<AssistantMessage["error"]>;
 
@@ -32,60 +39,98 @@ describe("model error presentation", () => {
       title: "This conversation is too large",
     });
   });
+});
 
-  it("recognizes a screenshot sent to a text-only model", () => {
-    const error: ModelError = {
-      name: "APIError",
-      data: {
-        message:
-          "Upstream request failed: [invalid_request_error] image input is not available on this engine",
-        statusCode: 400,
-        isRetryable: false,
-      },
-    };
+describe("free usage limit", () => {
+  const limit = (data: Record<string, unknown>) => ({ name: "APIError", data }) as ModelError;
+  const hour = 60 * 60 * 1000;
+  // What a chat turn gets from OpenCode 2.2.5, and what its helper prompts get.
+  const chatTurn = limit({
+    message:
+      "Free usage limit reached. Connect a provider or subscribe to OpenCode Go to keep going, or switch models.",
+    statusCode: 429,
+    responseBody: '{"type":"error","error":{"type":"FreeUsageLimitError"}}',
+    retryAfterMs: 3 * hour,
+    isRetryable: false,
+  });
+  const helperPrompt = {
+    name: "UnknownError",
+    data: {
+      message:
+        "Free usage limit reached. Free models work in OpenCode (https://opencode.ai); subscribe to OpenCode Go to keep going: https://opencode.ai/go",
+      isRetryable: false,
+    },
+  } as ModelError;
 
-    expect(presentModelError(error)).toMatchObject({
-      kind: "image",
-      title: "This model can't read images",
-    });
+  it("explains the limit and when the messages come back instead of showing the provider's error", () => {
+    const presentation = presentModelError(chatTurn);
+
+    expect(presentation.kind).toBe("usage");
+    expect(presentation.title).toBe("You've used the free messages for now");
+    expect(presentation.description).toContain("Free messages come back in about 3 hours.");
+    expect(presentation.description).toContain(
+      "connect your own AI account, like ChatGPT or Claude, in Settings under Providers",
+    );
+    expect(presentation.description).toContain("OpenCode Go");
+    // The limit is shared by every free model, whatever OpenCode's own text says.
+    expect(presentation.description).not.toMatch(/switch models|other free models/i);
   });
 
-  it("recognizes the OpenCode free-usage limit", () => {
-    const error: ModelError = {
-      name: "APIError",
-      data: {
-        message: "Free usage limit exceeded for today",
-        responseBody: "FreeUsageLimitError",
-        statusCode: 429,
-        isRetryable: true,
-      },
-    };
-    expect(isFreeUsageLimit(error)).toBe(true);
-    expect(presentModelError(error)).toMatchObject({
-      kind: "usage",
-      title: "You've used today's free messages",
-    });
+  it("recognises both of OpenCode's messages, and the typed error", () => {
+    expect(isFreeUsageLimit(chatTurn)).toBe(true);
+    expect(isFreeUsageLimit(helperPrompt)).toBe(true);
+    expect(
+      isFreeUsageLimit(limit({ responseBody: '{"error":{"type":"FreeUsageLimitError"}}' })),
+    ).toBe(true);
+    expect(isFreeUsageLimit(limit({ message: "Busy", type: "provider.free-limit" }))).toBe(true);
+    expect(isFreeUsageLimit(limit({ message: "Rate limit exceeded" }))).toBe(false);
   });
 
-  it("recognizes retired or region-locked models", () => {
-    const retired: ModelError = {
-      name: "APIError",
-      data: {
-        message: "This model is retired and no longer available",
-        statusCode: 400,
-        isRetryable: false,
-      },
-    };
-    expect(presentModelError(retired)).toMatchObject({ kind: "unavailable" });
+  it("says a few hours, not a day, when OpenCode gives no reset time", () => {
+    const presentation = presentModelError(helperPrompt, 0, 0);
+    expect(presentation.description).toContain("Free messages come back after a few hours.");
+    expect(presentation.description).not.toMatch(/daily|today|tomorrow/i);
+    expect(freeLimitEndsAt(helperPrompt, 0)).toBe(FREE_LIMIT_FALLBACK_MS);
+    expect(FREE_LIMIT_FALLBACK_MS).toBe(3 * hour);
+  });
 
-    const locked: ModelError = {
-      name: "APIError",
-      data: {
-        message: "Model is not available in your region",
-        statusCode: 403,
-        isRetryable: false,
-      },
-    };
-    expect(presentModelError(locked)).toMatchObject({ kind: "unavailable" });
+  it("counts a free limit down from when it hit, not from the saved text", () => {
+    const hit = limit({ message: "Free usage limit reached.", retryAfterMs: 10 * hour });
+    expect(presentModelError(hit, 0, 8 * hour).description).toContain("about 2 hours");
+    expect(presentModelError(hit, 0, 9.7 * hour).description).toContain("less than an hour");
+    expect(freeLimitEndsAt(hit, 0)).toBe(10 * hour);
+  });
+});
+
+describe("models that can't answer here", () => {
+  const unknown = (message: string, responseBody?: string) =>
+    ({ name: "UnknownError", data: { message, responseBody } }) as ModelError;
+
+  it("tells a model refused in the user's region apart, wherever OpenCode puts the reason", () => {
+    const inMessage = unknown("This model is not available in your country");
+    const inBody = unknown(
+      "Provider request failed",
+      '{"error":{"message":"This model is not available in your country"}}',
+    );
+    for (const error of [inMessage, inBody]) {
+      expect(isRegionLocked(error)).toBe(true);
+      expect(presentModelError(error)).toMatchObject({
+        kind: "region",
+        title: "This model isn't offered in your region",
+      });
+    }
+  });
+
+  it("tells a retired model apart from other upstream failures", () => {
+    const retired = unknown("Upstream request failed: Model is unavailable.");
+    expect(isModelUnavailable(retired)).toBe(true);
+    expect(presentModelError(retired)).toMatchObject({
+      kind: "unavailable",
+      title: "This model is no longer available",
+    });
+    expect(isModelUnavailable(unknown("Upstream request failed: Service is unavailable."))).toBe(
+      false,
+    );
+    expect(isRegionLocked(retired)).toBe(false);
   });
 });

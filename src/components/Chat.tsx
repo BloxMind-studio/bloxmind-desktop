@@ -211,6 +211,19 @@ function Chat() {
     posthog.capture("$pageview", analyticsProperties("navigation", screenProperties));
   }, [appScreen]);
 
+  // /connect asks the shell to open Settings.
+  useEffect(() => {
+    const openSettings = () => setShowSettings(true);
+    window.addEventListener("bloxmind:open-settings", openSettings);
+    return () => window.removeEventListener("bloxmind:open-settings", openSettings);
+  }, []);
+
+  // A chat's Playtest belongs to that chat, so switching chats closes it.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only the chat change matters.
+  useEffect(() => {
+    setShowPlaytest(false);
+  }, [activeSessionId]);
+
   useEffect(() => {
     if (studioConnection.state === "waiting") setShowStudioSetup(true);
   }, [studioConnection.state]);

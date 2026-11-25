@@ -3,7 +3,7 @@ import type { AssistantMessage } from "@/lib/opencode";
 export type ModelError = NonNullable<AssistantMessage["error"]>;
 
 export interface ModelErrorPresentation {
-  kind: "context" | "auth" | "aborted" | "image" | "usage" | "unavailable" | "generic";
+  kind: "context" | "auth" | "aborted" | "image" | "usage" | "region" | "unavailable" | "generic";
   title: string;
   description: string;
   detail?: string;
@@ -22,17 +22,76 @@ export function modelErrorDetail(error: ModelError): string | undefined {
   return detail?.trim();
 }
 
-/** OpenCode's free tier refusing a prompt because free messages are used up. */
+/** OpenCode puts the reason in the message or the response body, depending on where it failed. */
+function errorSays(error: ModelError, pattern: RegExp): boolean {
+  const data =
+    error.data && typeof error.data === "object"
+      ? (error.data as { message?: unknown; responseBody?: unknown })
+      : {};
+  return [data.message, data.responseBody].some(
+    (value) => typeof value === "string" && pattern.test(value),
+  );
+}
+
+/**
+ * OpenCode's free tier refusing a prompt because the free messages are used up
+ * for now. The limit is a rolling window per IP shared by every free model, so,
+ * despite OpenCode's own wording, switching free models doesn't help.
+ */
 export function isFreeUsageLimit(error: ModelError): boolean {
   const data =
-    error.data && typeof error.data === "object" ? (error.data as Record<string, unknown>) : {};
+    error.data && typeof error.data === "object"
+      ? (error.data as { message?: unknown; responseBody?: unknown; type?: unknown })
+      : {};
   return (
+    data.type === "provider.free-limit" ||
     (typeof data.responseBody === "string" && data.responseBody.includes("FreeUsageLimitError")) ||
     (typeof data.message === "string" && /free usage (limit|exceeded)/i.test(data.message))
   );
 }
 
-function isModelUnavailable(detail: string | undefined): boolean {
+/** A model its provider won't serve where the user is. */
+export function isRegionLocked(error: ModelError): boolean {
+  return errorSays(error, /not available in your (country|region)/i);
+}
+
+/** A model OpenCode no longer serves, usually because it was retired. */
+export function isModelUnavailable(error: ModelError): boolean {
+  return errorSays(error, /model is (no longer )?unavailable/i);
+}
+
+function retryAfter(error: ModelError): number | undefined {
+  const { retryAfterMs } = (error.data ?? {}) as { retryAfterMs?: unknown };
+  return typeof retryAfterMs === "number" && retryAfterMs > 0 ? retryAfterMs : undefined;
+}
+
+/**
+ * How long to treat a free limit as current when OpenCode gives no delay. Chat
+ * turns carry Zen's Retry-After, which was about 3 hours when measured on
+ * 2026-11-06; OpenCode 2.2.5 drops it from helper prompts, so those fall back to
+ * this.
+ */
+export const FREE_LIMIT_FALLBACK_MS = 3 * 60 * 60 * 1000;
+
+/**
+ * When a free limit lifts: after OpenCode's retry delay, or a few hours if it
+ * gave none. The error stays on its message for good, so this tells a current
+ * limit from an old one.
+ */
+export function freeLimitEndsAt(error: ModelError, hitAt: number): number {
+  return hitAt + (retryAfter(error) ?? FREE_LIMIT_FALLBACK_MS);
+}
+
+function freeLimitReturn(error: ModelError, hitAt: number | undefined, now: number): string {
+  const wait = retryAfter(error);
+  if (wait === undefined) return "Free messages come back after a few hours.";
+  const hours = Math.round((hitAt === undefined ? wait : hitAt + wait - now) / (60 * 60 * 1000));
+  if (hours < 1) return "Free messages come back in less than an hour.";
+  return `Free messages come back in about ${hours} ${hours === 1 ? "hour" : "hours"}.`;
+}
+
+/** Broader wording some providers use when a model is retired or region-locked. */
+function looksModelUnavailable(detail: string | undefined): boolean {
   if (!detail) return false;
   return (
     /model (?:is )?(?:retired|deprecated|no longer (?:available|supported)|disabled)/i.test(
@@ -53,15 +112,36 @@ export function isImageInputError(error: ModelError): boolean {
   );
 }
 
-export function presentModelError(error: ModelError): ModelErrorPresentation {
+export function presentModelError(
+  error: ModelError,
+  hitAt?: number,
+  now: number = Date.now(),
+): ModelErrorPresentation {
   const detail = modelErrorDetail(error);
 
   if (isFreeUsageLimit(error)) {
     return {
       kind: "usage",
-      title: "You've used today's free messages",
-      description:
-        "Free messages reset daily. To keep going now, connect a provider in Settings or use OpenCode Go.",
+      title: "You've used the free messages for now",
+      description: `${freeLimitReturn(error, hitAt, now)} To keep going now, connect your own AI account, like ChatGPT or Claude, in Settings under Providers, or subscribe to OpenCode Go.`,
+    };
+  }
+
+  if (isRegionLocked(error)) {
+    return {
+      kind: "region",
+      title: "This model isn't offered in your region",
+      description: "Switch to another model to keep going.",
+      detail,
+    };
+  }
+
+  if (isModelUnavailable(error)) {
+    return {
+      kind: "unavailable",
+      title: "This model is no longer available",
+      description: "It may have been removed. Switch to another model to keep going.",
+      detail,
     };
   }
 
@@ -105,7 +185,7 @@ export function presentModelError(error: ModelError): ModelErrorPresentation {
     };
   }
 
-  if (isModelUnavailable(detail)) {
+  if (looksModelUnavailable(detail)) {
     return {
       kind: "unavailable",
       title: "This model isn't available",

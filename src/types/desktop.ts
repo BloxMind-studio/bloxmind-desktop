@@ -64,6 +64,8 @@ export const AppConfigSchema = Schema.mutable(
     configVersion: Schema.Number.pipe(Schema.int(), Schema.between(0, 1_000)),
     lastModel: Schema.NullOr(Schema.String),
     hiddenModels: MutableStrings,
+    // Models refused in the user's region, so they aren't picked again.
+    unavailableModels: MutableStrings,
     theme: ThemePreferenceSchema,
     detailedAnalytics: DetailedAnalyticsPreferenceSchema,
     // Highest analytics policy notice the user has seen; 0 predates the opt-out model.
@@ -104,6 +106,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   configVersion: APP_CONFIG_VERSION,
   lastModel: null,
   hiddenModels: [],
+  unavailableModels: [],
   theme: "system",
   detailedAnalytics: "unset",
   analyticsNoticeVersion: 0,

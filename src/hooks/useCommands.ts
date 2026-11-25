@@ -1,10 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 import type { Command } from "@/lib/opencode";
 
+import { CLIENT_COMMANDS, mergeCommands } from "@/lib/promptSuggestions";
 import { qk } from "@/lib/queryKeys";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
-
-const EMPTY: Command[] = [];
 
 export function useCommands(): Command[] {
   const { client, ready } = useOpenCodeClient();
@@ -24,5 +24,5 @@ export function useCommands(): Command[] {
     enabled: ready && !!client,
   });
 
-  return data ?? EMPTY;
+  return useMemo(() => (data ? mergeCommands(data) : [...CLIENT_COMMANDS]), [data]);
 }

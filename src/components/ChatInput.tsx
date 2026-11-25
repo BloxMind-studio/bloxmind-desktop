@@ -9,6 +9,7 @@ import { useAbort } from "@/hooks/mutations/useAbort";
 import { useSendMessage } from "@/hooks/mutations/useSendMessage";
 import { useAgents } from "@/hooks/useAgents";
 import { useCommands } from "@/hooks/useCommands";
+import { useComposerCommands } from "@/hooks/useComposerCommands";
 import { useAllModels, useConnectedProviders } from "@/hooks/useProviders";
 import { useIsBusy } from "@/hooks/useSessionStatuses";
 import { modelAcceptsImages } from "@/lib/imageSupport";
@@ -274,6 +275,7 @@ function ChatInput() {
     selectedAgent,
     selectedVariant,
     hiddenModels,
+    unavailableModels,
     enterToSend,
     systemPrompt: customSystemPrompt,
     setSelectedModel,
@@ -364,6 +366,14 @@ function ChatInput() {
         const restored = failed.attachments.filter((attachment) => !currentIds.has(attachment.id));
         return [...restored, ...current];
       });
+    },
+  });
+  const { run: runCommand } = useComposerCommands({
+    restoreDraft: (draft, sessionID) => {
+      if (activeSessionIdRef.current !== sessionID) return;
+      promptEditorRef.current?.setText(draft);
+      writeDraft(sessionID, draft);
+      requestAnimationFrame(() => promptEditorRef.current?.focus());
     },
   });
 
@@ -560,6 +570,17 @@ function ChatInput() {
     }
   }, [showModelPicker, showAgentPicker]);
 
+  // /model asks the composer to open its picker, like OpenCode's desktop app.
+  useEffect(() => {
+    const openModelPicker = () => {
+      setShowModelPicker(true);
+      setShowAgentPicker(false);
+      requestAnimationFrame(() => modelSearchRef.current?.focus());
+    };
+    window.addEventListener("bloxmind:choose-model", openModelPicker);
+    return () => window.removeEventListener("bloxmind:choose-model", openModelPicker);
+  }, []);
+
   const modelsByProvider = useMemo(() => {
     const POPULAR = [
       "opencode",
@@ -614,7 +635,6 @@ function ChatInput() {
     const editorText = promptEditorRef.current?.getText() ?? text;
     const trimmed = editorText.trim();
     if (!trimmed && attachments.length === 0) return;
-    if (isBusy) return;
     if (attachments.length > 0 && acceptsImages === false) {
       toast.error("This model can't read images", {
         description: "Remove the attachments or switch to a vision-capable model.",
@@ -622,17 +642,39 @@ function ChatInput() {
       triggerRejectShake();
       return;
     }
+    const images =
+      attachments.length > 0
+        ? attachments.map((a) => ({ mime: a.mime, url: a.dataUrl, filename: a.filename }))
+        : undefined;
+
     const submittedText = editorText;
     const submittedAttachments = attachments;
+
+    // Slash commands run even while a reply streams, and some need no Studio.
+    const ranCommand = runCommand(trimmed, {
+      images,
+      system: systemPrompt,
+      onFailed: (error) => {
+        toast.error("Command not run", { description: error.message });
+        if (activeSessionIdRef.current !== activeSessionId) return;
+        promptEditorRef.current?.insertText(submittedText);
+        setAttachments(submittedAttachments);
+      },
+    });
+    if (ranCommand) {
+      setText("");
+      setAttachments([]);
+      promptEditorRef.current?.clear();
+      writeDraft(activeSessionId, "");
+      return;
+    }
+
+    if (isBusy) return;
     failedSendRef.current = {
       sessionId: activeSessionId,
       text: submittedText,
       attachments: submittedAttachments,
     };
-    const images =
-      attachments.length > 0
-        ? attachments.map((a) => ({ mime: a.mime, url: a.dataUrl, filename: a.filename }))
-        : undefined;
     setText("");
     setAttachments([]);
     promptEditorRef.current?.clear();
@@ -645,6 +687,7 @@ function ChatInput() {
 
   function handleModelClick(model: ModelInfo) {
     const fullId = `${model.providerId}/${model.id}`;
+    if (unavailableModels.has(fullId)) return;
     setSelectedModel(fullId);
     setShowModelPicker(false);
     setModelSearch("");
@@ -676,16 +719,24 @@ function ChatInput() {
         {group.models.map((model) => {
           const fullId = `${model.providerId}/${model.id}`;
           const isSelected = selectedModel === fullId;
+          const refused = unavailableModels.has(fullId);
           return (
             <button
               key={fullId}
               onClick={() => handleModelClick(model)}
               onMouseEnter={() => setHoveredModel(model)}
               onFocus={() => setHoveredModel(model)}
-              className={`flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs transition-colors ${isSelected ? "bg-accent font-medium text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}
+              disabled={refused}
+              title={refused ? "Not offered in your region" : undefined}
+              className={`flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${isSelected ? "bg-accent font-medium text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}
             >
               <span className="truncate">{model.name}</span>
               <ModelStatusBadge status={model.status} />
+              {refused && (
+                <span className="ml-auto shrink-0 text-[9px] text-muted-foreground/70">
+                  Not in your region
+                </span>
+              )}
             </button>
           );
         })}

@@ -157,6 +157,41 @@ export function getStartupErrorPresentation(
     };
   }
 
+  if (reason === "database_locked") {
+    return {
+      message: "BloxMind couldn't start",
+      detail:
+        "Another copy of BloxMind is still open and using your chats. Close it, or restart your computer, then try again.",
+      technicalDetail,
+    };
+  }
+
+  if (reason === "database_io") {
+    return {
+      message: "BloxMind couldn't start",
+      detail:
+        "BloxMind couldn't open your saved chats. Check that your computer has free space, then restart it and try again. If it keeps happening, your antivirus may be blocking the BloxMind folder.",
+      detailPath: installFolder ?? undefined,
+      technicalDetail,
+    };
+  }
+
+  if (reason === "folder_blocked") {
+    const windows =
+      typeof navigator !== "undefined" && navigator.userAgent.toLowerCase().includes("windows");
+    return {
+      message: "BloxMind couldn't start",
+      // Neither OneDrive nor Controlled folder access covers the user folder
+      // itself unless someone set them up to, so the usual cause is security
+      // software or a school or work policy.
+      detail: windows
+        ? "Something on this computer stopped BloxMind from saving files in the BloxMind folder in your user folder. That's usually antivirus, or a setting from your school or workplace. Allow BloxMind in your antivirus, or ask whoever looks after this computer, then try again."
+        : "BloxMind isn't allowed to save files in the BloxMind folder in your home folder. Make sure your account can change that folder, then try again.",
+      detailPath: installFolder ?? undefined,
+      technicalDetail,
+    };
+  }
+
   if (reason === "other") {
     return {
       message: "Setup couldn't finish",
