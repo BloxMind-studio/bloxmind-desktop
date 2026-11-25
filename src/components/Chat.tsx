@@ -9,10 +9,13 @@ import CompactionStatus from "@/components/CompactionStatus";
 import Explorer from "@/components/Explorer";
 import LoadingScreen from "@/components/LoadingScreen";
 import PlaytestPanel from "@/components/PlaytestPanel";
+import StudioNotice from "@/components/StudioNotice";
 import StudioSetup from "@/components/StudioSetup";
 import StudioTargetPicker from "@/components/StudioTargetPicker";
+import StudioUseReporter from "@/components/StudioUseReporter";
 import { useCompactSession } from "@/hooks/mutations/useCompactSession";
 import { useCreateSession } from "@/hooks/mutations/useCreateSession";
+import { useChatStudioUse } from "@/hooks/useMessages";
 import { isSessionWorking, useSessionStatus } from "@/hooks/useSessionStatuses";
 import { useSessions } from "@/hooks/useSessions";
 import { useStudioConnection } from "@/hooks/useStudioConnection";
@@ -136,6 +139,7 @@ function Chat() {
   const studioConnection = useStudioConnection();
   const studioTarget = useStudioTargetOptional();
   const hasStudioTarget = Boolean(studioTarget?.selected) && studioTarget?.status === "ready";
+  const studioUse = useChatStudioUse();
 
   // Get active session title from the sessions list
   const activeSessionTitle = allSessions?.find((s) => s.id === activeSessionId)?.title ?? null;
@@ -144,6 +148,7 @@ function Chat() {
   const [explorerCollapsed, setExplorerCollapsed] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showStudioSetup, setShowStudioSetup] = useState(false);
+  const [pickerRequest, setPickerRequest] = useState(0);
   const [showPlaytest, setShowPlaytest] = useState(false);
   const sidePanelOpen = showPlaytest || (hasStudioTarget && !explorerCollapsed);
   const desiredSidePanel = showPlaytest
@@ -366,7 +371,7 @@ function Chat() {
               </div>
               <div className="ml-2 flex min-w-0 items-center justify-end gap-1.5">
                 <CompactButton disabled={isBusy} />
-                <StudioTargetPicker />
+                <StudioTargetPicker openRequest={pickerRequest} />
                 {hasStudioTarget ? (
                   <div className="flex shrink-0 items-center gap-1.5">
                     <ProjectIndexButton />
@@ -405,6 +410,12 @@ function Chat() {
 
             <CompactionStatus />
             <ChatMessages />
+            <StudioUseReporter />
+            <StudioNotice
+              quiet={studioUse?.started === true}
+              onOpenSetup={() => setShowStudioSetup(true)}
+              onOpenPicker={() => setPickerRequest((request) => request + 1)}
+            />
             <ChatInput />
           </>
         )}

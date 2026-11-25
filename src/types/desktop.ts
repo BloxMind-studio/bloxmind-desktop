@@ -73,6 +73,12 @@ export const AppConfigSchema = Schema.mutable(
     defaultVariant: Schema.NullOr(Schema.String),
     studioTargetPrograms: Schema.NullOr(StudioTargetProgramsSchema),
     studioTargetsBySession: Schema.Record({ key: Schema.String, value: StudioTargetSchema }),
+    // Chats explicitly set aside for work that has nothing to do with Studio.
+    chatsWithoutStudio: MutableStrings,
+    // Chats someone picked a Studio for by hand, so the place isn't just a guess.
+    chatsWithChosenPlace: MutableStrings,
+    // The Studio a chat's message was routed to, even if nobody saw it happen.
+    routedTargetsBySession: Schema.Record({ key: Schema.String, value: StudioTargetSchema }),
     // UI customization
     accentColor: AccentColorSchema,
     layoutDensity: LayoutDensitySchema,
@@ -113,6 +119,9 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   defaultVariant: null,
   studioTargetPrograms: null,
   studioTargetsBySession: {},
+  chatsWithoutStudio: [],
+  chatsWithChosenPlace: [],
+  routedTargetsBySession: {},
   accentColor: "blue",
   layoutDensity: "comfortable",
   fontSize: 1,

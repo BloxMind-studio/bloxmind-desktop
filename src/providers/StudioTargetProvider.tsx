@@ -30,19 +30,74 @@ import type {
 
 export type StudioTargetStatus = "loading" | "ready" | "empty" | "error";
 
+/** Studio's window label ends with a place ID nobody needs to read. */
+export function placeName(label: string): string {
+  return label.replace(/\s*\(placeId:[^)]*\)$/, "");
+}
+
+/**
+ * Whether a Studio could be the place a chat remembers by name. Different Place IDs rule that out,
+ * and so does only one of them being published: those can't be the same place.
+ */
+function sameNamedPlace(target: StudioTarget, remembered: StudioTarget): boolean {
+  const placeId = (id: string | null | undefined) => (id && id !== "0" ? id : null);
+  return (
+    target.label.trim().toLowerCase() === remembered.label.trim().toLowerCase() &&
+    placeId(target.placeId) === placeId(remembered.placeId)
+  );
+}
+
 interface StudioTargetContextValue {
   targets: readonly StudioTarget[];
   selected: StudioTarget | null;
   promptReference: string | null;
   status: StudioTargetStatus;
+  /** The latest check failed, so a place's being closed is no longer known. */
+  discoveryFailed: boolean;
   refreshing: boolean;
   selectingKey: string | null;
   error: string | null;
+  /** The place this chat was working in when it isn't open any more. */
+  missing: StudioTarget | null;
+  /** Someone chose to use this chat for work that has nothing to do with Studio. */
+  withoutStudio: boolean;
+  workWithoutStudio(): void;
+  /** The messages say whether this chat used a Studio, even when nobody watched it happen. */
+  reportStudioUse(use: { started: boolean; usedStudio: boolean }): void;
+  /** This chat has used a Studio, but which one was never written down. */
+  unknownPlace: boolean;
+  clearError(): void;
+  /** A message is going out, so whichever Studio it's sent to is the one it would use. */
+  noteRouted(): void;
+  /** Someone picked a Studio for this chat by hand. */
+  studioChosen: boolean;
+  studioChoices: number;
+  /** A forked chat carries the same history, so it's working in the same place. */
+  copyPlaceToChat(from: string, to: string): void;
+  twins: number;
+  nameMatch: StudioTarget | null;
+  /** Why a message can't go out yet, without a Studio to work in. */
+  sendBlock: string | null;
   discover(): Promise<void>;
   select(target: StudioTarget): Promise<void>;
 }
 
 const StudioTargetContext = createContext<StudioTargetContextValue | null>(null);
+
+export const STUDIO_NOT_INSTALLED = "BloxMind can't find Roblox Studio. Check it's installed.";
+
+/** For a chat with no Studio, so the agent doesn't go looking for one and change the wrong place. */
+export const NO_STUDIO_PROMPT_REFERENCE =
+  "This chat isn't working in Roblox Studio. Do not use Roblox Studio tools unless the person asks you to connect one.";
+
+const PLACE_CLOSED_PROMPT_REFERENCE =
+  "The Roblox Studio place this chat works in isn't open. Do not use Roblox Studio tools. If the request needs Studio, ask the person to reopen that place.";
+
+const CHOOSE_STUDIO_PROMPT_REFERENCE =
+  "Several Roblox Studio places are open and this chat hasn't chosen one. Before using any Roblox Studio tool, ask the person to choose one in BloxMind's Studio picker. If the request has nothing to do with Roblox, ignore this.";
+
+const STILL_FINDING_PROMPT_REFERENCE =
+  "BloxMind hasn't finished finding which Roblox Studio places are open. Do not use Roblox Studio tools. If the request needs Studio, ask the person to try again in a moment.";
 
 function countBucket(count: number): "0" | "1" | "2-4" | "5+" {
   if (count === 0) return "0";
@@ -82,6 +137,20 @@ export function StudioTargetProvider({ children }: { children: ReactNode }) {
   const generationRef = useRef<Promise<StudioTargetPrograms> | null>(null);
   const targetsBySessionRef = useRef<Record<string, StudioTarget>>({});
   const configLoadedRef = useRef(false);
+  const [discoveryFailed, setDiscoveryFailed] = useState(false);
+  const chatsWithoutStudioRef = useRef<ReadonlySet<string>>(new Set());
+  const [withoutStudio, setWithoutStudio] = useState(false);
+  const chosenChatsRef = useRef<ReadonlySet<string>>(new Set());
+  const [studioChosen, setStudioChosen] = useState(false);
+  const [studioChoices, setStudioChoices] = useState(0);
+  const routedBySessionRef = useRef<Record<string, StudioTarget>>({});
+  const unknownPlacesRef = useRef<ReadonlySet<string>>(new Set());
+  const [unknownPlace, setUnknownPlace] = useState(false);
+  const studioUseRef = useRef<{ session: string; used: boolean } | null>(null);
+  const selectedRef = useRef<StudioTarget | null>(null);
+  selectedRef.current = selected;
+  const [findingForAWhile, setFindingForAWhile] = useState(false);
+  const errorSourceRef = useRef<"discovery" | "select" | null>(null);
   // Latest active session id; in-flight discoveries compare against this so a
   // discovery that started for a previous session can't apply its result
   // (selection, analytics, remembered target) to the one now on screen.
@@ -93,6 +162,54 @@ export function StudioTargetProvider({ children }: { children: ReactNode }) {
     const next = { ...targetsBySessionRef.current, [sessionId]: target };
     targetsBySessionRef.current = next;
     await desktop.patchConfig({ studioTargetsBySession: next });
+  }, []);
+
+  const setChatWithoutStudio = useCallback(
+    async (on: boolean) => {
+      if (!activeSessionId) return;
+      setWithoutStudio(on);
+      const chats = new Set(chatsWithoutStudioRef.current);
+      if (chats.has(activeSessionId) === on) return;
+      if (on) chats.add(activeSessionId);
+      else chats.delete(activeSessionId);
+      chatsWithoutStudioRef.current = chats;
+      await desktop.patchConfig({ chatsWithoutStudio: [...chats] });
+    },
+    [activeSessionId],
+  );
+
+  const clearError = useCallback(() => {
+    errorSourceRef.current = null;
+    setError(null);
+  }, []);
+
+  const noteRouted = useCallback(() => {
+    const current = selectedRef.current;
+    if (!current || !activeSessionId) return;
+    if (routedBySessionRef.current[activeSessionId]?.key === current.key) return;
+    routedBySessionRef.current = { ...routedBySessionRef.current, [activeSessionId]: current };
+    void desktop.patchConfig({ routedTargetsBySession: routedBySessionRef.current });
+  }, [activeSessionId]);
+
+  const copyPlaceToChat = useCallback((from: string, to: string) => {
+    const place = targetsBySessionRef.current[from];
+    if (place) {
+      targetsBySessionRef.current = { ...targetsBySessionRef.current, [to]: place };
+      void desktop.patchConfig({ studioTargetsBySession: targetsBySessionRef.current });
+    }
+    const routed = routedBySessionRef.current[from];
+    if (routed) {
+      routedBySessionRef.current = { ...routedBySessionRef.current, [to]: routed };
+      void desktop.patchConfig({ routedTargetsBySession: routedBySessionRef.current });
+    }
+    if (chatsWithoutStudioRef.current.has(from)) {
+      chatsWithoutStudioRef.current = new Set(chatsWithoutStudioRef.current).add(to);
+      void desktop.patchConfig({ chatsWithoutStudio: [...chatsWithoutStudioRef.current] });
+    }
+    if (chosenChatsRef.current.has(from)) {
+      chosenChatsRef.current = new Set(chosenChatsRef.current).add(to);
+      void desktop.patchConfig({ chatsWithChosenPlace: [...chosenChatsRef.current] });
+    }
   }, []);
 
   const generatePrograms = useCallback(async () => {
@@ -199,6 +316,12 @@ export function StudioTargetProvider({ children }: { children: ReactNode }) {
       }
       targetsRef.current = result.targets;
       setTargets(result.targets);
+      // Work without Studio means don't bind this chat to whichever place is open.
+      if (discoverySessionId && chatsWithoutStudioRef.current.has(discoverySessionId)) {
+        setSelected(null);
+        setStatus(result.targets.length === 0 ? "empty" : "ready");
+        return;
+      }
       const remembered = discoverySessionId
         ? targetsBySessionRef.current[discoverySessionId]
         : undefined;
@@ -290,6 +413,7 @@ export function StudioTargetProvider({ children }: { children: ReactNode }) {
           await withProgramFallbacks((programs) =>
             applyDiscovery(programs, operation, discoverySessionId),
           );
+          if (operation === operationRef.current) setDiscoveryFailed(false);
         } catch {
           if (operation !== operationRef.current) return;
           try {
@@ -299,6 +423,7 @@ export function StudioTargetProvider({ children }: { children: ReactNode }) {
           } catch (repairError) {
             if (operation !== operationRef.current) return;
             setStatus(targetsRef.current.length > 0 ? "ready" : "error");
+            setDiscoveryFailed(true);
             setSelectingKey(null);
             console.error("[studio-target] discovery repair failed", repairError);
             setError("Studio integration setup failed. Refresh to try again.");
@@ -318,6 +443,64 @@ export function StudioTargetProvider({ children }: { children: ReactNode }) {
       return discovery;
     },
     [activeSessionId, applyDiscovery, generatePrograms, withProgramFallbacks],
+  );
+
+  const workWithoutStudio = useCallback(() => {
+    if (!activeSessionId) return;
+    operationRef.current += 1;
+    discoveryRef.current = null;
+    setSelected(null);
+    if (targetsBySessionRef.current[activeSessionId]) {
+      const { [activeSessionId]: _forgotten, ...rest } = targetsBySessionRef.current;
+      targetsBySessionRef.current = rest;
+      void desktop.patchConfig({ studioTargetsBySession: rest });
+    }
+    chatsWithoutStudioRef.current = new Set(chatsWithoutStudioRef.current).add(activeSessionId);
+    void setChatWithoutStudio(true);
+    void discover();
+  }, [activeSessionId, discover, setChatWithoutStudio]);
+
+  const reportStudioUse = useCallback(
+    ({ usedStudio }: { started: boolean; usedStudio: boolean }) => {
+      if (!activeSessionId || !configLoadedRef.current) return;
+      const remembered = targetsBySessionRef.current[activeSessionId];
+      const seen = studioUseRef.current;
+      if (seen?.session !== activeSessionId) {
+        studioUseRef.current = { session: activeSessionId, used: usedStudio };
+        const routed = routedBySessionRef.current[activeSessionId];
+        if (usedStudio && !remembered && routed) {
+          operationRef.current += 1;
+          discoveryRef.current = null;
+          const session = activeSessionId;
+          void rememberTarget(routed, activeSessionId).then(() => {
+            if (activeSessionIdRef.current === session) void discover();
+          });
+        } else if (!usedStudio && remembered && !chosenChatsRef.current.has(activeSessionId)) {
+          const { [activeSessionId]: _forgotten, ...rest } = targetsBySessionRef.current;
+          targetsBySessionRef.current = rest;
+          void desktop.patchConfig({ studioTargetsBySession: rest });
+          void discover();
+        } else if (usedStudio && !remembered) {
+          operationRef.current += 1;
+          discoveryRef.current = null;
+          unknownPlacesRef.current = new Set(unknownPlacesRef.current).add(activeSessionId);
+          setSelected(null);
+          setUnknownPlace(true);
+          void discover();
+        }
+        return;
+      }
+      if (!usedStudio || seen.used) return;
+      seen.used = true;
+      if (remembered) return;
+      const usedTarget = routedBySessionRef.current[activeSessionId] ?? selectedRef.current;
+      if (usedTarget) void rememberTarget(usedTarget, activeSessionId);
+      else {
+        unknownPlacesRef.current = new Set(unknownPlacesRef.current).add(activeSessionId);
+        setUnknownPlace(true);
+      }
+    },
+    [activeSessionId, discover, rememberTarget],
   );
 
   const select = useCallback(
@@ -346,6 +529,23 @@ export function StudioTargetProvider({ children }: { children: ReactNode }) {
         if (operation !== operationRef.current || activeSessionIdRef.current !== sessionIdAtStart) {
           return;
         }
+        await setChatWithoutStudio(false);
+        if (operation !== operationRef.current || activeSessionIdRef.current !== sessionIdAtStart) {
+          return;
+        }
+        if (sessionIdAtStart) {
+          const unknown = new Set(unknownPlacesRef.current);
+          unknown.delete(sessionIdAtStart);
+          unknownPlacesRef.current = unknown;
+        }
+        setUnknownPlace(false);
+        setStudioChosen(true);
+        setStudioChoices((count) => count + 1);
+        if (sessionIdAtStart && !chosenChatsRef.current.has(sessionIdAtStart)) {
+          const chosen = new Set(chosenChatsRef.current).add(sessionIdAtStart);
+          chosenChatsRef.current = chosen;
+          void desktop.patchConfig({ chatsWithChosenPlace: [...chosen] });
+        }
         setSelected(result.selected);
         await rememberTarget(result.selected, sessionIdAtStart);
         setTargets((current) =>
@@ -371,7 +571,7 @@ export function StudioTargetProvider({ children }: { children: ReactNode }) {
         if (operation === operationRef.current) setSelectingKey(null);
       }
     },
-    [activeSessionId, generatePrograms, rememberTarget, withProgramFallbacks],
+    [activeSessionId, generatePrograms, rememberTarget, setChatWithoutStudio, withProgramFallbacks],
   );
 
   // AI traces attach the Studio place the prompt was routed to.
@@ -401,8 +601,15 @@ export function StudioTargetProvider({ children }: { children: ReactNode }) {
         // own effect run will (re)apply the correct remembered target.
         if (cancelled) return;
         targetsBySessionRef.current = config.studioTargetsBySession ?? {};
+        chatsWithoutStudioRef.current = new Set(config.chatsWithoutStudio ?? []);
+        chosenChatsRef.current = new Set(config.chatsWithChosenPlace ?? []);
+        routedBySessionRef.current = config.routedTargetsBySession ?? {};
         configLoadedRef.current = true;
       }
+      setWithoutStudio(chatsWithoutStudioRef.current.has(activeSessionId));
+      if (errorSourceRef.current === "select") clearError();
+      setUnknownPlace(unknownPlacesRef.current.has(activeSessionId));
+      setStudioChosen(chosenChatsRef.current.has(activeSessionId));
       setSelected(targetsBySessionRef.current[activeSessionId] ?? null);
       // Any selection spinner belonged to the previous session.
       setSelectingKey(null);
@@ -412,28 +619,111 @@ export function StudioTargetProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [activeSessionId, client, discover]);
+  }, [activeSessionId, clearError, client, discover]);
 
+  // Finding Studios is normally a moment. A stuck helper mustn't keep every chat from sending.
   useEffect(() => {
-    if (!client || status !== "empty") return;
-    const timer = window.setInterval(() => void discover(false), 2_000);
-    return () => window.clearInterval(timer);
-  }, [client, discover, status]);
+    setFindingForAWhile(false);
+    if (status !== "loading") return;
+    const timer = window.setTimeout(() => setFindingForAWhile(true), 3_000);
+    return () => window.clearTimeout(timer);
+  }, [status]);
 
-  const promptReference = selected ? createStudioTargetPromptReference(selected) : null;
+  const remembered = activeSessionId ? targetsBySessionRef.current[activeSessionId] : undefined;
+  const missing = !withoutStudio && !selected && remembered ? remembered : null;
+  const sameName = missing ? targets.filter((target) => sameNamedPlace(target, missing)) : [];
+  const twins = sameName.length;
+  const nameMatch = twins === 1 ? (sameName[0] ?? null) : null;
+  // With no place to get wrong, a chat can carry on with whatever else it's about.
+  const sendBlock =
+    withoutStudio || targets.length === 0
+      ? status === "loading" && !withoutStudio && !findingForAWhile
+        ? "Finding Studios."
+        : null
+      : missing && discoveryFailed
+        ? `Couldn't check if ${placeName(missing.label)} is open. Refresh, or work without Studio.`
+        : missing && twins > 1
+          ? `${twins} places named ${placeName(missing.label)} are open. Choose one, or work without Studio.`
+          : missing && nameMatch
+            ? `Is the open ${placeName(missing.label)} this chat's place? Choose it, or work without Studio.`
+            : missing
+              ? `${placeName(missing.label)} isn't open. Reopen it, choose another, or work without Studio.`
+              : unknownPlace && !selected
+                ? "Choose which Studio this chat worked in, or work without Studio."
+                : null;
+
+  // Quickly while someone waits for a Studio or this chat's place, slowly otherwise.
+  useEffect(() => {
+    if (!client || status === "loading" || withoutStudio) return;
+    const timer = window.setInterval(
+      () => void discover(false),
+      status === "empty" || missing !== null ? 2_000 : 10_000,
+    );
+    return () => window.clearInterval(timer);
+  }, [client, discover, missing, status, withoutStudio]);
+
+  const promptReference = selected
+    ? createStudioTargetPromptReference(selected)
+    : missing
+      ? PLACE_CLOSED_PROMPT_REFERENCE
+      : withoutStudio || (status !== "loading" && targets.length === 0)
+        ? NO_STUDIO_PROMPT_REFERENCE
+        : status === "loading"
+          ? STILL_FINDING_PROMPT_REFERENCE
+          : targets.length > 1
+            ? CHOOSE_STUDIO_PROMPT_REFERENCE
+            : null;
   const value = useMemo(
     () => ({
       targets,
       selected,
       promptReference,
       status,
+      discoveryFailed,
       refreshing,
       selectingKey,
       error,
+      missing,
+      withoutStudio,
+      workWithoutStudio,
+      reportStudioUse,
+      unknownPlace,
+      clearError,
+      noteRouted,
+      studioChosen,
+      studioChoices,
+      copyPlaceToChat,
+      twins,
+      nameMatch,
+      sendBlock,
       discover,
       select,
     }),
-    [targets, selected, promptReference, status, refreshing, selectingKey, error, discover, select],
+    [
+      targets,
+      selected,
+      promptReference,
+      status,
+      discoveryFailed,
+      refreshing,
+      selectingKey,
+      error,
+      missing,
+      withoutStudio,
+      workWithoutStudio,
+      reportStudioUse,
+      unknownPlace,
+      clearError,
+      noteRouted,
+      studioChosen,
+      studioChoices,
+      copyPlaceToChat,
+      twins,
+      nameMatch,
+      sendBlock,
+      discover,
+      select,
+    ],
   );
   return <StudioTargetContext.Provider value={value}>{children}</StudioTargetContext.Provider>;
 }

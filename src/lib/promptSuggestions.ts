@@ -31,6 +31,19 @@ export const CLIENT_COMMANDS: readonly Command[] = [
   clientCommand("reload", "reload config, commands and skills"),
 ];
 
+/**
+ * Whether this text would set the agent to work, which needs a Studio to work in.
+ * Commands that run here don't, including asking about or stopping a goal.
+ */
+export function needsStudio(text: string): boolean {
+  const parsed = parseSlashCommand(text);
+  if (!parsed) return true;
+  if (CLIENT_COMMANDS.some(({ name }) => name === parsed.name)) return false;
+  if (parsed.name !== "goal") return true;
+  const argument = parsed.input.trim().toLowerCase();
+  return argument !== "" && argument !== "pause" && argument !== "clear";
+}
+
 export function mergeCommands(catalog: readonly Command[]): Command[] {
   const clientNames = new Set(CLIENT_COMMANDS.map(({ name }) => name));
   return [...catalog.filter(({ name }) => !clientNames.has(name)), ...CLIENT_COMMANDS];

@@ -168,7 +168,11 @@ export function contentId(text: string): string {
   return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16).padStart(14, "0");
 }
 
-export function isStudioTool(tool: string): boolean {
+/** Code Mode reaches Studio through the `execute` tool, with a script that names it. */
+const STUDIO_IN_CODE = /roblox[-_]studio/;
+
+export function isStudioTool(tool: string, input?: Record<string, unknown>): boolean {
+  if (tool === "execute") return typeof input?.code === "string" && STUDIO_IN_CODE.test(input.code);
   return tool.startsWith(STUDIO_MCP_PREFIX);
 }
 

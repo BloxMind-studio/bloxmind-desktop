@@ -1,5 +1,6 @@
 import { hashKey, type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
+import { isStudioTool } from "@/lib/aiTracing";
 import type { OpencodeClient } from "@/lib/opencode";
 
 import { hasPlaytestContext } from "@/lib/playtestPlan";
@@ -111,6 +112,47 @@ export function useMessageIds(): string[] {
     select: useCallback((d: MessagesCache) => d.messageIds, []),
   });
   return data ?? EMPTY_IDS;
+}
+
+/** Looking at what's open isn't working in any of it, however it's called. */
+export function worksInStudio(tool: string, input?: Record<string, unknown>): boolean {
+  if (tool.endsWith("list_roblox_studios") || !isStudioTool(tool, input)) return false;
+  if (tool !== "execute" || typeof input?.code !== "string") return true;
+  return (
+    input.code.replace(/roblox[-_]studio\W+list_roblox_studios/g, "").match(/roblox[-_]studio/) !==
+    null
+  );
+}
+
+/** Whether this chat is under way, and whether the agent has used Studio in it. */
+export function useChatStudioUse(): { started: boolean; usedStudio: boolean } | null {
+  const { activeSessionId } = useActiveSession();
+  const { client, ready } = useOpenCodeClient();
+  const queryClient = useQueryClient();
+
+  return (
+    useQuery<MessagesCache, Error, { started: boolean; usedStudio: boolean }>({
+      queryKey: activeSessionId ? qk.messages(activeSessionId) : NOOP_KEY,
+      queryFn: () =>
+        client && activeSessionId
+          ? fetchMessages(client, queryClient, activeSessionId)
+          : Promise.resolve(EMPTY_CACHE),
+      enabled: ready && !!client && !!activeSessionId,
+      select: useCallback(
+        (cache: MessagesCache) => ({
+          started: cache.messageIds.length > 0,
+          usedStudio: cache.messageIds.some((id) =>
+            cache.messagesById[id]?.parts.some(
+              (part) =>
+                part.type === "tool" &&
+                worksInStudio(part.tool, part.state.input as Record<string, unknown> | undefined),
+            ),
+          ),
+        }),
+        [],
+      ),
+    }).data ?? null
+  );
 }
 
 export function useMessage(messageId: string): MessageWithParts | undefined {

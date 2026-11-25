@@ -14,6 +14,7 @@ import type { MessagesCache } from "@/lib/sseDispatch";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
+import { useStudioTargetOptional } from "@/providers/StudioTargetProvider";
 
 const BUILT_IN = new Set(["init", "review", ...CLIENT_COMMANDS.map(({ name }) => name)]);
 
@@ -51,6 +52,7 @@ export function useComposerCommands(actions: {
   restoreDraft: (text: string, sessionID: string) => void;
 }) {
   const { client } = useOpenCodeClient();
+  const studioTarget = useStudioTargetOptional();
   const { activeSessionId, selectSession } = useActiveSession();
   const { selectedModel, selectedVariant } = usePreferences();
   const queryClient = useQueryClient();
@@ -138,6 +140,8 @@ export function useComposerCommands(actions: {
         queryClient.setQueryData<Session[]>(qk.sessions, (previous) =>
           previous?.some(({ id }) => id === session.id) ? previous : [session, ...(previous ?? [])],
         );
+        // The same history means the same place, which has to be known before the chat opens.
+        studioTarget?.copyPlaceToChat?.(sessionID, session.id);
         await selectSession(session.id);
         return;
       }

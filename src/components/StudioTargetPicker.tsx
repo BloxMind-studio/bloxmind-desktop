@@ -21,10 +21,24 @@ function StudioIcon() {
   );
 }
 
-export default function StudioTargetPicker() {
+export default function StudioTargetPicker({
+  openRequest = 0,
+  onWorkedWithoutStudio,
+}: {
+  /** Bumped by the chat notice to open the picker without a click on its trigger. */
+  openRequest?: number;
+  onWorkedWithoutStudio?: () => void;
+} = {}) {
   const studioTarget = useStudioTargetOptional();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const seenOpenRequest = useRef(openRequest);
+
+  useEffect(() => {
+    if (openRequest === seenOpenRequest.current) return;
+    seenOpenRequest.current = openRequest;
+    setOpen(true);
+  }, [openRequest]);
 
   useEffect(() => {
     if (!open) return;
@@ -176,6 +190,21 @@ export default function StudioTargetPicker() {
               title={error}
             >
               {error}
+            </div>
+          ) : null}
+          {studioTarget && !studioTarget.withoutStudio ? (
+            <div className="border-t p-2">
+              <button
+                type="button"
+                onClick={() => {
+                  studioTarget.workWithoutStudio();
+                  onWorkedWithoutStudio?.();
+                  setOpen(false);
+                }}
+                className="w-full rounded-md px-3 py-2 text-left text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              >
+                Work without Studio
+              </button>
             </div>
           ) : null}
         </div>

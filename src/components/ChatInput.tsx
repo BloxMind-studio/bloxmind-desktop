@@ -15,6 +15,7 @@ import { useIsBusy } from "@/hooks/useSessionStatuses";
 import { modelAcceptsImages } from "@/lib/imageSupport";
 import { findModelInfo, formatTokens, modelSpecs, reasoningLabel } from "@/lib/modelSpecs";
 import { resolveVariantForModel } from "@/lib/modelVariant";
+import { needsStudio } from "@/lib/promptSuggestions";
 import { playMessageSent } from "@/lib/soundEffects";
 import { splitModelKey } from "@/lib/splitModelKey";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
@@ -282,7 +283,9 @@ function ChatInput() {
     setSelectedAgent,
     setSelectedVariant,
   } = usePreferences();
-  const studioTargetReference = useStudioTargetOptional()?.promptReference ?? null;
+  const studioTarget = useStudioTargetOptional();
+  const studioTargetReference = studioTarget?.promptReference ?? null;
+  const sendBlock = studioTarget?.sendBlock ?? null;
   const { contextPrompt: projectIndexContext } = useProjectIndexContext();
 
   const systemPrompt = useMemo(() => {
@@ -635,6 +638,11 @@ function ChatInput() {
     const editorText = promptEditorRef.current?.getText() ?? text;
     const trimmed = editorText.trim();
     if (!trimmed && attachments.length === 0) return;
+    if (sendBlock && needsStudio(trimmed)) {
+      if (studioTarget?.status === "loading") toast.message(sendBlock);
+      else toast.error(sendBlock);
+      return;
+    }
     if (attachments.length > 0 && acceptsImages === false) {
       toast.error("This model can't read images", {
         description: "Remove the attachments or switch to a vision-capable model.",
@@ -679,6 +687,7 @@ function ChatInput() {
     setAttachments([]);
     promptEditorRef.current?.clear();
     writeDraft(activeSessionId, "");
+    if (needsStudio(trimmed)) studioTarget?.noteRouted?.();
     playMessageSent();
     void sendMessage
       .mutateAsync({ text: trimmed || " ", images, studioTargetReference, systemPrompt })
