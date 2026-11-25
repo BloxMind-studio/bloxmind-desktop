@@ -7,6 +7,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+
+- The OpenCode v2 client was upgraded to `@opencode/client` 2.4.1 and the fallback engine pin to v2.4.1, with SHA-256 digests verified against GitHub's published release. Compatibility was smoke-tested against both the 2.3.0 and 2.4.1 engines (sessions, agents, models, MCP, instructions entries, and the SSE event stream).
+
 ## [0.16.1] - 2026-11-20
 
 ### Fixed
