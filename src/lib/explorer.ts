@@ -9,6 +9,9 @@ import { extractStructuredOutput } from "./structuredOutput";
 export const ExplorerFieldSchema = Schema.Struct({
   name: Schema.String,
   value: Schema.String,
+  // Optional hints so a read value can be shown the way Studio shows it.
+  type: Schema.optional(Schema.String),
+  numeric: Schema.optional(Schema.Boolean),
 });
 
 export type ExplorerField = typeof ExplorerFieldSchema.Type;
@@ -105,6 +108,54 @@ export function sortExplorerSnapshot(snapshot: ExplorerSnapshot): ExplorerSnapsh
   return { ...snapshot, roots: sortExplorerNodes(snapshot.roots) };
 }
 
+/** The numbers inside a value like "1, 2, 3" or a CFrame's rotation. */
+export function fieldNumbers(value: string): string[] {
+  return value.split(/[\s,;{}()]+/).filter(Boolean);
+}
+
+/** Shortens numbers with more than 3 decimals, and very big or tiny ones to an exponent. */
+export function shortenNumber(text: string): string {
+  if (text === "-0") return "0";
+  if (!/^-?\d+\.\d{4,}(?:e[-+]?\d+)?$/i.test(text)) return text;
+  const number = Number(text);
+  const size = Math.abs(number);
+  // Rotations leave noise like 8.7e-15 behind where the value is really zero.
+  if (size < 1e-9) return "0";
+  if (size >= 1e15 || size < 0.001) return number.toExponential(2);
+  return String(Number(number.toFixed(3)));
+}
+
+/** The same short numbers everywhere a numeric value is shown or copied. */
+export function readableFieldValue(field: ExplorerField): string {
+  return field.numeric
+    ? field.value.replace(/-?\d+(?:\.\d+)?(?:e[-+]?\d+)?/gi, shortenNumber)
+    : field.value;
+}
+
+/**
+ * A value as people want to read it: `Enum.CameraType.Fixed` as "Fixed", a
+ * CFrame by its position, a Color3 in 0 to 255, and numbers with more than
+ * three decimals shortened. The exact value stays in the row's title.
+ */
+export function formatFieldValue(field: ExplorerField): string {
+  const { value, type } = field;
+  if (value === "" && (type === "Instance" || type === "PhysicalProperties")) {
+    return type === "Instance" ? "None" : "Default";
+  }
+  if (type === "Color3") {
+    return fieldNumbers(value)
+      .slice(0, 3)
+      .map((part) => Math.round(Number(part) * 255))
+      .join(", ");
+  }
+  if (type === "CFrame") return fieldNumbers(value).slice(0, 3).map(shortenNumber).join(", ");
+  if (!type || type === "EnumItem") {
+    const enumItem = /^Enum\.\w+\.(\w+)$/.exec(value);
+    if (enumItem) return enumItem[1];
+  }
+  return readableFieldValue(field);
+}
+
 export const ExplorerSnapshotSchema = Schema.Struct({
   placeName: Schema.String,
   capturedAt: Schema.String,
@@ -145,7 +196,12 @@ const FIELD_JSON_SCHEMA = {
   type: "object",
   additionalProperties: false,
   required: ["name", "value"],
-  properties: { name: { type: "string" }, value: { type: "string" } },
+  properties: {
+    name: { type: "string" },
+    value: { type: "string" },
+    type: { type: "string" },
+    numeric: { type: "boolean" },
+  },
 } as const;
 
 const NODE_JSON_SCHEMA = {
@@ -207,7 +263,7 @@ export function explorerSystemPrompt(allowedTools: readonly string[]): string {
   return `You generate the private TypeScript data provider for BloxMind's Explorer panel.
 Write an import-free deterministic read-only TypeScript program and reply with a single JSON value, the complete envelope described below. Do not call any Studio tool yourself: tool calls in this session are rejected. Read the tools' parameters from your own tool list instead.
 The source must define async function run({ input, callTool }), require input.studioId, and return an Explorer snapshot matching the requested output contract. It must never modify the place.
-The program may only call these tools, by exactly these names: ${allowedTools.join(", ")}. The runtime refuses any other tool. Use these names in callTool even though your own tool list shows them with a "${STUDIO_MCP_SERVER_NAME}_" prefix. Pass { studio_id: input.studioId } on every Studio-specific tool call.
+The program may only call these tools, by exactly these names: ${allowedTools.join(", ")}. The runtime refuses any other tool. Use these names in callTool even though your own tool list shows them with a "${STUDIO_MCP_SERVER_NAME}_" prefix. Pass { studio_id: input.studioId } on every Studio-specific tool call. The tree read leaves properties empty on services and Terrain; when inspect_instance is available, read those nodes with it to fill properties and attributes (each field has name, value, optional type and numeric). Ignore a tool that isn't available or returns an error.
 callTool resolves to a raw MCP CallToolResult ({ content, isError }). When isError is true, content holds Studio's error text; it does not throw. Tool output is usually JSON inside a text content part, sometimes after a note, so parse it defensively.
 The JSON value you reply with must be exactly this object shape (no extra properties), where "source" is the complete program source as one JSON string:
 ${JSON.stringify({ version: 1, contract: EXPLORER_CONTRACT, source: "..." })}

@@ -66,6 +66,65 @@ async function run({ input, callTool }: { input: { studioId: string }; callTool:
       properties: [], attributes: [], children: [],
     });
   }
+  // Studio's tree read leaves properties empty on services and Terrain. Read
+  // those with inspect_instance so the inspector has something useful to show.
+  // Everything else keeps the cheap tree-only read, and a tool that isn't
+  // available in this Studio never stops the snapshot.
+  const inspectTargets = [...byPath.values()].filter(
+    (node: any) =>
+      visibleServices.has(String(node.path).split(".")[1] ?? "") ||
+      node.className === "Terrain",
+  );
+  const numbersIn = (text: string): string[] =>
+    String(text)
+      .split(/[\s,;{}()]+/)
+      .filter(Boolean);
+  const infer = (text: string): any => ({
+    value: text,
+    ...(/^Enum\.\w+\.\w+$/.test(text) ? { type: "EnumItem" } : {}),
+    ...(/-?\d+(?:\.\d+)?(?:e[-+]?\d+)?/i.test(text) ? { numeric: true } : {}),
+  });
+  const fieldValue = (value: any): any => {
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      return infer(String(value));
+    }
+    if (value && typeof value === "object") {
+      if (typeof value.Position === "string" && typeof value.Rotation === "string") {
+        return {
+          value: [...numbersIn(value.Position), ...numbersIn(value.Rotation)].join(", "),
+          type: "CFrame",
+          numeric: true,
+        };
+      }
+      if (Array.isArray(value)) return infer(value.map((item) => String(item)).join(", "));
+      return infer(JSON.stringify(value));
+    }
+    return infer("");
+  };
+  const fieldsOf = (values: any, limit: number): any[] => {
+    if (!values || typeof values !== "object" || Array.isArray(values)) return [];
+    return Object.entries(values)
+      .filter(([name]) => name !== "UniqueId")
+      .map(([name, raw]) => ({ name, ...fieldValue(raw) }))
+      .sort((a, b) => String(a.name).localeCompare(String(b.name)))
+      .slice(0, limit);
+  };
+  for (const node of inspectTargets) {
+    try {
+      const result = await callTool("inspect_instance", {
+        studio_id: studioId,
+        path: node.path,
+      });
+      if (mcpErrorText(result)) continue;
+      const data = normalizeMcpResult(result);
+      const match = Array.isArray(data?.matches) ? data.matches[0] : data;
+      if (!match) continue;
+      node.properties = fieldsOf(match.properties, 16);
+      node.attributes = fieldsOf(match.attributes, 24);
+    } catch {
+      // The tree is still useful without details from one instance.
+    }
+  }
   const roots: any[] = [];
   for (const [path, node] of byPath) {
     const parentPath = path.includes(".") ? path.slice(0, path.lastIndexOf(".")) : "";

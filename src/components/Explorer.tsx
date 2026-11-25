@@ -37,6 +37,7 @@ import {
   ExplorerModelError,
   type ExplorerNode,
   type ExplorerProgramEnvelope,
+  formatFieldValue,
   generateExplorerProgram,
   sortExplorerSnapshot,
 } from "@/lib/explorer";
@@ -834,7 +835,7 @@ function FieldSection({ title, fields }: { title: string; fields: readonly Explo
               {field.name}
             </dt>
             <dd className="break-words font-mono text-foreground" title={field.value}>
-              {field.value}
+              {formatFieldValue(field)}
             </dd>
           </div>
         ))}

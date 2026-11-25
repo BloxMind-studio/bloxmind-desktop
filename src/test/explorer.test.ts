@@ -7,8 +7,11 @@ import {
   ExplorerProgramEnvelopeSchema,
   ExplorerSnapshotSchema,
   explorerSystemPrompt,
+  formatFieldValue,
   generateExplorerProgram,
   MAX_EXPLORER_GENERATIONS,
+  readableFieldValue,
+  shortenNumber,
   sortExplorerNodes,
 } from "@/lib/explorer";
 import { isVisibleSession } from "@/lib/sessionVisibility";
@@ -357,5 +360,40 @@ describe("Explorer data boundary", () => {
     expect(prompt).toContain("only as a hint");
     expect(prompt).toContain("Rediscover");
     expect(prompt).toContain("verify its identity and current state immediately");
+  });
+});
+
+describe("Explorer field values", () => {
+  it("rounds noisy numbers without touching exact ones", () => {
+    expect(shortenNumber("0.30000001192092896")).toBe("0.3");
+    expect(shortenNumber("90.00000000000001")).toBe("90");
+    expect(shortenNumber("8.742277657347586e-15")).toBe("0");
+    expect(shortenNumber("0.00012345")).toBe("1.23e-4");
+    expect(shortenNumber("1.25")).toBe("1.25");
+    expect(shortenNumber("-0")).toBe("0");
+    expect(
+      readableFieldValue({
+        name: "Size",
+        value: "0.30000001192092896, 4, 1.5",
+        numeric: true,
+      }),
+    ).toBe("0.3, 4, 1.5");
+  });
+
+  it("shows enum names, CFrame positions and Color3 values the way people read them", () => {
+    expect(
+      formatFieldValue({ name: "Shape", type: "EnumItem", value: "Enum.PartType.Block" }),
+    ).toBe("Block");
+    expect(
+      formatFieldValue({ name: "CFrame", type: "CFrame", value: "1.00000001, 2, 3, 0, 90, 0" }),
+    ).toBe("1, 2, 3");
+    expect(
+      formatFieldValue({ name: "Color", type: "Color3", value: "1, 0.5, 0", numeric: true }),
+    ).toBe("255, 128, 0");
+    expect(formatFieldValue({ name: "PrimaryPart", type: "Instance", value: "" })).toBe("None");
+    // Text and exact numbers are left alone.
+    expect(formatFieldValue({ name: "Name", value: "0.30000001192092896" })).toBe(
+      "0.30000001192092896",
+    );
   });
 });
