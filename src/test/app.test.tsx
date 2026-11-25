@@ -813,12 +813,12 @@ describe("User journeys", () => {
 
     // The permission prompt should appear (populated by selectSession from SDK response)
     await waitFor(() => {
-      expect(screen.getByText("Permission Required")).toBeInTheDocument();
-      expect(screen.getByText("bash")).toBeInTheDocument();
+      expect(screen.getByText("Run this command?")).toBeInTheDocument();
+      expect(screen.getByText("rm -rf /tmp/test")).toBeInTheDocument();
     });
 
-    // Click "Allow Once"
-    const allowBtn = screen.getByText("Allow Once");
+    // Click "Allow once"
+    const allowBtn = screen.getByText("Allow once");
     await act(async () => {
       fireEvent.click(allowBtn);
     });

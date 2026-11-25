@@ -1,4 +1,4 @@
-import { rename, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, rename, readFile, rm, writeFile } from "node:fs/promises";
 import { userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -21,7 +21,9 @@ import {
   type AppConfig,
   AppConfigPatchSchema,
   AppConfigSchema,
+  type BlenderSetupProgress,
   DEFAULT_APP_CONFIG,
+  type ModelUploadResult,
   type OpenCodeStartupProgress,
 } from "../src/types/desktop";
 import { migrateStoredConfig } from "../src/lib/configMigration";
@@ -36,7 +38,23 @@ import {
 } from "../src/types/studioTarget";
 import { handleLastWindowClosed } from "./appLifecycle";
 import { createMainErrorReporter } from "./errorReporter";
-import { engineFolder } from "./machineFolders";
+import { blenderToolsFolder, engineFolder } from "./machineFolders";
+import {
+  blenderMcpServerConfig,
+  getBlenderToolsState,
+  installBlenderTools,
+  isBlenderInstalled,
+  openBlender,
+  removeBlenderTools,
+} from "./services/BlenderTools";
+import {
+  getUploadAccess,
+  modelFolder,
+  readModelFile,
+  readSentModel,
+  sendModelToPlace,
+  sentModelsFile,
+} from "./services/ModelUpload";
 import {
   findInstructionFiles,
   migrateWorkspaceInstructionsToGlobalSync,
@@ -44,7 +62,9 @@ import {
   stripLegacyManagedBlock,
   writeGlobalInstructions,
 } from "./instructionFiles";
-import { skillDirectories } from "./opencodeConfig";
+import { BLENDER_MCP_SERVER_NAME, skillDirectories, withBlender } from "./opencodeConfig";
+import type { McpServerConfig } from "../src/lib/mcpServers";
+import type { CallStudioTool } from "./studioQueries";
 import { channels } from "./channels";
 import { makeOpenCodeLayer, OpenCode } from "./services/OpenCode";
 import {
@@ -176,11 +196,25 @@ const studioMcpBrokerLayer = makeStudioMcpBrokerLayer({
   onStartFailure: (error) => reportMainError("studio_mcp_broker_start", error),
 }).pipe(Layer.tapErrorCause(reportLayerFailure("studio_mcp_broker_start")));
 
-const openCodeBinaryDirectory = engineFolder({
+const machineFolderOptions = {
   platform: process.platform,
   userData: app.getPath("userData"),
   localAppData: process.env.LOCALAPPDATA,
-});
+};
+const openCodeBinaryDirectory = engineFolder(machineFolderOptions);
+const blenderToolsRoot = () => blenderToolsFolder(machineFolderOptions);
+
+const blenderServerConfig = (): McpServerConfig => {
+  const server = blenderMcpServerConfig(blenderToolsRoot());
+  return {
+    name: BLENDER_MCP_SERVER_NAME,
+    type: "local",
+    command: [...server.command],
+    url: null,
+    enabled: true,
+    environment: server.environment,
+  };
+};
 
 const openCodeRuntime = ManagedRuntime.make(
   Layer.merge(
@@ -199,8 +233,17 @@ const openCodeRuntime = ManagedRuntime.make(
         }),
         // Read lazily at engine start so a server added in Settings while the
         // app runs is picked up on the next restart (live changes go through
-        // the engine's config API instead).
-        mcpServers: () => loadConfig.pipe(Effect.map((config) => config.mcpServers)),
+        // the engine's config API instead). Blender is added here too, so it
+        // survives an engine restart without depending on a live config patch.
+        mcpServers: () =>
+          Effect.gen(function* () {
+            const config = yield* loadConfig;
+            const installed = yield* Effect.promise(() => isBlenderInstalled(blenderToolsRoot()));
+            return [
+              ...config.mcpServers.filter((server) => server.name !== BLENDER_MCP_SERVER_NAME),
+              ...(installed ? [blenderServerConfig()] : []),
+            ];
+          }),
         workspace: join(app.getPath("home"), "BloxMind"),
         onNetstatMiss: (message) => reportMainError("opencode_netstat_miss", new Error(message)),
         onStartupProgress: (progress: OpenCodeStartupProgress) => {
@@ -354,6 +397,24 @@ function patchConfig(input: unknown) {
 }
 
 const runMain = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect);
+
+const StudioKeySchema = Schema.String.pipe(Schema.minLength(1), Schema.maxLength(512));
+
+/** Runs a read against Studio through the broker, keeping Studio's error text for the renderer. */
+const queryStudio = <A>(query: (callTool: CallStudioTool) => Promise<A>) =>
+  openCodeRuntime.runPromise(
+    Effect.gen(function* () {
+      const broker = yield* StudioMcpBroker;
+      return yield* Effect.tryPromise({
+        try: () => query((name, args) => Effect.runPromise(broker.callTool(name, args))),
+        catch: (cause) =>
+          new DesktopMainError({
+            message: cause instanceof Error ? cause.message : "Studio didn't answer",
+            cause,
+          }),
+      });
+    }),
+  );
 
 /**
  * Best-effort sweep of stale opencode processes left behind by a
@@ -635,6 +696,154 @@ const registerIpcHandlers = Effect.sync(() => {
         app.quit();
       }),
     ),
+  );
+  // Kept in main so leaving Settings doesn't stop or lose a Blender setup.
+  let blenderSetup: AbortController | null = null;
+  let blenderProgress: BlenderSetupProgress | null = null;
+  const applyBlenderToConfig = (blender: ReturnType<typeof blenderMcpServerConfig> | null) =>
+    configMutex.withPermits(1)(
+      Effect.tryPromise({
+        try: async () => {
+          const configFile = join(globalConfigDirectory, "opencode.json");
+          await writeFile(configFile, withBlender(await readFile(configFile, "utf8"), blender));
+        },
+        catch: (cause) =>
+          new DesktopMainError({ message: "Failed to apply Blender's settings", cause }),
+      }),
+    );
+  safeIpcHandle(channels.getBlenderToolsState, () =>
+    blenderSetup
+      ? { state: "installing", progress: blenderProgress }
+      : getBlenderToolsState(blenderToolsRoot()),
+  );
+  safeIpcHandle(channels.installBlenderTools, (event) => {
+    if (blenderSetup) return undefined;
+    const setup = new AbortController();
+    blenderSetup = setup;
+    blenderProgress = null;
+    return runMain(
+      installBlenderTools({
+        root: blenderToolsRoot(),
+        fetch: (url, init) => net.fetch(url, init),
+        signal: setup.signal,
+        onProgress: (progress) => {
+          blenderProgress = progress;
+          if (!event.sender.isDestroyed()) {
+            event.sender.send(channels.blenderSetupProgress, progress);
+          }
+        },
+      }).pipe(
+        // The page reads the reason from the message, as errors lose everything else crossing over.
+        Effect.mapError(
+          (error) =>
+            new DesktopMainError({
+              message: `${error.message} (reason: ${error.reason})`,
+              cause: error.cause,
+            }),
+        ),
+        Effect.andThen(applyBlenderToConfig(blenderMcpServerConfig(blenderToolsRoot()))),
+        Effect.ensuring(
+          Effect.sync(() => {
+            blenderSetup = null;
+          }),
+        ),
+      ),
+    );
+  });
+  safeIpcHandle(channels.cancelBlenderTools, () => blenderSetup?.abort());
+  safeIpcHandle(channels.openBlender, () =>
+    runMain(
+      Effect.tryPromise({
+        try: () => openBlender(blenderToolsRoot()),
+        catch: (cause) => new DesktopMainError({ message: "Couldn't open Blender", cause }),
+      }),
+    ),
+  );
+  safeIpcHandle(channels.removeBlenderTools, () =>
+    runMain(
+      Effect.gen(function* () {
+        const state = yield* Effect.promise(() => getBlenderToolsState(blenderToolsRoot()));
+        if (state.state === "ready" && state.running) {
+          return yield* Effect.fail(new DesktopMainError({ message: "Close Blender first" }));
+        }
+        yield* applyBlenderToConfig(null);
+        yield* Effect.tryPromise({
+          try: () => removeBlenderTools(blenderToolsRoot()),
+          catch: (cause) => {
+            const code = (cause as { code?: unknown } | null)?.code;
+            const locked = code === "EBUSY" || code === "EPERM" || code === "EACCES";
+            return new DesktopMainError({
+              message: `Couldn't remove Blender${locked ? " (locked)" : ""}`,
+              cause,
+            });
+          },
+        });
+      }),
+    ),
+  );
+  const sentModels = () => sentModelsFile(app.getPath("userData"));
+  const uploadsInFlight = new Map<
+    string,
+    { result: Promise<ModelUploadResult>; urls: Set<string> }
+  >();
+  safeIpcHandle(channels.getUploadAccess, async (_event, studioKey: unknown, modelUrl: unknown) => {
+    const modelsFolder = join(app.getPath("home"), "BloxMind", "Models");
+    await mkdir(modelsFolder, { recursive: true }).catch(() => {});
+    const folder = (typeof modelUrl === "string" ? modelFolder(modelUrl) : null) ?? modelsFolder;
+    const details = await queryStudio((callTool) =>
+      getUploadAccess(callTool, typeof studioKey === "string" ? studioKey : null, folder),
+    ).catch(() => ({ state: "no_studio" as const, readOn: false, writeOn: false }));
+    // Failing keeps the last answer on screen, and the checklist asks again on its next check.
+    if (details.state === "rate_limited") throw new Error("Roblox asked BloxMind to slow down");
+    return { ...details, folder, folderUrl: pathToFileURL(folder).href };
+  });
+  safeIpcHandle(channels.readModelFile, async (_event, url: unknown) => {
+    const file = await readModelFile(await Schema.decodeUnknownPromise(Schema.String)(url));
+    if (!file) return null;
+    return {
+      name: file.name,
+      fileName: file.fileName,
+      path: file.path,
+      folder: file.folder,
+      data: file.bytes,
+      kind: file.kind,
+      sizeBytes: file.bytes.byteLength,
+      hash: file.hash,
+      sent: await readSentModel(sentModels(), file.hash),
+    };
+  });
+  safeIpcHandle(
+    channels.uploadModelToPlace,
+    async (event, url: unknown, studioKey: unknown, hash: unknown, addOnly: unknown) => {
+      const decodedUrl = await Schema.decodeUnknownPromise(Schema.String)(url);
+      const studioId = await Schema.decodeUnknownPromise(StudioKeySchema)(studioKey);
+      const expectedHash = await Schema.decodeUnknownPromise(Schema.String)(hash);
+      // A second click, or a second card with the same bytes, joins the upload that's running for
+      // this Studio. Another Studio gets its own, since the model has to go in its place too.
+      const onlyAdd = addOnly === true;
+      const key = `${studioId}\n${expectedHash}\n${onlyAdd}`;
+      const running = uploadsInFlight.get(key);
+      if (running) {
+        running.urls.add(decodedUrl);
+        return running.result;
+      }
+      const urls = new Set([decodedUrl]);
+      const result = queryStudio((callTool) =>
+        sendModelToPlace(decodedUrl, {
+          callTool,
+          studioId,
+          sentFile: sentModels(),
+          expectedHash,
+          addOnly: onlyAdd,
+          onStep: (step) => {
+            if (event.sender.isDestroyed()) return;
+            for (const each of urls) event.sender.send(channels.modelUploadStep, each, step);
+          },
+        }),
+      ).finally(() => uploadsInFlight.delete(key));
+      uploadsInFlight.set(key, { result, urls });
+      return result;
+    },
   );
   safeIpcHandle(channels.notifyResponseReady, () =>
     runMain(

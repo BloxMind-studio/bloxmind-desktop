@@ -16,4 +16,16 @@ export const qk = {
   studioConnection: ["studio-connection"] as const,
   studioMcpStatus: ["studio-mcp-status"] as const,
   projectIndex: ["project-index"] as const,
+  blenderTools: ["blender-tools"] as const,
+  // Studio can hand the same key to another place, so the place's ID and name count too.
+  uploadAccess: (
+    studio: { key: string; placeId?: string | null; label?: string } | null,
+    modelUrl: string | null,
+  ) =>
+    [
+      "upload-access",
+      studio ? JSON.stringify([studio.key, studio.placeId ?? null, studio.label]) : null,
+      modelUrl,
+    ] as const,
+  modelFile: (url: string) => ["model-file", url] as const,
 };

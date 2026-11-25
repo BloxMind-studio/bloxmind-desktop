@@ -17,16 +17,11 @@ import {
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
+import { ModelCard } from "@/components/ModelCard";
+import { PermissionPrompt } from "@/components/PermissionPrompt";
 import { RobloxInstanceCard } from "@/components/RobloxInstanceCard";
 import type { HighlightLanguage } from "@/components/SyntaxHighlightedOutput";
-import type {
-  Part,
-  PermissionRequest,
-  QuestionAnswer,
-  QuestionRequest,
-  SessionStatus,
-  Todo,
-} from "@/lib/opencode";
+import type { Part, QuestionAnswer, QuestionRequest, SessionStatus, Todo } from "@/lib/opencode";
 
 /** Module-level constant to avoid creating a new array on every render. */
 const REMARK_PLUGINS = [remarkGfm];
@@ -112,6 +107,7 @@ import { useTodos } from "@/hooks/useTodos";
 import { notifyResponseReady } from "@/lib/desktopNotifications";
 import { type ModelChoice, pickFreeModel } from "@/lib/modelChoice";
 import { type ModelError, type ModelErrorPresentation, presentModelError } from "@/lib/modelError";
+import { modelLinksIn } from "@/lib/modelLinks";
 import { qk } from "@/lib/queryKeys";
 import { playResponseReady } from "@/lib/soundEffects";
 import type { MessagesCache } from "@/lib/sseDispatch";
@@ -1768,59 +1764,6 @@ const QuestionPrompt = memo(function QuestionPrompt({
   );
 });
 
-// ── Permission prompt ───────────────────────────────────────────────────
-
-const PermissionPrompt = memo(function PermissionPrompt({
-  permission,
-  onReply,
-}: {
-  permission: PermissionRequest;
-  onReply: (requestID: string, reply: "once" | "always" | "reject") => void;
-}) {
-  return (
-    <div className="animate-fade-in-up my-2 rounded-lg border border-amber-200 bg-amber-50/30 px-3 py-3 dark:border-amber-900 dark:bg-amber-950/30">
-      <div className="text-[11px] font-semibold text-foreground">Permission Required</div>
-      <div className="mt-1 text-[12px] text-foreground">
-        <span className="font-mono text-amber-700 dark:text-amber-400">
-          {permission.permission}
-        </span>
-      </div>
-      {permission.patterns.length > 0 && (
-        <div className="mt-1 space-y-0.5">
-          {permission.patterns.map((p, i) => (
-            <div key={i} className="font-mono text-[10px] text-muted-foreground">
-              {p}
-            </div>
-          ))}
-        </div>
-      )}
-      <div className="mt-3 flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => onReply(permission.id, "once")}
-          className="rounded-md bg-foreground px-3 py-1 text-[11px] font-medium text-background transition-opacity hover:opacity-90"
-        >
-          Allow Once
-        </button>
-        <button
-          type="button"
-          onClick={() => onReply(permission.id, "always")}
-          className="rounded-md border px-3 py-1 text-[11px] text-foreground transition-colors hover:bg-accent"
-        >
-          Always Allow
-        </button>
-        <button
-          type="button"
-          onClick={() => onReply(permission.id, "reject")}
-          className="rounded-md px-3 py-1 text-[11px] text-muted-foreground transition-colors hover:text-destructive"
-        >
-          Deny
-        </button>
-      </div>
-    </div>
-  );
-});
-
 // ── User message parts ──────────────────────────────────────────────────
 
 const UserPartsView = memo(
@@ -2102,6 +2045,15 @@ const MessageBubble = memo(function MessageBubble({
             <StreamingMessageContext.Provider value={isStreaming}>
               <SmartPartsRenderer parts={msg.parts} hideThinking={hideThinking} />
             </StreamingMessageContext.Provider>
+            {msg.info.role === "assistant" && msg.info.time.completed
+              ? [
+                  ...new Set(
+                    msg.parts.flatMap((part) =>
+                      part.type === "text" ? modelLinksIn(part.text) : [],
+                    ),
+                  ),
+                ].map((url) => <ModelCard key={url} url={url} />)
+              : null}
             {"error" in msg.info && msg.info.error && !aborted && (
               <ModelErrorCard
                 error={msg.info.error}

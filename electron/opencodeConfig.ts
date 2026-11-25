@@ -7,6 +7,9 @@ import { type McpServerConfig, toEngineMcpConfig, validateMcpServer } from "../s
 // `disabled` (not `enabled`), agents are under `agents` (plural), and `skills` is an
 // array of paths. Verified against @opencode/client ConfigEntry.info and V2 docs.
 
+/** The Blender MCP server sits beside the Studio bridge and user-configured servers. */
+export const BLENDER_MCP_SERVER_NAME = "blender";
+
 export interface StudioMcpWindowsEnvironment {
   localAppData?: string;
   comSpec?: string;
@@ -109,4 +112,19 @@ export function createOpenCodeConfig(
       },
     },
   };
+}
+
+/**
+ * Applies Blender being set up or removed to a config OpenCode has already read.
+ * The renderer reloads OpenCode afterwards, so it picks the change up without a restart.
+ */
+export function withBlender(contents: string, blender: Record<string, unknown> | null): string {
+  const config = JSON.parse(contents) as {
+    mcp: { servers: Record<string, unknown> };
+    [key: string]: unknown;
+  };
+  if (blender)
+    config.mcp.servers[BLENDER_MCP_SERVER_NAME] = { disabled: false, ...blender };
+  else delete config.mcp.servers[BLENDER_MCP_SERVER_NAME];
+  return JSON.stringify(config, null, 2);
 }

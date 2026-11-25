@@ -1,6 +1,8 @@
 import { existsSync, mkdirSync, renameSync, statSync } from "node:fs";
 import { posix, win32 } from "node:path";
 
+import { BLENDER_MARKER_FILE } from "./services/BlenderTools";
+
 /**
  * Where BloxMind keeps what it downloads for this computer: the engine. On Windows that's
  * %LOCALAPPDATA%, which stays on this machine. Electron's userData is in %APPDATA%, which roaming
@@ -76,6 +78,27 @@ export function engineFolder(
     fileSystem.mkdir(win32.dirname(next));
     fileSystem.rename(old, next);
     return next;
+  } catch {
+    return old;
+  }
+}
+
+/**
+ * Blender's tools folder. A finished setup holds a Python environment with its own path written
+ * into it, so it stays where it is. A folder a failed setup left behind holds nothing to keep, so
+ * new setups go to this computer's folder.
+ */
+export function blenderToolsFolder(
+  options: MachineFolderOptions,
+  fileSystem: MachineFolderFileSystem = nodeFileSystem,
+): string {
+  const paths = pathsFor(options.platform);
+  const old = paths.join(options.userData, "blender-tools");
+  const next = machineFolder(options, "blender-tools");
+  if (!next) return old;
+  try {
+    if (fileSystem.exists(paths.join(old, BLENDER_MARKER_FILE))) return old;
+    return clearFileInTheWay(fileSystem, next) ? next : old;
   } catch {
     return old;
   }

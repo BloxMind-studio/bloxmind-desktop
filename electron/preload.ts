@@ -2,8 +2,10 @@ import { contextBridge, ipcRenderer } from "electron";
 
 import type {
   AppConfig,
+  BlenderSetupProgress,
   DesktopApi,
   MainErrorReport,
+  ModelUploadStep,
   OpenCodeStartupProgress,
 } from "../src/types/desktop";
 import { channels } from "./channels";
@@ -37,6 +39,31 @@ const api: DesktopApi = {
   invokeProjectIndexProgram: (artifact, studioId) =>
     ipcRenderer.invoke(channels.invokeProjectIndexProgram, artifact, studioId),
   relaunch: () => ipcRenderer.invoke(channels.relaunch),
+  getBlenderToolsState: () => ipcRenderer.invoke(channels.getBlenderToolsState),
+  installBlenderTools: () => ipcRenderer.invoke(channels.installBlenderTools),
+  cancelBlenderTools: () => ipcRenderer.invoke(channels.cancelBlenderTools),
+  openBlender: () => ipcRenderer.invoke(channels.openBlender),
+  removeBlenderTools: () => ipcRenderer.invoke(channels.removeBlenderTools),
+  onBlenderSetupProgress: (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, progress: BlenderSetupProgress) =>
+      listener(progress);
+    ipcRenderer.on(channels.blenderSetupProgress, handler);
+    return () => ipcRenderer.removeListener(channels.blenderSetupProgress, handler);
+  },
+  getUploadAccess: (studioKey, modelUrl) =>
+    ipcRenderer.invoke(channels.getUploadAccess, studioKey, modelUrl),
+  readModelFile: (url) => ipcRenderer.invoke(channels.readModelFile, url),
+  uploadModelToPlace: (url, studioKey, hash, addOnly) =>
+    ipcRenderer.invoke(channels.uploadModelToPlace, url, studioKey, hash, addOnly),
+  onModelUploadStep: (listener) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      url: string,
+      step: ModelUploadStep,
+    ) => listener(url, step);
+    ipcRenderer.on(channels.modelUploadStep, handler);
+    return () => ipcRenderer.removeListener(channels.modelUploadStep, handler);
+  },
   notifyResponseReady: () => ipcRenderer.invoke(channels.notifyResponseReady),
   installStudioTargetPrograms: (envelopes) =>
     ipcRenderer.invoke(channels.installStudioTargetPrograms, envelopes),

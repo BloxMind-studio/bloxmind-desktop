@@ -22,10 +22,13 @@ import {
   type AppConfig,
   AppConfigPatchSchema,
   AppConfigSchema,
+  type BlenderToolsState,
   DEFAULT_APP_CONFIG,
   type DesktopApi,
   type InstructionFile,
   InstructionFileSchema,
+  type ModelFileInfo,
+  type ModelUploadResult,
   type OpenCodeInfo,
   OpenCodeInfoSchema,
   type OpenCodeStartupProgress,
@@ -33,6 +36,7 @@ import {
   StudioMcpStatusSchema,
   type UpdateInfo,
   UpdateInfoSchema,
+  type UploadAccess,
 } from "@/types/desktop";
 import {
   type GeneratedProgramArtifact,
@@ -118,6 +122,22 @@ interface DesktopEffects {
     sessionId: string,
   ) => Effect.Effect<readonly Checkpoint[], DesktopError>;
   readonly checkpointValidate: () => Effect.Effect<ValidationResult, DesktopError>;
+  readonly getBlenderToolsState: Effect.Effect<BlenderToolsState, DesktopError>;
+  readonly installBlenderTools: Effect.Effect<void, DesktopError>;
+  readonly cancelBlenderTools: Effect.Effect<void, DesktopError>;
+  readonly openBlender: Effect.Effect<void, DesktopError>;
+  readonly removeBlenderTools: Effect.Effect<void, DesktopError>;
+  readonly getUploadAccess: (
+    studioKey: string | null,
+    modelUrl: string | null,
+  ) => Effect.Effect<UploadAccess, DesktopError>;
+  readonly readModelFile: (url: string) => Effect.Effect<ModelFileInfo | null, DesktopError>;
+  readonly uploadModelToPlace: (
+    url: string,
+    studioKey: string,
+    hash: string,
+    addOnly?: boolean,
+  ) => Effect.Effect<ModelUploadResult, DesktopError>;
 }
 
 type StartupProgressListener = (progress: OpenCodeStartupProgress) => void;
@@ -216,6 +236,24 @@ const browserEffects: DesktopEffects = {
     Effect.fail(new DesktopError({ message: "Checkpointing requires the desktop app." })),
   checkpointValidate: () =>
     Effect.fail(new DesktopError({ message: "Checkpointing requires the desktop app." })),
+  getBlenderToolsState: Effect.succeed({ state: "unsupported" }),
+  installBlenderTools: Effect.fail(
+    new DesktopError({ message: "Blender setup requires the desktop app." }),
+  ),
+  cancelBlenderTools: Effect.void,
+  openBlender: Effect.fail(new DesktopError({ message: "Blender requires the desktop app." })),
+  removeBlenderTools: Effect.void,
+  getUploadAccess: () =>
+    Effect.succeed({
+      state: "no_studio" as const,
+      readOn: false,
+      writeOn: false,
+      folder: "",
+      folderUrl: "",
+    }),
+  readModelFile: () => Effect.succeed(null),
+  uploadModelToPlace: () =>
+    Effect.succeed({ status: "failed", reason: "studio_error" } satisfies ModelUploadResult),
 };
 
 const invoke = <A>(message: string, operation: () => Promise<A>) =>
@@ -339,6 +377,18 @@ function makeBridgeEffects(api: DesktopApi): DesktopEffects {
       invoke("Failed to validate workspace", () => api.checkpointValidate()).pipe(
         decodeBridgeValue("Validation result is invalid", ValidationResultSchema),
       ),
+    getBlenderToolsState: invoke("Failed to check Blender", () => api.getBlenderToolsState()),
+    installBlenderTools: invoke("Failed to set up Blender", () => api.installBlenderTools()),
+    cancelBlenderTools: invoke("Failed to stop Blender setup", () => api.cancelBlenderTools()),
+    openBlender: invoke("Failed to open Blender", () => api.openBlender()),
+    removeBlenderTools: invoke("Failed to remove Blender", () => api.removeBlenderTools()),
+    getUploadAccess: (studioKey, modelUrl) =>
+      invoke("Failed to check upload access", () => api.getUploadAccess(studioKey, modelUrl)),
+    readModelFile: (url) => invoke("Failed to read the model file", () => api.readModelFile(url)),
+    uploadModelToPlace: (url, studioKey, hash, addOnly) =>
+      invoke("Failed to add the model to the place", () =>
+        api.uploadModelToPlace(url, studioKey, hash, addOnly),
+      ),
   };
 }
 
@@ -384,6 +434,19 @@ export const desktop: DesktopApi = {
   onBloxMindProgramsUpdated: (listener) =>
     window.BloxMind?.onBloxMindProgramsUpdated(listener) ?? (() => {}),
   onMainError: (listener) => window.BloxMind?.onMainError(listener) ?? (() => {}),
+  getBlenderToolsState: () => runPromise(desktopEffects.getBlenderToolsState),
+  installBlenderTools: () => runPromise(desktopEffects.installBlenderTools),
+  cancelBlenderTools: () => runPromise(desktopEffects.cancelBlenderTools),
+  openBlender: () => runPromise(desktopEffects.openBlender),
+  removeBlenderTools: () => runPromise(desktopEffects.removeBlenderTools),
+  onBlenderSetupProgress: (listener) =>
+    window.BloxMind?.onBlenderSetupProgress(listener) ?? (() => {}),
+  getUploadAccess: (studioKey, modelUrl) =>
+    runPromise(desktopEffects.getUploadAccess(studioKey, modelUrl)),
+  readModelFile: (url) => runPromise(desktopEffects.readModelFile(url)),
+  uploadModelToPlace: (url, studioKey, hash, addOnly) =>
+    runPromise(desktopEffects.uploadModelToPlace(url, studioKey, hash, addOnly)),
+  onModelUploadStep: (listener) => window.BloxMind?.onModelUploadStep(listener) ?? (() => {}),
   checkpointCapture: (context) => runPromise(desktopEffects.checkpointCapture(context)),
   checkpointRestore: (input) => runPromise(desktopEffects.checkpointRestore(input)),
   checkpointPreview: (checkpointId, sessionId) =>

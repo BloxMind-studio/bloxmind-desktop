@@ -1,10 +1,11 @@
-import { Search, Sparkles } from "lucide-react";
+import { Box, Search, Sparkles } from "lucide-react";
 import posthog from "posthog-js/dist/module.full.no-external.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import ProviderCheckPopover from "@/components/ProviderCheckPopover";
 import ProviderConnectDialog from "@/components/ProviderConnectDialog";
 import ProviderLogo from "@/components/ProviderLogo";
+import { ThreeDToolsTab } from "@/components/ThreeDToolsTab";
 import { THEME_OPTIONS, type Theme, useTheme } from "@/components/theme-provider";
 import { useCheckProvider } from "@/hooks/mutations/useCheckProvider";
 import { useDisconnectProvider } from "@/hooks/mutations/useSetApiKey";
@@ -70,6 +71,7 @@ type SettingsTab =
   | "providers"
   | "models"
   | "integrations"
+  | "threeD"
   | "engine"
   | "behavior"
   | "connection"
@@ -195,6 +197,18 @@ function Settings({ onClose }: SettingsProps) {
               <circle cx="12" cy="12" r="2" />
             </svg>
             Integrations
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("threeD")}
+            className={`flex shrink-0 items-center gap-2 whitespace-nowrap rounded-md px-2.5 py-1.5 text-left text-xs transition-colors @xl:mx-1.5 ${
+              tab === "threeD"
+                ? "bg-accent font-medium text-foreground"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground"
+            }`}
+          >
+            <Box aria-hidden="true" width={13} height={13} />
+            3D tools
           </button>
 
           <div className="mt-4 hidden px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground @xl:block">
@@ -372,6 +386,7 @@ function Settings({ onClose }: SettingsProps) {
           {tab === "providers" && <ProvidersTab />}
           {tab === "models" && <ModelsTab />}
           {tab === "integrations" && <IntegrationsTab />}
+          {tab === "threeD" && <ThreeDToolsTab />}
           {tab === "engine" && <EngineTab />}
           {tab === "behavior" && <BehaviorTab />}
           {tab === "connection" && <ConnectionTab />}
