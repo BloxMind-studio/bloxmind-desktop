@@ -1,6 +1,6 @@
 import { Boxes, Combine, FolderTree, Play } from "lucide-react";
 import posthog from "posthog-js/dist/module.full.no-external.js";
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import ChatInput from "@/components/ChatInput";
 import ChatMessages from "@/components/ChatMessages";
@@ -9,6 +9,7 @@ import CompactionStatus from "@/components/CompactionStatus";
 import Explorer from "@/components/Explorer";
 import LoadingScreen from "@/components/LoadingScreen";
 import PlaytestPanel from "@/components/PlaytestPanel";
+import Settings from "@/components/Settings";
 import StudioNotice from "@/components/StudioNotice";
 import StudioSetup from "@/components/StudioSetup";
 import StudioTargetPicker from "@/components/StudioTargetPicker";
@@ -29,8 +30,6 @@ import { SIDE_PANEL_EXIT_MS, useOpenCodeClient } from "@/providers/OpenCodeClien
 import { usePreferences } from "@/providers/PreferencesProvider";
 import { useProjectIndexContext } from "@/providers/ProjectIndexProvider";
 import { useStudioTargetOptional } from "@/providers/StudioTargetProvider";
-
-const Settings = lazy(() => import("@/components/Settings"));
 
 /**
  * Project index status marker. A compact icon with a colored dot that shows
@@ -400,9 +399,7 @@ function Chat() {
         ) : studioConnection.state === "checking" ? (
           <LoadingScreen message="Finding Roblox Studio" animation="dots" />
         ) : showSettings ? (
-          <Suspense fallback={<LoadingScreen message="Loading settings..." />}>
-            <Settings onClose={handleSessionSelect} />
-          </Suspense>
+          <Settings onClose={handleSessionSelect} />
         ) : !ready ? (
           <LoadingScreen message="Initializing..." />
         ) : !activeSessionId ? (
