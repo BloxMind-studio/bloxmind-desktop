@@ -40,6 +40,7 @@ import {
   type OpenCodeStartupProgress,
   type StudioMcpStatus,
   StudioMcpStatusSchema,
+  type SystemNotification,
   type UpdateInfo,
   UpdateInfoSchema,
   type UploadAccess,
@@ -105,6 +106,10 @@ interface DesktopEffects {
   readonly installUpdate: Effect.Effect<void, DesktopError>;
   readonly relaunch: Effect.Effect<void, DesktopError>;
   readonly notifyResponseReady: Effect.Effect<void, DesktopError>;
+  readonly showSystemNotification: (
+    notification: SystemNotification,
+  ) => Effect.Effect<boolean, DesktopError>;
+  readonly openNotificationSettings: Effect.Effect<void, DesktopError>;
   readonly installStudioTargetPrograms: (
     envelopes: StudioTargetProgramEnvelopes,
   ) => Effect.Effect<StudioTargetPrograms, DesktopError>;
@@ -225,6 +230,8 @@ const browserEffects: DesktopEffects = {
     Effect.fail(new DesktopError({ message: "Project index requires the desktop app." })),
   relaunch: Effect.sync(() => window.location.reload()),
   notifyResponseReady: Effect.void,
+  showSystemNotification: () => Effect.succeed(false),
+  openNotificationSettings: Effect.void,
   installStudioTargetPrograms: () =>
     Effect.fail(
       new DesktopError({ message: "Studio targets are only available in the desktop app." }),
@@ -351,6 +358,13 @@ function makeBridgeEffects(api: DesktopApi): DesktopEffects {
       ).pipe(decodeBridgeValue("Project index skeleton is invalid", ProjectSkeletonSchema)),
     relaunch: invoke("Failed to relaunch the app", () => api.relaunch()),
     notifyResponseReady: invoke("Failed to show notification", () => api.notifyResponseReady()),
+    showSystemNotification: (notification) =>
+      invoke("Failed to show notification", () => api.showSystemNotification(notification)).pipe(
+        decodeBridgeValue("System notification reply is invalid", Schema.Boolean),
+      ),
+    openNotificationSettings: invoke("Failed to open notification settings", () =>
+      api.openNotificationSettings(),
+    ),
     installStudioTargetPrograms: (envelopes) =>
       invoke("Failed to install Studio target programs", () =>
         api.installStudioTargetPrograms(envelopes),
@@ -445,6 +459,11 @@ export const desktop: DesktopApi = {
     runPromise(desktopEffects.invokeProjectIndexProgram(artifact, studioId)),
   relaunch: () => runPromise(desktopEffects.relaunch),
   notifyResponseReady: () => runPromise(desktopEffects.notifyResponseReady),
+  showSystemNotification: (notification) =>
+    runPromise(desktopEffects.showSystemNotification(notification)),
+  openNotificationSettings: () => runPromise(desktopEffects.openNotificationSettings),
+  onSystemNotificationClick: (listener: (id: string) => void) =>
+    window.BloxMind?.onSystemNotificationClick(listener) ?? (() => {}),
   installStudioTargetPrograms: (envelopes) =>
     runPromise(desktopEffects.installStudioTargetPrograms(envelopes)),
   discoverStudioTargets: (programs) => runPromise(desktopEffects.discoverStudioTargets(programs)),

@@ -4,6 +4,17 @@ import { useEffect, useRef, useState } from "react";
 import { analyticsProperties } from "@/lib/analytics";
 import { useStudioTargetOptional } from "@/providers/StudioTargetProvider";
 
+/** Three fruitless Refreshes inside 30 seconds means someone is stuck, not just checking. */
+const STUCK_REFRESHES = 3;
+const STUCK_WINDOW_MS = 30_000;
+/** Studio answers in milliseconds, too fast to see, so Refresh stays busy at least this long. */
+const MIN_REFRESH_MS = 600;
+
+function foundLabel(count: number): string {
+  if (count === 0) return "No Studio found";
+  return `${count} ${count === 1 ? "Studio" : "Studios"} found`;
+}
+
 function StudioIcon() {
   return (
     <svg
@@ -23,16 +34,23 @@ function StudioIcon() {
 
 export default function StudioTargetPicker({
   openRequest = 0,
+  onOpenSetup,
   onWorkedWithoutStudio,
 }: {
   /** Bumped by the chat notice to open the picker without a click on its trigger. */
   openRequest?: number;
+  /** Opens the setup steps, after several fruitless refreshes or from the empty state. */
+  onOpenSetup?: () => void;
   onWorkedWithoutStudio?: () => void;
 } = {}) {
   const studioTarget = useStudioTargetOptional();
   const [open, setOpen] = useState(false);
+  const [checked, setChecked] = useState(false);
+  const [stuck, setStuck] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const seenOpenRequest = useRef(openRequest);
+  const emptyRefreshes = useRef<number[]>([]);
+  const stuckRef = useRef(false);
 
   useEffect(() => {
     if (openRequest === seenOpenRequest.current) return;
@@ -43,20 +61,94 @@ export default function StudioTargetPicker({
   useEffect(() => {
     if (!open) return;
     const close = (event: MouseEvent) => {
-      if (!containerRef.current?.contains(event.target as Node)) setOpen(false);
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+        setChecked(false);
+        // Closing it counts as moving on, so a later Refresh isn't stuck straight away.
+        emptyRefreshes.current = [];
+        stuckRef.current = false;
+        setStuck(false);
+      }
     };
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
   }, [open]);
 
+  const hasTargets = (studioTarget?.targets.length ?? 0) > 0;
+
+  // Studio can turn up from the background check too, not only from Refresh.
+  useEffect(() => {
+    if (!hasTargets) return;
+    emptyRefreshes.current = [];
+    stuckRef.current = false;
+    setStuck(false);
+  }, [hasTargets]);
+
   if (!studioTarget) return null;
-  const { targets, selected, status, refreshing, selectingKey, error, discover, select } =
-    studioTarget;
+  const {
+    targets,
+    selected,
+    status,
+    refreshing,
+    selectingKey,
+    error,
+    clearError,
+    missing,
+    discover,
+    select,
+  } = studioTarget;
+  const busy = status === "loading" || refreshing || selectingKey !== null;
 
   const buttonLabel =
     status === "loading"
       ? "Finding Studios…"
       : (selected?.label ?? (status === "empty" ? "No Studios" : "Choose Studio"));
+
+  const refresh = async () => {
+    // Refresh keeps keyboard focus while it's busy, so it can't use disabled.
+    if (busy) return;
+    clearError();
+    setChecked(false);
+    await Promise.all([
+      discover(),
+      new Promise((resolve) => window.setTimeout(resolve, MIN_REFRESH_MS)),
+    ]);
+    setChecked(true);
+    const now = Date.now();
+    const found = targets.length;
+    emptyRefreshes.current =
+      found > 0 ? [] : [...emptyRefreshes.current, now].filter((at) => now - at < STUCK_WINDOW_MS);
+    if (emptyRefreshes.current.length >= STUCK_REFRESHES && !stuckRef.current && !missing) {
+      stuckRef.current = true;
+      setStuck(true);
+      posthog.capture(
+        "studio_target_guidance_shown",
+        analyticsProperties("studio_target", { trigger: "repeated_refresh", status }),
+      );
+    }
+  };
+
+  const showMeHow = onOpenSetup ? (
+    <button
+      type="button"
+      onClick={() => {
+        posthog.capture(
+          "studio_target_guidance_followed",
+          analyticsProperties("studio_target", {
+            trigger: stuck ? "repeated_refresh" : "empty",
+            status,
+          }),
+        );
+        setOpen(false);
+        onOpenSetup();
+      }}
+      className={`mt-2 inline-flex h-7 items-center rounded-md px-3 text-xs font-medium transition-colors ${
+        stuck ? "bg-foreground text-background hover:opacity-90" : "border hover:bg-accent"
+      }`}
+    >
+      Show me how
+    </button>
+  ) : null;
 
   return (
     <div ref={containerRef} className="relative min-w-0 flex-1">
@@ -107,9 +199,10 @@ export default function StudioTargetPicker({
             <h4 className="text-sm font-semibold">Pick Studio</h4>
             <button
               type="button"
-              onClick={() => void discover()}
-              disabled={status === "loading" || refreshing || selectingKey !== null}
-              className="inline-flex min-w-14 items-center justify-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+              onClick={() => void refresh()}
+              aria-disabled={busy}
+              aria-busy={refreshing}
+              className="inline-flex min-w-14 items-center justify-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground aria-disabled:cursor-default aria-disabled:opacity-50 aria-disabled:hover:bg-transparent aria-disabled:hover:text-muted-foreground"
             >
               {refreshing ? (
                 <span className="h-2.5 w-2.5 animate-spin rounded-full border border-current border-t-transparent" />
@@ -126,10 +219,13 @@ export default function StudioTargetPicker({
               </output>
             ) : status === "empty" ? (
               <div className="px-4 py-7 text-center">
-                <p className="text-sm font-medium">No Studio windows found</p>
+                <p className="text-sm font-medium">
+                  {checked ? foundLabel(targets.length) : "No Studio windows found"}
+                </p>
                 <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
                   Studio MCP is connected, but it has not reported an open Studio window yet.
                 </p>
+                {showMeHow}
               </div>
             ) : status === "error" ? (
               <div className="px-4 py-7 text-center">
@@ -140,6 +236,7 @@ export default function StudioTargetPicker({
                 >
                   {error ?? "The Studio integration could not be initialized."}
                 </p>
+                {showMeHow}
               </div>
             ) : (
               <div className="space-y-1">
@@ -183,6 +280,11 @@ export default function StudioTargetPicker({
               </div>
             )}
           </div>
+          {checked && !busy ? (
+            <output className="block border-t px-4 py-2 text-center text-[11px] text-muted-foreground">
+              {foundLabel(targets.length)}
+            </output>
+          ) : null}
           {error && status !== "error" ? (
             <div
               role="alert"

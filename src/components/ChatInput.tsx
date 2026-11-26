@@ -1,6 +1,8 @@
+import posthog from "posthog-js/dist/module.full.no-external.js";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ContextUsageIndicator } from "@/components/ContextUsageIndicator";
+import GoalPill from "@/components/GoalPill";
 import ModelStatusBadge from "@/components/ModelStatusBadge";
 import PromptEditor, { type PromptEditorHandle } from "@/components/PromptEditor";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -10,13 +12,16 @@ import { useSendMessage } from "@/hooks/mutations/useSendMessage";
 import { useCommands } from "@/hooks/useCommands";
 import { useComposerCommands } from "@/hooks/useComposerCommands";
 import { useAllModels, useConnectedProviders } from "@/hooks/useProviders";
+import { useSessionGoal } from "@/hooks/useSessionGoal";
 import { useIsBusy } from "@/hooks/useSessionStatuses";
+import { analyticsProperties } from "@/lib/analytics";
 import { modelAcceptsImages } from "@/lib/imageSupport";
 import { findModelInfo, formatTokens, modelSpecs, reasoningLabel } from "@/lib/modelSpecs";
 import { resolveVariantForModel } from "@/lib/modelVariant";
 import { needsStudio } from "@/lib/promptSuggestions";
 import { playMessageSent } from "@/lib/soundEffects";
 import { splitModelKey } from "@/lib/splitModelKey";
+import { recordPromptSent } from "@/lib/starCallout";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { useExplorerReference } from "@/providers/ExplorerReferenceProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
@@ -259,7 +264,12 @@ const SendButton = memo(function SendButton({
   );
 });
 
-function ChatInput() {
+function ChatInput({
+  onOpenSettings,
+}: {
+  /** Lets the model picker send someone to Providers when their models aren't there. */
+  onOpenSettings?: () => void;
+}) {
   const { pendingReference, consumeReference, objects } = useExplorerReference();
   // PromptEditor rebuilds its object search index whenever the array identity
   // changes; spreading inline on every render defeated that memoization.
@@ -283,6 +293,7 @@ function ChatInput() {
   const studioTargetReference = studioTarget?.promptReference ?? null;
   const sendBlock = studioTarget?.sendBlock ?? null;
   const { contextPrompt: projectIndexContext } = useProjectIndexContext();
+  const goal = useSessionGoal();
 
   const systemPrompt = useMemo(() => {
     const parts = [
@@ -414,6 +425,15 @@ function ChatInput() {
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [activeSessionId]);
+
+  // Settings, Studio setup and Reconnect replace the composer instead of
+  // hiding it. This cleanup only runs on unmount, so switching chats can't
+  // write the outgoing text under the incoming chat's key.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only the unmount matters; a ref is used to avoid a stale session id
+  useEffect(
+    () => () => writeDraft(activeSessionIdRef.current, promptEditorRef.current?.getText() ?? ""),
+    [],
+  );
 
   useEffect(() => {
     if (!pendingReference) return;
@@ -674,9 +694,14 @@ function ChatInput() {
     writeDraft(activeSessionId, "");
     if (needsStudio(trimmed)) studioTarget?.noteRouted?.();
     playMessageSent();
-    void sendMessage
-      .mutateAsync({ text: trimmed || " ", images, studioTargetReference, systemPrompt })
-      .catch(() => undefined);
+    void recordPromptSent(
+      sendMessage.mutateAsync({
+        text: trimmed || " ",
+        images,
+        studioTargetReference,
+        systemPrompt,
+      }),
+    );
   }
 
   function handleModelClick(model: ModelInfo) {
@@ -738,6 +763,21 @@ function ChatInput() {
   return (
     <div className="shrink-0 border-t bg-card px-4 py-3">
       <div className="relative mb-2 flex items-center gap-1">
+        {goal ? (
+          <GoalPill
+            goal={goal}
+            onCommand={(command) => {
+              if (sendBlock && needsStudio(`/goal ${command}`)) {
+                toast.error(sendBlock);
+                return;
+              }
+              runCommand(`/goal ${command}`, {
+                system: systemPrompt,
+                onFailed: (error) => toast.error("Command failed", { description: error.message }),
+              });
+            }}
+          />
+        ) : null}
         <div className="relative" ref={modelPickerRef}>
           <button
             onClick={() => {
@@ -861,6 +901,32 @@ function ChatInput() {
                   </div>
                 )}
               </div>
+              {onOpenSettings ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    posthog.capture("model_picker_add_models_clicked", analyticsProperties("chat"));
+                    setShowModelPicker(false);
+                    setModelSearch("");
+                    onOpenSettings();
+                  }}
+                  className="flex w-full shrink-0 items-center gap-1.5 border-t px-2 py-2 text-left text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                >
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                  >
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                  Add providers and models
+                </button>
+              ) : null}
             </div>
           )}
         </div>

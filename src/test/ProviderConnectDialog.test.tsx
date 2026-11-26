@@ -12,6 +12,9 @@ vi.mock("@/hooks/mutations/useOAuth", () => ({
   useCompleteOAuth: () => ({ mutateAsync: completeOAuth }),
   captureProviderConnectFailure: vi.fn(),
 }));
+vi.mock("@/hooks/mutations/useExternalLogin", () => ({
+  useExternalLogin: () => vi.fn(),
+}));
 vi.mock("@/hooks/mutations/useSetApiKey", () => ({
   useSetApiKey: () => ({ mutateAsync: vi.fn() }),
 }));

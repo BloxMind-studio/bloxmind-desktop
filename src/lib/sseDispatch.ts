@@ -737,6 +737,11 @@ function dispatchEvent(
       }
       break;
     }
+    case "goal.changed": {
+      const { sessionID, goal } = data;
+      if (sessionID) queryClient.setQueryData(qk.goal(sessionID), goal ?? null);
+      break;
+    }
     case "form.created": {
       // OC2 form -> OC1 question so BloxMind's question UI can render it.
       const form = data.form ?? data;

@@ -150,6 +150,16 @@ function findNode(nodes: readonly ExplorerNode[], path: string): ExplorerNode | 
   return null;
 }
 
+/** The chain of objects down to the first one at a path, which a link in the chat names. */
+function chainToPath(nodes: readonly ExplorerNode[], path: string): ExplorerNode[] | null {
+  for (const node of nodes) {
+    if (node.path === path || node.path === `game.${path}`) return [node];
+    const rest = chainToPath(node.children, path);
+    if (rest) return [node, ...rest];
+  }
+  return null;
+}
+
 function countNodes(nodes: readonly ExplorerNode[]): number {
   return nodes.reduce((total, node) => total + 1 + countNodes(node.children), 0);
 }
@@ -226,7 +236,7 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
   const { client } = useOpenCodeClient();
   const studioTarget = useStudioTargetOptional();
   const { fontSize } = usePreferences();
-  const { referenceObject, publishObjects } = useExplorerReference();
+  const { referenceObject, publishObjects, focusRequest, consumeFocus } = useExplorerReference();
   const [collection, setCollection] = useState<ExplorerCollection | null>(null);
   const collectionRef = useRef<ExplorerCollection | null>(null);
   const syncingRef = useRef(false);
@@ -239,6 +249,7 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
   const [syncError, setSyncError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [scrollTarget, setScrollTarget] = useState<{ path: string } | null>(null);
   const [search, setSearch] = useState("");
   const telemetryRef = useRef({ firstSyncReported: false, hadFailure: false });
   // Consecutive failed syncs, which set the retry backoff.
@@ -565,6 +576,29 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
   useEffect(() => {
     treeVirtualizer.measure();
   }, [treeRowHeight, treeVirtualizer]);
+
+  // A reply can link to an object before this panel's next sync has it, so the
+  // request waits until the tree that names it arrives.
+  useEffect(() => {
+    if (!focusRequest || !collection) return;
+    const chain = chainToPath(collection.snapshot.roots, focusRequest);
+    if (!chain) return;
+    consumeFocus();
+    setSearch("");
+    const paths = chain.map((node) => node.path);
+    setSelectedPath(paths[paths.length - 1] ?? null);
+    setScrollTarget({ path: paths[paths.length - 1] ?? focusRequest });
+    setExpanded((current) => new Set([...current, ...paths.slice(0, -1)]));
+  }, [focusRequest, collection, consumeFocus]);
+
+  // The rows the link expanded arrive with the next render, so scroll then.
+  useEffect(() => {
+    if (!scrollTarget) return;
+    const index = treeRows.findIndex((row) => row.node.path === scrollTarget.path);
+    if (index < 0) return;
+    treeVirtualizer.scrollToIndex(index, { align: "auto" });
+    setScrollTarget(null);
+  }, [scrollTarget, treeRows, treeVirtualizer]);
 
   if (collapsed) {
     return (

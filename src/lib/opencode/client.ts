@@ -665,6 +665,24 @@ export function createOpencodeClient(config: OpencodeClientConfig): OpencodeClie
       summarize: (input: Record<string, unknown>, opts?: V1Options) =>
         v1(oc2.session.compact(withDirectory(dir, input) as never, { signal: opts?.signal })),
     },
+    /** Goal plugin RPC. Servers without the plugin reject the call, which callers treat as no goal. */
+    goal: {
+      get: (input: { sessionID: string }, opts?: V1Options) =>
+        v1(
+          oc2.rpc
+            .call(
+              {
+                rpcID: "opencode.goal",
+                method: "get",
+                input,
+                ...(dir ? { location: { directory: dir } } : {}),
+              } as never,
+              { signal: opts?.signal },
+            )
+            .then((res) => (res as { output?: unknown }).output ?? null),
+          opts,
+        ),
+    },
     experimental: {
       session: {
         list: (input?: Record<string, unknown>, opts?: V1Options): Promise<{ data: Session[] }> =>
@@ -759,7 +777,8 @@ export function createOpencodeClient(config: OpencodeClientConfig): OpencodeClie
               // index into the same filtered view — an env method has no id and
               // would shift every index.
               const eligible = methods.filter(
-                (method: any) => method?.type === "oauth" || method?.type === "key",
+                (method: any) =>
+                  method?.type === "oauth" || method?.type === "key" || method?.type === "external",
               );
               const index = typeof input.method === "number" ? input.method : 0;
               methodID =
@@ -1107,6 +1126,81 @@ export function createOpencodeClient(config: OpencodeClientConfig): OpencodeClie
           | undefined;
         if (exp?.set) return v1(exp.set(input, { signal: opts?.signal }), opts);
         throw new Error("Provider authentication is not available for this OC2 engine API.");
+      },
+      externalStatus: async (input: { providerID: string }, opts?: V1Options) => {
+        try {
+          const integrationID = await resolveIntegrationID(input.providerID, opts);
+          const [integrations, models] = await Promise.all([
+            oc2.integration
+              .list(withDirectory(dir, {}) as never, { signal: opts?.signal } as never)
+              .catch(() => [] as unknown),
+            oc2.model
+              .list(withDirectory(dir, {}) as never, { signal: opts?.signal } as never)
+              .catch(() => [] as unknown),
+          ]);
+          const info = unwrapList(integrations).find(
+            (entry: any) => entry?.id === integrationID || entry?.id === input.providerID,
+          );
+          for (const connection of Array.isArray(info?.connections) ? info.connections : []) {
+            if (
+              connection?.type === "credential" &&
+              connection?.method === "external" &&
+              connection?.status
+            ) {
+              const status = connection.status;
+              return {
+                data: {
+                  state: "problem" as const,
+                  message:
+                    typeof status === "string"
+                      ? status
+                      : typeof status.message === "string"
+                        ? status.message
+                        : "The external login isn't ready.",
+                },
+              };
+            }
+          }
+          const ready = unwrapList(models).some(
+            (model: any) => model?.providerID === input.providerID && model?.enabled !== false,
+          );
+          return { data: { state: ready ? ("ready" as const) : ("checking" as const) } };
+        } catch (cause) {
+          return {
+            data: {
+              state: "problem" as const,
+              message: cause instanceof Error ? cause.message : String(cause),
+            },
+          };
+        }
+      },
+      connectExternal: async (
+        input: { providerID: string; methodIndex: number },
+        opts?: V1Options,
+      ) => {
+        const integrationID = await resolveIntegrationID(input.providerID, opts);
+        const integrations = unwrapList(
+          await oc2.integration.list(
+            withDirectory(dir, {}) as never,
+            { signal: opts?.signal } as never,
+          ),
+        );
+        const integration =
+          integrations.find((entry: any) => entry?.id === integrationID) ??
+          integrations.find((entry: any) => entry?.id === input.providerID);
+        const methods = Array.isArray(integration?.methods) ? integration.methods : [];
+        // Index into the same filtered view the connect dialog shows.
+        const eligible = methods.filter(
+          (method: any) =>
+            method?.type === "oauth" || method?.type === "key" || method?.type === "external",
+        );
+        const methodID = eligible[input.methodIndex]?.id;
+        if (!methodID) throw new Error("Choose a way to connect first.");
+        await oc2.integration.connect.external(
+          withDirectory(dir, { integrationID, methodID }) as never,
+          { signal: opts?.signal } as never,
+        );
+        return { data: true };
       },
       remove: async (input: { providerID: string }, opts?: V1Options) => {
         try {

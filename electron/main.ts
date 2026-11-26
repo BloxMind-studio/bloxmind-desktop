@@ -25,6 +25,7 @@ import {
   DEFAULT_APP_CONFIG,
   type ModelUploadResult,
   type OpenCodeStartupProgress,
+  SystemNotificationSchema,
 } from "../src/types/desktop";
 import { migrateStoredConfig } from "../src/lib/configMigration";
 import {
@@ -73,6 +74,7 @@ import { BLENDER_MCP_SERVER_NAME, skillDirectories, withBlender } from "./openco
 import type { McpServerConfig } from "../src/lib/mcpServers";
 import { editExplorerObject, type CallStudioTool } from "./studioQueries";
 import { channels } from "./channels";
+import { createSystemNotifier, notificationSettingsUrl } from "./systemNotifications";
 import { makeOpenCodeLayer, OpenCode } from "./services/OpenCode";
 import {
   GeneratedProgramRuntime,
@@ -140,6 +142,19 @@ function configPath(): string {
 
 let mainWindow: BrowserWindow | null = null;
 let quitting = false;
+
+const showSystemNotification = createSystemNotifier({
+  isSupported: () => Notification.isSupported(),
+  // BloxMind plays its own sound, if the user wants one.
+  create: (content) => new Notification({ ...content, silent: true }),
+  onClick: (id) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+    mainWindow.webContents.send(channels.systemNotificationClicked, id);
+  },
+});
 /** True once the boot sequence has created the main window. */
 let booted = false;
 /** Non-null while quit-time cleanup is running; guards against reentrancy. */
@@ -912,6 +927,26 @@ const registerIpcHandlers = Effect.sync(() => {
       }),
     ),
   );
+  safeIpcHandle(channels.openNotificationSettings, () => {
+    const url = notificationSettingsUrl(process.platform, "ai.BloxMind.desktop");
+    return url ? shell.openExternal(url) : undefined;
+  });
+  safeIpcHandle(channels.showSystemNotification, (_event, input: unknown) =>
+    runMain(
+      Schema.decodeUnknown(SystemNotificationSchema)(input).pipe(
+        Effect.mapError(
+          (cause) => new DesktopMainError({ message: "System notification is invalid", cause }),
+        ),
+        Effect.flatMap((notification) =>
+          Effect.tryPromise({
+            try: () => showSystemNotification(notification),
+            catch: (cause) =>
+              new DesktopMainError({ message: "Failed to show a system notification", cause }),
+          }),
+        ),
+      ),
+    ),
+  );
   // ── Checkpoint system ──────────────────────────────────────────────
   // Checkpoint IPC arguments cross a trust boundary; validate them before
   // they reach the service (which additionally sanitizes them into paths).
@@ -1079,6 +1114,8 @@ function createWindow(): Effect.Effect<void, DesktopMainError> {
 }
 
 const registerAppLifecycle = Effect.sync(() => {
+  // Windows drops notifications from an app without this. It matches appId in electron-builder.yml.
+  if (process.platform === "win32") app.setAppUserModelId("ai.BloxMind.desktop");
   app.on("window-all-closed", () =>
     Effect.runSync(
       Effect.sync(() => {

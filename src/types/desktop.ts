@@ -33,6 +33,15 @@ export const DetailedAnalyticsPreferenceSchema = Schema.Literal("unset", "enable
 export const AccentColorSchema = Schema.Literal("blue", "violet", "emerald", "rose", "amber");
 export const LayoutDensitySchema = Schema.Literal("compact", "comfortable");
 
+export const NotificationKindsSchema = Schema.Struct({
+  finished: Schema.Boolean,
+  waiting: Schema.Boolean,
+  failed: Schema.Boolean,
+  app: Schema.Boolean,
+});
+
+export type NotificationKinds = typeof NotificationKindsSchema.Type;
+
 export type ThemePreference = typeof ThemePreferenceSchema.Type;
 export type AccentColor = typeof AccentColorSchema.Type;
 export type LayoutDensity = typeof LayoutDensitySchema.Type;
@@ -105,6 +114,13 @@ export const AppConfigSchema = Schema.mutable(
     autoScroll: Schema.Boolean,
     enterToSend: Schema.Boolean,
     notificationsEnabled: Schema.Boolean,
+    // Separate kinds only matter once someone has chosen them; null follows the defaults.
+    notificationKinds: Schema.NullOr(NotificationKindsSchema),
+    notificationSound: Schema.Boolean,
+    notificationsOffered: Schema.Boolean,
+    // GitHub star callout: counted prompts until it has been shown, then left alone.
+    promptsSent: Schema.Number.pipe(Schema.int(), Schema.between(0, 1_000_000)),
+    starCalloutShown: Schema.Boolean,
     // SSE connection
     sseReconnectDelay: Schema.Number.pipe(Schema.int(), Schema.between(1_000, 60_000)),
     sseHeartbeatTimeout: Schema.Number.pipe(Schema.int(), Schema.between(5_000, 120_000)),
@@ -143,12 +159,25 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   autoScroll: true,
   enterToSend: true,
   notificationsEnabled: true,
+  notificationKinds: null,
+  notificationSound: true,
+  notificationsOffered: false,
+  promptsSent: 0,
+  starCalloutShown: false,
   sseReconnectDelay: 3_000,
   sseHeartbeatTimeout: 30_000,
   mcpServers: [],
 };
 
 export const AppConfigPatchSchema = Schema.partial(AppConfigSchema);
+
+export const SystemNotificationSchema = Schema.Struct({
+  id: Schema.String,
+  title: Schema.String,
+  body: Schema.String,
+});
+
+export type SystemNotification = typeof SystemNotificationSchema.Type;
 
 export const OpenCodeInfoSchema = Schema.mutable(
   Schema.Struct({
@@ -280,6 +309,11 @@ export interface DesktopApi {
   ): Promise<ModelUploadResult>;
   onModelUploadStep(listener: (url: string, step: ModelUploadStep) => void): () => void;
   notifyResponseReady(): Promise<void>;
+  /** Resolves to false when the OS won't show it, e.g. permission was denied. */
+  showSystemNotification(notification: SystemNotification): Promise<boolean>;
+  onSystemNotificationClick(listener: (id: string) => void): () => void;
+  /** Opens the page where the system lets people allow BloxMind's notifications. */
+  openNotificationSettings(): Promise<void>;
   checkpointCapture(context: CaptureContext): Promise<Checkpoint>;
   checkpointRestore(input: CheckpointRestoreInput): Promise<CheckpointRestoreResult>;
   checkpointPreview(checkpointId: string, sessionId: string): Promise<RestorePreview>;

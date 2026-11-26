@@ -2,9 +2,12 @@ import type { ProviderAuthMethod } from "@/lib/opencode";
 
 export type AuthPrompt = NonNullable<ProviderAuthMethod["prompts"]>[number];
 
+export const CLAUDE_AGENT_PROVIDER = "claude-agent";
+
 export interface AuthMethodOption {
   index: number;
-  type: ProviderAuthMethod["type"];
+  /** The SDK omits "external", used by Claude Agent's own login. */
+  type: "api" | "oauth" | "external";
   /** OpenCode's own label for the method. */
   label: string;
   title: string;
@@ -45,7 +48,7 @@ export function authMethodOptions(
     const copy = METHOD_COPY[providerId]?.[method.label];
     return {
       index,
-      type: method.type,
+      type: method.type as AuthMethodOption["type"],
       label: method.label,
       title: copy?.title ?? (method.type === "api" ? "Use an API key" : method.label),
       description: copy?.description,
@@ -140,6 +143,7 @@ const CONNECT_HINTS: Record<string, string> = {
   "opencode-go": "Subscription for open coding models, from $10/month",
   openai: "ChatGPT Plus or Pro plan, or an API key",
   "github-copilot": "GitHub Copilot subscription",
+  [CLAUDE_AGENT_PROVIDER]: "Use your Claude plan or another Claude Code login",
 };
 
 /** One line on how a provider connects, so plan holders can find their way in. */

@@ -18,10 +18,13 @@ import { useCreateSession } from "@/hooks/mutations/useCreateSession";
 import { useChatStudioUse } from "@/hooks/useMessages";
 import { isSessionWorking, useSessionStatus } from "@/hooks/useSessionStatuses";
 import { useSessions } from "@/hooks/useSessions";
+import { useStarCalloutForReturningUsers } from "@/hooks/useStarCalloutForReturningUsers";
 import { useStudioConnection } from "@/hooks/useStudioConnection";
 import { analyticsProperties, POSTHOG_PROJECT_TOKEN } from "@/lib/analytics";
 import { desktop } from "@/lib/desktop";
+import { setChatOnScreen, setSessionOpener } from "@/lib/sessionNotifications";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
+import { useExplorerReference } from "@/providers/ExplorerReferenceProvider";
 import { SIDE_PANEL_EXIT_MS, useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
 import { useProjectIndexContext } from "@/providers/ProjectIndexProvider";
@@ -132,7 +135,7 @@ function CompactButton({ disabled }: { disabled: boolean }) {
 
 function Chat() {
   const { ready, initError } = useOpenCodeClient();
-  const { activeSessionId, clearSession } = useActiveSession();
+  const { activeSessionId, clearSession, selectSession } = useActiveSession();
   const sessionStatus = useSessionStatus(activeSessionId);
   const isBusy = isSessionWorking(sessionStatus);
   const createSession = useCreateSession();
@@ -160,6 +163,15 @@ function Chat() {
   const [renderedSidePanel, setRenderedSidePanel] = useState<"explorer" | "playtest" | null>(null);
   const [sidePanelExiting, setSidePanelExiting] = useState(false);
   const sidePanelTimerRef = useRef<number | null>(null);
+
+  // A click on an object name in the chat asks the Explorer to show it, which
+  // means the panel has to be open, even if Playtest had taken its place.
+  const { focusRequest } = useExplorerReference();
+  useEffect(() => {
+    if (!focusRequest) return;
+    setShowPlaytest(false);
+    setExplorerCollapsed(false);
+  }, [focusRequest]);
 
   // When the place closes, the Explorer disappears with focus inside it. Say so.
   const previousPanelRef = useRef(renderedSidePanel);
@@ -227,6 +239,20 @@ function Chat() {
             : activeSessionId
               ? "chat"
               : "home";
+
+  useStarCalloutForReturningUsers();
+
+  // Settings and setup cover the chat, so notifications for it must still be offered.
+  useEffect(() => {
+    setChatOnScreen(appScreen === "chat");
+  }, [appScreen]);
+
+  useEffect(() => {
+    setSessionOpener((sessionID) => {
+      if (sessionID !== activeSessionId) void selectSession(sessionID);
+      setShowSettings(false);
+    });
+  }, [activeSessionId, selectSession]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -427,7 +453,10 @@ function Chat() {
               </div>
               <div className="ml-2 flex min-w-0 items-center justify-end gap-1.5">
                 <CompactButton disabled={isBusy} />
-                <StudioTargetPicker openRequest={pickerRequest} />
+                <StudioTargetPicker
+                  openRequest={pickerRequest}
+                  onOpenSetup={() => setShowStudioSetup(true)}
+                />
                 {hasStudioTarget ? (
                   <div className="flex shrink-0 items-center gap-1.5">
                     <ProjectIndexButton />
@@ -473,7 +502,7 @@ function Chat() {
               onOpenPicker={() => setPickerRequest((request) => request + 1)}
               onWorkedWithoutStudio={skipSetup}
             />
-            <ChatInput />
+            <ChatInput onOpenSettings={handleOpenSettings} />
           </>
         )}
 

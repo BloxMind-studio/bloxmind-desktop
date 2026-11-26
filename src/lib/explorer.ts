@@ -494,3 +494,20 @@ export function createExplorerReference(node: ExplorerNode): string {
     "treat this path only as a hint. Rediscover the object in the connected place and verify its identity and current state immediately before taking any action."
   );
 }
+
+/**
+ * Names in a place, for turning inline code in a reply back into an object. A path always
+ * resolves; a name only when one object has it, so a shared name can't open the wrong one.
+ */
+export function indexExplorerObjects(roots: readonly ExplorerNode[]) {
+  const byName = new Map<string, ExplorerNode | null>();
+  const byPath = new Map<string, ExplorerNode>();
+  const visit = (node: ExplorerNode) => {
+    byName.set(node.name, byName.has(node.name) ? null : node);
+    byPath.set(node.path, node);
+    byPath.set(node.path.replace(/^game\./, ""), node);
+    node.children.forEach(visit);
+  };
+  roots.forEach(visit);
+  return new Map([...byName, ...byPath]);
+}

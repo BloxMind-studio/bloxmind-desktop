@@ -16,7 +16,7 @@ import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
 import { useStudioTargetOptional } from "@/providers/StudioTargetProvider";
 
-const BUILT_IN = new Set(["init", "review", ...CLIENT_COMMANDS.map(({ name }) => name)]);
+const BUILT_IN = new Set(["init", "review", "goal", ...CLIENT_COMMANDS.map(({ name }) => name)]);
 
 /** Failed commands report status too, like what a bare /goal says about the current goal. */
 function isCommandReport(error: unknown): error is Error {

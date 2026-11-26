@@ -1,4 +1,4 @@
-import { Box, Search, Sparkles } from "lucide-react";
+import { Box, ChevronRight, Search, Sparkles } from "lucide-react";
 import posthog from "posthog-js/dist/module.full.no-external.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -18,6 +18,7 @@ import {
   useProviderList,
 } from "@/hooks/useProviders";
 import { analyticsDeviceId, analyticsProperties } from "@/lib/analytics";
+import { playChime } from "@/lib/chime";
 import { desktop } from "@/lib/desktop";
 import {
   BLENDER_ANIMATIONS_PLUGIN_URL,
@@ -26,6 +27,7 @@ import {
   parseCommandLine,
   validateMcpServer,
 } from "@/lib/mcpServers";
+import { canOpenNotificationSettings, notify, openNotificationSettings } from "@/lib/notifications";
 import type { Model } from "@/lib/opencode";
 import { OPENCODE_GO, shouldRecommendOpenCodeGo } from "@/lib/opencodeGo";
 import {
@@ -40,13 +42,19 @@ import { checkModels, checkPreference, type ProviderCheckResult } from "@/lib/pr
 import { VERIFICATION_OPTIONS } from "@/lib/verification";
 import { usePreferences } from "@/providers/PreferencesProvider";
 import type { ModelInfo, ProviderInfo } from "@/types";
-import { type AppConfig, DEFAULT_APP_CONFIG, type UpdateInfo } from "@/types/desktop";
+import {
+  type AppConfig,
+  DEFAULT_APP_CONFIG,
+  type NotificationKinds,
+  type UpdateInfo,
+} from "@/types/desktop";
 
 // ── Popular providers (same order as OpenCode's web UI) ──────────────
 const POPULAR_PROVIDERS = [
   "opencode",
   "opencode-go",
   "anthropic",
+  "claude-agent",
   "github-copilot",
   "openai",
   "google",
@@ -68,8 +76,8 @@ const TECHNOLOGIES = [
 
 type SettingsTab =
   | "general"
+  | "notifications"
   | "providers"
-  | "models"
   | "integrations"
   | "threeD"
   | "engine"
@@ -151,28 +159,6 @@ function Settings({ onClose }: SettingsProps) {
             Providers
           </button>
           <button
-            onClick={() => setTab("models")}
-            className={`flex shrink-0 items-center gap-2 whitespace-nowrap rounded-md px-2.5 py-1.5 text-left text-xs transition-colors @xl:mx-1.5 ${
-              tab === "models"
-                ? "bg-accent font-medium text-foreground"
-                : "text-muted-foreground hover:bg-accent hover:text-foreground"
-            }`}
-          >
-            <svg
-              width="13"
-              height="13"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-            </svg>
-            Models
-          </button>
-          <button
             onClick={() => setTab("integrations")}
             className={`flex shrink-0 items-center gap-2 whitespace-nowrap rounded-md px-2.5 py-1.5 text-left text-xs transition-colors @xl:mx-1.5 ${
               tab === "integrations"
@@ -238,6 +224,30 @@ function Settings({ onClose }: SettingsProps) {
               <rect x="3" y="14" width="7" height="7" />
             </svg>
             General
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("notifications")}
+            className={`mx-1.5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${
+              tab === "notifications"
+                ? "bg-accent font-medium text-foreground"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground"
+            }`}
+          >
+            <svg
+              width="13"
+              height="13"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
+              <path d="M13.7 21a2 2 0 0 1-3.4 0" />
+            </svg>
+            Notifications
           </button>
           <button
             onClick={() => setTab("engine")}
@@ -383,8 +393,8 @@ function Settings({ onClose }: SettingsProps) {
         {/* Content area */}
         <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
           {tab === "general" && <GeneralTab />}
+          {tab === "notifications" && <NotificationsTab />}
           {tab === "providers" && <ProvidersTab />}
-          {tab === "models" && <ModelsTab />}
           {tab === "integrations" && <IntegrationsTab />}
           {tab === "threeD" && <ThreeDToolsTab />}
           {tab === "engine" && <EngineTab />}
@@ -415,7 +425,9 @@ function ProvidersTab() {
   const [checks, setChecks] = useState<Record<string, "checking" | ProviderCheckResult>>({});
   const checkMutation = useCheckProvider();
   const providerList = useProviderList();
-  const { selectedModel } = usePreferences();
+  const { selectedModel, hiddenModels, toggleModelVisibility } = usePreferences();
+  const allModels = useAllModels();
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
 
   // Bumped whenever a provider's credential changes, so a check that was
   // running for the old credential can't report onto the new one.
@@ -471,6 +483,7 @@ function ProvidersTab() {
   function handleConnected(provider: ProviderInfo) {
     // A new credential makes any earlier or running check stale.
     forgetCheck(provider.id);
+    setExpanded((current) => new Set([...current, provider.id]));
     toast.success(`${provider.name} connected`, {
       action: {
         label: "Check it works",
@@ -505,8 +518,23 @@ function ProvidersTab() {
     [needle],
   );
 
+  const modelsByProvider = useMemo(() => {
+    const groups = new Map<string, ModelInfo[]>();
+    for (const model of allModels) {
+      groups.set(model.providerId, [...(groups.get(model.providerId) ?? []), model]);
+    }
+    for (const models of groups.values()) models.sort((a, b) => a.name.localeCompare(b.name));
+    return groups;
+  }, [allModels]);
+  const matchingModels = (providerId: string) =>
+    (modelsByProvider.get(providerId) ?? []).filter((model) =>
+      `${model.name} ${model.id}`.toLowerCase().includes(needle),
+    );
+
   const connected = allProviders.filter(
-    (p) => connectedProviders.includes(p.id) && matches(p, providerDisplayName(p)),
+    (p) =>
+      connectedProviders.includes(p.id) &&
+      (matches(p, providerDisplayName(p)) || (needle && matchingModels(p.id).length > 0)),
   );
 
   const goProvider = allProviders.find((p) => p.id === OPENCODE_GO.providerId);
@@ -584,7 +612,7 @@ function ProvidersTab() {
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder={`Search ${allProviders.length} providers`}
+            placeholder={`Search ${allProviders.length} providers and your models`}
             aria-label="Search providers"
             className="h-8 w-full rounded-md border bg-background pr-2 pl-8 text-xs placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
           />
@@ -636,6 +664,7 @@ function ProvidersTab() {
           <div className="divide-y rounded-lg border bg-card">
             {connected.map((provider) => {
               const check = checks[provider.id];
+              const nameMatches = matches(provider, providerDisplayName(provider));
               return (
                 <div key={provider.id} className="px-3 py-2.5">
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
@@ -723,6 +752,73 @@ function ProvidersTab() {
                       )}
                     </p>
                   )}
+                  {(modelsByProvider.get(provider.id)?.length ?? 0) > 0 && (
+                    <div className="mt-1.5 @md:pl-10">
+                      <button
+                        type="button"
+                        aria-expanded={expanded.has(provider.id) || (!!needle && !nameMatches)}
+                        onClick={() =>
+                          setExpanded((current) => {
+                            const next = new Set(current);
+                            if (next.has(provider.id)) next.delete(provider.id);
+                            else next.add(provider.id);
+                            return next;
+                          })
+                        }
+                        className="flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                      >
+                        <ChevronRight
+                          aria-hidden="true"
+                          size={12}
+                          className={`transition-transform ${expanded.has(provider.id) ? "rotate-90" : ""}`}
+                        />
+                        {(() => {
+                          const models = modelsByProvider.get(provider.id) ?? [];
+                          const shown = models.filter(
+                            (model) => !hiddenModels.has(`${model.providerId}/${model.id}`),
+                          ).length;
+                          return shown === models.length
+                            ? `${models.length} ${models.length === 1 ? "model" : "models"}`
+                            : `${shown} of ${models.length} models shown`;
+                        })()}
+                      </button>
+                      {(expanded.has(provider.id) || (!!needle && !nameMatches)) && (
+                        <div className="mt-1 space-y-0.5">
+                          {(needle && !nameMatches
+                            ? matchingModels(provider.id)
+                            : (modelsByProvider.get(provider.id) ?? [])
+                          ).map((model) => {
+                            const modelKey = `${model.providerId}/${model.id}`;
+                            const isVisible = !hiddenModels.has(modelKey);
+                            return (
+                              <button
+                                key={modelKey}
+                                type="button"
+                                role="switch"
+                                aria-checked={isVisible}
+                                aria-label={`Show ${model.name} in the chat`}
+                                onClick={() => toggleModelVisibility(modelKey)}
+                                className="flex w-full items-center justify-between gap-3 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-accent/60"
+                              >
+                                <span className="truncate text-[11px]">{model.name}</span>
+                                <span
+                                  className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors ${
+                                    isVisible ? "bg-foreground" : "bg-border"
+                                  }`}
+                                >
+                                  <span
+                                    className={`inline-block h-3 w-3 rounded-full bg-background transition-transform ${
+                                      isVisible ? "translate-x-3.5" : "translate-x-0.5"
+                                    }`}
+                                  />
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -778,185 +874,7 @@ function ProvidersTab() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// Models Tab
-// ═══════════════════════════════════════════════════════════════════════
 
-function ModelsTab() {
-  const allModels = useAllModels();
-  const connectedProviders = useConnectedProviders();
-  const { hiddenModels, toggleModelVisibility } = usePreferences();
-
-  const [search, setSearch] = useState("");
-  const searchRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    searchRef.current?.focus();
-  }, []);
-
-  // Group models by provider (only connected providers), filtered by search
-  const modelsByProvider = useMemo(() => {
-    const query = search.toLowerCase().trim();
-    const groups: Record<string, { providerName: string; models: ModelInfo[] }> = {};
-
-    for (const model of allModels) {
-      // Only show models from connected providers
-      if (!connectedProviders.includes(model.providerId)) continue;
-
-      // Filter by search
-      if (query) {
-        const haystack = `${model.name} ${model.id} ${model.providerName}`.toLowerCase();
-        if (!haystack.includes(query)) continue;
-      }
-
-      if (!groups[model.providerId]) {
-        groups[model.providerId] = {
-          providerName: model.providerName,
-          models: [],
-        };
-      }
-      groups[model.providerId].models.push(model);
-    }
-
-    // Sort models within each group
-    for (const group of Object.values(groups)) {
-      group.models.sort((a, b) => a.name.localeCompare(b.name));
-    }
-
-    // Sort provider groups: popular first, then alphabetical
-    const entries = Object.entries(groups);
-    entries.sort(([aId], [bId]) => {
-      const aPopular = POPULAR_PROVIDERS.includes(aId);
-      const bPopular = POPULAR_PROVIDERS.includes(bId);
-      if (aPopular && !bPopular) return -1;
-      if (!aPopular && bPopular) return 1;
-      if (aPopular && bPopular) {
-        return POPULAR_PROVIDERS.indexOf(aId) - POPULAR_PROVIDERS.indexOf(bId);
-      }
-      return groups[aId].providerName.localeCompare(groups[bId].providerName);
-    });
-
-    return entries;
-  }, [allModels, connectedProviders, search]);
-
-  const totalModels = allModels.filter((m) => connectedProviders.includes(m.providerId)).length;
-
-  return (
-    <div className="mx-auto w-full max-w-md px-4 py-6 @xl:px-6 @xl:py-8">
-      <h4 className="font-serif text-lg italic text-foreground">Models</h4>
-      <p className="mt-1 text-xs text-muted-foreground">
-        Toggle which models appear in the model selector.
-      </p>
-
-      {/* Search */}
-      <div className="mt-4">
-        <div className="flex items-center gap-1.5 rounded-lg border bg-background px-2.5">
-          <svg
-            width="13"
-            height="13"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="shrink-0 text-muted-foreground/50"
-          >
-            <circle cx="11" cy="11" r="8" />
-            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-          </svg>
-          <input
-            ref={searchRef}
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search models..."
-            className="h-8 flex-1 bg-transparent text-xs placeholder:text-muted-foreground/40 focus:outline-none"
-          />
-          {search && (
-            <button
-              onClick={() => {
-                setSearch("");
-                searchRef.current?.focus();
-              }}
-              className="flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
-            >
-              <svg
-                width="8"
-                height="8"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="3"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Model groups */}
-      <div className="mt-5 space-y-6">
-        {modelsByProvider.map(([providerId, group]) => (
-          <div key={providerId}>
-            <div className="flex items-center gap-2 pb-2">
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-accent text-[10px] font-semibold text-muted-foreground">
-                {group.providerName.charAt(0).toUpperCase()}
-              </span>
-              <span className="text-sm font-medium">{group.providerName}</span>
-            </div>
-            <div className="rounded-lg border bg-card">
-              {group.models.map((model, idx) => {
-                const modelKey = `${model.providerId}/${model.id}`;
-                const isVisible = !hiddenModels.has(modelKey);
-                return (
-                  <div key={modelKey}>
-                    {idx > 0 && <div className="mx-3.5 h-px bg-border" />}
-                    <button
-                      onClick={() => toggleModelVisibility(modelKey)}
-                      className="flex w-full items-center justify-between px-3.5 py-2.5 text-left"
-                    >
-                      <span className="truncate text-xs">{model.name}</span>
-                      {/* Toggle switch */}
-                      <span
-                        className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
-                          isVisible ? "bg-foreground" : "bg-border"
-                        }`}
-                      >
-                        <span
-                          className={`inline-block h-3.5 w-3.5 rounded-full bg-background transition-transform ${
-                            isVisible ? "translate-x-4" : "translate-x-0.5"
-                          }`}
-                        />
-                      </span>
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ))}
-
-        {modelsByProvider.length === 0 && totalModels > 0 && (
-          <div className="py-4 text-center text-xs text-muted-foreground">
-            No models matching &quot;{search}&quot;
-          </div>
-        )}
-
-        {totalModels === 0 && (
-          <div className="py-4 text-center text-xs text-muted-foreground">
-            Connect a provider to see available models.
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════
 // General Tab
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -1749,6 +1667,148 @@ function IntegrationsTab() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// Notifications Tab
+// ═══════════════════════════════════════════════════════════════════════
+
+const NOTIFICATION_KINDS: ReadonlyArray<{ kind: keyof NotificationKinds; label: string }> = [
+  { kind: "finished", label: "A chat finishes" },
+  { kind: "waiting", label: "A chat needs your answer or approval" },
+  { kind: "failed", label: "A chat runs into a problem" },
+  { kind: "app", label: "An update is ready or the connection is lost" },
+];
+
+function NotificationSwitch({
+  label,
+  description,
+  checked,
+  onChange,
+}: {
+  label: string;
+  description?: string;
+  checked: boolean;
+  onChange: (enabled: boolean) => void;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4 px-3.5 py-3">
+      <div>
+        <div className="text-sm font-medium">{label}</div>
+        {description ? (
+          <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{description}</p>
+        ) : null}
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
+        onClick={() => onChange(!checked)}
+        className={`relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+          checked ? "bg-foreground" : "bg-border"
+        }`}
+      >
+        <span
+          className={`inline-block h-3.5 w-3.5 rounded-full bg-background transition-transform ${
+            checked ? "translate-x-4" : "translate-x-0.5"
+          }`}
+        />
+      </button>
+    </div>
+  );
+}
+
+function NotificationsTab() {
+  const {
+    notificationsEnabled,
+    setNotificationsEnabled,
+    notifications,
+    setNotificationKind,
+    setNotificationSound,
+  } = usePreferences();
+
+  return (
+    <div className="mx-auto w-full max-w-md px-6 py-8">
+      <h4 className="font-serif text-lg italic text-foreground">Notifications</h4>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Sent while BloxMind isn't the app in front.
+      </p>
+
+      <div className="mt-6 rounded-lg border bg-card">
+        <NotificationSwitch
+          label="Desktop notifications"
+          description="Allow notices while BloxMind is in the background."
+          checked={notificationsEnabled}
+          onChange={(enabled) => {
+            posthog.capture(
+              "system_notifications_toggled",
+              analyticsProperties("notifications", { kind: "master", enabled }),
+            );
+            setNotificationsEnabled(enabled);
+          }}
+        />
+      </div>
+
+      <div className="mt-6">
+        <div className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Notify me when
+        </div>
+        <div className="divide-y rounded-lg border bg-card">
+          {NOTIFICATION_KINDS.map(({ kind, label }) => (
+            <NotificationSwitch
+              key={kind}
+              label={label}
+              checked={notifications.kinds[kind]}
+              onChange={(enabled) => {
+                posthog.capture(
+                  "system_notifications_toggled",
+                  analyticsProperties("notifications", { kind, enabled }),
+                );
+                setNotificationKind(kind, enabled);
+              }}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-4 rounded-lg border bg-card">
+        <NotificationSwitch
+          label="Play a sound"
+          checked={notifications.sound}
+          onChange={(enabled) => {
+            posthog.capture(
+              "notification_sound_toggled",
+              analyticsProperties("notifications", { enabled }),
+            );
+            setNotificationSound(enabled);
+            if (enabled) playChime();
+          }}
+        />
+      </div>
+
+      <div className="mt-4 flex justify-end gap-2">
+        {canOpenNotificationSettings() ? (
+          <button
+            type="button"
+            onClick={openNotificationSettings}
+            className="h-8 rounded-lg border bg-card px-3 text-xs transition-colors hover:bg-accent"
+          >
+            Open system settings
+          </button>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => {
+            void notify.test();
+          }}
+          className="h-8 rounded-lg border bg-card px-3 text-xs transition-colors hover:bg-accent"
+        >
+          Send a test notification
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // Behavior Tab
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -1758,8 +1818,6 @@ function BehaviorTab() {
     setAutoScroll,
     enterToSend,
     setEnterToSend,
-    notificationsEnabled,
-    setNotificationsEnabled,
     verificationLevel,
     setVerificationLevel,
   } = usePreferences();
@@ -1857,35 +1915,6 @@ function BehaviorTab() {
               <span
                 className={`inline-block h-3.5 w-3.5 rounded-full bg-background transition-transform ${
                   enterToSend ? "translate-x-4" : "translate-x-0.5"
-                }`}
-              />
-            </button>
-          </div>
-        </div>
-
-        {/* Notifications */}
-        <div className="rounded-lg border bg-card p-3.5">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <div className="text-sm font-medium">Notifications</div>
-              <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-                Show a desktop notification when a response finishes while BloxMind is in the
-                background.
-              </p>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={notificationsEnabled}
-              aria-label="Notifications"
-              onClick={() => setNotificationsEnabled(!notificationsEnabled)}
-              className={`relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
-                notificationsEnabled ? "bg-foreground" : "bg-border"
-              }`}
-            >
-              <span
-                className={`inline-block h-3.5 w-3.5 rounded-full bg-background transition-transform ${
-                  notificationsEnabled ? "translate-x-4" : "translate-x-0.5"
                 }`}
               />
             </button>

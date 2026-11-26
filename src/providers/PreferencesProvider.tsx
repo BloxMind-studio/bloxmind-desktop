@@ -17,15 +17,16 @@ import {
   setDetailedAnalyticsEnabled as setDetailedAnalyticsCollection,
 } from "@/lib/analytics";
 import { type AppConfig, loadConfig, patchConfig } from "@/lib/config";
-import { setNotificationsEnabled as setDesktopNotificationsEnabled } from "@/lib/desktopNotifications";
 import { applyMcpServers, type McpServerConfig } from "@/lib/mcpServers";
 import { goneReason, modelName, replacementModel } from "@/lib/modelChoice";
+import { offerNotificationsOnce } from "@/lib/notificationOffer";
+import { setNotificationPreferences } from "@/lib/notifications";
 import { qk } from "@/lib/queryKeys";
 import { setSoundEffectsEnabled } from "@/lib/soundEffects";
 import { splitModelKey } from "@/lib/splitModelKey";
 import { DEFAULT_VERIFICATION_LEVEL, type VerificationLevel } from "@/lib/verification";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
-import type { AccentColor, LayoutDensity } from "@/types/desktop";
+import type { AccentColor, LayoutDensity, NotificationKinds } from "@/types/desktop";
 
 const ACCENT_CSS_VALUES: Record<AccentColor, string> = {
   blue: "221 83% 58%",
@@ -76,6 +77,8 @@ interface PreferencesContextValue {
   autoScroll: boolean;
   enterToSend: boolean;
   notificationsEnabled: boolean;
+  /** Granular notification choices; the master switch above still applies. */
+  notifications: { kinds: NotificationKinds; sound: boolean };
   /** How thoroughly the assistant verifies a change before reporting. */
   verificationLevel: VerificationLevel;
   // SSE connection
@@ -101,6 +104,8 @@ interface PreferencesContextValue {
   setAutoScroll: (enabled: boolean) => void;
   setEnterToSend: (enabled: boolean) => void;
   setNotificationsEnabled: (enabled: boolean) => void;
+  setNotificationKind: (kind: keyof NotificationKinds, enabled: boolean) => void;
+  setNotificationSound: (enabled: boolean) => void;
   setVerificationLevel: (level: VerificationLevel) => void;
   setSseReconnectDelay: (delay: number) => void;
   setSseHeartbeatTimeout: (timeout: number) => void;
@@ -155,6 +160,13 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [autoScroll, setAutoScrollState] = useState(true);
   const [enterToSend, setEnterToSendState] = useState(true);
   const [notificationsEnabled, setNotificationsEnabledState] = useState(true);
+  const [notificationKinds, setNotificationKindsState] = useState<NotificationKinds>({
+    finished: true,
+    waiting: true,
+    failed: true,
+    app: true,
+  });
+  const [notificationSound, setNotificationSoundState] = useState(true);
   const [verificationLevel, setVerificationLevelState] = useState<VerificationLevel>(
     DEFAULT_VERIFICATION_LEVEL,
   );
@@ -245,6 +257,10 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setAutoScrollState(configData.autoScroll);
     setEnterToSendState(configData.enterToSend);
     setNotificationsEnabledState(configData.notificationsEnabled);
+    setNotificationKindsState(
+      configData.notificationKinds ?? { finished: true, waiting: true, failed: true, app: true },
+    );
+    setNotificationSoundState(configData.notificationSound);
     setVerificationLevelState(configData.verificationLevel);
     // SSE connection
     setSseReconnectDelayState(configData.sseReconnectDelay);
@@ -494,6 +510,23 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     },
     [queuePatch],
   );
+  const setNotificationKind = useCallback(
+    (kind: keyof NotificationKinds, enabled: boolean) => {
+      setNotificationKindsState((current) => {
+        const next = { ...current, [kind]: enabled };
+        queuePatch({ notificationKinds: next });
+        return next;
+      });
+    },
+    [queuePatch],
+  );
+  const setNotificationSound = useCallback(
+    (enabled: boolean) => {
+      setNotificationSoundState(enabled);
+      queuePatch({ notificationSound: enabled });
+    },
+    [queuePatch],
+  );
   const setVerificationLevel = useCallback(
     (level: VerificationLevel) => {
       setVerificationLevelState(level);
@@ -560,8 +593,15 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   }, [soundEffects]);
 
   useEffect(() => {
-    setDesktopNotificationsEnabled(notificationsEnabled);
-  }, [notificationsEnabled]);
+    setNotificationPreferences(notificationKinds, notificationSound, notificationsEnabled);
+  }, [notificationKinds, notificationSound, notificationsEnabled]);
+
+  // A Mac only asks for notification permission when the first one is sent, so
+  // ask once while someone is here to answer rather than when they are away.
+  useEffect(() => {
+    if (!configData) return;
+    void offerNotificationsOnce();
+  }, [configData]);
 
   // OpenCode 2 has no live config channel (BloxMind's engine reads its config
   // from disk at startup), so there is nothing to push here: the engine gets
@@ -588,6 +628,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       autoScroll,
       enterToSend,
       notificationsEnabled,
+      notifications: { kinds: notificationKinds, sound: notificationSound },
       verificationLevel,
       sseReconnectDelay,
       sseHeartbeatTimeout,
@@ -610,6 +651,8 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       setAutoScroll,
       setEnterToSend,
       setNotificationsEnabled,
+      setNotificationKind,
+      setNotificationSound,
       setVerificationLevel,
       setSseReconnectDelay,
       setSseHeartbeatTimeout,
@@ -634,6 +677,8 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       autoScroll,
       enterToSend,
       notificationsEnabled,
+      notificationKinds,
+      notificationSound,
       verificationLevel,
       sseReconnectDelay,
       sseHeartbeatTimeout,
@@ -656,6 +701,8 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       setAutoScroll,
       setEnterToSend,
       setNotificationsEnabled,
+      setNotificationKind,
+      setNotificationSound,
       setVerificationLevel,
       setSseReconnectDelay,
       setSseHeartbeatTimeout,

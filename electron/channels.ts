@@ -35,6 +35,9 @@ export const channels = {
   mainError: "app:main-error",
   mainErrorReady: "app:main-error-ready",
   notifyResponseReady: "app:notify-response-ready",
+  showSystemNotification: "app:show-system-notification",
+  systemNotificationClicked: "app:system-notification-clicked",
+  openNotificationSettings: "app:open-notification-settings",
   compileProjectIndexProgram: "project-index:compile-program",
   invokeProjectIndexProgram: "project-index:invoke-program",
   // ── Checkpoint system ──────────────────────────────────────────────

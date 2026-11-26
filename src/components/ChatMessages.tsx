@@ -5,6 +5,7 @@ import {
   createContext,
   lazy,
   memo,
+  type ReactNode,
   Suspense,
   useCallback,
   useContext,
@@ -22,6 +23,7 @@ import { PermissionPrompt } from "@/components/PermissionPrompt";
 import { RobloxInstanceCard } from "@/components/RobloxInstanceCard";
 import type { HighlightLanguage } from "@/components/SyntaxHighlightedOutput";
 import type { Part, QuestionAnswer, QuestionRequest, SessionStatus, Todo } from "@/lib/opencode";
+import { useExplorerReference } from "@/providers/ExplorerReferenceProvider";
 
 /** Module-level constant to avoid creating a new array on every render. */
 const REMARK_PLUGINS = [remarkGfm];
@@ -59,6 +61,7 @@ const TOOLS_WITH_OWN_HEADER = new Set([
   "task",
   "webfetch",
   "todowrite",
+  "execute",
 ]);
 
 /** Stable key for the todo panel's item in the scroll feed. */
@@ -104,7 +107,6 @@ import { useActiveQuestion } from "@/hooks/useQuestions";
 import { useSessionError } from "@/hooks/useSessionError";
 import { isSessionWorking, useSessionStatus } from "@/hooks/useSessionStatuses";
 import { useTodos } from "@/hooks/useTodos";
-import { notifyResponseReady } from "@/lib/desktopNotifications";
 import { type ModelChoice, pickFreeModel } from "@/lib/modelChoice";
 import {
   freeLimitEndsAt,
@@ -773,6 +775,68 @@ const TodoWriteToolView = memo(function TodoWriteToolView({
   );
 });
 
+/** "roblox-studio_search_game_tree" reads as "Search game tree". */
+function toolTitle(tool: string): string {
+  const words = tool
+    .replace(/^roblox-studio_/, "")
+    .replace(/[_-]+/g, " ")
+    .trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** What a Code Mode script did, from the tools it calls: "Inspect instance, Search game tree". */
+function toolsInCode(code: string): string {
+  const names = [...code.matchAll(/\btools(?:\.[\w$]+|\[["'][^"']+["']\])\.([\w$]+)\(/g)].map(
+    (match) => toolTitle(match[1] ?? ""),
+  );
+  return [...new Set(names)].join(", ");
+}
+
+/** OpenCode's Code Mode: the script a model ran against its tools, and what it returned. */
+const ExecuteToolView = memo(function ExecuteToolView({
+  input,
+  output,
+  status,
+}: {
+  input: Record<string, unknown>;
+  output?: string;
+  status: string;
+}) {
+  const code = inputField(input, "code");
+  const detail = toolsInCode(code);
+  return (
+    <div className="min-w-0">
+      <div className="flex min-w-0 items-center gap-1.5 text-[11px]">
+        <svg
+          width="10"
+          height="10"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="text-muted-foreground"
+        >
+          <polyline points="16 18 22 12 16 6" />
+          <polyline points="8 6 2 12 8 18" />
+        </svg>
+        <span className="shrink-0 text-muted-foreground">
+          {status === "completed" ? "Ran code" : "Running code"}
+        </span>
+        {detail && <span className="min-w-0 truncate text-muted-foreground/70">{detail}</span>}
+        {status === "running" && (
+          <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-amber-400" />
+        )}
+      </div>
+      {code && (
+        <InlineDisclosure text={code} tone="output" previewLines={3} language="javascript" />
+      )}
+      {output && <InlineDisclosure text={output.slice(0, 3000)} tone="output" previewLines={3} />}
+    </div>
+  );
+});
+
 const DefaultToolView = memo(function DefaultToolView({
   tool,
   input,
@@ -819,6 +883,29 @@ const DefaultToolView = memo(function DefaultToolView({
  */
 const StreamingMessageContext = createContext(false);
 
+const INLINE_CODE = "rounded bg-muted px-1 py-0.5 font-mono text-[11.5px] text-foreground";
+
+/** Inline code that names an object in the place opens it in the Explorer. */
+function InlineCode({ children }: { children?: ReactNode }) {
+  const { objectIndex, focusObject } = useExplorerReference();
+  const object = typeof children === "string" ? objectIndex.get(children.trim()) : null;
+  if (!object) return <code className={INLINE_CODE}>{children}</code>;
+  return (
+    <button
+      type="button"
+      title={`Show ${object.path} in the Explorer`}
+      onClick={() => focusObject(object.path)}
+      className="cursor-pointer"
+    >
+      <code
+        className={`${INLINE_CODE} underline decoration-muted-foreground/50 underline-offset-2 hover:decoration-foreground`}
+      >
+        {children}
+      </code>
+    </button>
+  );
+}
+
 /**
  * Markdown code renderer. A standalone component (rather than a shorthand
  * method on `markdownComponents`) so its streaming-context read is a legal
@@ -854,11 +941,7 @@ function MarkdownCode({ className, children }: ComponentProps<"code">) {
       </div>
     );
   }
-  return (
-    <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11.5px] text-foreground">
-      {children}
-    </code>
-  );
+  return <InlineCode>{children}</InlineCode>;
 }
 
 /** So a reply can point at a file it made. Only links, since a picture would load it. */
@@ -1116,6 +1199,8 @@ const ToolPartView = memo(function ToolPartView({
         return <TaskToolView input={input} status={status} />;
       case "webfetch":
         return <WebFetchToolView input={input} status={status} />;
+      case "execute":
+        return <ExecuteToolView input={input} output={output} status={status} />;
       case "todowrite":
         return <TodoWriteToolView input={input} />;
       case "inspect_instance":
@@ -2081,7 +2166,6 @@ function ChatMessages() {
     // and, when the window is in the background, raise a system notification.
     if (sameSession && prev?.type === "busy" && sessionStatusType === "idle") {
       playResponseReady();
-      notifyResponseReady();
     }
     // Capture whenever the agent transitions into "busy" (from idle, error,
     // or the very first message of a session), once per message. Empty paths

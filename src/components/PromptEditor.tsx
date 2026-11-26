@@ -5,11 +5,7 @@ import { LexicalErrorBoundary } from "@lexical/react/LexicalErrorBoundary";
 import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin";
 import { OnChangePlugin } from "@lexical/react/LexicalOnChangePlugin";
 import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin";
-import {
-  LexicalTypeaheadMenuPlugin,
-  MenuOption,
-  useBasicTypeaheadTriggerMatch,
-} from "@lexical/react/LexicalTypeaheadMenuPlugin";
+import { LexicalTypeaheadMenuPlugin, MenuOption } from "@lexical/react/LexicalTypeaheadMenuPlugin";
 import {
   $createParagraphNode,
   $createTextNode,
@@ -38,6 +34,13 @@ import { createPortal } from "react-dom";
 import { analyticsProperties } from "@/lib/analytics";
 import type { ExplorerNode } from "@/lib/explorer";
 import type { Command } from "@/lib/opencode";
+import {
+  buildObjectSearchIndex,
+  promptTriggerMatch,
+  type SearchableObject,
+  searchCommands,
+  searchObjects,
+} from "@/lib/promptSuggestions";
 
 type TokenKind = "object" | "command";
 
@@ -144,28 +147,8 @@ class PromptOption extends MenuOption {
 
 const EMPTY_OBJECT_INDEX: readonly SearchableObject[] = [];
 const EMPTY_COMMANDS: readonly Command[] = [];
-
-interface SearchableObject {
-  node: ExplorerNode;
-  searchText: string;
-}
-
-function buildObjectSearchIndex(nodes: readonly ExplorerNode[]): SearchableObject[] {
-  const index: SearchableObject[] = [];
-  const pending = [...nodes].reverse();
-  while (pending.length > 0) {
-    const node = pending.pop();
-    if (!node) continue;
-    index.push({
-      node,
-      searchText: `${node.name} ${node.className} ${node.path}`.toLowerCase(),
-    });
-    for (let childIndex = node.children.length - 1; childIndex >= 0; childIndex -= 1) {
-      pending.push(node.children[childIndex]);
-    }
-  }
-  return index;
-}
+const OBJECT_TRIGGER = promptTriggerMatch("@");
+const COMMAND_TRIGGER = promptTriggerMatch("/");
 
 function SetEditorRef({ editorRef }: { editorRef: React.MutableRefObject<LexicalEditor | null> }) {
   const [editor] = useLexicalComposerContext();
@@ -252,17 +235,12 @@ function TypeaheadPlugin({
   commands?: readonly Command[];
 }) {
   const [query, setQuery] = useState<string | null>(null);
-  const triggerFn = useBasicTypeaheadTriggerMatch(kind === "object" ? "@" : "/", {
-    minLength: 0,
-  });
+  const triggerFn = kind === "object" ? OBJECT_TRIGGER : COMMAND_TRIGGER;
   const options = useMemo(() => {
-    const search = (query ?? "").toLowerCase();
+    const search = query ?? "";
     if (kind === "object") {
-      const objectOptions: PromptOption[] = [];
-      for (const entry of objectIndex) {
-        if (!entry.searchText.includes(search)) continue;
-        const { node } = entry;
-        objectOptions.push(
+      return searchObjects(objectIndex, search).map(
+        (node) =>
           new PromptOption(
             `object:${node.path}`,
             "object",
@@ -270,29 +248,20 @@ function TypeaheadPlugin({
             `${node.className} · ${node.path}`,
             node.path,
           ),
-        );
-        if (objectOptions.length === 10) break;
-      }
-      return objectOptions;
+      );
     }
 
-    const commandOptions: PromptOption[] = [];
-    for (const command of commands) {
-      if (!command.name.toLowerCase().includes(search)) continue;
+    return searchCommands(commands, search).map((command) => {
       const hints = Array.isArray(command.hints) ? command.hints : [];
       const usage = hints.length > 0 ? `/${command.name} ${hints.join(" ")}` : "";
-      commandOptions.push(
-        new PromptOption(
-          `command:${command.name}`,
-          "command",
-          `/${command.name}`,
-          [usage, command.description].filter(Boolean).join(" · "),
-          `/${command.name}`,
-        ),
+      return new PromptOption(
+        `command:${command.name}`,
+        "command",
+        `/${command.name}`,
+        [usage, command.description].filter(Boolean).join(" · "),
+        `/${command.name}`,
       );
-      if (commandOptions.length === 10) break;
-    }
-    return commandOptions;
+    });
   }, [commands, kind, objectIndex, query]);
 
   return (

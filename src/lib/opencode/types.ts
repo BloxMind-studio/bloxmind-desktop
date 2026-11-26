@@ -38,3 +38,12 @@ export type {
 
 // OC2-native types that are shape-compatible and useful at the boundary.
 export type { OpencodeClientConfig } from "./client";
+
+/** A chat's live goal, from the engine's goal plugin (absent on servers without it). */
+export type SessionGoal = {
+  id: string;
+  objective: string;
+  status: "active" | "paused" | "complete";
+  /** Why the goal last changed: the reviewer's reason, or what paused it. */
+  reason?: string;
+};

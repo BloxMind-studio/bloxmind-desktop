@@ -67,6 +67,14 @@ const api: DesktopApi = {
     return () => ipcRenderer.removeListener(channels.modelUploadStep, handler);
   },
   notifyResponseReady: () => ipcRenderer.invoke(channels.notifyResponseReady),
+  showSystemNotification: (notification) =>
+    ipcRenderer.invoke(channels.showSystemNotification, notification),
+  openNotificationSettings: () => ipcRenderer.invoke(channels.openNotificationSettings),
+  onSystemNotificationClick: (listener) => {
+    const handleClick = (_event: Electron.IpcRendererEvent, id: string) => listener(id);
+    ipcRenderer.on(channels.systemNotificationClicked, handleClick);
+    return () => ipcRenderer.removeListener(channels.systemNotificationClicked, handleClick);
+  },
   installStudioTargetPrograms: (envelopes) =>
     ipcRenderer.invoke(channels.installStudioTargetPrograms, envelopes),
   discoverStudioTargets: (programs) =>

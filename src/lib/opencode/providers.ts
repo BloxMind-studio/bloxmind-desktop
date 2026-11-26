@@ -192,9 +192,13 @@ export function translateOc2AuthMethods(
   const out: Record<string, Array<Record<string, unknown>>> = {};
   for (const integration of integrations) {
     const methods = (Array.isArray(integration?.methods) ? integration.methods : [])
-      .filter((method: any) => method?.type === "oauth" || method?.type === "key")
+      .filter(
+        (method: any) =>
+          method?.type === "oauth" || method?.type === "key" || method?.type === "external",
+      )
       .map((method: any) => ({
-        type: method.type === "key" ? "api" : "oauth",
+        ...(method.id ? { id: method.id } : {}),
+        type: method.type === "key" ? "api" : method.type,
         label: method.label ?? (method.type === "key" ? "API key" : "Sign in"),
         ...(method.form ? { prompts: formFieldPrompts(method.form) } : {}),
       }));

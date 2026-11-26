@@ -15,6 +15,7 @@ const BUILTIN_TOOL_NAMES = [
   "task",
   "webfetch",
   "todowrite",
+  "execute",
   "inspect_instance",
 ] as const;
 
