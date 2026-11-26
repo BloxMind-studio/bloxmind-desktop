@@ -29,10 +29,12 @@ import {
 } from "../src/types/desktop";
 import { migrateStoredConfig } from "../src/lib/configMigration";
 import {
+  ExplorerDetailsRequestSchema,
   ExplorerEditResultSchema,
   ExplorerEditSchema,
   ExplorerProgramEnvelopeSchema,
   ExplorerSnapshotSchema,
+  ExplorerSyncRequestSchema,
 } from "../src/lib/explorer";
 import { ProjectIndexProgramEnvelopeSchema, ProjectSkeletonSchema } from "../src/lib/projectIndex";
 import { GeneratedProgramArtifactSchema } from "../src/types/generatedProgram";
@@ -72,7 +74,8 @@ import {
 } from "./instructionFiles";
 import { BLENDER_MCP_SERVER_NAME, skillDirectories, withBlender } from "./opencodeConfig";
 import type { McpServerConfig } from "../src/lib/mcpServers";
-import { editExplorerObject, type CallStudioTool } from "./studioQueries";
+import { editExplorerObject, type CallStudioTool, mcpData, mcpError } from "./studioQueries";
+import { syncExplorerTree } from "./explorerTree";
 import { channels } from "./channels";
 import { createSystemNotifier, notificationSettingsUrl } from "./systemNotifications";
 import { makeOpenCodeLayer, OpenCode } from "./services/OpenCode";
@@ -516,6 +519,50 @@ const registerIpcHandlers = Effect.sync(() => {
         return yield* runtime.compile(program);
       }),
     ),
+  );
+  // A newer read replaces one still running, so a closed place doesn't keep Studio busy.
+  let explorerTreeRead: AbortController | null = null;
+  safeIpcHandle(channels.syncExplorerTree, (event, studioId: unknown, input: unknown) =>
+    queryStudio(async (callTool) => {
+      const id = await Schema.decodeUnknownPromise(StudioKeySchema)(studioId);
+      const options = await Schema.decodeUnknownPromise(ExplorerSyncRequestSchema)(input);
+      explorerTreeRead?.abort();
+      const read = new AbortController();
+      explorerTreeRead = read;
+      return syncExplorerTree(callTool, id, {
+        ...options,
+        signal: read.signal,
+        onUpdate: (update) => {
+          if (!event.sender.isDestroyed())
+            event.sender.send(channels.explorerTreeUpdate, { studioId: id, ...update });
+        },
+      });
+    }),
+  );
+  safeIpcHandle(channels.getExplorerNodeDetails, (_event, studioId: unknown, input: unknown) =>
+    queryStudio(async (callTool) => {
+      const id = await Schema.decodeUnknownPromise(StudioKeySchema)(studioId);
+      const request = await Schema.decodeUnknownPromise(ExplorerDetailsRequestSchema)(input);
+      const result = await callTool("inspect_instance", { studio_id: id, path: request.path });
+      if (mcpError(result)) return null;
+      const data = mcpData(result);
+      const match = Array.isArray(data?.matches)
+        ? data.matches[request.occurrence ?? 0]
+        : data;
+      if (!match) return null;
+      const fields = (values: unknown) =>
+        Object.entries(values && typeof values === "object" ? values : {})
+          .filter(([name]) => name !== "UniqueId")
+          .map(([name, value]) => ({
+            name,
+            value: typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? String(value) : JSON.stringify(value),
+          }))
+          .sort((a, b) => a.name.localeCompare(b.name));
+      return {
+        properties: fields(match.properties),
+        attributes: fields(match.attributes),
+      };
+    }),
   );
   safeIpcHandle(channels.editExplorerObject, (_event, studioId: unknown, input: unknown) =>
     openCodeRuntime.runPromise(

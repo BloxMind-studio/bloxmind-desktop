@@ -4,6 +4,7 @@ import type {
   AppConfig,
   BlenderSetupProgress,
   DesktopApi,
+  ExplorerTreeUpdate,
   MainErrorReport,
   ModelUploadStep,
   OpenCodeStartupProgress,
@@ -13,6 +14,16 @@ import { channels } from "./channels";
 const api: DesktopApi = {
   compileExplorerProgram: (program) =>
     ipcRenderer.invoke(channels.compileExplorerProgram, program),
+  syncExplorerTree: (studioId, request) =>
+    ipcRenderer.invoke(channels.syncExplorerTree, studioId, request),
+  onExplorerTreeUpdate: (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, update: ExplorerTreeUpdate) =>
+      listener(update);
+    ipcRenderer.on(channels.explorerTreeUpdate, handler);
+    return () => ipcRenderer.removeListener(channels.explorerTreeUpdate, handler);
+  },
+  getExplorerNodeDetails: (studioId, request) =>
+    ipcRenderer.invoke(channels.getExplorerNodeDetails, studioId, request),
   editExplorerObject: (studioId, edit) =>
     ipcRenderer.invoke(channels.editExplorerObject, studioId, edit),
   compileProjectIndexProgram: (program) =>

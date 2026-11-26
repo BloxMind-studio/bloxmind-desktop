@@ -12,15 +12,47 @@ export const ExplorerFieldSchema = Schema.Struct({
   // Optional hints so a read value can be shown the way Studio shows it.
   type: Schema.optional(Schema.String),
   numeric: Schema.optional(Schema.Boolean),
+  /** Whether Studio accepts a change to this field. */
+  writable: Schema.optional(Schema.Boolean),
+  /** Studio's grouping, like Transform or Appearance. */
+  category: Schema.optional(Schema.String),
+  /** Choices for enums and BrickColors. */
+  options: Schema.optional(Schema.Array(Schema.String)),
+  /** Colors for each BrickColor choice. */
+  swatches: Schema.optional(Schema.Array(Schema.String)),
 });
 
 export type ExplorerField = typeof ExplorerFieldSchema.Type;
 
+export const ExplorerNodeDetailsSchema = Schema.Struct({
+  properties: Schema.Array(ExplorerFieldSchema),
+  attributes: Schema.Array(ExplorerFieldSchema),
+  locked: Schema.optional(Schema.Boolean),
+  /** Read without a script to keep Studio's redo, so computed values are missing. */
+  limited: Schema.optional(Schema.Literal("redo", "failed")),
+  tags: Schema.optional(Schema.Array(Schema.String)),
+  placeTags: Schema.optional(Schema.Array(Schema.String)),
+});
+export type ExplorerNodeDetails = typeof ExplorerNodeDetailsSchema.Type;
+
+export const ExplorerDetailsRequestSchema = Schema.Struct({
+  path: Schema.String,
+  className: Schema.optional(Schema.String),
+  occurrence: Schema.optional(Schema.Number),
+});
+export type ExplorerDetailsRequest = typeof ExplorerDetailsRequestSchema.Type;
+
 export const ExplorerNodeSchema = Schema.Struct({
+  /** Tells apart objects that share a path. The path alone is what a message or a person sees. */
+  id: Schema.optional(Schema.String),
+  occurrence: Schema.optional(Schema.Number),
+  occurrences: Schema.optional(Schema.Number),
   name: Schema.String,
   className: Schema.String,
   path: Schema.String,
   hasChildren: Schema.Boolean,
+  /** Its children come in their own update, so anything already there stays until then. */
+  pending: Schema.optional(Schema.Boolean),
   properties: Schema.Array(ExplorerFieldSchema),
   attributes: Schema.Array(ExplorerFieldSchema),
   children: Schema.Array(Schema.suspend((): Schema.Schema<ExplorerNode> => ExplorerNodeSchema)),
@@ -29,10 +61,14 @@ export const ExplorerNodeSchema = Schema.Struct({
 }).annotations({ identifier: "ExplorerNode" });
 
 export interface ExplorerNode {
+  readonly id?: string;
+  readonly occurrence?: number;
+  readonly occurrences?: number;
   readonly name: string;
   readonly className: string;
   readonly path: string;
   readonly hasChildren: boolean;
+  readonly pending?: boolean;
   readonly properties: readonly ExplorerField[];
   readonly attributes: readonly ExplorerField[];
   readonly children: readonly ExplorerNode[];
@@ -102,6 +138,122 @@ export function sortExplorerNodes(nodes: readonly ExplorerNode[]): readonly Expl
       const classOrder = explorerCollator.compare(left.className, right.className);
       return classOrder !== 0 ? classOrder : explorerCollator.compare(left.name, right.name);
     });
+}
+
+export function nodeId(node: Pick<ExplorerNode, "id" | "path">): string {
+  return node.id ?? node.path;
+}
+
+export const ExplorerWaitSchema = Schema.Literal(
+  "studio_closed",
+  "no_place",
+  "mode_changed",
+  "place_loading",
+);
+export type ExplorerWait = typeof ExplorerWaitSchema.Type;
+
+/** One changed part of the tree: the new children of an object, or the services for null. */
+export const ExplorerTreeUpdateSchema = Schema.Struct({
+  studioId: Schema.String,
+  parentId: Schema.NullOr(Schema.String),
+  children: Schema.Array(ExplorerNodeSchema),
+  placeName: Schema.optional(Schema.String),
+});
+export type ExplorerTreeUpdate = typeof ExplorerTreeUpdateSchema.Type;
+
+export const ExplorerSyncRequestSchema = Schema.Struct({
+  fresh: Schema.Boolean,
+  force: Schema.Boolean,
+});
+export type ExplorerSyncRequest = typeof ExplorerSyncRequestSchema.Type;
+
+export const ExplorerSyncResultSchema = Schema.Struct({
+  changed: Schema.Boolean,
+  /** Studio says when the tree changes, so there's no need to read it until it does. */
+  watching: Schema.Boolean,
+  complete: Schema.Boolean,
+  truncated: Schema.Boolean,
+  slowestReadMs: Schema.Number,
+  waiting: Schema.optional(ExplorerWaitSchema),
+});
+export type ExplorerSyncResult = typeof ExplorerSyncResultSchema.Type;
+
+/** The tree as updates build it up. Objects are found by id, and changed in place. */
+export interface ExplorerTree {
+  readonly placeName: string;
+  readonly roots: readonly ExplorerNode[];
+  readonly byId: ReadonlyMap<string, ExplorerNode>;
+}
+
+export function emptyExplorerTree(): ExplorerTree {
+  return { placeName: "", roots: [], byId: new Map() };
+}
+
+/**
+ * Applies updates to a tree. Only the changed parts are touched, so this stays cheap in a big place.
+ */
+export function applyExplorerUpdates(
+  tree: ExplorerTree,
+  updates: readonly Pick<ExplorerTreeUpdate, "parentId" | "children" | "placeName">[],
+): ExplorerTree {
+  const byId = tree.byId as Map<string, ExplorerNode>;
+  let { placeName, roots } = tree;
+  const forget = (nodes: readonly ExplorerNode[]) => {
+    for (const node of nodes) {
+      byId.delete(nodeId(node));
+      forget(node.children);
+    }
+  };
+  const remember = (nodes: readonly ExplorerNode[]) => {
+    for (const node of nodes) {
+      byId.set(nodeId(node), node);
+      remember(node.children);
+    }
+  };
+  for (const update of updates) {
+    placeName = update.placeName ?? placeName;
+    const parent = update.parentId === null ? null : byId.get(update.parentId);
+    if (parent === undefined) continue;
+    const before = parent ? parent.children : roots;
+    const held = new Map(before.map((node) => [nodeId(node), node]));
+    const next = update.children.map((node) => {
+      const old = node.pending ? held.get(nodeId(node)) : undefined;
+      return old ? { ...node, children: old.children } : node;
+    });
+    forget(before);
+    remember(next);
+    if (parent) Object.assign(parent, { children: next, pending: false });
+    else roots = next;
+  }
+  return { placeName, roots: [...roots], byId };
+}
+
+export interface ExplorerRow {
+  readonly node: ExplorerNode;
+  readonly depth: number;
+  readonly position: number;
+  readonly siblings: number;
+  readonly loading?: boolean;
+}
+
+/** The rows on screen for what's expanded, one list for however deep the tree goes. */
+export function explorerRows(
+  roots: readonly ExplorerNode[],
+  expanded: ReadonlySet<string>,
+): ExplorerRow[] {
+  const rows: ExplorerRow[] = [];
+  const add = (nodes: readonly ExplorerNode[], depth: number) => {
+    nodes.forEach((node, index) => {
+      rows.push({ node, depth, position: index + 1, siblings: nodes.length });
+      if (!expanded.has(nodeId(node))) return;
+      if (node.children.length > 0) add(node.children, depth + 1);
+      else if (node.pending) {
+        rows.push({ node, depth: depth + 1, position: 1, siblings: 1, loading: true });
+      }
+    });
+  };
+  add(roots, 0);
+  return rows;
 }
 
 export function sortExplorerSnapshot(snapshot: ExplorerSnapshot): ExplorerSnapshot {
@@ -513,8 +665,6 @@ export function indexExplorerObjects(roots: readonly ExplorerNode[]) {
 }
 
 /** Studio's own state keeping the tree from being read, which clears up without anything failing. */
-export type ExplorerWait = "studio_closed" | "no_place" | "mode_changed" | "place_loading";
-
 export const EXPLORER_WAIT_NOTICES: Record<ExplorerWait, string> = {
   studio_closed: "Studio closed. Reopen it to continue.",
   no_place: "No place open. Open one in Studio.",

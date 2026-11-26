@@ -40,6 +40,24 @@ export function mcpError(result: CallToolResult): string | null {
   return text || "Studio returned an error";
 }
 
+/** Studio's default Explorer service set; less common services stay hidden. */
+export const VISIBLE_SERVICES = new Set([
+  "Workspace",
+  "Players",
+  "Lighting",
+  "MaterialService",
+  "ReplicatedFirst",
+  "ReplicatedStorage",
+  "ServerScriptService",
+  "ServerStorage",
+  "StarterGui",
+  "StarterPack",
+  "StarterPlayer",
+  "Teams",
+  "SoundService",
+  "TextChatService",
+]);
+
 function identifier(value: unknown): string | null {
   if (typeof value === "string") return value.trim() || null;
   return typeof value === "number" && Number.isFinite(value) ? String(value) : null;
@@ -407,4 +425,83 @@ function findObjectLuau(target: {
 if #matches ~= ${target.occurrences ?? 1} then error("Found " .. #matches .. " objects at this path") end
 local instance = matches[${(target.occurrence ?? 0) + 1}]
 if instance.ClassName ~= ${JSON.stringify(target.className)} then error("Found 0 objects at this path") end`;
+}
+
+const HISTORY_STATE_PATH = "CoreGui.BloxBotHistoryState";
+const HISTORY_STATE_MAX_AGE_SECONDS = 5;
+
+// Says whether Studio has anything to redo and counts changes to the tree, where inspect_instance
+// can read them without a script. It lives in CoreGui, which isn't part of the place: it isn't saved
+// and doesn't touch undo history.
+const WATCH_HISTORY_LUAU = `local CoreGui = game:GetService("CoreGui")
+local ChangeHistoryService = game:GetService("ChangeHistoryService")
+local previous = CoreGui:FindFirstChild("BloxBotHistoryState")
+if previous then previous:Destroy() end
+local state = Instance.new("StringValue")
+state.Name = "BloxBotHistoryState"
+state.Archivable = false
+state.Parent = CoreGui
+local generation = (_G.__bloxbotHistoryWatch or 0) + 1
+_G.__bloxbotHistoryWatch = generation
+local visible = { ${[...VISIBLE_SERVICES].map((name) => `${name} = true`).join(", ")} }
+local treeVersion = 0
+local function noteChange(instance)
+  local top = instance
+  while top.Parent and top.Parent ~= game do top = top.Parent end
+  if visible[top.Name] then treeVersion += 1 end
+end
+local connections = {
+  game.DescendantAdded:Connect(noteChange),
+  game.DescendantRemoving:Connect(noteChange),
+  game.ItemChanged:Connect(function(instance, property)
+    if property == "Name" or property == "Parent" then noteChange(instance) end
+  end),
+}
+task.spawn(function()
+  while state.Parent and _G.__bloxbotHistoryWatch == generation do
+    state.Value = tostring(ChangeHistoryService:GetCanRedo()) .. " " .. os.time() .. " " .. treeVersion
+    task.wait(0.2)
+  end
+  for _, connection in connections do connection:Disconnect() end
+end)
+return "ok"`;
+
+type RedoState = "nothing-to-redo" | "can-redo" | "unknown";
+
+/** Null for the tree's version means Studio won't say when the tree changes. */
+export async function readHistoryState(
+  callTool: CallStudioTool,
+  studioId: string,
+): Promise<{ redo: RedoState; treeVersion: string | null }> {
+  const unknown = { redo: "unknown" as const, treeVersion: null };
+  const result = await callTool("inspect_instance", {
+    studio_id: studioId,
+    path: HISTORY_STATE_PATH,
+  });
+  if (mcpError(result)) return unknown;
+  const state = /^(true|false) (\d+)(?: (\d+))?$/.exec(
+    String(mcpData(result)?.properties?.Value ?? ""),
+  );
+  if (!state) return unknown;
+  // A value that stopped updating means the watcher is gone, for example after a plugin reload.
+  const age = Math.abs(Date.now() / 1000 - Number(state[2]));
+  if (age > HISTORY_STATE_MAX_AGE_SECONDS) return unknown;
+  return {
+    redo: state[1] === "true" ? "can-redo" : "nothing-to-redo",
+    treeVersion: state[3] ?? null,
+  };
+}
+
+
+/** Installs CoreGui's redo/change watcher so later reads can avoid clearing Studio's redo stack. */
+export async function startHistoryWatcher(
+  callTool: CallStudioTool,
+  studioId: string,
+): Promise<boolean> {
+  const result = await callTool("execute_luau", {
+    studio_id: studioId,
+    datamodel_type: "Edit",
+    code: WATCH_HISTORY_LUAU,
+  });
+  return mcpError(result) === null;
 }

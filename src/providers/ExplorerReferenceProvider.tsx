@@ -11,6 +11,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { type ExplorerTreeSync, useExplorerTreeSync } from "@/hooks/useExplorerTreeSync";
 import { type ExplorerNode, type ExplorerReference, indexExplorerObjects } from "@/lib/explorer";
 import { useStudioTargetOptional } from "@/providers/StudioTargetProvider";
 
@@ -35,20 +36,22 @@ export interface ExplorerView {
   setSelectedPath: Dispatch<SetStateAction<string | null>>;
   search: string;
   setSearch: Dispatch<SetStateAction<string>>;
-  /** What someone had opened and searched for, which outlives the panel being closed. */
   scrollTopRef: MutableRefObject<number>;
 }
 
 const ExplorerViewContext = createContext<ExplorerView | null>(null);
+const ExplorerTreeContext = createContext<ExplorerTreeSync | null>(null);
 
 interface ExplorerReferenceContextValue {
   pendingReference: ExplorerReference | null;
   objects: readonly ExplorerNode[];
+  objectsLoading: boolean;
+  objectsFailed: boolean;
+  objectsWaiting: string | null;
+  requestSync: ExplorerTreeSync["requestSync"];
   referenceObject: (reference: ExplorerReference) => void;
   consumeReference: () => void;
-  publishObjects: (objects: readonly ExplorerNode[]) => void;
   objectIndex: ReadonlyMap<string, ExplorerNode | null>;
-  /** The object a click in the chat asked the Explorer to show. */
   focusRequest: string | null;
   focusObject: (path: string) => void;
   consumeFocus: () => void;
@@ -58,6 +61,7 @@ const ExplorerReferenceContext = createContext<ExplorerReferenceContextValue | n
 const NOTHING_EXPANDED: Set<string> = new Set();
 
 export function ExplorerReferenceProvider({ children }: { children: ReactNode }) {
+  const sync = useExplorerTreeSync();
   const placeKey = explorerPlaceKey(useStudioTargetOptional());
   const [expandedByPlace, setExpandedByPlace] = useState<
     ReadonlyMap<string | undefined, Set<string>>
@@ -96,23 +100,24 @@ export function ExplorerReferenceProvider({ children }: { children: ReactNode })
   );
 
   const [pendingReference, setPendingReference] = useState<ExplorerReference | null>(null);
-  const [objects, setObjects] = useState<readonly ExplorerNode[]>([]);
   const [focusRequest, setFocusRequest] = useState<string | null>(null);
   const referenceObject = useCallback(
     (reference: ExplorerReference) => setPendingReference(reference),
     [],
   );
   const consumeReference = useCallback(() => setPendingReference(null), []);
-  const publishObjects = useCallback((next: readonly ExplorerNode[]) => setObjects(next), []);
   const consumeFocus = useCallback(() => setFocusRequest(null), []);
-  const objectIndex = useMemo(() => indexExplorerObjects(objects), [objects]);
+  const objectIndex = useMemo(() => indexExplorerObjects(sync.objects), [sync.objects]);
   const value = useMemo(
     () => ({
       pendingReference,
-      objects,
+      objects: sync.objects,
+      objectsLoading: sync.syncing && sync.objects.length === 0,
+      objectsFailed: sync.syncError !== null && sync.objects.length === 0,
+      objectsWaiting: sync.objects.length === 0 ? sync.waiting : null,
+      requestSync: sync.requestSync,
       referenceObject,
       consumeReference,
-      publishObjects,
       objectIndex,
       focusRequest,
       focusObject: setFocusRequest,
@@ -120,10 +125,13 @@ export function ExplorerReferenceProvider({ children }: { children: ReactNode })
     }),
     [
       pendingReference,
-      objects,
+      sync.objects,
+      sync.syncing,
+      sync.syncError,
+      sync.waiting,
+      sync.requestSync,
       referenceObject,
       consumeReference,
-      publishObjects,
       objectIndex,
       focusRequest,
       consumeFocus,
@@ -131,11 +139,13 @@ export function ExplorerReferenceProvider({ children }: { children: ReactNode })
   );
 
   return (
-    <ExplorerViewContext.Provider value={view}>
-      <ExplorerReferenceContext.Provider value={value}>
-        {children}
-      </ExplorerReferenceContext.Provider>
-    </ExplorerViewContext.Provider>
+    <ExplorerTreeContext.Provider value={sync}>
+      <ExplorerViewContext.Provider value={view}>
+        <ExplorerReferenceContext.Provider value={value}>
+          {children}
+        </ExplorerReferenceContext.Provider>
+      </ExplorerViewContext.Provider>
+    </ExplorerTreeContext.Provider>
   );
 }
 
@@ -148,5 +158,11 @@ export function useExplorerReference() {
 export function useExplorerView() {
   const value = useContext(ExplorerViewContext);
   if (!value) throw new Error("useExplorerView must be used inside ExplorerReferenceProvider");
+  return value;
+}
+
+export function useExplorerTree() {
+  const value = useContext(ExplorerTreeContext);
+  if (!value) throw new Error("useExplorerTree must be used inside ExplorerReferenceProvider");
   return value;
 }

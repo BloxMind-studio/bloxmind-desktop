@@ -1,10 +1,18 @@
 import { Schema } from "effect";
 import type { BloxMindProgramManifest } from "../lib/bloxmindProgramManifest";
+
+export type { ExplorerTreeUpdate } from "../lib/explorer";
+
 import type {
+  ExplorerDetailsRequest,
   ExplorerEdit,
   ExplorerEditResult,
+  ExplorerNodeDetails,
   ExplorerProgramEnvelope,
   ExplorerSnapshot,
+  ExplorerSyncRequest,
+  ExplorerSyncResult,
+  ExplorerTreeUpdate,
 } from "../lib/explorer";
 import type { ProjectIndexProgramEnvelope, ProjectSkeleton } from "../lib/projectIndex";
 import { DEFAULT_VERIFICATION_LEVEL, VerificationLevelSchema } from "../lib/verification";
@@ -239,6 +247,14 @@ export interface MainErrorReport {
 
 export interface DesktopApi {
   compileExplorerProgram(program: ExplorerProgramEnvelope): Promise<GeneratedProgramArtifact>;
+  /** Reads the place in the main process, sending parts back as they arrive. */
+  syncExplorerTree(studioId: string, request: ExplorerSyncRequest): Promise<ExplorerSyncResult>;
+  onExplorerTreeUpdate(listener: (update: ExplorerTreeUpdate) => void): () => void;
+  /** Full property/attribute surface for one object, read without clearing Studio's redo. */
+  getExplorerNodeDetails(
+    studioId: string,
+    request: ExplorerDetailsRequest,
+  ): Promise<ExplorerNodeDetails | null>;
   /** Makes one change to an object in the open Studio place. */
   editExplorerObject(studioId: string, edit: ExplorerEdit): Promise<ExplorerEditResult>;
   invokeExplorerProgram(

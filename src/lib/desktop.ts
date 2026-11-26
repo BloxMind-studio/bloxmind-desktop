@@ -5,11 +5,18 @@ import {
 } from "@/lib/bloxmindProgramManifest";
 import { migrateStoredConfig } from "@/lib/configMigration";
 import {
+  type ExplorerDetailsRequest,
   type ExplorerEdit,
   type ExplorerEditResult,
   ExplorerEditResultSchema,
+  type ExplorerNodeDetails,
+  ExplorerNodeDetailsSchema,
   type ExplorerSnapshot,
   ExplorerSnapshotSchema,
+  type ExplorerSyncRequest,
+  type ExplorerSyncResult,
+  ExplorerSyncResultSchema,
+  type ExplorerTreeUpdate,
 } from "@/lib/explorer";
 import { type ProjectSkeleton, ProjectSkeletonSchema } from "@/lib/projectIndex";
 import {
@@ -74,6 +81,14 @@ interface DesktopEffects {
   ) => Promise<infer Output>
     ? (input: Input) => Effect.Effect<Output, DesktopError>
     : never;
+  readonly syncExplorerTree: (
+    studioId: string,
+    request: ExplorerSyncRequest,
+  ) => Effect.Effect<ExplorerSyncResult, DesktopError>;
+  readonly getExplorerNodeDetails: (
+    studioId: string,
+    request: ExplorerDetailsRequest,
+  ) => Effect.Effect<ExplorerNodeDetails | null, DesktopError>;
   readonly editExplorerObject: (
     studioId: string,
     edit: ExplorerEdit,
@@ -223,6 +238,10 @@ const browserEffects: DesktopEffects = {
   ),
   invokeExplorerProgram: () =>
     Effect.fail(new DesktopError({ message: "Explorer requires the desktop app." })),
+  syncExplorerTree: () =>
+    Effect.fail(new DesktopError({ message: "Explorer requires the desktop app." })),
+  getExplorerNodeDetails: () =>
+    Effect.fail(new DesktopError({ message: "Explorer requires the desktop app." })),
   listExplorerProgramTools: Effect.fail(
     new DesktopError({ message: "Explorer requires the desktop app." }),
   ),
@@ -306,6 +325,16 @@ function makeBridgeEffects(api: DesktopApi): DesktopEffects {
     editExplorerObject: (studioId, edit) =>
       invoke("Failed to change the object", () => api.editExplorerObject(studioId, edit)).pipe(
         decodeBridgeValue("Studio's answer is invalid", ExplorerEditResultSchema),
+      ),
+    syncExplorerTree: (studioId, request) =>
+      invoke("Failed to read the Studio tree", () => api.syncExplorerTree(studioId, request)).pipe(
+        decodeBridgeValue("Explorer sync answer is invalid", ExplorerSyncResultSchema),
+      ),
+    getExplorerNodeDetails: (studioId, request) =>
+      invoke("Failed to read object details", () =>
+        api.getExplorerNodeDetails(studioId, request),
+      ).pipe(
+        decodeBridgeValue("Object details are invalid", Schema.NullOr(ExplorerNodeDetailsSchema)),
       ),
     compileProjectIndexProgram: (program) =>
       invoke("Failed to compile project index program", () =>
@@ -434,6 +463,12 @@ const runPromise = <A>(effect: Effect.Effect<A, DesktopError>): Promise<A> =>
 /** Promise-only adapter consumed by React and exposed by the Electron bridge contract. */
 export const desktop: DesktopApi = {
   compileExplorerProgram: (program) => runPromise(desktopEffects.compileExplorerProgram(program)),
+  syncExplorerTree: (studioId, request) =>
+    runPromise(desktopEffects.syncExplorerTree(studioId, request)),
+  onExplorerTreeUpdate: (listener: (update: ExplorerTreeUpdate) => void) =>
+    window.BloxMind?.onExplorerTreeUpdate(listener) ?? (() => {}),
+  getExplorerNodeDetails: (studioId, request) =>
+    runPromise(desktopEffects.getExplorerNodeDetails(studioId, request)),
   editExplorerObject: (studioId, edit) =>
     runPromise(desktopEffects.editExplorerObject(studioId, edit)),
   compileProjectIndexProgram: (program) =>

@@ -21,40 +21,27 @@ import {
 import posthog from "posthog-js/dist/module.full.no-external.js";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import {
-  analyticsProperties,
-  errorAnalyticsProperties,
-  explorerAnalyticsProperties,
-} from "@/lib/analytics";
-import { BUILTIN_BLOXMIND_PROGRAMS, resolveBloxMindPrograms } from "@/lib/bloxmindPrograms";
+import { analyticsProperties, explorerAnalyticsProperties } from "@/lib/analytics";
 import { desktop } from "@/lib/desktop";
 import {
   ATTRIBUTE_TYPES,
   EXPLORER_LONG_WAIT_NOTICES,
   EXPLORER_WAIT_NOTICES,
-  type ExplorerCollection,
   type ExplorerField,
   type ExplorerNode,
-  type ExplorerProgramEnvelope,
-  type ExplorerWait,
-  explorerWaitFromError,
   fieldNumbers,
   formatFieldValue,
+  nodeId,
   OBJECT_DRAG_NAME_TYPE,
   OBJECT_DRAG_TYPE,
-  sortExplorerSnapshot,
 } from "@/lib/explorer";
-import { useExplorerReference, useExplorerView } from "@/providers/ExplorerReferenceProvider";
-import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
+import {
+  useExplorerReference,
+  useExplorerTree,
+  useExplorerView,
+} from "@/providers/ExplorerReferenceProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
 import { useStudioTargetOptional } from "@/providers/StudioTargetProvider";
-
-const ACTIVE_SYNC_MS = 2_500;
-const IDLE_SYNC_MS = 5_000;
-const MAX_UNCHANGED_SYNC_MS = 30_000;
-// After failures, wait longer each time up to this, so a broken Studio setup
-// doesn't retry (and re-ask the model for a program) every few seconds.
-const MAX_FAILURE_BACKOFF_MS = 5 * 60_000;
 
 interface ExplorerProps {
   collapsed: boolean;
@@ -159,74 +146,24 @@ const TreeRow = memo(function TreeRow({
   );
 });
 
-function findNode(nodes: readonly ExplorerNode[], path: string): ExplorerNode | null {
-  for (const node of nodes) {
-    if (node.path === path) return node;
-    const child = findNode(node.children, path);
-    if (child) return child;
-  }
-  return null;
-}
-
 /** The chain of objects down to the first one at a path, which a link in the chat names. */
-function chainToPath(nodes: readonly ExplorerNode[], path: string): ExplorerNode[] | null {
+function chainToPath(nodes: readonly ExplorerNode[], key: string): ExplorerNode[] | null {
   for (const node of nodes) {
-    if (node.path === path || node.path === `game.${path}`) return [node];
-    const rest = chainToPath(node.children, path);
+    if (nodeId(node) === key || node.path === key || node.path === `game.${key}`) return [node];
+    const rest = chainToPath(node.children, key);
     if (rest) return [node, ...rest];
   }
   return null;
 }
 
-function countNodes(nodes: readonly ExplorerNode[]): number {
-  return nodes.reduce((total, node) => total + 1 + countNodes(node.children), 0);
-}
-
 function collectPaths(nodes: readonly ExplorerNode[]): Set<string> {
   const paths = new Set<string>();
   const visit = (node: ExplorerNode) => {
-    paths.add(node.path);
+    paths.add(nodeId(node));
     node.children.forEach(visit);
   };
   nodes.forEach(visit);
   return paths;
-}
-
-function sameFields(a: readonly ExplorerField[], b: readonly ExplorerField[]): boolean {
-  if (a === b) return true;
-  if (a.length !== b.length) return false;
-  for (let index = 0; index < a.length; index += 1) {
-    if (a[index].name !== b[index].name || a[index].value !== b[index].value) return false;
-  }
-  return true;
-}
-
-/**
- * Keep the previous node objects for every part of the tree that did not
- * change. Studio polls return a freshly parsed tree every few seconds; without
- * this, one changed instance republished every node and defeated `TreeRow`'s
- * memo (and the composer's reference index).
- */
-function mergeExplorerNodes(
-  previous: readonly ExplorerNode[],
-  next: readonly ExplorerNode[],
-): ExplorerNode[] {
-  const previousByPath = new Map(previous.map((node) => [node.path, node]));
-  return next.map((node) => {
-    const before = previousByPath.get(node.path);
-    const children = mergeExplorerNodes(before?.children ?? [], node.children);
-    const unchanged =
-      before !== undefined &&
-      before.name === node.name &&
-      before.className === node.className &&
-      before.path === node.path &&
-      before.hasChildren === node.hasChildren &&
-      sameFields(before.properties, node.properties) &&
-      sameFields(before.attributes, node.attributes) &&
-      children.length === before.children.length &&
-      children.every((child, index) => child === before.children[index]);
-    return unchanged ? before : { ...node, children };
-  });
 }
 
 interface FlatTreeRow {
@@ -243,7 +180,7 @@ function flattenVisibleRows(
 ): FlatTreeRow[] {
   for (const node of nodes) {
     rows.push({ node, depth });
-    if (node.children.length > 0 && expanded.has(node.path)) {
+    if (node.children.length > 0 && expanded.has(nodeId(node))) {
       flattenVisibleRows(node.children, expanded, depth + 1, rows);
     }
   }
@@ -251,28 +188,15 @@ function flattenVisibleRows(
 }
 
 export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerProps) {
-  const { client } = useOpenCodeClient();
   const studioTarget = useStudioTargetOptional();
   const { fontSize } = usePreferences();
-  const { referenceObject, publishObjects, focusRequest, consumeFocus } = useExplorerReference();
+  const { referenceObject, focusRequest, consumeFocus } = useExplorerReference();
+  const { tree, syncError, waiting, setDemand, requestSync } = useExplorerTree();
   const { expanded, setExpanded, selectedPath, setSelectedPath, search, setSearch, scrollTopRef } =
     useExplorerView();
-  const [collection, setCollection] = useState<ExplorerCollection | null>(null);
-  const collectionRef = useRef<ExplorerCollection | null>(null);
-  const syncingRef = useRef(false);
-  const resyncRequestedRef = useRef(false);
-  const syncLatestRef = useRef<() => void>(() => undefined);
-  // The latest sync effect's scheduler, for a sync that finishes after its
-  // own effect was replaced.
-  const scheduleLatestRef = useRef<() => void>(() => {});
-  const [, setSyncing] = useState(false);
-  const [syncError, setSyncError] = useState<string | null>(null);
-  const [waiting, setWaiting] = useState<ExplorerWait | null>(null);
   const [waitingLong, setWaitingLong] = useState(false);
   const [scrollTarget, setScrollTarget] = useState<{ path: string } | null>(null);
-  const telemetryRef = useRef({ firstSyncReported: false, hadFailure: false });
-  // Consecutive failed syncs, which set the retry backoff.
-  const failuresRef = useRef(0);
+
   useEffect(() => {
     posthog.capture(
       collapsed ? "explorer_closed" : "explorer_opened",
@@ -280,14 +204,11 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
     );
   }, [collapsed]);
 
-  // Reopening Explorer or switching Studio gives a failed setup a fresh try.
-  const studioKey = studioTarget?.selected?.key;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: resets when Explorer opens or the Studio changes
+  // The panel and the composer share one reader, so tell it what we need.
   useEffect(() => {
-    failuresRef.current = 0;
-  }, [collapsed, studioKey]);
+    setDemand({ open: !collapsed && !!studioTarget?.selected, busy: sessionBusy });
+  }, [collapsed, sessionBusy, studioTarget?.selected, setDemand]);
 
-  // A short wait is just a notice; a long one gets a more useful explanation.
   useEffect(() => {
     setWaitingLong(false);
     if (!waiting) return;
@@ -295,241 +216,7 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
     return () => window.clearTimeout(timer);
   }, [waiting]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: setters are stable and keyed by place
-  useEffect(() => {
-    if (!client || collapsed || !studioTarget?.selected) return;
-    const studioId = studioTarget.selected.key;
-    let cancelled = false;
-    let timer: number | undefined;
-    let unchangedPolls = 0;
-
-    function scheduleNext() {
-      if (cancelled) return;
-      const baseDelay = sessionBusy ? ACTIVE_SYNC_MS : IDLE_SYNC_MS;
-      const delay =
-        failuresRef.current > 0
-          ? Math.min(IDLE_SYNC_MS * 2 ** failuresRef.current, MAX_FAILURE_BACKOFF_MS)
-          : Math.min(baseDelay * 2 ** Math.min(unchangedPolls, 3), MAX_UNCHANGED_SYNC_MS);
-      // Replace any pending timer, so scheduling twice never runs two syncs.
-      if (timer !== undefined) window.clearTimeout(timer);
-      timer = window.setTimeout(() => void sync(), delay);
-    }
-
-    async function sync() {
-      if (syncingRef.current) {
-        resyncRequestedRef.current = true;
-        return;
-      }
-      if (document.visibilityState === "hidden" || !document.hasFocus()) {
-        scheduleNext();
-        return;
-      }
-      syncingRef.current = true;
-      setSyncing(true);
-      setSyncError(null);
-      const syncStartedAt = performance.now();
-      const isFirstSync = !telemetryRef.current.firstSyncReported;
-      if (isFirstSync) {
-        posthog.capture("sync_started", analyticsProperties("explorer", { source: "initial" }));
-      }
-
-      async function generate(reason: "initial" | "retry") {
-        const startedAt = performance.now();
-        posthog.capture(
-          "collector_generation_started",
-          analyticsProperties("explorer", { reason }),
-        );
-        const programProperties = {
-          program_source: "builtin",
-          program_sequence: BUILTIN_BLOXMIND_PROGRAMS.explorer.sequence,
-        };
-        // Compiles a program and runs it once, as every program is checked
-        // before Explorer uses it.
-        const tryProgram = async (program: ExplorerProgramEnvelope) => {
-          const artifact = await desktop.compileExplorerProgram(program);
-          const snapshot = sortExplorerSnapshot(
-            await desktop.invokeExplorerProgram(artifact, studioId),
-          );
-          if (snapshot.roots.length === 0) {
-            throw new Error("Studio has not returned an instance tree yet");
-          }
-          return { artifact, snapshot };
-        };
-        try {
-          const { explorer } = await resolveBloxMindPrograms();
-          const generated: ExplorerCollection = {
-            program: explorer.program,
-            ...(await tryProgram(explorer.program)),
-            origin: explorer.source,
-          };
-          posthog.capture(
-            "collector_generation_succeeded",
-            analyticsProperties(
-              "explorer",
-              explorerAnalyticsProperties({
-                duration_ms: Math.round(performance.now() - startedAt),
-                reason,
-                ...programProperties,
-                root_count: generated.snapshot.roots.length,
-                node_count: countNodes(generated.snapshot.roots),
-              }),
-            ),
-          );
-          return generated;
-        } catch (error) {
-          console.error("[explorer] collector generation failed", error);
-          posthog.capture(
-            "collector_generation_failed",
-            errorAnalyticsProperties(
-              "explorer",
-              "collector_generation",
-              error,
-              explorerAnalyticsProperties({
-                duration_ms: Math.round(performance.now() - startedAt),
-                reason,
-                ...programProperties,
-              }),
-            ),
-          );
-          throw error;
-        }
-      }
-
-      try {
-        const current = collectionRef.current;
-        let next: ExplorerCollection;
-        if (current) {
-          try {
-            const snapshot = sortExplorerSnapshot(
-              await desktop.invokeExplorerProgram(current.artifact, studioId),
-            );
-            next = { ...current, snapshot };
-          } catch (error) {
-            telemetryRef.current.hadFailure = true;
-            if (failuresRef.current === 0)
-              posthog.capture(
-                "sync_failed",
-                errorAnalyticsProperties("explorer", "collector_runtime", error, {
-                  reason: "collector_runtime",
-                }),
-              );
-            // Keep the last tree on screen; the next scheduled poll retries the
-            // shipped program without spending a message on a model.
-            throw error;
-          }
-        } else {
-          next = await generate("initial");
-        }
-
-        if (cancelled) return;
-        // Compare and merge structurally instead of serializing both trees:
-        // unchanged nodes keep their previous object identity, so only the rows
-        // that actually changed re-render.
-        const previousRoots = current?.snapshot.roots ?? [];
-        const mergedRoots = mergeExplorerNodes(previousRoots, next.snapshot.roots);
-        const treeUnchanged =
-          current !== null &&
-          next.snapshot.placeName === current.snapshot.placeName &&
-          mergedRoots.length === previousRoots.length &&
-          mergedRoots.every((node, index) => node === previousRoots[index]);
-        unchangedPolls = treeUnchanged ? unchangedPolls + 1 : 0;
-        failuresRef.current = 0;
-        // An idle poll that returns the same tree must not publish: a fresh
-        // object identity re-renders every TreeRow and rebuilds the composer's
-        // reference index for nothing.
-        if (!treeUnchanged) {
-          const merged: ExplorerCollection = {
-            ...next,
-            snapshot: { ...next.snapshot, roots: mergedRoots },
-          };
-          collectionRef.current = merged;
-          setCollection(merged);
-          publishObjects(mergedRoots);
-          setExpanded((currentExpanded) =>
-            currentExpanded.size > 0
-              ? currentExpanded
-              : new Set(mergedRoots.map((node) => node.path)),
-          );
-        }
-        if (isFirstSync || telemetryRef.current.hadFailure) {
-          posthog.capture(
-            "sync_succeeded",
-            analyticsProperties(
-              "explorer",
-              explorerAnalyticsProperties({
-                duration_ms: Math.round(performance.now() - syncStartedAt),
-                source: telemetryRef.current.hadFailure ? "recovery" : "initial",
-                root_count: next.snapshot.roots.length,
-                node_count: countNodes(next.snapshot.roots),
-              }),
-            ),
-          );
-          telemetryRef.current.firstSyncReported = true;
-          telemetryRef.current.hadFailure = false;
-          setWaiting(null);
-        }
-      } catch (error) {
-        console.error("[explorer] sync failed", error);
-        telemetryRef.current.hadFailure = true;
-        const wait = explorerWaitFromError(error);
-        setWaiting(wait);
-        // Studio's own state clears up on its own, so keep polling at the idle rate.
-        if (wait) failuresRef.current = 0;
-        else failuresRef.current += 1;
-        // Report the first failure of a streak, not every retry.
-        if (failuresRef.current === 1)
-          posthog.capture(
-            "sync_failed",
-            errorAnalyticsProperties(
-              "explorer",
-              "sync",
-              error,
-              explorerAnalyticsProperties({
-                duration_ms: Math.round(performance.now() - syncStartedAt),
-                reason: collectionRef.current ? "recovery_failed" : "initial_failed",
-              }),
-            ),
-          );
-        if (!cancelled) setSyncError(error instanceof Error ? error.message : String(error));
-      } finally {
-        syncingRef.current = false;
-        if (!cancelled) setSyncing(false);
-        // A re-sync requested while this one ran waits for the backoff if
-        // this one failed.
-        if (resyncRequestedRef.current && failuresRef.current === 0) {
-          resyncRequestedRef.current = false;
-          queueMicrotask(() => syncLatestRef.current());
-        } else {
-          resyncRequestedRef.current = false;
-          scheduleLatestRef.current();
-        }
-      }
-    }
-
-    syncLatestRef.current = () => void sync();
-    scheduleLatestRef.current = scheduleNext;
-    // This effect also re-runs when the chat turns busy or idle; during a
-    // failure streak, wait for the backoff instead of retrying straight away.
-    if (failuresRef.current > 0) scheduleNext();
-    else void sync();
-    const resume = () => {
-      // While failing, wait for the backoff timer rather than retrying (and
-      // possibly asking the model again) every time the window regains focus.
-      if (failuresRef.current > 0) return;
-      if (document.visibilityState === "visible" && document.hasFocus()) {
-        if (timer !== undefined) window.clearTimeout(timer);
-        void sync();
-      }
-    };
-    document.addEventListener("visibilitychange", resume);
-    window.addEventListener("focus", resume);
-    return () => {
-      cancelled = true;
-      if (timer !== undefined) window.clearTimeout(timer);
-      document.removeEventListener("visibilitychange", resume);
-      window.removeEventListener("focus", resume);
-    };
-  }, [client, collapsed, publishObjects, sessionBusy, studioTarget?.selected]);
+  const roots = tree?.roots ?? [];
 
   // Newer published programs replace a shipped or published program at the next
   // sync (a working model-written one is kept), and retry a setup that failed.
@@ -544,14 +231,13 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
   }, []);
 
   const selected = useMemo(
-    () => (selectedPath && collection ? findNode(collection.snapshot.roots, selectedPath) : null),
-    [collection, selectedPath],
+    () => (selectedPath ? (roots.find((node) => nodeId(node) === selectedPath) ?? null) : null),
+    [roots, selectedPath],
   );
 
   const visibleRoots = useMemo(() => {
-    if (!collection) return [];
     const query = search.trim().toLowerCase();
-    if (!query) return collection.snapshot.roots;
+    if (!query) return roots;
     const filter = (node: ExplorerNode): ExplorerNode | null => {
       const children = node.children.flatMap((child) => {
         const match = filter(child);
@@ -560,18 +246,18 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
       const matches = `${node.name} ${node.className} ${node.path}`.toLowerCase().includes(query);
       return matches || children.length > 0 ? { ...node, children } : null;
     };
-    return collection.snapshot.roots.flatMap((root) => {
+    return roots.flatMap((root) => {
       const match = filter(root);
       return match ? [match] : [];
     });
-  }, [collection, search]);
+  }, [roots, search]);
   const visibleExpanded = useMemo(
     () => (search.trim() ? collectPaths(visibleRoots) : expanded),
     [expanded, search, visibleRoots],
   );
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: setter is stable and keyed by place
-  const handleSelect = useCallback((next: ExplorerNode) => setSelectedPath(next.path), []);
+  const handleSelect = useCallback((next: ExplorerNode) => setSelectedPath(nodeId(next)), []);
 
   const [menu, setMenu] = useState<{ x: number; y: number; node: ExplorerNode } | null>(null);
   const [renaming, setRenaming] = useState<ExplorerNode | null>(null);
@@ -579,10 +265,7 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
   const [deleting, setDeleting] = useState<ExplorerNode | null>(null);
   const [objectBusy, setObjectBusy] = useState(false);
 
-  const resync = useCallback(() => {
-    resyncRequestedRef.current = true;
-    syncLatestRef.current();
-  }, []);
+  const resync = useCallback(() => requestSync({ force: true }), [requestSync]);
 
   const handleObjectAction = useCallback(
     async (action: "rename" | "duplicate" | "delete", node: ExplorerNode, name?: string) => {
@@ -652,7 +335,7 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
     estimateSize: () => treeRowHeight,
     overscan: 12,
     initialOffset: () => scrollTopRef.current,
-    getItemKey: (index) => treeRows[index]?.node.path ?? index,
+    getItemKey: (index) => (treeRows[index] ? nodeId(treeRows[index].node) : index),
   });
   // Rows have a fixed height, but that height changes with the font-size
   // preference; recompute the offsets instead of keeping the old scale.
@@ -665,21 +348,22 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
   // request waits until the tree that names it arrives.
   // biome-ignore lint/correctness/useExhaustiveDependencies: setters are stable and keyed by place
   useEffect(() => {
-    if (!focusRequest || !collection) return;
-    const chain = chainToPath(collection.snapshot.roots, focusRequest);
+    if (!focusRequest || roots.length === 0) return;
+    const chain = chainToPath(roots, focusRequest);
     if (!chain) return;
     consumeFocus();
     setSearch("");
-    const paths = chain.map((node) => node.path);
-    setSelectedPath(paths[paths.length - 1] ?? null);
-    setScrollTarget({ path: paths[paths.length - 1] ?? focusRequest });
-    setExpanded((current) => new Set([...current, ...paths.slice(0, -1)]));
-  }, [focusRequest, collection, consumeFocus]);
+    const ids = chain.map((node) => nodeId(node));
+    const last = chain[chain.length - 1];
+    setSelectedPath(ids[ids.length - 1] ?? null);
+    setScrollTarget({ path: nodeId(last ?? { path: focusRequest }) });
+    setExpanded((current) => new Set([...current, ...ids.slice(0, -1)]));
+  }, [focusRequest, roots, consumeFocus]);
 
   // The rows the link expanded arrive with the next render, so scroll then.
   useEffect(() => {
     if (!scrollTarget) return;
-    const index = treeRows.findIndex((row) => row.node.path === scrollTarget.path);
+    const index = treeRows.findIndex((row) => nodeId(row.node) === scrollTarget.path);
     if (index < 0) return;
     treeVirtualizer.scrollToIndex(index, { align: "auto" });
     setScrollTarget(null);
@@ -743,7 +427,7 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
             </span>
             <button
               type="button"
-              onClick={() => syncLatestRef.current()}
+              onClick={() => requestSync()}
               className="shrink-0 whitespace-nowrap font-medium underline-offset-2 hover:underline"
             >
               Check now
@@ -765,7 +449,7 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
         role="tree"
         aria-label="Instance hierarchy"
       >
-        {!collection && !syncError && !waiting ? <ExplorerLoading /> : null}
+        {roots.length === 0 && !syncError && !waiting ? <ExplorerLoading /> : null}
         <div
           style={{
             height: `${treeVirtualizer.getTotalSize()}px`,
@@ -778,7 +462,7 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
             if (!row) return null;
             return (
               <div
-                key={row.node.path}
+                key={nodeId(row.node)}
                 style={{
                   position: "absolute",
                   top: 0,
@@ -790,8 +474,8 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
                 <TreeRow
                   node={row.node}
                   depth={row.depth}
-                  isExpanded={visibleExpanded.has(row.node.path)}
-                  isSelected={selectedPath === row.node.path}
+                  isExpanded={visibleExpanded.has(nodeId(row.node))}
+                  isSelected={selectedPath === nodeId(row.node)}
                   onToggle={toggleNode}
                   onSelect={handleSelect}
                   onContextMenu={(event, node) => {
@@ -811,10 +495,7 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
           studioId={studioTarget?.selected?.key ?? null}
           onReference={handleReference}
           onReferenceField={(field) => handleReference(field)}
-          onChanged={() => {
-            resyncRequestedRef.current = true;
-            syncLatestRef.current();
-          }}
+          onChanged={() => requestSync({ force: true })}
         />
       ) : (
         <div className="shrink-0 border-t px-3 py-2 text-[9px] text-muted-foreground">

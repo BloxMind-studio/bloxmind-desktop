@@ -1,5 +1,8 @@
 export const channels = {
   compileExplorerProgram: "explorer:compile-program",
+  syncExplorerTree: "explorer:sync-tree",
+  explorerTreeUpdate: "explorer:tree-update",
+  getExplorerNodeDetails: "explorer:get-node-details",
   editExplorerObject: "explorer:edit-object",
   checkForUpdate: "app:check-for-update",
   getOpenCodeInfo: "opencode:get-info",
