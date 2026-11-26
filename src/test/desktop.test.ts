@@ -55,7 +55,6 @@ describe("browser desktop fallback", () => {
       starCalloutShown: false,
       sseReconnectDelay: 3000,
       sseHeartbeatTimeout: 30000,
-      mcpServers: [],
     });
   });
 
@@ -101,7 +100,6 @@ describe("browser desktop fallback", () => {
       starCalloutShown: false,
       sseReconnectDelay: 3000,
       sseHeartbeatTimeout: 30000,
-      mcpServers: [],
     });
   });
 
@@ -145,7 +143,6 @@ describe("browser desktop fallback", () => {
       starCalloutShown: false,
       sseReconnectDelay: 3000,
       sseHeartbeatTimeout: 30000,
-      mcpServers: [],
     });
   });
 

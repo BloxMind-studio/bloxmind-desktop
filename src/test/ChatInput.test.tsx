@@ -141,7 +141,6 @@ function seedState(qc: QueryClient, session: Session, textOnly = false) {
     notificationsEnabled: true,
     sseReconnectDelay: 3_000,
     sseHeartbeatTimeout: 30_000,
-    mcpServers: [],
   });
   qc.setQueryData<MessagesCache>(qk.messages(session.id), { messageIds: [], messagesById: {} });
   qc.setQueryData(qk.todos(session.id), []);

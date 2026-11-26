@@ -17,7 +17,6 @@ import {
   setDetailedAnalyticsEnabled as setDetailedAnalyticsCollection,
 } from "@/lib/analytics";
 import { type AppConfig, loadConfig, patchConfig } from "@/lib/config";
-import { applyMcpServers, type McpServerConfig } from "@/lib/mcpServers";
 import { goneReason, modelName, replacementModel } from "@/lib/modelChoice";
 import { offerNotificationsOnce } from "@/lib/notificationOffer";
 import { setNotificationPreferences } from "@/lib/notifications";
@@ -25,7 +24,6 @@ import { qk } from "@/lib/queryKeys";
 import { setSoundEffectsEnabled } from "@/lib/soundEffects";
 import { splitModelKey } from "@/lib/splitModelKey";
 import { DEFAULT_VERIFICATION_LEVEL, type VerificationLevel } from "@/lib/verification";
-import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 import type { AccentColor, LayoutDensity, NotificationKinds } from "@/types/desktop";
 
 const ACCENT_CSS_VALUES: Record<AccentColor, string> = {
@@ -84,8 +82,6 @@ interface PreferencesContextValue {
   // SSE connection
   sseReconnectDelay: number;
   sseHeartbeatTimeout: number;
-  // Extra MCP servers (Settings → Integrations)
-  mcpServers: McpServerConfig[];
   setSelectedModel: (modelID: string) => void;
   setSelectedAgent: (name: string) => void;
   setSelectedVariant: (variant: string | null) => void;
@@ -109,7 +105,6 @@ interface PreferencesContextValue {
   setVerificationLevel: (level: VerificationLevel) => void;
   setSseReconnectDelay: (delay: number) => void;
   setSseHeartbeatTimeout: (timeout: number) => void;
-  setMcpServers: (servers: McpServerConfig[]) => void;
 }
 
 export const PreferencesContext = createContext<PreferencesContextValue | undefined>(undefined);
@@ -173,12 +168,9 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   // SSE connection
   const [sseReconnectDelay, setSseReconnectDelayState] = useState(3_000);
   const [sseHeartbeatTimeout, setSseHeartbeatTimeoutState] = useState(30_000);
-  // Extra MCP servers (Settings → Integrations)
-  const [mcpServers, setMcpServersState] = useState<McpServerConfig[]>([]);
 
   const connectedProviders = useConnectedProviders();
   const providerList = useProviderList();
-  const { client } = useOpenCodeClient();
 
   // Pending settings write. Merged so a burst of edits lands as one patch and
   // flushed on blur/unmount so a fast quit cannot drop the last change.
@@ -265,8 +257,6 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     // SSE connection
     setSseReconnectDelayState(configData.sseReconnectDelay);
     setSseHeartbeatTimeoutState(configData.sseHeartbeatTimeout);
-    // Extra MCP servers
-    setMcpServersState(configData.mcpServers);
 
     // Detailed AI traces are opt-in as of notice version 3: nothing beyond basic
     // app health events leaves the device until the user turns sharing on. Users
@@ -551,29 +541,6 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     [queuePatch],
   );
 
-  // Persist the MCP server list and push it into the running engine. The
-  // engine config file also carries the list, so a change made while the
-  // engine is starting still lands at next launch; the live apply covers the
-  // running session.
-  const setMcpServers = useCallback(
-    (next: McpServerConfig[]) => {
-      const removed = mcpServers
-        .filter((server) => !next.some((candidate) => candidate.name === server.name))
-        .map((server) => server.name);
-      setMcpServersState(next);
-      patchConfig({ mcpServers: next }).catch(() => {});
-      if (client) {
-        void applyMcpServers(client, next, removed).catch((error: unknown) => {
-          console.warn("Failed to apply MCP servers:", error);
-          toast.error(
-            "The change was saved, but the running engine didn't accept it. Restart BloxMind to apply it.",
-          );
-        });
-      }
-    },
-    [client, mcpServers],
-  );
-
   // Apply UI customization CSS variables
   useEffect(() => {
     applyAccentColor(accentColor);
@@ -632,7 +599,6 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       verificationLevel,
       sseReconnectDelay,
       sseHeartbeatTimeout,
-      mcpServers,
       setSelectedModel,
       setSelectedAgent,
       setSelectedVariant,
@@ -656,7 +622,6 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       setVerificationLevel,
       setSseReconnectDelay,
       setSseHeartbeatTimeout,
-      setMcpServers,
     }),
     [
       selectedModel,
@@ -682,7 +647,6 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       verificationLevel,
       sseReconnectDelay,
       sseHeartbeatTimeout,
-      mcpServers,
       setSelectedModel,
       setSelectedAgent,
       setSelectedVariant,
@@ -706,7 +670,6 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       setVerificationLevel,
       setSseReconnectDelay,
       setSseHeartbeatTimeout,
-      setMcpServers,
     ],
   );
 

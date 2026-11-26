@@ -256,18 +256,11 @@ const openCodeRuntime = ManagedRuntime.make(
           isPackaged: app.isPackaged,
           resourcesPath: process.resourcesPath,
         }),
-        // Read lazily at engine start so a server added in Settings while the
-        // app runs is picked up on the next restart (live changes go through
-        // the engine's config API instead). Blender is added here too, so it
-        // survives an engine restart without depending on a live config patch.
+        // The Blender bridge is added here so it survives an engine restart.
         mcpServers: () =>
           Effect.gen(function* () {
-            const config = yield* loadConfig;
             const installed = yield* Effect.promise(() => isBlenderInstalled(blenderToolsRoot()));
-            return [
-              ...config.mcpServers.filter((server) => server.name !== BLENDER_MCP_SERVER_NAME),
-              ...(installed ? [blenderServerConfig()] : []),
-            ];
+            return installed ? [blenderServerConfig()] : [];
           }),
         workspace: join(app.getPath("home"), "BloxMind"),
         onNetstatMiss: (message) => reportMainError("opencode_netstat_miss", new Error(message)),

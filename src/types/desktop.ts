@@ -55,25 +55,6 @@ export type AccentColor = typeof AccentColorSchema.Type;
 export type LayoutDensity = typeof LayoutDensitySchema.Type;
 
 /**
- * One extra MCP server the user configured in Settings → Integrations. Shape
- * matches `McpServerConfig` in `src/lib/mcpServers.ts`, which holds the
- * validation and engine conversion.
- */
-export const McpServerSchema = Schema.mutable(
-  Schema.Struct({
-    name: Schema.String,
-    type: Schema.Literal("local", "remote"),
-    command: Schema.NullOr(MutableStrings),
-    url: Schema.NullOr(Schema.String),
-    enabled: Schema.Boolean,
-    // Optional so configs written before it existed still load.
-    environment: Schema.optional(
-      Schema.NullOr(Schema.Record({ key: Schema.String, value: Schema.String })),
-    ),
-  }),
-);
-
-/**
  * Version of the stored configuration shape. Bumped whenever loading an older
  * file must rewrite values; `migrateStoredConfig` applies the rewrites once and
  * persists the new version.
@@ -132,8 +113,6 @@ export const AppConfigSchema = Schema.mutable(
     // SSE connection
     sseReconnectDelay: Schema.Number.pipe(Schema.int(), Schema.between(1_000, 60_000)),
     sseHeartbeatTimeout: Schema.Number.pipe(Schema.int(), Schema.between(5_000, 120_000)),
-    // Extra MCP servers (Settings → Integrations), e.g. the Blender bridge.
-    mcpServers: Schema.mutable(Schema.Array(McpServerSchema)),
   }),
 );
 
@@ -174,7 +153,6 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   starCalloutShown: false,
   sseReconnectDelay: 3_000,
   sseHeartbeatTimeout: 30_000,
-  mcpServers: [],
 };
 
 export const AppConfigPatchSchema = Schema.partial(AppConfigSchema);
