@@ -755,6 +755,10 @@ const registerIpcHandlers = Effect.sync(() => {
           Effect.tapErrorCause((cause) =>
             Effect.logError(`[explorer] invocation failed: ${String(cause)}`),
           ),
+          // The renderer wants a plain message; an Effect failure serializes as FiberFailure.
+          Effect.catchAll((cause) =>
+            Effect.fail(new Error(cause instanceof Error ? cause.message : String(cause))),
+          ),
         ),
       ),
   );
@@ -793,6 +797,10 @@ const registerIpcHandlers = Effect.sync(() => {
         }).pipe(
           Effect.tapErrorCause((cause) =>
             Effect.logError(`[project-index] invocation failed: ${String(cause)}`),
+          ),
+          // The renderer wants a plain message; an Effect failure serializes as FiberFailure.
+          Effect.catchAll((cause) =>
+            Effect.fail(new Error(cause instanceof Error ? cause.message : String(cause))),
           ),
         ),
       ),
