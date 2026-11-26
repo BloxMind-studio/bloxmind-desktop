@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import {
+  type ExplorerField,
   type ExplorerNode,
   type ExplorerSyncResult,
   type ExplorerWait,
@@ -185,6 +186,8 @@ interface BuiltNode {
   path: string;
   hasChildren: boolean;
   pending?: boolean;
+  properties: ExplorerField[];
+  attributes: ExplorerField[];
   children: BuiltNode[];
 }
 
@@ -228,6 +231,8 @@ async function buildChildren(
         className: typeof row?.className === "string" ? row.className : "Instance",
         path: gamePath(path),
         hasChildren: false,
+        properties: [],
+        attributes: [],
         children: [],
       },
     };
@@ -275,6 +280,8 @@ async function buildChildren(
     className: "",
     path: "",
     hasChildren: false,
+    properties: [],
+    attributes: [],
     children: [],
   };
   const link = async (parentKey: string, parents: readonly BuiltNode[]) => {
@@ -468,6 +475,8 @@ export async function syncExplorerTree(
       path: gamePath(path),
       hasChildren: hidden > 0,
       ...(hidden > 0 ? { pending: true } : {}),
+      properties: [],
+      attributes: [],
       children: [],
     };
   });

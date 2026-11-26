@@ -311,7 +311,7 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
           "explorer",
           explorerAnalyticsProperties({
             class_category: iconForClass(selected.className) === Box ? "generic" : "known",
-            has_attributes: selected.attributes.length > 0,
+            has_attributes: (selected.attributes ?? []).length > 0,
           }),
         ),
       );
@@ -972,7 +972,7 @@ function AttributeTags({
         </div>
       )}
       <div className="mt-2 flex flex-wrap gap-1">
-        {node.attributes.map((field) => (
+        {(node.attributes ?? []).map((field) => (
           <button
             key={field.name}
             type="button"
@@ -1035,9 +1035,9 @@ function Inspector({
         studioId={studioId}
         onChanged={onChanged}
         onReferenceField={onReferenceField}
-        fields={[{ name: "ClassName", value: node.className }, ...node.properties]}
+        fields={[{ name: "ClassName", value: node.className }, ...(node.properties ?? [])]}
       />
-      {node.attributes.length > 0 ? (
+      {(node.attributes ?? []).length > 0 ? (
         <FieldSection
           title="Attributes"
           kind="attribute"
@@ -1045,7 +1045,7 @@ function Inspector({
           studioId={studioId}
           onChanged={onChanged}
           onReferenceField={onReferenceField}
-          fields={node.attributes}
+          fields={node.attributes ?? []}
         />
       ) : null}
       <AttributeTags node={node} studioId={studioId} onChanged={onChanged} />
