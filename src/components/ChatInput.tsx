@@ -15,6 +15,7 @@ import { useAllModels, useConnectedProviders } from "@/hooks/useProviders";
 import { useSessionGoal } from "@/hooks/useSessionGoal";
 import { useIsBusy } from "@/hooks/useSessionStatuses";
 import { analyticsProperties } from "@/lib/analytics";
+import { OBJECT_DRAG_NAME_TYPE, OBJECT_DRAG_TYPE } from "@/lib/explorer";
 import { modelAcceptsImages } from "@/lib/imageSupport";
 import { findModelInfo, formatTokens, modelSpecs, reasoningLabel } from "@/lib/modelSpecs";
 import { resolveVariantForModel } from "@/lib/modelVariant";
@@ -270,7 +271,8 @@ function ChatInput({
   /** Lets the model picker send someone to Providers when their models aren't there. */
   onOpenSettings?: () => void;
 }) {
-  const { pendingReference, consumeReference, objects } = useExplorerReference();
+  const { pendingReference, consumeReference, referenceObject, objects, objectIndex } =
+    useExplorerReference();
   // PromptEditor rebuilds its object search index whenever the array identity
   // changes; spreading inline on every render defeated that memoization.
   const editorObjects = useMemo(() => [...objects], [objects]);
@@ -342,6 +344,7 @@ function ChatInput({
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [isDraggingObject, setIsDraggingObject] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [lbSlideDir, setLbSlideDir] = useState<"left" | "right" | null>(null);
   const [lbAnimKey, setLbAnimKey] = useState(0);
@@ -437,7 +440,7 @@ function ChatInput({
 
   useEffect(() => {
     if (!pendingReference) return;
-    promptEditorRef.current?.insertText(pendingReference);
+    promptEditorRef.current?.insertObject(pendingReference);
     consumeReference();
     requestAnimationFrame(() => promptEditorRef.current?.focus());
   }, [pendingReference, consumeReference]);
@@ -548,11 +551,15 @@ function ChatInput({
     e.preventDefault();
     e.stopPropagation();
     dragCounterRef.current++;
-    if (dragCounterRef.current === 1) setIsDragging(true);
+    if (dragCounterRef.current === 1) {
+      setIsDragging(true);
+      setIsDraggingObject(e.dataTransfer.types.includes(OBJECT_DRAG_TYPE));
+    }
   }, []);
   const onDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    e.dataTransfer.dropEffect = "copy";
   }, []);
   const onDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -566,9 +573,19 @@ function ChatInput({
       e.stopPropagation();
       dragCounterRef.current = 0;
       setIsDragging(false);
-      if (e.dataTransfer.files.length > 0) addImageFiles(e.dataTransfer.files);
+      setIsDraggingObject(false);
+      const path = e.dataTransfer.getData(OBJECT_DRAG_TYPE);
+      // The panel can be ahead of this list while a big place loads, and the path is what counts.
+      if (path)
+        referenceObject(
+          objectIndex.get(path) ?? {
+            name: e.dataTransfer.getData(OBJECT_DRAG_NAME_TYPE),
+            path,
+          },
+        );
+      else if (e.dataTransfer.files.length > 0) addImageFiles(e.dataTransfer.files);
     },
-    [addImageFiles],
+    [addImageFiles, objectIndex, referenceObject],
   );
 
   useEffect(() => {
@@ -1062,7 +1079,13 @@ function ChatInput({
                 addImageFiles(imageFiles);
               }
             }}
-            placeholder={isDragging ? "Drop images here..." : "Describe what you want to build..."}
+            placeholder={
+              isDragging
+                ? isDraggingObject
+                  ? "Drop to reference this object..."
+                  : "Drop images here..."
+                : "Describe what you want to build..."
+            }
             enterToSend={enterToSend}
           />
           <div className="flex shrink-0 flex-col items-end gap-1 pt-0.5">

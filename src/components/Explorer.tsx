@@ -29,16 +29,21 @@ import {
 import { BUILTIN_BLOXMIND_PROGRAMS, resolveBloxMindPrograms } from "@/lib/bloxmindPrograms";
 import { desktop } from "@/lib/desktop";
 import {
-  createExplorerReference,
+  EXPLORER_LONG_WAIT_NOTICES,
+  EXPLORER_WAIT_NOTICES,
   type ExplorerCollection,
   type ExplorerField,
   type ExplorerNode,
   type ExplorerProgramEnvelope,
+  type ExplorerWait,
+  explorerWaitFromError,
   fieldNumbers,
   formatFieldValue,
+  OBJECT_DRAG_NAME_TYPE,
+  OBJECT_DRAG_TYPE,
   sortExplorerSnapshot,
 } from "@/lib/explorer";
-import { useExplorerReference } from "@/providers/ExplorerReferenceProvider";
+import { useExplorerReference, useExplorerView } from "@/providers/ExplorerReferenceProvider";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
 import { useStudioTargetOptional } from "@/providers/StudioTargetProvider";
@@ -101,6 +106,12 @@ const TreeRow = memo(function TreeRow({
     <div
       role="treeitem"
       tabIndex={0}
+      draggable
+      onDragStart={(event) => {
+        event.dataTransfer.effectAllowed = "copy";
+        event.dataTransfer.setData(OBJECT_DRAG_TYPE, node.path);
+        event.dataTransfer.setData(OBJECT_DRAG_NAME_TYPE, node.name);
+      }}
       aria-selected={isSelected}
       aria-expanded={canExpand ? isExpanded : undefined}
       onClick={() => onSelect(node)}
@@ -237,6 +248,8 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
   const studioTarget = useStudioTargetOptional();
   const { fontSize } = usePreferences();
   const { referenceObject, publishObjects, focusRequest, consumeFocus } = useExplorerReference();
+  const { expanded, setExpanded, selectedPath, setSelectedPath, search, setSearch, scrollTopRef } =
+    useExplorerView();
   const [collection, setCollection] = useState<ExplorerCollection | null>(null);
   const collectionRef = useRef<ExplorerCollection | null>(null);
   const syncingRef = useRef(false);
@@ -247,10 +260,9 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
   const scheduleLatestRef = useRef<() => void>(() => {});
   const [, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
-  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [waiting, setWaiting] = useState<ExplorerWait | null>(null);
+  const [waitingLong, setWaitingLong] = useState(false);
   const [scrollTarget, setScrollTarget] = useState<{ path: string } | null>(null);
-  const [search, setSearch] = useState("");
   const telemetryRef = useRef({ firstSyncReported: false, hadFailure: false });
   // Consecutive failed syncs, which set the retry backoff.
   const failuresRef = useRef(0);
@@ -268,6 +280,15 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
     failuresRef.current = 0;
   }, [collapsed, studioKey]);
 
+  // A short wait is just a notice; a long one gets a more useful explanation.
+  useEffect(() => {
+    setWaitingLong(false);
+    if (!waiting) return;
+    const timer = window.setTimeout(() => setWaitingLong(true), 10_000);
+    return () => window.clearTimeout(timer);
+  }, [waiting]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: setters are stable and keyed by place
   useEffect(() => {
     if (!client || collapsed || !studioTarget?.selected) return;
     const studioId = studioTarget.selected.key;
@@ -438,11 +459,16 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
           );
           telemetryRef.current.firstSyncReported = true;
           telemetryRef.current.hadFailure = false;
+          setWaiting(null);
         }
       } catch (error) {
         console.error("[explorer] sync failed", error);
         telemetryRef.current.hadFailure = true;
-        failuresRef.current += 1;
+        const wait = explorerWaitFromError(error);
+        setWaiting(wait);
+        // Studio's own state clears up on its own, so keep polling at the idle rate.
+        if (wait) failuresRef.current = 0;
+        else failuresRef.current += 1;
         // Report the first failure of a streak, not every retry.
         if (failuresRef.current === 1)
           posthog.capture(
@@ -500,6 +526,7 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
 
   // Newer published programs replace a shipped or published program at the next
   // sync (a working model-written one is kept), and retry a setup that failed.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: setter is stable and keyed by place
   const toggleNode = useCallback((path: string) => {
     setExpanded((current) => {
       const next = new Set(current);
@@ -536,11 +563,12 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
     [expanded, search, visibleRoots],
   );
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: setter is stable and keyed by place
   const handleSelect = useCallback((next: ExplorerNode) => setSelectedPath(next.path), []);
 
   const handleReference = useCallback(() => {
     if (!selected) return;
-    referenceObject(createExplorerReference(selected));
+    referenceObject({ name: selected.name, path: selected.path });
     posthog.capture(
       "reference_added",
       analyticsProperties(
@@ -568,6 +596,7 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
     getScrollElement: () => treeScrollRef.current,
     estimateSize: () => treeRowHeight,
     overscan: 12,
+    initialOffset: () => scrollTopRef.current,
     getItemKey: (index) => treeRows[index]?.node.path ?? index,
   });
   // Rows have a fixed height, but that height changes with the font-size
@@ -579,6 +608,7 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
 
   // A reply can link to an object before this panel's next sync has it, so the
   // request waits until the tree that names it arrives.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: setters are stable and keyed by place
   useEffect(() => {
     if (!focusRequest || !collection) return;
     const chain = chainToPath(collection.snapshot.roots, focusRequest);
@@ -645,19 +675,42 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
         </div>
       </div>
 
-      {syncError ? (
+      {waiting ? (
+        <div
+          role="status"
+          className="shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-2 text-[10px] text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span>
+              {waitingLong
+                ? (EXPLORER_LONG_WAIT_NOTICES[waiting] ?? EXPLORER_WAIT_NOTICES[waiting])
+                : EXPLORER_WAIT_NOTICES[waiting]}
+            </span>
+            <button
+              type="button"
+              onClick={() => syncLatestRef.current()}
+              className="shrink-0 whitespace-nowrap font-medium underline-offset-2 hover:underline"
+            >
+              Check now
+            </button>
+          </div>
+        </div>
+      ) : syncError ? (
         <div className="shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-2 text-[10px] text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
-          Explorer couldn’t load this Studio place. Close and reopen Explorer to retry.
+          Explorer couldn't load this Studio place. Close and reopen Explorer to retry.
         </div>
       ) : null}
 
       <div
         ref={treeScrollRef}
+        onScroll={(event) => {
+          scrollTopRef.current = event.currentTarget.scrollTop;
+        }}
         className="min-h-0 flex-1 overflow-y-auto py-1"
         role="tree"
         aria-label="Instance hierarchy"
       >
-        {!collection && !syncError ? <ExplorerLoading /> : null}
+        {!collection && !syncError && !waiting ? <ExplorerLoading /> : null}
         <div
           style={{
             height: `${treeVirtualizer.getTotalSize()}px`,

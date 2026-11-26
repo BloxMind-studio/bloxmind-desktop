@@ -32,7 +32,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { analyticsProperties } from "@/lib/analytics";
-import type { ExplorerNode } from "@/lib/explorer";
+import type { ExplorerNode, ExplorerReference } from "@/lib/explorer";
 import type { Command } from "@/lib/opencode";
 import {
   buildObjectSearchIndex,
@@ -352,6 +352,8 @@ export interface PromptEditorHandle {
   focus(): void;
   getText(): string;
   insertText(text: string): void;
+  /** Adds the same object chip as picking it from the @ list. */
+  insertObject(reference: ExplorerReference): void;
   setText(text: string): void;
 }
 
@@ -393,6 +395,18 @@ export default forwardRef<PromptEditorHandle, PromptEditorProps>(function Prompt
         if (!last || !$isElementNode(last)) root.append(paragraph);
         if (root.getTextContent().trim()) paragraph.append($createTextNode("\n\n"));
         paragraph.append($createTextNode(text));
+        paragraph.selectEnd();
+      });
+    },
+    insertObject({ name, path, field }) {
+      editorRef.current?.update(() => {
+        const root = $getRoot();
+        const last = root.getLastChild();
+        const paragraph = last && $isElementNode(last) ? last : $createParagraphNode();
+        if (!last || !$isElementNode(last)) root.append(paragraph);
+        if (/\S$/.test(root.getTextContent())) paragraph.append($createTextNode(" "));
+        const label = field ? `@${name}.${field.name}` : `@${name}`;
+        paragraph.append($createPromptTokenNode("object", label, path), $createTextNode(" "));
         paragraph.selectEnd();
       });
     },

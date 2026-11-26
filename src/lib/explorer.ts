@@ -511,3 +511,43 @@ export function indexExplorerObjects(roots: readonly ExplorerNode[]) {
   roots.forEach(visit);
   return new Map([...byName, ...byPath]);
 }
+
+/** Studio's own state keeping the tree from being read, which clears up without anything failing. */
+export type ExplorerWait = "studio_closed" | "no_place" | "mode_changed" | "place_loading";
+
+export const EXPLORER_WAIT_NOTICES: Record<ExplorerWait, string> = {
+  studio_closed: "Studio closed. Reopen it to continue.",
+  no_place: "No place open. Open one in Studio.",
+  mode_changed: "Playtest starting or stopping. Back in a moment.",
+  place_loading: "Place still loading. Back in a moment.",
+};
+
+/** For when "back in a moment" has stopped being true. */
+export const EXPLORER_LONG_WAIT_NOTICES: Partial<Record<ExplorerWait, string>> = {
+  mode_changed: "Can't read Studio during this playtest. Stop it to see objects.",
+  place_loading: "This place is slow to load. Still trying.",
+};
+
+/** Best-effort mapping of Studio's error text to the state that caused it. */
+export function explorerWaitFromError(error: unknown): ExplorerWait | null {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/place is not open|no place/i.test(message)) return "no_place";
+  if (/studio_id is not connected|studio.*not connected/i.test(message)) return "studio_closed";
+  if (/playtest/i.test(message)) return "mode_changed";
+  if (/still loading|not ready/i.test(message)) return "place_loading";
+  return null;
+}
+
+export type ExplorerFieldKind = "property" | "attribute";
+export type ExplorerReferenceKind = ExplorerFieldKind | "tag";
+
+/** An object, or one of its fields, to mention in a message. */
+export interface ExplorerReference {
+  readonly name: string;
+  readonly path: string;
+  readonly field?: { readonly kind: ExplorerReferenceKind; readonly name: string };
+}
+
+/** What an object dragged out of Explorer carries: its path, which the message box looks up. */
+export const OBJECT_DRAG_TYPE = "application/x-bloxmind-object";
+export const OBJECT_DRAG_NAME_TYPE = "application/x-bloxmind-object-name";

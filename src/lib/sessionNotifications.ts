@@ -20,6 +20,7 @@ export function setSessionOpener(opener: OpenSession): void {
   openSession = opener;
 }
 
+// biome-ignore lint/suspicious/noExplicitAny: staged OC1/OC2 event reconciliation boundary
 function eventData(event: unknown): Record<string, any> {
   const e = event && typeof event === "object" ? (event as Record<string, unknown>) : {};
   const data = e.data ?? e.properties;
