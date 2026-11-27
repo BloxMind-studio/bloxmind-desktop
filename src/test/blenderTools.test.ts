@@ -14,6 +14,8 @@ import {
   isBlenderInstalled,
   openBlender,
   removeBlenderTools,
+  startMenuShortcutPath,
+  startMenuShortcutScript,
   unpackUv,
 } from "../../electron/services/BlenderTools";
 
@@ -431,6 +433,35 @@ describe("Blender tools", () => {
       await removeBlenderTools(root);
 
       await expect(stat(root)).rejects.toThrow();
+    });
+  });
+
+  describe("Windows Start Menu entry", () => {
+    const appData = join("C:\\", "Users", "Someone", "AppData", "Roaming");
+    const shortcut = join(
+      appData,
+      "Microsoft",
+      "Windows",
+      "Start Menu",
+      "Programs",
+      "Blender (BloxMind).lnk",
+    );
+
+    it("only makes an entry on Windows", () => {
+      expect(startMenuShortcutPath("win32", appData)).toBe(shortcut);
+      expect(startMenuShortcutPath("darwin", appData)).toBeNull();
+      expect(startMenuShortcutPath("linux", appData)).toBeNull();
+    });
+
+    it("points the shortcut at the app's Blender executable and escapes quotes", () => {
+      const executable = join("C:\\", "tools", "blender-5.2.3", "blender.exe");
+      const script = startMenuShortcutScript(shortcut, executable);
+
+      expect(script).toContain(`CreateShortcut('${shortcut}')`);
+      expect(script).toContain(`$s.TargetPath = '${executable}'`);
+      expect(script).toContain(`$s.IconLocation = '${executable},0'`);
+      expect(script).toContain("$s.Save()");
+      expect(startMenuShortcutScript("it's.lnk", executable)).toContain("it''s.lnk");
     });
   });
 

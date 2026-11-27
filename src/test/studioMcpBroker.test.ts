@@ -134,6 +134,35 @@ describe("Studio MCP broker", () => {
     expect(upstream.callTool).toHaveBeenCalledWith("inspect_place", { depth: 3 });
   });
 
+  it("exposes an agent tool that opens the app's Blender", async () => {
+    const upstream = fakeUpstream();
+    const openBlender = vi.fn().mockResolvedValue(undefined);
+    const broker = await startStudioMcpBroker(upstream, { openBlender });
+    cleanups.push(() => broker.close());
+    const client = await connect(broker.info);
+
+    const listed = await client.listTools();
+    expect(listed.tools).toContainEqual(expect.objectContaining({ name: "bloxmind_open_blender" }));
+    await expect(client.callTool({ name: "bloxmind_open_blender" })).resolves.toMatchObject({
+      content: [{ type: "text", text: "Blender is opening." }],
+    });
+    expect(openBlender).toHaveBeenCalledOnce();
+    expect(upstream.callTool).not.toHaveBeenCalledWith("bloxmind_open_blender", {});
+  });
+
+  it("reports a failed Blender open as a tool error", async () => {
+    const broker = await startStudioMcpBroker(fakeUpstream(), {
+      openBlender: vi.fn().mockRejectedValue(new Error("Blender isn't set up yet")),
+    });
+    cleanups.push(() => broker.close());
+    const client = await connect(broker.info);
+
+    await expect(client.callTool({ name: "bloxmind_open_blender" })).resolves.toMatchObject({
+      isError: true,
+      content: [{ type: "text", text: "Blender isn't set up yet" }],
+    });
+  });
+
   it("keeps concurrent clients stateless by forwarding each explicit studio_id", async () => {
     const upstream = fakeUpstream();
     const broker = await startStudioMcpBroker(upstream);

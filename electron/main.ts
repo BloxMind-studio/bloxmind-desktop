@@ -212,15 +212,6 @@ const globalConfigDirectory = join(
   "opencode",
 );
 
-const studioMcpBrokerLayer = makeStudioMcpBrokerLayer({
-  workspace: join(app.getPath("home"), "BloxMind"),
-  localAppData: process.env.LOCALAPPDATA,
-  comSpec: process.env.ComSpec,
-  systemRoot: process.env.SystemRoot,
-  // Reported once per launch, after the startup retries, and not when Studio isn't installed.
-  onStartFailure: (error) => reportMainError("studio_mcp_broker_start", error),
-}).pipe(Layer.tapErrorCause(reportLayerFailure("studio_mcp_broker_start")));
-
 const machineFolderOptions = {
   platform: process.platform,
   userData: app.getPath("userData"),
@@ -228,6 +219,22 @@ const machineFolderOptions = {
 };
 const openCodeBinaryDirectory = engineFolder(machineFolderOptions);
 const blenderToolsRoot = () => blenderToolsFolder(machineFolderOptions);
+
+const studioMcpBrokerLayer = makeStudioMcpBrokerLayer({
+  workspace: join(app.getPath("home"), "BloxMind"),
+  localAppData: process.env.LOCALAPPDATA,
+  comSpec: process.env.ComSpec,
+  systemRoot: process.env.SystemRoot,
+  // Exposed to the agent as a tool so it can start Blender for 3D tasks.
+  openBlender: async () => {
+    if (!(await isBlenderInstalled(blenderToolsRoot()))) {
+      throw new Error("Blender isn't set up yet. Use the 3D Tools tab to install it first.");
+    }
+    await openBlender(blenderToolsRoot(), process.platform);
+  },
+  // Reported once per launch, after the startup retries, and not when Studio isn't installed.
+  onStartFailure: (error) => reportMainError("studio_mcp_broker_start", error),
+}).pipe(Layer.tapErrorCause(reportLayerFailure("studio_mcp_broker_start")));
 
 const blenderServerConfig = (): McpServerConfig => {
   const server = blenderMcpServerConfig(blenderToolsRoot());

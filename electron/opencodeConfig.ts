@@ -1,3 +1,4 @@
+import { homedir } from "node:os";
 import { join, win32 } from "node:path";
 
 import { STUDIO_MCP_SERVER_NAME } from "../src/lib/bloxmindProgramManifest";
@@ -67,6 +68,26 @@ export function skillDirectories(runtime: OpenCodeRuntimePaths): string[] {
     : [join(runtime.appPath, ".agents", "skills")];
 }
 
+const GUIDANCE_MARKER = "<!-- bloxmind-3d-guidance -->";
+const modelsFolder = () => join(homedir(), "BloxMind", "Models");
+
+/** Where models for uploads live, and how the agent starts Blender itself. */
+function guidance(blenderEnabled: boolean): string {
+  const folder = modelsFolder();
+  return [
+    GUIDANCE_MARKER,
+    `Models for uploads: ${folder}. Export GLB with textures embedded, link it with a file:// URL, and let BloxMind offer the upload button; never upload yourself.`,
+    blenderEnabled ? "Open Blender with bloxmind_open_blender before using its tools." : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function withGuidance(prompt: string, blenderEnabled: boolean): string {
+  const base = prompt.split(GUIDANCE_MARKER)[0].trimEnd();
+  return `${base}\n\n${guidance(blenderEnabled)}`;
+}
+
 export function createOpenCodeConfig(
   broker: { url: string; headers?: Record<string, string> },
   skillsPaths: readonly string[] = [],
@@ -117,8 +138,10 @@ export function createOpenCodeConfig(
         mode: "primary",
         description: "Roblox Studio development assistant",
         // OpenCode loads project AGENTS.md separately; keep this Studio-specific and compact.
-        prompt:
+        prompt: withGuidance(
           "BloxMind is a standalone AI workspace: it works directly against Roblox Studio through the Studio MCP bridge. There is no Rojo, no default.project.json, and no local filesystem-to-Studio syncing — never look for, assume, or mention them; inspect and write only through the Studio MCP tools. Inspect before editing; never guess what MCP can read. Discover Studios when needed, choose by Studio ID and Place ID, and pass studio_id on every Studio-specific tool call; never call set_active_studio. Make the smallest coherent change, preserve Luau conventions, verify only as much as the user's verification level asks, and report briefly. When you make files someone may want to open, link them with a file:// URL. When you create or extend a map, load the roblox-world-boundaries skill and follow it: give the world a themed sky, a distant backdrop, and a sealed perimeter with out-of-bounds handling, so the map never ends in visible empty space. If Studio is unavailable, give one reconnect instruction, then stop retrying.",
+          mcpServers.some((server) => server.name === BLENDER_MCP_SERVER_NAME),
+        ),
       },
     },
   };
@@ -131,10 +154,15 @@ export function createOpenCodeConfig(
 export function withBlender(contents: string, blender: Record<string, unknown> | null): string {
   const config = JSON.parse(contents) as {
     mcp: { servers: Record<string, unknown> };
+    agents?: { studio?: { prompt?: string } };
     [key: string]: unknown;
   };
   if (blender)
     config.mcp.servers[BLENDER_MCP_SERVER_NAME] = { disabled: false, ...blender };
   else delete config.mcp.servers[BLENDER_MCP_SERVER_NAME];
+  const studio = config.agents?.studio;
+  if (studio && typeof studio.prompt === "string") {
+    studio.prompt = withGuidance(studio.prompt, blender !== null);
+  }
   return JSON.stringify(config, null, 2);
 }

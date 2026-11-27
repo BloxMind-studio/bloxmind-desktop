@@ -462,13 +462,20 @@ function reject(res: ServerResponse, statusCode: number, message: string) {
   res.end(JSON.stringify({ jsonrpc: "2.0", error: { code: -32_000, message }, id: null }));
 }
 
+const OPEN_BLENDER_TOOL: Tool = {
+  name: "bloxmind_open_blender",
+  description:
+    "Open the Blender installed by BloxMind so its 3D tools can be used. Call this when Blender isn't running and a 3D task needs it.",
+  inputSchema: { type: "object", properties: {}, additionalProperties: false },
+};
+
 interface BrokerResource extends StudioMcpBrokerService {
   close(): Promise<void>;
 }
 
 export async function startStudioMcpBroker(
   upstream: StudioMcpUpstream,
-  options: { token?: string } = {},
+  options: { token?: string; openBlender?: () => Promise<void> } = {},
 ): Promise<BrokerResource> {
   process.stderr.write("[studio-mcp] broker starting\n");
   // Per-launch credential. It is only shared with the OpenCode config this
@@ -483,10 +490,31 @@ export async function startStudioMcpBroker(
       { name: "BloxMind-studio-broker", version: "1.0.0" },
       { capabilities: { tools: { listChanged: true } } },
     );
-    server.setRequestHandler(ListToolsRequestSchema, () => upstream.listTools());
-    server.setRequestHandler(CallToolRequestSchema, (request) =>
-      upstream.callTool(request.params.name, request.params.arguments ?? {}),
-    );
+    server.setRequestHandler(ListToolsRequestSchema, async () => {
+      const listed = await upstream.listTools();
+      return {
+        tools: options.openBlender ? [...listed.tools, OPEN_BLENDER_TOOL] : listed.tools,
+      };
+    });
+    server.setRequestHandler(CallToolRequestSchema, async (request) => {
+      if (request.params.name === OPEN_BLENDER_TOOL.name && options.openBlender) {
+        try {
+          await options.openBlender();
+          return { content: [{ type: "text" as const, text: "Blender is opening." }] };
+        } catch (error) {
+          return {
+            isError: true,
+            content: [
+              {
+                type: "text" as const,
+                text: error instanceof Error ? error.message : "Blender couldn't be opened",
+              },
+            ],
+          };
+        }
+      }
+      return upstream.callTool(request.params.name, request.params.arguments ?? {});
+    });
     const transport: StreamableHTTPServerTransport = new StreamableHTTPServerTransport({
       sessionIdGenerator: randomUUID,
       onsessioninitialized: (sessionId): void => {
@@ -588,6 +616,8 @@ export interface StudioMcpBrokerOptions {
   localAppData?: string;
   comSpec?: string;
   systemRoot?: string;
+  /** Opens the Blender installed by the app; exposed to the agent as a tool. */
+  openBlender?: () => Promise<void>;
   /** Called once when the startup attempts fail for a reason worth reporting. */
   onStartFailure?: (error: StudioMcpBrokerError) => void;
   startSchedule?: Schedule.Schedule<unknown, StudioMcpStartFailure>;
@@ -628,7 +658,10 @@ export function makeStudioMcpBrokerLayer(options: StudioMcpBrokerOptions) {
       // The broker starts without Studio so the rest of the app works while Studio is set up.
       const broker = yield* Effect.acquireRelease(
         Effect.tryPromise({
-          try: () => startStudioMcpBroker(connection),
+          try: () =>
+            startStudioMcpBroker(connection, {
+              openBlender: options.openBlender,
+            }),
           catch: (cause) =>
             new StudioMcpBrokerError({ message: "Failed to start Studio MCP broker", cause }),
         }),

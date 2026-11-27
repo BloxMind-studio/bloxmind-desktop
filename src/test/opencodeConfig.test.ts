@@ -1,3 +1,4 @@
+import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -6,6 +7,7 @@ import {
   createOpenCodeConfig,
   skillDirectories,
   studioMcpCommand,
+  withBlender,
 } from "../../electron/opencodeConfig";
 
 const broker = { url: "http://127.0.0.1:43210/mcp" };
@@ -50,7 +52,8 @@ describe("OpenCode configuration", () => {
   it("keeps Studio instructions concise and action-oriented", () => {
     const prompt = createOpenCodeConfig(broker).agents.studio.prompt;
 
-    expect(prompt.trim().split(/\s+/).length).toBeLessThanOrEqual(165);
+    // Includes the short 3D guidance about the Models folder and opening Blender.
+    expect(prompt.trim().split(/\s+/).length).toBeLessThanOrEqual(215);
     expect(prompt).toMatch(/inspect before editing/i);
     expect(prompt).toContain("smallest coherent change");
     expect(prompt).toContain("verification level");
@@ -160,6 +163,53 @@ describe("OpenCode configuration", () => {
       url: broker.url,
       disabled: false,
     });
+  });
+});
+
+describe("3D guidance", () => {
+  const blenderServer = {
+    name: "blender",
+    type: "local" as const,
+    command: ["blender-mcp"],
+    url: null,
+    enabled: true,
+  };
+
+  it("points at the folder uploads actually read, not the working folder", () => {
+    const prompt = createOpenCodeConfig(broker).agents.studio.prompt;
+
+    expect(prompt).toContain(join(homedir(), "BloxMind", "Models"));
+    expect(prompt).not.toContain("bloxmind/models");
+    expect(prompt).toContain("file:// URL");
+    expect(prompt).toContain("never upload yourself");
+  });
+
+  it("tells the agent to open Blender only when the tools are available", () => {
+    const without = createOpenCodeConfig(broker).agents.studio.prompt;
+    const withTools = createOpenCodeConfig(broker, [], [blenderServer]).agents.studio.prompt;
+
+    expect(without).not.toContain("bloxmind_open_blender");
+    expect(withTools).toContain("bloxmind_open_blender");
+  });
+
+  it("keeps the guidance current when Blender is set up or removed later", () => {
+    const original = JSON.stringify(createOpenCodeConfig(broker));
+
+    const enabled = JSON.parse(withBlender(original, { type: "local", command: ["blender"] }));
+    expect(enabled.mcp.servers.blender).toEqual({
+      disabled: false,
+      type: "local",
+      command: ["blender"],
+    });
+    expect(enabled.agents.studio.prompt).toContain("bloxmind_open_blender");
+    expect(enabled.agents.studio.prompt).toContain(join(homedir(), "BloxMind", "Models"));
+
+    // Reapplying doesn't stack another copy of the guidance.
+    const twice = JSON.parse(withBlender(JSON.stringify(enabled), null));
+    expect(twice.mcp.servers.blender).toBeUndefined();
+    expect(twice.agents.studio.prompt).not.toContain("bloxmind_open_blender");
+    expect(twice.agents.studio.prompt).toContain(join(homedir(), "BloxMind", "Models"));
+    expect(twice.agents.studio.prompt.match(/bloxmind-3d-guidance/g)).toHaveLength(1);
   });
 });
 

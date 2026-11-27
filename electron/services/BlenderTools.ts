@@ -2,8 +2,9 @@ import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
 import { chmod, mkdir, mkdtemp, readFile, rename, rm, stat, statfs, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { connect } from "node:net";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { promisify } from "node:util";
@@ -192,6 +193,55 @@ function uvEnvironment(root: string): NodeJS.ProcessEnv {
 
 function blenderEnvironment(root: string): NodeJS.ProcessEnv {
   return { ...process.env, BLENDER_USER_RESOURCES: userResources(root) };
+}
+
+const SHORTCUT_NAME = "Blender (BloxMind).lnk";
+const powershell = () =>
+  join(
+    process.env.SystemRoot ?? "C:\\Windows",
+    "System32",
+    "WindowsPowerShell",
+    "v1.0",
+    "powershell.exe",
+  );
+
+/** A Windows Start Menu entry, so this Blender shows up like any installed app. */
+export function startMenuShortcutPath(
+  platform: NodeJS.Platform,
+  appData = process.env.APPDATA ?? join(homedir(), "AppData", "Roaming"),
+): string | null {
+  if (platform !== "win32") return null;
+  return join(appData, "Microsoft", "Windows", "Start Menu", "Programs", SHORTCUT_NAME);
+}
+
+/** PowerShell that points the entry at the app's portable Blender. */
+export function startMenuShortcutScript(shortcut: string, executable: string): string {
+  const quote = (value: string) => value.replaceAll("'", "''");
+  return [
+    `$s = (New-Object -ComObject WScript.Shell).CreateShortcut('${quote(shortcut)}')`,
+    `$s.TargetPath = '${quote(executable)}'`,
+    `$s.WorkingDirectory = '${quote(dirname(executable))}'`,
+    `$s.IconLocation = '${quote(executable)},0'`,
+    "$s.Save()",
+  ].join("; ");
+}
+
+async function createStartMenuShortcut(root: string, platform: NodeJS.Platform): Promise<void> {
+  const shortcut = startMenuShortcutPath(platform);
+  if (!shortcut) return;
+  const executable = blenderExecutable(root, platform);
+  await mkdir(dirname(shortcut), { recursive: true });
+  await run(powershell(), [
+    "-NoProfile",
+    "-NonInteractive",
+    "-Command",
+    startMenuShortcutScript(shortcut, executable),
+  ]);
+}
+
+async function removeStartMenuShortcut(platform: NodeJS.Platform): Promise<void> {
+  const shortcut = startMenuShortcutPath(platform);
+  if (shortcut) await rm(shortcut, { force: true });
 }
 
 /** The config OpenCode needs to reach Blender, or null until setup has finished. */
@@ -576,6 +626,8 @@ async function installEverything(options: BlenderToolsOptions): Promise<void> {
   );
 
   await rm(downloads, { recursive: true, force: true });
+  // Best effort: a locked-down shell shouldn't undo an otherwise good setup.
+  await createStartMenuShortcut(root, platform).catch(() => {});
   await writeFile(
     markerPath(root),
     JSON.stringify({ blender: BLENDER_VERSION, mcp: MCP_VERSION, uv: UV_VERSION }),
@@ -676,6 +728,11 @@ export function openBlender(root: string, platform: NodeJS.Platform = process.pl
   });
 }
 
-export function removeBlenderTools(root: string): Promise<void> {
-  return rm(root, { recursive: true, force: true });
+export function removeBlenderTools(
+  root: string,
+  platform: NodeJS.Platform = process.platform,
+): Promise<void> {
+  return rm(root, { recursive: true, force: true }).then(async () =>
+    removeStartMenuShortcut(platform).catch(() => {}),
+  );
 }
