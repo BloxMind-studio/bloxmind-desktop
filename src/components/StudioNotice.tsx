@@ -1,7 +1,8 @@
 import posthog from "posthog-js/dist/module.full.no-external.js";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { analyticsProperties } from "@/lib/analytics";
+import { desktop } from "@/lib/desktop";
 import { placeName, useStudioTargetOptional } from "@/providers/StudioTargetProvider";
 
 const LINK = "shrink-0 text-foreground underline underline-offset-2 hover:opacity-80";
@@ -43,7 +44,35 @@ export default function StudioNotice({
 
   // The notice going away says nothing to a screen reader, so a return gets said out loud.
   const [returned, setReturned] = useState<string | null>(null);
+  const [openFailed, setOpenFailed] = useState<string | null>(null);
+  const autoOpenedRef = useRef<string | null>(null);
+  const openTimerRef = useRef<number | undefined>(undefined);
   const wasMissing = useRef(false);
+
+  // A chat remembers the place it worked in. When Studio is connected but
+  // that place is closed, reopen it rather than asking someone to find it.
+  const reopen = useCallback((target: { placeId?: string | null; label: string } | null) => {
+    if (!target?.placeId) return;
+    setOpenFailed(null);
+    void desktop.openUrl(`roblox://placeId=${encodeURIComponent(target.placeId)}`).catch(() => {});
+    window.clearTimeout(openTimerRef.current);
+    openTimerRef.current = window.setTimeout(() => setOpenFailed(target.label), 8_000);
+  }, []);
+
+  useEffect(() => {
+    if (!missing) {
+      autoOpenedRef.current = null;
+      setOpenFailed(null);
+      window.clearTimeout(openTimerRef.current);
+      return;
+    }
+    if (missing.placeId && autoOpenedRef.current !== missing.placeId) {
+      autoOpenedRef.current = missing.placeId;
+      reopen(missing);
+    }
+  }, [missing, reopen]);
+
+  useEffect(() => () => window.clearTimeout(openTimerRef.current), []);
   useEffect(() => {
     if (missing) {
       wasMissing.current = true;
@@ -66,21 +95,23 @@ export default function StudioNotice({
     ? null
     : unreachable
       ? "Couldn't reach Studio."
-      : place && twins > 1
-        ? `${twins} places named ${place} are open.`
-        : place && nameMatch
-          ? `Is the open ${place} this chat's place?`
-          : place
-            ? canChoose
-              ? `${place} isn't open. Reopen it or choose another.`
-              : `${place} isn't open. Reopen it to use Studio again.`
-            : unknownPlace
+      : openFailed && place
+        ? `Couldn't open ${place}. It may be deleted or unavailable.`
+        : place && twins > 1
+          ? `${twins} places named ${place} are open.`
+          : place && nameMatch
+            ? `Is the open ${place} this chat's place?`
+            : place
               ? canChoose
-                ? "Choose which Studio this chat worked in."
-                : "This chat worked in a Studio that isn't open."
-              : canChoose
-                ? "Several Studios are open."
-                : "No Studio connected.";
+                ? `${place} isn't open. Reopen it or choose another.`
+                : `${place} isn't open. Reopen it to use Studio again.`
+              : unknownPlace
+                ? canChoose
+                  ? "Choose which Studio this chat worked in."
+                  : "This chat worked in a Studio that isn't open."
+                : canChoose
+                  ? "Several Studios are open."
+                  : "No Studio connected.";
 
   // Once each time Show me how appears, so following it always has a showing to count against.
   const offersSteps = message !== null && !canChoose;
@@ -140,6 +171,10 @@ export default function StudioNotice({
           {nameMatch && !unreachable && openCount === 1 ? null : canChoose ? (
             <button type="button" onClick={onOpenPicker} className={LINK}>
               {nameMatch || (place && twins === 0) ? "Choose another" : "Choose one"}
+            </button>
+          ) : place && !canChoose && !nameMatch ? (
+            <button type="button" onClick={() => reopen(missing)} className={LINK}>
+              Reopen {place}
             </button>
           ) : (
             <button type="button" onClick={openSetup} className={LINK}>

@@ -61,8 +61,11 @@ export function useProjectIndex(): {
       return decoded;
     },
     enabled: ready && !!client && hasStudioTarget,
-    // Keep the index around; it only changes when scripts are added/removed.
+    // Keep the index around, but refresh it while the place is open so the
+    // header marker and the prompt context stay in step with Studio edits.
     staleTime: 30_000,
+    refetchInterval: ready && hasStudioTarget ? 30_000 : false,
+    refetchOnWindowFocus: true,
     retry: 2,
     retryDelay: 1_000,
   });

@@ -85,7 +85,7 @@ describe("StudioNotice", () => {
   it("names the missing place with the steps when nothing else is open", () => {
     show({ status: "empty", missing: DUNGEON });
     expect(screen.getByRole("status")).toHaveTextContent("Dungeon isn't open");
-    expect(screen.getByRole("button", { name: "Open the place in Studio" })).toBeVisible();
+    expect(screen.getByRole("button", { name: /Reopen Dungeon/ })).toBeVisible();
   });
 
   it("says out loud when a chat's place comes back", () => {
