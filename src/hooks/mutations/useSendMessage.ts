@@ -9,6 +9,7 @@ import {
   errorAnalyticsProperties,
 } from "@/lib/analytics";
 import { IMAGE_INPUT_UNAVAILABLE_NOTE, modelAcceptsImages } from "@/lib/imageSupport";
+import type { ModelError } from "@/lib/modelError";
 import { findModelInfo } from "@/lib/modelSpecs";
 import type { SessionStatus } from "@/lib/opencode";
 import { qk } from "@/lib/queryKeys";
@@ -183,6 +184,9 @@ export function useSendMessage(options?: { onError?: (error: Error) => void }) {
         ...previous,
         [activeSessionId]: { type: "busy" },
       }));
+      // A new turn makes the last turn's failure stale. Without this its card stays
+      // pinned below the chat even after the agent answers the follow-up.
+      queryClient.setQueryData<ModelError | null>(qk.sessionError(activeSessionId), null);
       return context;
     },
 

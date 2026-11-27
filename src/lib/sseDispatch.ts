@@ -614,6 +614,11 @@ function dispatchEvent(
       if (!currentSessionId || !info || info.sessionID !== currentSessionId) break;
       const previousMessage = queryClient.getQueryData<MessagesCache>(qk.messages(currentSessionId))
         ?.messagesById[info.id];
+      if (!previousMessage && info.role === "user") {
+        // A fresh turn retires the previous turn's error, so its red card doesn't
+        // hang around at the bottom after the agent has already answered.
+        queryClient.setQueryData<ModelError | null>(qk.sessionError(currentSessionId), null);
+      }
       const newlyCompleted =
         info.role === "assistant" &&
         info.time?.completed !== undefined &&

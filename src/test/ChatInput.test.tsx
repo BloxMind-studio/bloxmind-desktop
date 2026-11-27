@@ -243,6 +243,26 @@ describe("ChatInput", () => {
     expect(args.system).toContain("## Verification level: Quick check");
   });
 
+  it("retires the previous turn's error as soon as a new message is sent", async () => {
+    const client = createClient();
+    const qc = createQueryClient();
+    const error = { name: "APIError", data: { message: "Provider request failed" } };
+    qc.setQueryData(qk.sessionError("s1"), error);
+
+    render(<TestChatInput client={client} queryClient={qc} />);
+    const textarea = await screen.findByRole("textbox", { name: "Message" });
+
+    await act(async () => {
+      fireEvent.input(textarea, { target: { textContent: "continue" } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTitle("Send"));
+    });
+
+    await waitFor(() => expect(client.session.promptAsync).toHaveBeenCalledOnce());
+    expect(qc.getQueryData(qk.sessionError("s1"))).toBeNull();
+  });
+
   it("sends message on Enter key (without Shift)", async () => {
     const client = createClient();
     const qc = createQueryClient();

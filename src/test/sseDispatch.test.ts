@@ -465,6 +465,43 @@ describe("sseDispatch", () => {
       const cache = getMessages(qc);
       expect(cache.messageIds).toEqual(["m1"]);
     });
+
+    it("retires the last turn's error when a new user message arrives", () => {
+      const error = { name: "APIError", data: { message: "Provider request failed" } };
+      qc.setQueryData(qk.sessionError("s1"), error);
+      qc.setQueryData<MessagesCache>(qk.messages("s1"), { messageIds: [], messagesById: {} });
+
+      dispatch(
+        qc,
+        {
+          type: "message.updated",
+          properties: { info: { id: "u1", sessionID: "s1", role: "user" } },
+        },
+        "s1",
+      );
+
+      expect(qc.getQueryData(qk.sessionError("s1"))).toBeNull();
+    });
+
+    it("keeps the error when an already known user message is replayed", () => {
+      const error = { name: "APIError", data: { message: "Provider request failed" } };
+      qc.setQueryData(qk.sessionError("s1"), error);
+      qc.setQueryData<MessagesCache>(qk.messages("s1"), {
+        messageIds: ["u1"],
+        messagesById: { u1: message("u1") },
+      });
+
+      dispatch(
+        qc,
+        {
+          type: "message.updated",
+          properties: { info: { id: "u1", sessionID: "s1", role: "user" } },
+        },
+        "s1",
+      );
+
+      expect(qc.getQueryData(qk.sessionError("s1"))).toEqual(error);
+    });
   });
 
   describe("message.part.updated", () => {

@@ -35,8 +35,8 @@ function errorSays(error: ModelError, pattern: RegExp): boolean {
 
 /**
  * OpenCode's free tier refusing a prompt because the free messages are used up
- * for now. The limit is a rolling window per IP shared by every free model, so,
- * despite OpenCode's own wording, switching free models doesn't help.
+ * for now. Limits are rolling windows, and some models still have free usage of
+ * their own, so another model is worth trying while the first one recovers.
  */
 export function isFreeUsageLimit(error: ModelError): boolean {
   const data =
@@ -72,6 +72,9 @@ function retryAfter(error: ModelError): number | undefined {
  * this.
  */
 export const FREE_LIMIT_FALLBACK_MS = 3 * 60 * 60 * 1000;
+
+/** Free usage isn't always shared, so another model can still answer right now. */
+export const TRY_ANOTHER_MODEL = "Try another model — free usage can be separate for each model.";
 
 /**
  * When a free limit lifts: after OpenCode's retry delay, or a few hours if it
@@ -123,7 +126,7 @@ export function presentModelError(
     return {
       kind: "usage",
       title: "You've used the free messages for now",
-      description: `${freeLimitReturn(error, hitAt, now)} To keep going now, connect your own AI account, like ChatGPT or Claude, in Settings under Providers, or subscribe to OpenCode Go.`,
+      description: `${freeLimitReturn(error, hitAt, now)} ${TRY_ANOTHER_MODEL} To keep going now, connect your own AI account, like ChatGPT or Claude, in Settings under Providers, or subscribe to OpenCode Go.`,
     };
   }
 

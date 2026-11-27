@@ -6,6 +6,7 @@ import {
   isModelUnavailable,
   isRegionLocked,
   presentModelError,
+  TRY_ANOTHER_MODEL,
 } from "@/lib/modelError";
 import type { AssistantMessage } from "@/lib/opencode/types";
 
@@ -72,8 +73,8 @@ describe("free usage limit", () => {
       "connect your own AI account, like ChatGPT or Claude, in Settings under Providers",
     );
     expect(presentation.description).toContain("OpenCode Go");
-    // The limit is shared by every free model, whatever OpenCode's own text says.
-    expect(presentation.description).not.toMatch(/switch models|other free models/i);
+    // Some models still have their own free usage, so trying another is worth a mention.
+    expect(presentation.description).toContain(TRY_ANOTHER_MODEL);
   });
 
   it("recognises both of OpenCode's messages, and the typed error", () => {

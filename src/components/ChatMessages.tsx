@@ -115,6 +115,7 @@ import {
   type ModelError,
   type ModelErrorPresentation,
   presentModelError,
+  TRY_ANOTHER_MODEL,
 } from "@/lib/modelError";
 import { modelLinksIn } from "@/lib/modelLinks";
 import { qk } from "@/lib/queryKeys";
@@ -1413,8 +1414,15 @@ const ModelErrorCard = memo(function ModelErrorCard({
 
   if (presentation.kind === "usage") {
     const limitOver = hitAt !== undefined && now >= freeLimitEndsAt(error, hitAt);
-    if (limitOver || !isLatest) {
+    if (limitOver) {
       return <p className="my-1 text-xs text-muted-foreground">You reached the free limit here.</p>;
+    }
+    if (!isLatest) {
+      return (
+        <p className="my-1 text-xs text-muted-foreground">
+          You reached the free limit here. {TRY_ANOTHER_MODEL}
+        </p>
+      );
     }
   }
 
