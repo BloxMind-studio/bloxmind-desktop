@@ -445,7 +445,7 @@ export default function Explorer({ collapsed, sessionBusy, onToggle }: ExplorerP
         onScroll={(event) => {
           scrollTopRef.current = event.currentTarget.scrollTop;
         }}
-        className="min-h-0 flex-1 overflow-y-auto py-1"
+        className="app-scrollbar min-h-0 flex-1 overflow-y-auto py-1"
         role="tree"
         aria-label="Instance hierarchy"
       >
@@ -1009,7 +1009,7 @@ function Inspector({
 }) {
   const InstanceIcon = iconForClass(node.className);
   return (
-    <div className="max-h-[42%] shrink-0 overflow-y-auto border-t bg-card/60">
+    <div className="app-scrollbar max-h-[42%] shrink-0 overflow-y-auto border-t bg-card/60">
       <div className="sticky top-0 border-b bg-card/95 p-3 backdrop-blur-sm">
         <div className="flex items-start gap-2">
           <InstanceIcon size={15} className="mt-0.5 shrink-0 text-blue-600 dark:text-blue-400" />

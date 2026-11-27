@@ -143,7 +143,7 @@ export default function StudioNotice({
             </button>
           ) : (
             <button type="button" onClick={openSetup} className={LINK}>
-              Show me how
+              {place ? "Open the place in Studio" : "Show me how"}
             </button>
           )}
           <button type="button" onClick={workWithoutStudio} className={LINK}>

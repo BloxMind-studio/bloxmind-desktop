@@ -78,7 +78,7 @@ interface StudioTargetContextValue {
   nameMatch: StudioTarget | null;
   /** Why a message can't go out yet, without a Studio to work in. */
   sendBlock: string | null;
-  discover(): Promise<void>;
+  discover(showLoading?: boolean, silent?: boolean): Promise<void>;
   select(target: StudioTarget): Promise<void>;
 }
 
@@ -104,6 +104,22 @@ function countBucket(count: number): "0" | "1" | "2-4" | "5+" {
   if (count === 1) return "1";
   if (count < 5) return "2-4";
   return "5+";
+}
+
+/** Background checks return fresh copies; only a real change should re-render the picker. */
+function sameTargets(a: readonly StudioTarget[], b: readonly StudioTarget[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every((target, index) => {
+      const next = b[index];
+      return (
+        next.key === target.key &&
+        next.label === target.label &&
+        next.detail === target.detail &&
+        next.placeId === target.placeId
+      );
+    })
+  );
 }
 
 function discoveredPlaceIds(targets: readonly StudioTarget[]): string[] {
@@ -314,8 +330,9 @@ export function StudioTargetProvider({ children }: { children: ReactNode }) {
         setSelectingKey(null);
         return;
       }
+      const targetsChanged = !sameTargets(targetsRef.current, result.targets);
       targetsRef.current = result.targets;
-      setTargets(result.targets);
+      if (targetsChanged) setTargets(result.targets);
       // Work without Studio means don't bind this chat to whichever place is open.
       if (discoverySessionId && chatsWithoutStudioRef.current.has(discoverySessionId)) {
         setSelected(null);
@@ -399,16 +416,20 @@ export function StudioTargetProvider({ children }: { children: ReactNode }) {
   );
 
   const discover = useCallback(
-    async (showLoading = true) => {
+    async (showLoading = true, silent = false) => {
       if (discoveryRef.current) return discoveryRef.current;
       const discovery = (async () => {
         const operation = ++operationRef.current;
         // The session this discovery is for; results are discarded if the
         // user switches sessions before it completes.
         const discoverySessionId = activeSessionId;
-        if (showLoading && targetsRef.current.length === 0) setStatus("loading");
-        else setRefreshing(true);
-        setError(null);
+        // Background polls are invisible to the UI. Toggling `refreshing` on
+        // every two seconds made the Studio picker flicker while it was open.
+        if (!silent) {
+          if (showLoading && targetsRef.current.length === 0) setStatus("loading");
+          else setRefreshing(true);
+          setError(null);
+        }
         try {
           await withProgramFallbacks((programs) =>
             applyDiscovery(programs, operation, discoverySessionId),
@@ -436,7 +457,7 @@ export function StudioTargetProvider({ children }: { children: ReactNode }) {
           }
         }
       })().finally(() => {
-        setRefreshing(false);
+        if (!silent) setRefreshing(false);
         discoveryRef.current = null;
       });
       discoveryRef.current = discovery;
@@ -656,7 +677,7 @@ export function StudioTargetProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!client || status === "loading" || withoutStudio) return;
     const timer = window.setInterval(
-      () => void discover(false),
+      () => void discover(false, true),
       status === "empty" || missing !== null ? 2_000 : 10_000,
     );
     return () => window.clearInterval(timer);

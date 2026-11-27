@@ -45,6 +45,8 @@ const PROBLEM_COPY: Record<StudioMcpProblem, string> = {
 interface StudioSetupProps {
   connected: boolean;
   checking: boolean;
+  /** The MCP helper is connected, but a Studio window with a place is needed to use tools. */
+  placeOpen?: boolean;
   /** Set when BloxMind knows why it can't reach Studio's MCP helper. */
   problem?: StudioMcpProblem | null;
   onCheck: () => void;
@@ -56,6 +58,7 @@ interface StudioSetupProps {
 function StudioSetup({
   connected,
   checking,
+  placeOpen = true,
   problem,
   onCheck,
   onContinue,
@@ -63,6 +66,40 @@ function StudioSetup({
 }: StudioSetupProps) {
   const [stepIndex, setStepIndex] = useState(0);
   const step = STEPS[stepIndex];
+
+  if (connected && !placeOpen) {
+    return (
+      <div className="flex flex-1 items-center justify-center px-6 py-5">
+        <section className="animate-scale-in flex max-w-md flex-col items-center text-center">
+          <StudioScreenshot step={0} image={STEPS[0].image} alt={STEPS[0].alt} />
+          <h1 className="mt-5 font-serif text-3xl italic">Open a place in Studio</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Studio is connected, but no place is open. Open any place in Roblox Studio, then check
+            again.
+          </p>
+          <div className="mt-6 flex gap-2">
+            <button
+              type="button"
+              onClick={onCheck}
+              disabled={checking}
+              className="inline-flex h-10 items-center rounded-lg bg-foreground px-6 text-sm font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-60"
+            >
+              {checking ? "Checking..." : "Check again"}
+            </button>
+            {onSkip ? (
+              <button
+                type="button"
+                onClick={onSkip}
+                className="h-10 rounded-lg border px-4 text-sm font-medium transition-colors hover:bg-muted"
+              >
+                Work without Studio
+              </button>
+            ) : null}
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   if (connected) {
     return (

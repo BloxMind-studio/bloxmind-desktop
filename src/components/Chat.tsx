@@ -391,6 +391,7 @@ function Chat() {
           <StudioSetup
             connected={studioConnection.state === "connected"}
             checking={studioConnection.checking}
+            placeOpen={hasStudioTarget}
             problem={studioConnection.problem}
             onCheck={() => studioConnection.checkAgain()}
             onContinue={finishSetup}

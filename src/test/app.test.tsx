@@ -357,7 +357,7 @@ describe("User journeys", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Check again" }));
 
-    expect(await screen.findByRole("heading", { name: "Studio connected" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Open a place in Studio" })).toBeVisible();
   });
 
   it("creates a session and shows the chat interface", async () => {
