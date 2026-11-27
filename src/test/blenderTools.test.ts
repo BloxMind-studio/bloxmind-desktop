@@ -500,9 +500,14 @@ describe("Blender tools", () => {
       expect(entry?.values.DisplayName).toBe("Blender (BloxMind)");
       expect(entry?.values.InstallLocation).toBe(root);
       expect(entry?.values.DisplayIcon).toContain("blender.exe");
-      // Uninstalling from Windows Settings has to take the folder and the entry with it.
-      expect(entry?.values.UninstallString).toContain(root);
-      expect(entry?.values.UninstallString).toContain("Uninstall\\BloxMind Blender");
+      // Uninstalling from Windows Settings has to take the folder and the entry with it. reg.exe
+      // can't take quotes inside a value, so the script is encoded instead.
+      expect(entry?.values.UninstallString).toContain("powershell.exe -NoProfile -EncodedCommand");
+      const encoded = entry?.values.UninstallString.split("-EncodedCommand ")[1] ?? "";
+      expect(Buffer.from(encoded, "base64").toString("utf16le")).toContain(root);
+      expect(Buffer.from(encoded, "base64").toString("utf16le")).toContain(
+        "Uninstall\\BloxMind Blender",
+      );
       expect(windowsAppEntry(root, "darwin", appData)).toBeNull();
     });
 

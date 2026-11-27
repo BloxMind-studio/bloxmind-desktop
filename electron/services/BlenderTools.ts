@@ -262,7 +262,8 @@ export function windowsAppEntry(
       DisplayIcon: `${executable},0`,
       NoModify: "1",
       NoRepair: "1",
-      UninstallString: `"${powershell()}" -NoProfile -Command "${uninstall}"`,
+      // Encoded, because reg.exe can't take quotes inside a value and the app list runs this as-is.
+      UninstallString: `${powershell()} -NoProfile -EncodedCommand ${Buffer.from(uninstall, "utf16le").toString("base64")}`,
     },
   };
 }
