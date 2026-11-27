@@ -9,6 +9,7 @@ import {
   BLENDER_MCP_PORT,
   blenderMcpServerConfig,
   downloadPinned,
+  ensureWindowsAppIntegration,
   getBlenderToolsState,
   installBlenderTools,
   isBlenderInstalled,
@@ -16,7 +17,9 @@ import {
   removeBlenderTools,
   startMenuShortcutPath,
   startMenuShortcutScript,
+  stopBlenderServerProcesses,
   unpackUv,
+  windowsAppEntry,
 } from "../../electron/services/BlenderTools";
 
 const CONTENTS = Buffer.from("blender bytes, all of them");
@@ -451,7 +454,7 @@ describe("Blender tools", () => {
     });
   });
 
-  describe("Windows Start Menu entry", () => {
+  describe("Windows entries", () => {
     const appData = join("C:\\", "Users", "Someone", "AppData", "Roaming");
     const shortcut = join(
       appData,
@@ -477,6 +480,38 @@ describe("Blender tools", () => {
       expect(script).toContain(`$s.IconLocation = '${executable},0'`);
       expect(script).toContain("$s.Save()");
       expect(startMenuShortcutScript("it's.lnk", executable)).toContain("it''s.lnk");
+    });
+
+    it("gives Windows' app list a name, an icon, and a working Uninstall", () => {
+      const root = join(
+        "C:\\",
+        "Users",
+        "Someone",
+        "AppData",
+        "Local",
+        "BloxMind",
+        "blender-tools",
+      );
+      const entry = windowsAppEntry(root, "win32", appData);
+
+      expect(entry?.key).toBe(
+        "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\BloxMind Blender",
+      );
+      expect(entry?.values.DisplayName).toBe("Blender (BloxMind)");
+      expect(entry?.values.InstallLocation).toBe(root);
+      expect(entry?.values.DisplayIcon).toContain("blender.exe");
+      // Uninstalling from Windows Settings has to take the folder and the entry with it.
+      expect(entry?.values.UninstallString).toContain(root);
+      expect(entry?.values.UninstallString).toContain("Uninstall\\BloxMind Blender");
+      expect(windowsAppEntry(root, "darwin", appData)).toBeNull();
+    });
+
+    it("leaves other systems alone", async () => {
+      const runner = vi.fn(async () => {});
+      await ensureWindowsAppIntegration(await directory(), "linux", runner, () => {});
+      await stopBlenderServerProcesses(await directory(), "darwin", runner);
+
+      expect(runner).not.toHaveBeenCalled();
     });
   });
 

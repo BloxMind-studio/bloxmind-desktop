@@ -147,7 +147,7 @@ describe("ThreeDToolsTab", () => {
     start();
 
     expect(
-      await screen.findByText(/Deleting removes Blender, its Start Menu entry, and every file/),
+      await screen.findByText(/Deleting removes Blender, its Start Menu entry, its app list entry/),
     ).toBeVisible();
   });
 
@@ -171,31 +171,71 @@ describe("ThreeDToolsTab", () => {
     expect(mocks.remove).toHaveBeenCalledOnce();
   });
 
-  it("reloads OpenCode and tries again when Windows holds the server's files", async () => {
+  it("reloads OpenCode and tries again when its server is still holding the files", async () => {
     mocks.getState.mockResolvedValue({ state: "ready", running: false });
     mocks.remove
       .mockRejectedValueOnce(
-        new Error("Failed to remove Blender: Couldn't remove Blender (locked)"),
+        new Error(
+          "Failed to remove Blender: Error invoking remote method 'blender:remove': " +
+            "DesktopMainError: Couldn't remove Blender (locked)",
+        ),
       )
       .mockResolvedValue(undefined);
     start();
     fireEvent.click(await screen.findByRole("button", { name: "Delete Blender" }));
 
     await waitFor(() => expect(mocks.remove).toHaveBeenCalledTimes(2));
-    expect(mocks.dispose).toHaveBeenCalled();
+    expect(mocks.dispose).toHaveBeenCalledOnce();
+    expect(mocks.error).not.toHaveBeenCalled();
   });
 
-  it("doesn't reload OpenCode when deleting failed for something other than a lock", async () => {
+  it("says Blender is still running when it's open, after the retry too", async () => {
     mocks.getState.mockResolvedValue({ state: "ready", running: false });
-    mocks.remove.mockRejectedValue(new Error("Failed to remove Blender: Couldn't remove Blender"));
+    mocks.remove.mockRejectedValue(
+      new Error(
+        "Failed to remove Blender: Error invoking remote method 'blender:remove': " +
+          "DesktopMainError: Couldn't remove Blender (locked)",
+      ),
+    );
     start();
     fireEvent.click(await screen.findByRole("button", { name: "Delete Blender" }));
 
     await waitFor(() =>
-      expect(mocks.error).toHaveBeenCalledWith("Couldn't remove Blender", expect.anything()),
+      expect(mocks.error).toHaveBeenCalledWith("Couldn't remove Blender", {
+        description: "Blender is still running. Close it, then try again.",
+      }),
     );
-    expect(mocks.remove).toHaveBeenCalledOnce();
+    expect(mocks.remove).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows the real reason when deleting fails for something else", async () => {
+    mocks.getState.mockResolvedValue({ state: "ready", running: false });
+    mocks.remove.mockRejectedValue(
+      new Error(
+        "Failed to remove Blender: Error invoking remote method 'blender:remove': " +
+          "DesktopMainError: Couldn't remove Blender: ENOENT: no such file or directory",
+      ),
+    );
+    start();
+    fireEvent.click(await screen.findByRole("button", { name: "Delete Blender" }));
+
+    await waitFor(() =>
+      expect(mocks.error).toHaveBeenCalledWith("Couldn't remove Blender", {
+        description: "Couldn't remove Blender: ENOENT: no such file or directory",
+      }),
+    );
     expect(mocks.dispose).not.toHaveBeenCalled();
+  });
+
+  it("counts the delete as done even when OpenCode won't reload", async () => {
+    mocks.getState.mockResolvedValue({ state: "ready", running: false });
+    mocks.remove.mockResolvedValue(undefined);
+    mocks.dispose.mockRejectedValue(new Error("reload failed"));
+    start();
+    fireEvent.click(await screen.findByRole("button", { name: "Delete Blender" }));
+
+    await waitFor(() => expect(mocks.dispose).toHaveBeenCalledOnce());
+    expect(mocks.error).not.toHaveBeenCalled();
   });
 
   it("doesn't offer it where it can't run", async () => {

@@ -24,6 +24,14 @@ const FAILURES: Record<BlenderFailureReason, string> = {
 /** What the main process says when a file it had to delete was still in use. */
 const DELETE_LOCKED = "Couldn't remove Blender (locked)";
 
+/** The useful half of an error that came through Electron's IPC wrapper. */
+function removeFailure(error: Error): string {
+  return error.message
+    .replace(/^Failed to remove Blender:\s*/, "")
+    .replace(/^Error invoking remote method '[^']*':\s*/, "")
+    .replace(/^(?:[A-Za-z]*Error):\s*/, "");
+}
+
 function failureReason(error: Error): BlenderFailureReason {
   const reason = /\(reason: ([a-z_]+)\)/.exec(error.message)?.[1];
   return reason && reason in FAILURES ? (reason as BlenderFailureReason) : "other";
@@ -148,21 +156,30 @@ function BlenderRow() {
   });
   const remove = useMutation<void, Error>({
     mutationFn: async () => {
+      let reloaded = false;
       try {
         await desktop.removeBlenderTools();
       } catch (error) {
-        // Windows won't delete Blender's server while OpenCode is still running it. Blender is out
-        // of the config by now, so reloading stops the server. Anything else, like Blender being
-        // open, a reload won't fix.
+        // The engine can start Blender's server again, so stop it with a reload and try once more.
         if (!(error instanceof Error && error.message.includes(DELETE_LOCKED))) throw error;
-        await client?.location.reload({ throwOnError: true });
+        await client?.location.reload({ throwOnError: true }).catch(() => {});
+        reloaded = true;
         await desktop.removeBlenderTools();
       }
-      await client?.location.reload({ throwOnError: true });
+      // Blender is gone either way. The engine drops its server on the next start, so a failed
+      // reload must not turn a finished delete into an error on screen.
+      if (!reloaded) await client?.location.reload({ throwOnError: true }).catch(() => {});
     },
     onSuccess: () => posthog.capture("blender_removed", analyticsProperties("three_d_tools")),
-    onError: () =>
-      toast.error("Couldn't remove Blender", { description: "Close Blender, then try again." }),
+    onError: (error) => {
+      const reason = removeFailure(error);
+      const locked = reason.includes(DELETE_LOCKED);
+      toast.error("Couldn't remove Blender", {
+        description: locked
+          ? "Blender is still running. Close it, then try again."
+          : reason || "Try again.",
+      });
+    },
     onSettled: refresh,
   });
   const open = useMutation<void, Error>({
@@ -233,7 +250,10 @@ function BlenderRow() {
               : "Open it when you want the AI to make a model."}
           </p>
           {state.running ? null : (
-            <p>Deleting removes Blender, its Start Menu entry, and every file it left behind.</p>
+            <p>
+              Deleting removes Blender, its Start Menu entry, its app list entry, and every file it
+              left behind.
+            </p>
           )}
         </>
       ) : (

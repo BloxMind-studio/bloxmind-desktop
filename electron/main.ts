@@ -56,6 +56,7 @@ import {
   isBlenderInstalled,
   openBlender,
   removeBlenderTools,
+  stopBlenderServerProcesses,
 } from "./services/BlenderTools";
 import {
   getUploadAccess,
@@ -878,23 +879,22 @@ const registerIpcHandlers = Effect.sync(() => {
   safeIpcHandle(channels.removeBlenderTools, () =>
     runMain(
       Effect.gen(function* () {
-        const state = yield* Effect.promise(() => getBlenderToolsState(blenderToolsRoot()));
-        if (state.state === "ready" && state.running) {
-          return yield* Effect.fail(new DesktopMainError({ message: "Close Blender first" }));
-        }
+        const root = blenderToolsRoot();
+        // The bridge server runs from this folder and keeps Blender's Python files open. Stopping it
+        // first is why a delete works without Blender ever being opened. Blender itself is untouched,
+        // so a running copy keeps its unsaved work and the delete below reports it as locked.
+        yield* Effect.promise(() => stopBlenderServerProcesses(root));
         yield* applyBlenderToConfig(null);
         yield* Effect.tryPromise({
           try: () =>
-            removeBlenderTools(
-              blenderToolsRoot(),
-              process.platform,
-              blenderToolsFolders(machineFolderOptions),
-            ),
+            removeBlenderTools(root, process.platform, blenderToolsFolders(machineFolderOptions)),
           catch: (cause) => {
             const code = (cause as { code?: unknown } | null)?.code;
             const locked = code === "EBUSY" || code === "EPERM" || code === "EACCES";
             return new DesktopMainError({
-              message: `Couldn't remove Blender${locked ? " (locked)" : ""}`,
+              message: locked
+                ? "Couldn't remove Blender (locked)"
+                : `Couldn't remove Blender: ${cause instanceof Error ? cause.message : String(cause)}`,
               cause,
             });
           },

@@ -196,6 +196,11 @@ function blenderEnvironment(root: string): NodeJS.ProcessEnv {
 }
 
 const SHORTCUT_NAME = "Blender (BloxMind).lnk";
+const APP_ENTRY_NAME = "Blender (BloxMind)";
+/** Windows' own app list reads this key, which is why the Start Menu entry alone isn't enough. */
+const APP_ENTRY_KEY = "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\BloxMind Blender";
+const systemTool = (name: string) =>
+  join(process.env.SystemRoot ?? "C:\\Windows", "System32", name);
 const powershell = () =>
   join(
     process.env.SystemRoot ?? "C:\\Windows",
@@ -204,6 +209,9 @@ const powershell = () =>
     "v1.0",
     "powershell.exe",
   );
+
+/** Inside PowerShell's single quotes, a quote is written twice. */
+const powershellQuote = (value: string) => value.replaceAll("'", "''");
 
 /** A Windows Start Menu entry, so this Blender shows up like any installed app. */
 export function startMenuShortcutPath(
@@ -216,7 +224,7 @@ export function startMenuShortcutPath(
 
 /** PowerShell that points the entry at the app's portable Blender. */
 export function startMenuShortcutScript(shortcut: string, executable: string): string {
-  const quote = (value: string) => value.replaceAll("'", "''");
+  const quote = powershellQuote;
   return [
     `$s = (New-Object -ComObject WScript.Shell).CreateShortcut('${quote(shortcut)}')`,
     `$s.TargetPath = '${quote(executable)}'`,
@@ -226,12 +234,52 @@ export function startMenuShortcutScript(shortcut: string, executable: string): s
   ].join("; ");
 }
 
-async function createStartMenuShortcut(root: string, platform: NodeJS.Platform): Promise<void> {
+/** What Windows' app list shows, and what its Uninstall button runs. */
+export function windowsAppEntry(
+  root: string,
+  platform: NodeJS.Platform,
+  appData?: string,
+): { key: string; values: Record<string, string> } | null {
+  if (platform !== "win32") return null;
+  const executable = blenderExecutable(root, platform);
+  const shortcut = startMenuShortcutPath(platform, appData);
+  const uninstall = [
+    `Remove-Item -LiteralPath '${powershellQuote(root)}' -Recurse -Force -ErrorAction SilentlyContinue`,
+    `Remove-Item -LiteralPath 'HKCU:\\${APP_ENTRY_KEY}' -Recurse -Force -ErrorAction SilentlyContinue`,
+    ...(shortcut
+      ? [
+          `Remove-Item -LiteralPath '${powershellQuote(shortcut)}' -Force -ErrorAction SilentlyContinue`,
+        ]
+      : []),
+  ].join("; ");
+  return {
+    key: `HKCU\\${APP_ENTRY_KEY}`,
+    values: {
+      DisplayName: APP_ENTRY_NAME,
+      DisplayVersion: BLENDER_VERSION,
+      Publisher: "BloxMind",
+      InstallLocation: root,
+      DisplayIcon: `${executable},0`,
+      NoModify: "1",
+      NoRepair: "1",
+      UninstallString: `"${powershell()}" -NoProfile -Command "${uninstall}"`,
+    },
+  };
+}
+
+type CommandRunner = (command: string, args: readonly string[]) => Promise<unknown>;
+const defaultRunner: CommandRunner = (command, args) => run(command, [...args]);
+
+async function createStartMenuShortcut(
+  root: string,
+  platform: NodeJS.Platform,
+  runCommand: CommandRunner = defaultRunner,
+): Promise<void> {
   const shortcut = startMenuShortcutPath(platform);
   if (!shortcut) return;
   const executable = blenderExecutable(root, platform);
   await mkdir(dirname(shortcut), { recursive: true });
-  await run(powershell(), [
+  await runCommand(powershell(), [
     "-NoProfile",
     "-NonInteractive",
     "-Command",
@@ -239,9 +287,63 @@ async function createStartMenuShortcut(root: string, platform: NodeJS.Platform):
   ]);
 }
 
-async function removeStartMenuShortcut(platform: NodeJS.Platform): Promise<void> {
+async function removeStartMenuShortcut(
+  platform: NodeJS.Platform,
+  runCommand: CommandRunner = defaultRunner,
+): Promise<void> {
   const shortcut = startMenuShortcutPath(platform);
   if (shortcut) await rm(shortcut, { force: true });
+  if (platform !== "win32") return;
+  // The app list entry goes with it, so nothing is left pointing at a folder that's gone.
+  await runCommand(systemTool("reg.exe"), ["delete", `HKCU\\${APP_ENTRY_KEY}`, "/f"]);
+}
+
+async function registerWindowsApp(
+  root: string,
+  platform: NodeJS.Platform,
+  runCommand: CommandRunner = defaultRunner,
+): Promise<void> {
+  const entry = windowsAppEntry(root, platform);
+  if (!entry) return;
+  for (const [name, value] of Object.entries(entry.values)) {
+    await runCommand(systemTool("reg.exe"), [
+      "add",
+      entry.key,
+      "/v",
+      name,
+      "/t",
+      "REG_SZ",
+      "/d",
+      value,
+      "/f",
+    ]);
+  }
+}
+
+/**
+ * Makes the Windows entry and app list entry, once per run. Setup makes them, but an install from
+ * before they existed only gets them here, which is why the state check calls this too.
+ */
+const integrationDone = new Set<string>();
+export async function ensureWindowsAppIntegration(
+  root: string,
+  platform: NodeJS.Platform = process.platform,
+  runCommand: CommandRunner = defaultRunner,
+  log: (message: string) => void = (message) => console.warn(message),
+): Promise<void> {
+  if (platform !== "win32") return;
+  const doneKey = `${platform}:${root}`;
+  if (integrationDone.has(doneKey)) return;
+  if (!(await exists(blenderExecutable(root, platform)))) return;
+  integrationDone.add(doneKey);
+  try {
+    const shortcut = startMenuShortcutPath(platform);
+    if (shortcut && !(await exists(shortcut))) await createStartMenuShortcut(root, platform, runCommand);
+    await registerWindowsApp(root, platform, runCommand);
+  } catch (error) {
+    // Setup is still good without an entry, but it's worth knowing why there isn't one.
+    log(`[blender] Couldn't add the Windows app entry: ${String(error)}`);
+  }
 }
 
 /** The config OpenCode needs to reach Blender, or null until setup has finished. */
@@ -627,7 +729,7 @@ async function installEverything(options: BlenderToolsOptions): Promise<void> {
 
   await rm(downloads, { recursive: true, force: true });
   // Best effort: a locked-down shell shouldn't undo an otherwise good setup.
-  await createStartMenuShortcut(root, platform).catch(() => {});
+  await ensureWindowsAppIntegration(root, platform);
   await writeFile(
     markerPath(root),
     JSON.stringify({ blender: BLENDER_VERSION, mcp: MCP_VERSION, uv: UV_VERSION }),
@@ -709,6 +811,8 @@ export async function getBlenderToolsState(
 ): Promise<BlenderToolsState> {
   if (!filesFor(platform, arch)) return { state: "unsupported" };
   if (!(await isBlenderInstalled(root, platform))) return { state: "not_installed" };
+  // An install from before the Windows entries existed gets them without being set up again.
+  void ensureWindowsAppIntegration(root, platform);
   return { state: "ready", running: await isBlenderListening() };
 }
 
@@ -729,8 +833,48 @@ export function openBlender(root: string, platform: NodeJS.Platform = process.pl
 }
 
 /**
+ * Stops the MCP bridge and its Python, which run from the tools folder and hold its files open.
+ * Blender itself is left alone, since it may hold unsaved work.
+ */
+export async function stopBlenderServerProcesses(
+  root: string,
+  platform: NodeJS.Platform = process.platform,
+  runCommand: CommandRunner = defaultRunner,
+): Promise<void> {
+  if (platform !== "win32") return;
+  const script = [
+    `$root = '${powershellQuote(root)}'`,
+    "Get-CimInstance Win32_Process",
+    "| Where-Object { $_.ExecutablePath -and $_.Name -ne 'blender.exe' -and $_.ExecutablePath.StartsWith($root, 'OrdinalIgnoreCase') }",
+    "| ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }",
+  ].join(" ");
+  await runCommand(powershell(), [
+    "-NoProfile",
+    "-NonInteractive",
+    "-Command",
+    script,
+  ]).catch(() => {});
+}
+
+const LOCKED_CODES = new Set(["EBUSY", "EPERM", "EACCES"]);
+
+/** Windows sometimes lets go of a file a moment after the process holding it stops. */
+async function removeWithRetry(path: string, attempts = 3): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await rm(path, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code ?? "";
+      if (attempt + 1 >= attempts || !LOCKED_CODES.has(code)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
+    }
+  }
+}
+
+/**
  * Deletes Blender with nothing left behind: every folder an install or a cancelled setup could use,
- * the `.bak` files moved aside when a folder was in the way, and the Windows Start Menu entry.
+ * the `.bak` files moved aside when a folder was in the way, and the Windows entries.
  */
 export async function removeBlenderTools(
   root: string,
@@ -740,19 +884,19 @@ export async function removeBlenderTools(
   try {
     await Promise.all(
       [...new Set([root, ...extraRoots])].map(async (folder) => {
-        await rm(folder, { recursive: true, force: true });
+        await removeWithRetry(folder);
         const parent = dirname(folder);
         const name = basename(folder);
         const siblings = await readdir(parent).catch(() => []);
         await Promise.all(
           siblings
             .filter((entry) => entry.startsWith(`${name}.bak-`))
-            .map((entry) => rm(join(parent, entry), { recursive: true, force: true })),
+            .map((entry) => removeWithRetry(join(parent, entry))),
         );
       }),
     );
   } finally {
-    // An uninstall shouldn't fail just because the shell won't let go of one shortcut.
+    // An uninstall shouldn't fail just because the shell won't let go of one entry.
     await removeStartMenuShortcut(platform).catch(() => {});
   }
 }
