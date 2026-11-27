@@ -1485,8 +1485,8 @@ function BehaviorTab() {
             <div>
               <div className="text-sm font-medium">Auto-allow tools (this session)</div>
               <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-                Skip permission prompts in this chat. Nothing is approved for good, and uploads or
-                changes to your Roblox account still ask every time. Switch chats to start fresh.
+                Skip permission prompts in this chat, including Roblox and upload actions. Nothing
+                is approved for good. Switch chats or restart BloxMind to start fresh.
               </p>
             </div>
             <button

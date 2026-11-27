@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  canAutoAllow,
   isSessionAutoAllow,
   setSessionAutoAllow,
   subscribeSessionAutoAllow,
@@ -35,12 +34,5 @@ describe("session auto-allow", () => {
     unsubscribe();
     setSessionAutoAllow("s1", true);
     expect(listener).toHaveBeenCalledTimes(2);
-  });
-
-  it("never auto-allows account-wide decisions", () => {
-    expect(canAutoAllow("bash")).toBe(true);
-    expect(canAutoAllow("edit")).toBe(true);
-    expect(canAutoAllow("roblox-studio_upload_image")).toBe(false);
-    expect(canAutoAllow("roblox_studio_open_cloud_invoke")).toBe(false);
   });
 });

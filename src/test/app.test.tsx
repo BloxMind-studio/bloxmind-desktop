@@ -882,26 +882,31 @@ describe("User journeys", () => {
       { throwOnError: true },
     );
 
-    // Later requests in the same chat never reach the prompt.
+    // Later requests never reach the prompt, including Roblox account changes.
     const activeRef = { current: "session-auto-allow" };
-    await act(async () => {
-      sseDispatch(
-        queryClient,
-        {
-          type: "permission.asked",
-          properties: {
-            id: "perm_allow_2",
-            sessionID: "session-auto-allow",
-            permission: "edit",
-            patterns: ["src/a.ts"],
-          },
-        } as never,
-        activeRef,
-      );
-    });
+    for (const [id, permission] of [
+      ["perm_allow_2", "edit"],
+      ["perm_allow_3", "roblox_studio_open_cloud_invoke"],
+    ]) {
+      await act(async () => {
+        sseDispatch(
+          queryClient,
+          {
+            type: "permission.asked",
+            properties: {
+              id,
+              sessionID: "session-auto-allow",
+              permission,
+              patterns: [],
+            },
+          } as never,
+          activeRef,
+        );
+      });
+    }
     await waitFor(() =>
       expect(client.permission.reply).toHaveBeenCalledWith(
-        expect.objectContaining({ requestID: "perm_allow_2", reply: "once" }),
+        expect.objectContaining({ requestID: "perm_allow_3", reply: "once" }),
         { throwOnError: true },
       ),
     );

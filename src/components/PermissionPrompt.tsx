@@ -127,25 +127,23 @@ export const PermissionPrompt = memo(function PermissionPrompt({
           {deny ?? "Deny"}
         </button>
         {everyTime ? null : (
-          <>
-            <button
-              type="button"
-              onClick={() => onReply(permission.id, "always")}
-              className="rounded-md border px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-accent"
-            >
-              Always allow
-            </button>
-            {onAlwaysThisSession ? (
-              <button
-                type="button"
-                onClick={() => onAlwaysThisSession(permission.id)}
-                className="rounded-md border px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-accent"
-              >
-                Always allow (this session)
-              </button>
-            ) : null}
-          </>
+          <button
+            type="button"
+            onClick={() => onReply(permission.id, "always")}
+            className="rounded-md border px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-accent"
+          >
+            Always allow
+          </button>
         )}
+        {onAlwaysThisSession ? (
+          <button
+            type="button"
+            onClick={() => onAlwaysThisSession(permission.id)}
+            className="rounded-md border px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-accent"
+          >
+            Always allow (this session)
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={() => onReply(permission.id, "once")}

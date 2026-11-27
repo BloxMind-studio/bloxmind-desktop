@@ -119,7 +119,6 @@ import {
 } from "@/lib/modelError";
 import { modelLinksIn } from "@/lib/modelLinks";
 import { qk } from "@/lib/queryKeys";
-import { canAutoAllow } from "@/lib/sessionAutoAllow";
 import { playResponseReady } from "@/lib/soundEffects";
 import type { MessagesCache } from "@/lib/sseDispatch";
 import { baseToolName } from "@/lib/toolName";
@@ -2500,10 +2499,9 @@ function ChatMessages() {
     [rejectQuestion],
   );
   // Trusted chats answer their own requests, so the agent isn't stopped by a prompt every step.
-  // Account-wide actions stay a separate decision, and "once" saves no approval in the engine.
+  // "once" saves no approval in the engine, and the trust ends with this chat or the app.
   useEffect(() => {
     if (!autoAllow || !activePermission || !activeSessionId) return;
-    if (!canAutoAllow(activePermission.permission)) return;
     if (autoRepliedRef.current.has(activePermission.id)) return;
     autoRepliedRef.current.add(activePermission.id);
     replyPermission.mutate({ requestID: activePermission.id, reply: "once" });

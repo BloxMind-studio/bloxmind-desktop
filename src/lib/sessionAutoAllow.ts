@@ -26,8 +26,3 @@ export function subscribeSessionAutoAllow(listener: () => void): () => void {
     listeners.delete(listener);
   };
 }
-
-/** Account-wide actions are always a separate decision, even within a trusted chat. */
-export function canAutoAllow(permission: string): boolean {
-  return !permission.endsWith("upload_image") && !permission.endsWith("open_cloud_invoke");
-}
