@@ -71,9 +71,15 @@ import {
   migrateWorkspaceInstructionsToGlobalSync,
   readGlobalInstructions,
   stripLegacyManagedBlock,
+  withModelsFolderInstruction,
   writeGlobalInstructions,
 } from "./instructionFiles";
-import { BLENDER_MCP_SERVER_NAME, skillDirectories, withBlender } from "./opencodeConfig";
+import {
+  BLENDER_MCP_SERVER_NAME,
+  modelsFolder,
+  skillDirectories,
+  withBlender,
+} from "./opencodeConfig";
 import type { McpServerConfig } from "../src/lib/mcpServers";
 import { editExplorerObject, type CallStudioTool, mcpData, mcpError } from "./studioQueries";
 import { syncExplorerTree } from "./explorerTree";
@@ -1273,6 +1279,20 @@ if (!hasSingleInstanceLock) {
         } catch (error) {
           console.warn("[bloxmind] Failed to seed global engine instructions:", error);
         }
+      });
+      // Every agent reads the engine-global AGENTS.md, so the upload folder rule goes
+      // there too — the Studio agent's own prompt isn't seen by other agents.
+      yield* Effect.tryPromise({
+        try: async () => {
+          const instructions = await readGlobalInstructions(globalConfigDirectory);
+          const updated = withModelsFolderInstruction(instructions, modelsFolder());
+          if (updated !== instructions) {
+            await writeGlobalInstructions(globalConfigDirectory, updated);
+          }
+        },
+        catch: (cause) => {
+          console.warn("[bloxmind] Failed to add the models folder instruction:", cause);
+        },
       });
       // The cached copy is ready before the window asks for it; the download
       // happens in the background and applies from the next time a program loads.

@@ -52,8 +52,8 @@ describe("OpenCode configuration", () => {
   it("keeps Studio instructions concise and action-oriented", () => {
     const prompt = createOpenCodeConfig(broker).agents.studio.prompt;
 
-    // Includes the short 3D guidance about the Models folder and opening Blender.
-    expect(prompt.trim().split(/\s+/).length).toBeLessThanOrEqual(215);
+    // Includes the Models folder rule, which has to spell out the temp-folder trap.
+    expect(prompt.trim().split(/\s+/).length).toBeLessThanOrEqual(240);
     expect(prompt).toMatch(/inspect before editing/i);
     expect(prompt).toContain("smallest coherent change");
     expect(prompt).toContain("verification level");
@@ -182,6 +182,9 @@ describe("3D guidance", () => {
     expect(prompt).not.toContain("bloxmind/models");
     expect(prompt).toContain("file:// URL");
     expect(prompt).toContain("never upload yourself");
+    // OpenCode's temp folder is where models used to end up, and Studio rejects it.
+    expect(prompt).toContain("Never export a GLB/GLTF to a temp");
+    expect(prompt).toContain("move the finished file there");
   });
 
   it("tells the agent to open Blender only when the tools are available", () => {

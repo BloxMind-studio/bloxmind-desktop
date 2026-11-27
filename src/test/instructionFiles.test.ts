@@ -10,6 +10,7 @@ import {
   migrateWorkspaceInstructionsToGlobalSync,
   readGlobalInstructions,
   stripLegacyManagedBlock,
+  withModelsFolderInstruction,
   writeGlobalInstructions,
 } from "../../electron/instructionFiles";
 
@@ -191,5 +192,22 @@ describe("global engine instructions", () => {
     await mkdir(join(globalConfigDirectory, "AGENTS.md"), { recursive: true });
 
     await expect(readGlobalInstructions(globalConfigDirectory)).rejects.toThrow();
+  });
+
+  it("tells every agent where models must be exported, without losing user rules", () => {
+    const folder = join("C:\\", "Users", "Ali", "BloxMind", "Models");
+    const once = withModelsFolderInstruction("My own rules", folder);
+
+    expect(once).toContain("My own rules");
+    expect(once).toContain(folder);
+    expect(once).toContain("Never write a model to a temp");
+
+    // Reapplying after the folder changes replaces just BloxMind's block.
+    const again = withModelsFolderInstruction(`${once}\n\nMore of my rules`, "C:\\other\\Models");
+    expect(again).toContain("My own rules");
+    expect(again).toContain("More of my rules");
+    expect(again).toContain("C:\\other\\Models");
+    expect(again).not.toContain(folder);
+    expect(again.match(/bloxmind-models-folder:begin/g)).toHaveLength(1);
   });
 });

@@ -326,6 +326,11 @@ function UploadsRow() {
           ? "Upload appears on each model a reply links to. You choose what's allowed in Studio's MCP Permissions."
           : "Add models to your place with one click, after you check each one. Studio handles the sign-in, so there's no key to make."}
       </p>
+      <p className="pt-1 text-[11px]">
+        Export models to{" "}
+        <code className="break-all rounded bg-muted px-1 py-0.5">{access.folder}</code>. Studio only
+        allows uploads from this folder, and the agent is told to use it.
+      </p>
       {access.state === "refused" ? (
         <p className="pt-1">
           Roblox isn't accepting Studio's sign-in for uploads right now. Try again later.

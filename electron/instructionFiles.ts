@@ -245,3 +245,29 @@ export async function stripLegacyManagedBlock(workspace: string): Promise<boolea
   await writeFile(target, `${remainder}\n`, "utf8");
   return true;
 }
+
+const MODELS_FOLDER_BEGIN = "<!-- bloxmind-models-folder:begin -->";
+const MODELS_FOLDER_END = "<!-- bloxmind-models-folder:end -->";
+
+/**
+ * Puts the upload folder rule in the engine-global AGENTS.md, which every agent
+ * reads — not just BloxMind's Studio agent. Anything the user wrote around the
+ * markers is kept, and reapplying replaces only BloxMind's own block.
+ */
+export function withModelsFolderInstruction(content: string, folder: string): string {
+  const block = [
+    MODELS_FOLDER_BEGIN,
+    "## BloxMind 3D models",
+    "",
+    `Export every GLB/GLTF meant for upload directly to \`${folder}\`. Create the folder first if it is missing. Never write a model to a temp, cache, scratch, or workspace directory: Roblox Studio's Open Cloud upload only accepts files from \`${folder}\`. If a tool writes somewhere else, move the finished file here before offering an upload.`,
+    MODELS_FOLDER_END,
+  ].join("\n");
+
+  const begin = content.indexOf(MODELS_FOLDER_BEGIN);
+  const end = content.indexOf(MODELS_FOLDER_END);
+  const rest =
+    begin !== -1 && end > begin
+      ? `${content.slice(0, begin)}${content.slice(end + MODELS_FOLDER_END.length)}`
+      : content;
+  return `${rest.trimEnd()}\n\n${block}\n`;
+}

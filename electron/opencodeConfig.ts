@@ -69,14 +69,15 @@ export function skillDirectories(runtime: OpenCodeRuntimePaths): string[] {
 }
 
 const GUIDANCE_MARKER = "<!-- bloxmind-3d-guidance -->";
-const modelsFolder = () => join(homedir(), "BloxMind", "Models");
+/** The one folder Roblox Studio's MCP allows Open Cloud uploads from. */
+export const modelsFolder = () => join(homedir(), "BloxMind", "Models");
 
 /** Where models for uploads live, and how the agent starts Blender itself. */
 function guidance(blenderEnabled: boolean): string {
   const folder = modelsFolder();
   return [
     GUIDANCE_MARKER,
-    `Models for uploads: ${folder}. Export GLB with textures embedded, link it with a file:// URL, and let BloxMind offer the upload button; never upload yourself.`,
+    `All models for upload MUST be exported directly to ${folder}. Create it first if it is missing. Never export a GLB/GLTF to a temp, cache, scratch, or workspace folder: Open Cloud only accepts uploads from ${folder}. If a tool writes elsewhere, move the finished file there before offering an upload. Export GLB with textures embedded, link the file with a file:// URL, and let BloxMind offer the upload button; never upload yourself.`,
     blenderEnabled ? "Open Blender with bloxmind_open_blender before using its tools." : "",
   ]
     .filter(Boolean)

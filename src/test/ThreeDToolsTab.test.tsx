@@ -238,6 +238,13 @@ describe("ThreeDToolsTab", () => {
     expect(mocks.error).not.toHaveBeenCalled();
   });
 
+  it("shows the upload folder the agent is told to export to", async () => {
+    start();
+
+    expect(await screen.findByText("/home/BloxMind/Models")).toBeVisible();
+    expect(screen.getByText(/Studio only allows uploads from this folder/)).toBeVisible();
+  });
+
   it("doesn't offer it where it can't run", async () => {
     mocks.getState.mockResolvedValue({ state: "unsupported" });
     start();
