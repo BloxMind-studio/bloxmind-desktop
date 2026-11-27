@@ -8,6 +8,8 @@ interface ProjectIndexContextValue {
   isLoading: boolean;
   isFetching: boolean;
   error: string | null;
+  /** Studio is connected but no place is open yet. */
+  waiting: boolean;
   contextPrompt: string | null;
   refresh: () => void;
 }
@@ -156,7 +158,7 @@ function formatProjectContext(skeleton: ProjectSkeleton): string {
 }
 
 export function ProjectIndexProvider({ children }: { children: ReactNode }) {
-  const { skeleton, isLoading, isFetching, error, refresh } = useProjectIndex();
+  const { skeleton, isLoading, isFetching, error, waiting, refresh } = useProjectIndex();
 
   const contextPrompt = useMemo(() => {
     if (!skeleton) return null;
@@ -164,8 +166,8 @@ export function ProjectIndexProvider({ children }: { children: ReactNode }) {
   }, [skeleton]);
 
   const value = useMemo<ProjectIndexContextValue>(
-    () => ({ skeleton, isLoading, isFetching, error, contextPrompt, refresh }),
-    [skeleton, isLoading, isFetching, error, contextPrompt, refresh],
+    () => ({ skeleton, isLoading, isFetching, error, waiting, contextPrompt, refresh }),
+    [skeleton, isLoading, isFetching, error, waiting, contextPrompt, refresh],
   );
 
   return <ProjectIndexContext.Provider value={value}>{children}</ProjectIndexContext.Provider>;
@@ -181,6 +183,7 @@ export function useProjectIndexContext() {
       isLoading: false,
       isFetching: false,
       error: null,
+      waiting: false,
       contextPrompt: null,
       refresh: () => {},
     } as ProjectIndexContextValue;

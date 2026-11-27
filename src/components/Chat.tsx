@@ -38,7 +38,7 @@ import { useStudioTargetOptional } from "@/providers/StudioTargetProvider";
  * The native tooltip carries the details. Clicking triggers a re-index.
  */
 function ProjectIndexButton() {
-  const { skeleton, isLoading, isFetching, error, refresh } = useProjectIndexContext();
+  const { skeleton, isLoading, isFetching, error, waiting, refresh } = useProjectIndexContext();
 
   const indexed = skeleton !== null;
   const busy = isLoading || isFetching;
@@ -48,13 +48,15 @@ function ProjectIndexButton() {
     (skeleton?.circularDependencies.length ?? 0) > 0 ||
     (skeleton?.unreadableScripts ?? 0) > 0;
 
-  const title = error
-    ? `Index failed: ${error}. Click to retry.`
-    : busy
-      ? "Reading the script map from Studio..."
-      : indexed
-        ? `${total} ${total === 1 ? "script" : "scripts"} indexed${partial ? " with issues" : ""}. Click to refresh.`
-        : "Index project";
+  const title = waiting
+    ? "Waiting for a place in Studio..."
+    : error
+      ? `Index failed: ${error}. Click to retry.`
+      : busy
+        ? "Reading the script map from Studio..."
+        : indexed
+          ? `${total} ${total === 1 ? "script" : "scripts"} indexed${partial ? " with issues" : ""}. Click to refresh.`
+          : "Index project";
 
   return (
     <button
@@ -63,14 +65,18 @@ function ProjectIndexButton() {
       disabled={busy}
       title={title}
       className={`group inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border bg-background px-2 text-[11px] font-medium tabular-nums transition-[background-color,color] hover:bg-accent hover:text-foreground disabled:opacity-50 ${
-        error ? "text-red-500" : "text-muted-foreground"
+        error
+          ? "text-red-500"
+          : waiting
+            ? "text-amber-600 dark:text-amber-400"
+            : "text-muted-foreground"
       }`}
     >
       <span className="relative flex items-center" aria-hidden="true">
         <FolderTree size={13} />
         <span
           className={`absolute -right-1 -top-1 rounded-full ${
-            busy
+            busy || waiting
               ? "h-1.5 w-1.5 animate-ping bg-amber-400"
               : partial
                 ? "h-1.5 w-1.5 bg-amber-500"

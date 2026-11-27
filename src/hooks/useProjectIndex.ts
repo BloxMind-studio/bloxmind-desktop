@@ -9,6 +9,16 @@ import { qk } from "@/lib/queryKeys";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 import { useStudioTargetOptional } from "@/providers/StudioTargetProvider";
 
+/** Studio refusing a read because of its own state is a wait, not an index failure. */
+function isStudioWaiting(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    /Place is not open/i.test(message) ||
+    /studio_id\W*is not connected/i.test(message) ||
+    /not available in \w+ mode/i.test(message)
+  );
+}
+
 /**
  * Compile and invoke the project index program to build a dependency graph
  * of all scripts in the current Roblox Studio place.
@@ -28,6 +38,8 @@ export function useProjectIndex(): {
   isLoading: boolean;
   isFetching: boolean;
   error: string | null;
+  /** Studio is connected but its place isn't open yet; not a failure. */
+  waiting: boolean;
   refresh: () => void;
 } {
   const { client, ready } = useOpenCodeClient();
@@ -66,9 +78,11 @@ export function useProjectIndex(): {
     staleTime: 30_000,
     refetchInterval: ready && hasStudioTarget ? 30_000 : false,
     refetchOnWindowFocus: true,
-    retry: 2,
+    retry: (count, failure) => (isStudioWaiting(failure) ? false : count < 2),
     retryDelay: 1_000,
   });
+
+  const waiting = error ? isStudioWaiting(error) : false;
 
   const refresh = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: projectIndexKey });
@@ -78,7 +92,8 @@ export function useProjectIndex(): {
     skeleton: data ?? null,
     isLoading,
     isFetching,
-    error: error ? (error instanceof Error ? error.message : String(error)) : null,
+    error: waiting ? null : error ? (error instanceof Error ? error.message : String(error)) : null,
+    waiting,
     refresh,
   };
 }
