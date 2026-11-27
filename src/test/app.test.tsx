@@ -17,6 +17,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { desktop } from "@/lib/desktop";
 import type { Session } from "@/lib/opencode";
 import { qk } from "@/lib/queryKeys";
+import { setSessionAutoAllow } from "@/lib/sessionAutoAllow";
 import { type MessagesCache, sseDispatch } from "@/lib/sseDispatch";
 import { ActiveSessionProvider } from "@/providers/ActiveSessionProvider";
 import { ExplorerReferenceProvider } from "@/providers/ExplorerReferenceProvider";
@@ -248,6 +249,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  setSessionAutoAllow("session-auto-allow", false);
   vi.restoreAllMocks();
 });
 
@@ -830,6 +832,78 @@ describe("User journeys", () => {
         sessionID: "s1",
       }),
       { throwOnError: true },
+    );
+  });
+
+  it("trusts a chat for the session without saving engine approvals", async () => {
+    const session = makeSession("session-auto-allow", "Trusted Session");
+    const permRequest = {
+      id: "perm_allow_1",
+      sessionID: "session-auto-allow",
+      permission: "bash",
+      patterns: ["echo hello"],
+    };
+    const client = createClient({
+      get: vi.fn().mockResolvedValue({ data: session }),
+      messages: vi.fn().mockResolvedValue({
+        data: [
+          {
+            info: {
+              id: "msg_trust",
+              sessionID: "session-auto-allow",
+              role: "assistant",
+              time: { created: Date.now(), updated: Date.now() },
+            },
+            parts: [],
+          },
+        ],
+      }),
+    });
+    client.permission.list = vi.fn().mockResolvedValue({ data: [permRequest] });
+    const queryClient = createQueryClient();
+    seedReadyState(queryClient, { sessions: [session] });
+
+    render(<TestApp client={client} queryClient={queryClient} />);
+    await act(async () => {
+      fireEvent.click(await screen.findByText("Trusted Session"));
+    });
+    await waitFor(() => expect(screen.getByText("Run this command?")).toBeInTheDocument());
+
+    await act(async () => {
+      fireEvent.click(screen.getByText("Always allow (this session)"));
+    });
+    expect(client.permission.reply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestID: "perm_allow_1",
+        reply: "once",
+        decision: "once",
+        sessionID: "session-auto-allow",
+      }),
+      { throwOnError: true },
+    );
+
+    // Later requests in the same chat never reach the prompt.
+    const activeRef = { current: "session-auto-allow" };
+    await act(async () => {
+      sseDispatch(
+        queryClient,
+        {
+          type: "permission.asked",
+          properties: {
+            id: "perm_allow_2",
+            sessionID: "session-auto-allow",
+            permission: "edit",
+            patterns: ["src/a.ts"],
+          },
+        } as never,
+        activeRef,
+      );
+    });
+    await waitFor(() =>
+      expect(client.permission.reply).toHaveBeenCalledWith(
+        expect.objectContaining({ requestID: "perm_allow_2", reply: "once" }),
+        { throwOnError: true },
+      ),
     );
   });
 

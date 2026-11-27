@@ -16,6 +16,7 @@ import {
   useConnectedProviders,
   useProviderList,
 } from "@/hooks/useProviders";
+import { useSessionAutoAllow } from "@/hooks/useSessionAutoAllow";
 import { analyticsDeviceId, analyticsProperties } from "@/lib/analytics";
 import { playChime } from "@/lib/chime";
 import { desktop } from "@/lib/desktop";
@@ -32,6 +33,7 @@ import {
 } from "@/lib/providerAuth";
 import { checkModels, checkPreference, type ProviderCheckResult } from "@/lib/providerCheck";
 import { VERIFICATION_OPTIONS } from "@/lib/verification";
+import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
 import type { ModelInfo, ProviderInfo } from "@/types";
 import {
@@ -1375,6 +1377,8 @@ function BehaviorTab() {
     verificationLevel,
     setVerificationLevel,
   } = usePreferences();
+  const { activeSessionId } = useActiveSession();
+  const { enabled: autoAllow, setEnabled: setAutoAllow } = useSessionAutoAllow(activeSessionId);
 
   return (
     <div className="mx-auto w-full max-w-md px-6 py-8">
@@ -1469,6 +1473,36 @@ function BehaviorTab() {
               <span
                 className={`inline-block h-3.5 w-3.5 rounded-full bg-background transition-transform ${
                   enterToSend ? "translate-x-4" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+
+        {/* Session approvals */}
+        <div className="rounded-lg border bg-card p-3.5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-sm font-medium">Auto-allow tools (this session)</div>
+              <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                Skip permission prompts in this chat. Nothing is approved for good, and uploads or
+                changes to your Roblox account still ask every time. Switch chats to start fresh.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={autoAllow}
+              aria-label="Auto-allow tools (this session)"
+              disabled={!activeSessionId}
+              onClick={() => setAutoAllow(!autoAllow)}
+              className={`relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+                autoAllow ? "bg-foreground" : "bg-border"
+              }`}
+            >
+              <span
+                className={`inline-block h-3.5 w-3.5 rounded-full bg-background transition-transform ${
+                  autoAllow ? "translate-x-4" : "translate-x-0.5"
                 }`}
               />
             </button>

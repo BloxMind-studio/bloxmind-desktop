@@ -214,7 +214,7 @@ function BlenderRow() {
                   if (!remove.isPending) remove.mutate();
                 }}
               >
-                Remove
+                Delete Blender
               </button>
             </>
           )
@@ -226,11 +226,16 @@ function BlenderRow() {
       }
     >
       {ready ? (
-        <p>
-          {state.running
-            ? "The AI can use it now. Close Blender to remove it."
-            : "Open it when you want the AI to make a model."}
-        </p>
+        <>
+          <p>
+            {state.running
+              ? "The AI can use it now. Close Blender to delete it."
+              : "Open it when you want the AI to make a model."}
+          </p>
+          {state.running ? null : (
+            <p>Deleting removes Blender, its Start Menu entry, and every file it left behind.</p>
+          )}
+        </>
       ) : (
         <>
           <p>Free, open-source 3D software. About 400 MB to download, 1.1 GB once installed.</p>

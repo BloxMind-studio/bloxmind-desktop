@@ -48,7 +48,7 @@ import { handleLastWindowClosed } from "./appLifecycle";
 import { isOpenableUrl } from "./openableUrl";
 import { networkDriveLetters, onNetworkDrive } from "./networkDrives";
 import { createMainErrorReporter } from "./errorReporter";
-import { blenderToolsFolder, engineFolder } from "./machineFolders";
+import { blenderToolsFolder, blenderToolsFolders, engineFolder } from "./machineFolders";
 import {
   blenderMcpServerConfig,
   getBlenderToolsState,
@@ -884,7 +884,12 @@ const registerIpcHandlers = Effect.sync(() => {
         }
         yield* applyBlenderToConfig(null);
         yield* Effect.tryPromise({
-          try: () => removeBlenderTools(blenderToolsRoot()),
+          try: () =>
+            removeBlenderTools(
+              blenderToolsRoot(),
+              process.platform,
+              blenderToolsFolders(machineFolderOptions),
+            ),
           catch: (cause) => {
             const code = (cause as { code?: unknown } | null)?.code;
             const locked = code === "EBUSY" || code === "EPERM" || code === "EACCES";

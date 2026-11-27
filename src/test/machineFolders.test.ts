@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { engineFolder, type MachineFolderFileSystem } from "../../electron/machineFolders";
+import {
+  blenderToolsFolders,
+  engineFolder,
+  type MachineFolderFileSystem,
+} from "../../electron/machineFolders";
 
 const USER_DATA = "C:\\Users\\Ada\\AppData\\Roaming\\bloxmind";
 const LOCAL = "C:\\Users\\Ada\\AppData\\Local";
@@ -86,5 +90,23 @@ describe("engineFolder", () => {
       return false;
     };
     expect(engineFolder(windows, fileSystem)).toBe(`${USER_DATA}\\opencode`);
+  });
+});
+
+describe("blenderToolsFolders", () => {
+  it("includes an older install in userData on Windows", () => {
+    expect(blenderToolsFolders(windows)).toEqual([
+      `${LOCAL}\\bloxmind\\blender-tools`,
+      `${USER_DATA}\\blender-tools`,
+    ]);
+  });
+
+  it("has only one folder where userData is already the right place", () => {
+    expect(blenderToolsFolders({ ...windows, platform: "darwin" })).toEqual([
+      `${USER_DATA}/blender-tools`,
+    ]);
+    expect(blenderToolsFolders({ ...windows, localAppData: undefined })).toEqual([
+      `${USER_DATA}\\blender-tools`,
+    ]);
   });
 });

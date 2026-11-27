@@ -1,10 +1,10 @@
 import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
-import { chmod, mkdir, mkdtemp, readFile, rename, rm, stat, statfs, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, statfs, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { connect } from "node:net";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { promisify } from "node:util";
@@ -728,11 +728,31 @@ export function openBlender(root: string, platform: NodeJS.Platform = process.pl
   });
 }
 
-export function removeBlenderTools(
+/**
+ * Deletes Blender with nothing left behind: every folder an install or a cancelled setup could use,
+ * the `.bak` files moved aside when a folder was in the way, and the Windows Start Menu entry.
+ */
+export async function removeBlenderTools(
   root: string,
   platform: NodeJS.Platform = process.platform,
+  extraRoots: readonly string[] = [],
 ): Promise<void> {
-  return rm(root, { recursive: true, force: true }).then(async () =>
-    removeStartMenuShortcut(platform).catch(() => {}),
-  );
+  try {
+    await Promise.all(
+      [...new Set([root, ...extraRoots])].map(async (folder) => {
+        await rm(folder, { recursive: true, force: true });
+        const parent = dirname(folder);
+        const name = basename(folder);
+        const siblings = await readdir(parent).catch(() => []);
+        await Promise.all(
+          siblings
+            .filter((entry) => entry.startsWith(`${name}.bak-`))
+            .map((entry) => rm(join(parent, entry), { recursive: true, force: true })),
+        );
+      }),
+    );
+  } finally {
+    // An uninstall shouldn't fail just because the shell won't let go of one shortcut.
+    await removeStartMenuShortcut(platform).catch(() => {});
+  }
 }

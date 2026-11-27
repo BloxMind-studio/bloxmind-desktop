@@ -103,3 +103,14 @@ export function blenderToolsFolder(
     return old;
   }
 }
+
+/**
+ * Every folder a Blender setup can live in, including an older install in userData. A clean delete
+ * has to remove all of them; a failed setup can also leave an unmarked folder behind.
+ */
+export function blenderToolsFolders(options: MachineFolderOptions): string[] {
+  const paths = pathsFor(options.platform);
+  const old = paths.join(options.userData, "blender-tools");
+  const next = machineFolder(options, "blender-tools");
+  return next && next !== old ? [next, old] : [old];
+}

@@ -104,6 +104,7 @@ import {
 import { useActivePermission } from "@/hooks/usePermissions";
 import { useProviderList } from "@/hooks/useProviders";
 import { useActiveQuestion } from "@/hooks/useQuestions";
+import { useSessionAutoAllow } from "@/hooks/useSessionAutoAllow";
 import { useSessionError } from "@/hooks/useSessionError";
 import { isSessionWorking, useSessionStatus } from "@/hooks/useSessionStatuses";
 import { useTodos } from "@/hooks/useTodos";
@@ -117,6 +118,7 @@ import {
 } from "@/lib/modelError";
 import { modelLinksIn } from "@/lib/modelLinks";
 import { qk } from "@/lib/queryKeys";
+import { canAutoAllow } from "@/lib/sessionAutoAllow";
 import { playResponseReady } from "@/lib/soundEffects";
 import type { MessagesCache } from "@/lib/sseDispatch";
 import { baseToolName } from "@/lib/toolName";
@@ -2119,6 +2121,8 @@ function ChatMessages() {
   const answerQuestion = useAnswerQuestion();
   const rejectQuestion = useRejectQuestion();
   const replyPermission = useReplyPermission();
+  const { enabled: autoAllow, setEnabled: setAutoAllow } = useSessionAutoAllow(activeSessionId);
+  const autoRepliedRef = useRef(new Set<string>());
   // Session status drives both the checkpoint capture trigger (busy
   // transitions) and the working-vs-idle gating for message controls.
   const sessionStatusType = sessionStatus?.type;
@@ -2487,10 +2491,28 @@ function ChatMessages() {
     (requestID: string) => rejectQuestion.mutate(requestID),
     [rejectQuestion],
   );
+  // Trusted chats answer their own requests, so the agent isn't stopped by a prompt every step.
+  // Account-wide actions stay a separate decision, and "once" saves no approval in the engine.
+  useEffect(() => {
+    if (!autoAllow || !activePermission || !activeSessionId) return;
+    if (!canAutoAllow(activePermission.permission)) return;
+    if (autoRepliedRef.current.has(activePermission.id)) return;
+    autoRepliedRef.current.add(activePermission.id);
+    replyPermission.mutate({ requestID: activePermission.id, reply: "once" });
+  }, [autoAllow, activePermission, activeSessionId, replyPermission.mutate]);
+
   const handleReplyPermission = useCallback(
     (requestID: string, reply: "once" | "always" | "reject") =>
       replyPermission.mutate({ requestID, reply }),
     [replyPermission],
+  );
+  const handleAlwaysThisSession = useCallback(
+    (requestID: string) => {
+      setAutoAllow(true);
+      autoRepliedRef.current.add(requestID);
+      replyPermission.mutate({ requestID, reply: "once" });
+    },
+    [setAutoAllow, replyPermission.mutate],
   );
 
   if (messageIds.length === 0 && !isBusy && !sessionError) {
@@ -2636,7 +2658,11 @@ function ChatMessages() {
               />
             )}
             {activePermission && (
-              <PermissionPrompt permission={activePermission} onReply={handleReplyPermission} />
+              <PermissionPrompt
+                permission={activePermission}
+                onReply={handleReplyPermission}
+                onAlwaysThisSession={handleAlwaysThisSession}
+              />
             )}
             <BusyThinkingIndicator status={sessionStatus} lastMessageRole={lastMessageRole} />
             {sessionError && !lastMessageHasError && <ModelErrorCard error={sessionError} />}

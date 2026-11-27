@@ -142,21 +142,30 @@ describe("ThreeDToolsTab", () => {
     await waitFor(() => expect(mocks.open).toHaveBeenCalledOnce());
   });
 
+  it("says deleting leaves no Blender files behind", async () => {
+    mocks.getState.mockResolvedValue({ state: "ready", running: false });
+    start();
+
+    expect(
+      await screen.findByText(/Deleting removes Blender, its Start Menu entry, and every file/),
+    ).toBeVisible();
+  });
+
   it("says when Blender is connected", async () => {
     mocks.getState.mockResolvedValue({ state: "ready", running: true });
     start();
 
     expect(await screen.findByText("Open")).toBeVisible();
     expect(screen.queryByRole("button", { name: "Open Blender" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Remove" })).toBeNull();
-    expect(screen.getByText(/Close Blender to remove it/)).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Delete Blender" })).toBeNull();
+    expect(screen.getByText(/Close Blender to delete it/)).toBeVisible();
   });
 
   it("removes it and has OpenCode forget it", async () => {
     mocks.getState.mockResolvedValue({ state: "ready", running: false });
     mocks.remove.mockResolvedValue(undefined);
     start();
-    fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Delete Blender" }));
 
     await waitFor(() => expect(mocks.dispose).toHaveBeenCalledOnce());
     expect(mocks.remove).toHaveBeenCalledOnce();
@@ -170,7 +179,7 @@ describe("ThreeDToolsTab", () => {
       )
       .mockResolvedValue(undefined);
     start();
-    fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Delete Blender" }));
 
     await waitFor(() => expect(mocks.remove).toHaveBeenCalledTimes(2));
     expect(mocks.dispose).toHaveBeenCalled();
@@ -180,7 +189,7 @@ describe("ThreeDToolsTab", () => {
     mocks.getState.mockResolvedValue({ state: "ready", running: false });
     mocks.remove.mockRejectedValue(new Error("Failed to remove Blender: Couldn't remove Blender"));
     start();
-    fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Delete Blender" }));
 
     await waitFor(() =>
       expect(mocks.error).toHaveBeenCalledWith("Couldn't remove Blender", expect.anything()),

@@ -426,12 +426,27 @@ describe("Blender tools", () => {
       await expect(isBlenderInstalled(root)).resolves.toBe(false);
     });
 
-    it("removes everything", async () => {
+    it("removes everything, including older folders and files moved aside", async () => {
       const root = await directory();
+      const older = await directory();
       await writeFile(join(root, "installed.json"), "{}");
+      await writeFile(join(older, "installed.json"), "{}");
+      await writeFile(`${root}.bak-123`, "in the way");
+      await writeFile(`${older}.bak-456`, "in the way");
 
-      await removeBlenderTools(root);
+      await removeBlenderTools(root, "linux", [older]);
 
+      await expect(stat(root)).rejects.toThrow();
+      await expect(stat(older)).rejects.toThrow();
+      await expect(stat(`${root}.bak-123`)).rejects.toThrow();
+      await expect(stat(`${older}.bak-456`)).rejects.toThrow();
+    });
+
+    it("cleans up even when an older folder was never used", async () => {
+      const root = await directory();
+      const missing = join(root, "..", `bloxbot-blender-missing-${Date.now()}`);
+
+      await expect(removeBlenderTools(root, "linux", [missing])).resolves.toBeUndefined();
       await expect(stat(root)).rejects.toThrow();
     });
   });
